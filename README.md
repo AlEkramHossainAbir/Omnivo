@@ -5,6 +5,8 @@
 One platform for accounting, inventory, sales, purchasing, POS, HR and payroll. Every company (tenant) gets its own isolated workspace, such as `acme.omnivo.app`, and can keep working when the internet drops.
 
 > 📘 The full system design, architecture decisions, scaling strategy and roadmap are in Bangla: **[docs/system-design.bn.md](docs/system-design.bn.md)**
+>
+> 🧭 Architecture decision records (ADRs) are in [docs/adr/](docs/adr/). The first is [0001: PostgreSQL over MongoDB](docs/adr/0001-postgresql-over-mongodb.md).
 
 ---
 
