@@ -16,8 +16,8 @@ One platform for accounting, inventory, sales, purchasing, POS, HR and payroll. 
 |---|---|---|
 | **Omnivo App** | The ERP web app (PWA). Offline-first, mobile responsive. | Tenant users |
 | **Omnivo API** | Multi-tenant backend (modular monolith) | App, integrations |
-| **Omnivo Website** | Marketing site, landing page, pricing, blog, docs | Prospects |
-| **Omnivo Admin** | Internal console for tenants, plans, billing and support | Omnivo team |
+| **Omnivo Website** | Marketing site, landing page, pricing, blog, docs, and checkout where customers buy plans, modules and add-ons | Prospects, customers |
+| **Omnivo Admin** | Internal console for tenants, billing and support. It also manages the product catalog: which plans, modules and add-ons exist, their prices, and which ones the website shows | Omnivo team |
 | **Omnivo Mobile** *(later)* | Native wrapper around the PWA (Capacitor) for POS and field sales | Tenant users |
 
 ## Core principles
@@ -69,11 +69,12 @@ The Bangla design document explains the reason, benefits and trade-offs behind e
 ```mermaid
 flowchart LR
   U[Users - Browser / PWA / Mobile] --> CF[Cloudflare CDN + WAF]
-  CF --> WEB[Website - Astro static]
+  CF --> WEB[Website - Astro, catalog pages from API]
   CF --> APP[ERP App - static PWA bundle]
   CF --> LB[Load Balancer / Ingress]
   LB --> API1[API pod]
   LB --> API2[API pod]
+  WEB -- published catalog --> LB
   API1 & API2 --> PGB[PgBouncer]
   PGB --> PG[(PostgreSQL primary)]
   PG --> PGR[(Read replicas)]
@@ -92,7 +93,7 @@ omnivo/
 ├── apps/
 │   ├── web/            # Astro — marketing site, landing, pricing, blog
 │   ├── app/            # React + Vite — ERP PWA
-│   ├── admin/          # React — internal admin console
+│   ├── admin/          # React — internal admin console (tenants, billing, product catalog)
 │   ├── api/            # NestJS — modular monolith
 │   └── worker/         # Background jobs (BullMQ)
 ├── packages/
@@ -121,6 +122,8 @@ omnivo/
 | **Enterprise** | Large businesses | Unlimited users, dedicated database, SSO, SLA, custom domain |
 
 Paid plans are billed monthly or yearly (yearly gets 2 months free). Add-on modules can be purchased separately.
+
+The table above is only a starting point. Plans, prices and what the website shows are **not hard-coded**: they live in the product catalog and are managed from the Admin panel. Pricing and product pages are rendered on the server, cached at the CDN, and refreshed when an admin publishes a change. Prices are versioned, so existing subscribers keep their price when it changes. Details are in section 13.3 of [docs/system-design.bn.md](docs/system-design.bn.md).
 
 ## Getting started
 

@@ -264,6 +264,7 @@ flowchart TB
 - একই `packages/ui` থেকে React কম্পোনেন্ট ব্যবহার করা যায়, তাই ডিজাইন একই থাকবে।
 - ব্লগ ও ডক্স: Astro Content Collections (Markdown/MDX)। ডক্সের জন্য **Starlight** ব্যবহার করতে পারেন।
 - হোস্টিং: Cloudflare Pages, যেখানে ফ্রি আর গ্লোবাল CDN।
+- **প্রাইসিং ও প্রোডাক্ট পেজ ডায়নামিক:** কোন প্ল্যান বা মডিউল ওয়েবসাইটে দেখাবে, সেটা Admin Panel থেকে ঠিক হবে। তাই এই পেজগুলো Astro-র on-demand rendering দিয়ে সার্ভারে রেন্ডার হবে আর CDN-এ ক্যাশ থাকবে; বাকি পেজ (ব্লগ, ডক্স, About) স্ট্যাটিক থাকবে। বিস্তারিত [১৩.৩](#১৩৩-product-catalog-admin-panel-থেকে-website-নিয়ন্ত্রণ)-এ।
 - Lighthouse স্কোর টার্গেট: ৯৫+।
 
 ### ৩.১০ Authentication ও Authorization
@@ -842,6 +843,103 @@ local (Docker Compose)  →  preview (প্রতি PR-এ, ঐচ্ছিক
   - বাংলাদেশ: **SSLCommerz**, **bKash**, **Nagad**, **ShurjoPay**
 - **Dunning:** পেমেন্ট ব্যর্থ হলে রিমাইন্ডার (ইমেইল, SMS)। ৭ দিন grace period, তারপর read-only মোড, **কখনো সাথে সাথে ডেটা মুছবেন না।**
 - বিলিং ইভেন্ট (subscription changed, payment failed) webhook দিয়ে আসবে, idempotent handler দিয়ে প্রসেস হবে।
+
+### ১৩.৩ Product Catalog: Admin Panel থেকে Website নিয়ন্ত্রণ
+
+কাস্টমার (নতুন ব্যবসা) Omnivo-র **ওয়েবসাইট** থেকে প্ল্যান, মডিউল বা অ্যাড-অন কিনবে। ওয়েবসাইটে কোন প্রোডাক্ট দেখাবে, কোনটা লুকানো থাকবে, দাম কত, কোন ক্রমে দেখাবে, "Most Popular" ব্যাজ কোনটায় থাকবে, এসব ঠিক হবে **Omnivo Admin Panel** থেকে। কোড বা ওয়েবসাইট আবার ডিপ্লয় না করেই।
+
+**তিনটা অংশ:**
+
+| অংশ | কে ব্যবহার করে | কাজ |
+|---|---|---|
+| **Admin Panel** (`admin.omnivo.app`) | Omnivo টিম | প্রোডাক্ট, দাম, ফিচার, কুপন তৈরি ও এডিট; ওয়েবসাইটে দেখাবে কিনা ঠিক করা; প্রিভিউ ও পাবলিশ |
+| **Catalog API** (`apps/api`-এর `catalog` মডিউল) | Website, Admin, Billing | একমাত্র সত্যের উৎস (single source of truth); পাবলিক এন্ডপয়েন্ট শুধু পাবলিশড ও দৃশ্যমান প্রোডাক্ট দেয় |
+| **Website** (`omnivo.app`) | সম্ভাব্য কাস্টমার | প্রাইসিং ও প্রোডাক্ট পেজ দেখানো, "Buy / Start trial" থেকে সাইনআপ ও পেমেন্ট |
+
+#### ডেটা মডেল
+
+```
+catalog_products
+  id, code (starter, growth, payroll_addon), type (plan | module | addon)
+  name, description, features (JSONB, বাংলা + ইংরেজি)
+  status (draft | published | archived)
+  show_on_website (bool)      ← পাবলিশড হলেও ওয়েবসাইটে লুকানো রাখা যায়
+  sort_order, badge ("Most Popular"), highlight (bool)
+  available_regions (BD, global), publish_at (শিডিউল করে পাবলিশ)
+
+catalog_prices                 ← দাম কখনো এডিট হয় না, নতুন রো তৈরি হয়
+  id, product_id, currency (BDT | USD), interval (month | year)
+  amount (NUMERIC), active (bool), created_at
+
+catalog_entitlements           ← প্ল্যান কিনলে কী পাবে (১৩.২-এর entitlements)
+  product_id, feature_key (feature.multi_branch), limit_value (users = 25)
+
+coupons
+  code, discount_type (percent | fixed), value, valid_until, max_redemptions, applies_to
+
+subscriptions
+  tenant_id, price_id, status, current_period_end   ← price_id দিয়ে বাঁধা
+```
+
+**এই মডেলের মূল নিয়ম:**
+- **দাম immutable (versioned):** দাম বদলালে পুরনো `catalog_prices` রো `active = false` হবে আর নতুন রো তৈরি হবে। পুরনো কাস্টমার তাদের পুরনো দামেই থাকবে (grandfathering); নতুন কাস্টমার নতুন দাম পাবে। Stripe-ও এভাবেই কাজ করে।
+- **Published বনাম Show on website আলাদা:** একটা প্ল্যান পাবলিশড কিন্তু ওয়েবসাইটে লুকানো থাকতে পারে। যেমন কোনো Enterprise ক্লায়েন্টের জন্য বিশেষ প্ল্যান, যেটা শুধু সরাসরি লিংকে কেনা যাবে।
+- **Archive, delete নয়:** যে প্রোডাক্ট কেউ কিনেছে, তা কখনো মুছবেন না। archive করলে ওয়েবসাইট থেকে সরে যাবে, কিন্তু পুরনো সাবস্ক্রিপশন চলতে থাকবে।
+- **Region ও currency:** বাংলাদেশ থেকে ঢুকলে BDT আর bKash/SSLCommerz, বাইরে থেকে USD আর Stripe। দেশ চেনা যাবে Cloudflare-এর `CF-IPCountry` হেডার থেকে, সাথে ইউজার নিজে বদলানোর অপশন।
+
+#### পাবলিশ থেকে ওয়েবসাইটে দেখানো পর্যন্ত
+
+```mermaid
+sequenceDiagram
+  participant A as Admin (Omnivo টিম)
+  participant API as Catalog API
+  participant PG as PostgreSQL
+  participant W as Worker
+  participant CF as Cloudflare CDN
+  participant Web as Website (Astro)
+
+  A->>API: প্রোডাক্ট এডিট (draft)
+  A->>Web: প্রিভিউ লিংক (?preview=token)
+  A->>API: Publish
+  API->>PG: catalog আপডেট + audit log + outbox (CatalogPublished)
+  PG-->>W: outbox event
+  W->>CF: /pricing, /products/* ক্যাশ purge
+  Note over Web,CF: পরের ভিজিটরে Astro নতুন ডেটা দিয়ে রেন্ডার করে আবার ক্যাশ করে
+```
+
+**ওয়েবসাইট কীভাবে ডেটা পাবে? তিনটা অপশন:**
+
+| অপশন | সুবিধা | সমস্যা |
+|---|---|---|
+| সম্পূর্ণ static, পাবলিশে পুরো সাইট rebuild | সবচেয়ে দ্রুত | প্রতিটা পরিবর্তনে কয়েক মিনিট দেরি, CI-নির্ভর |
+| ব্রাউজারে JS দিয়ে API থেকে fetch | সবসময় লেটেস্ট | SEO খারাপ, পেজ লোডে দাম "লাফিয়ে" আসে |
+| **সার্ভারে রেন্ডার + CDN ক্যাশ + পাবলিশে purge** ✅ | প্রায় static-এর মতোই দ্রুত, SEO ভালো, পাবলিশের কয়েক সেকেন্ডের মধ্যে আপডেট | purge ঠিকমতো না হলে পুরনো দাম দেখাতে পারে (তাই `s-maxage` ছোট রাখা, যেমন ৫ মিনিট, সেফটি নেট হিসেবে) |
+
+#### কেনার ফ্লো (Website থেকে টেন্যান্ট তৈরি)
+
+```
+Website: প্ল্যান বাছাই (price_id)
+  → সাইনআপ (ইমেইল, কোম্পানির নাম, সাবডোমেইন)
+  → সার্ভার price_id আবার যাচাই করে (active? এই region-এ বিক্রিযোগ্য? কুপন বৈধ?)
+  → পেমেন্ট গেটওয়ে (SSLCommerz / bKash / Stripe)
+  → গেটওয়ের webhook → subscription active (idempotent)
+  → টেন্যান্ট provisioning job (৪.৭)
+  → ওয়েলকাম ইমেইল + acme.omnivo.app-এ রিডাইরেক্ট
+```
+
+- ⚠️ **দাম কখনো ওয়েবসাইট বা ব্রাউজার থেকে বিশ্বাস করবেন না।** ব্রাউজার শুধু `price_id` আর কুপন কোড পাঠাবে; আসল টাকার অঙ্ক সার্ভার ক্যাটালগ থেকে হিসাব করবে। না হলে কেউ ব্রাউজারে দাম বদলে ১ টাকায় কিনে নেবে।
+- ফ্রি ট্রায়ালে পেমেন্ট ধাপ বাদ যাবে; ট্রায়াল শেষে আপগ্রেড পেজে একই ক্যাটালগ দেখাবে।
+- টেন্যান্ট অ্যাপের ভেতরের "Upgrade / Add module" পেজও **একই Catalog API** ব্যবহার করবে, তাই ওয়েবসাইট আর অ্যাপে দাম কখনো আলাদা হবে না।
+
+#### Admin Panel-এর নিরাপত্তা
+
+Admin Panel দিয়ে দাম বদলানো যায় আর সব টেন্যান্ট দেখা যায়, তাই এটা সবচেয়ে সংবেদনশীল অংশ:
+- আলাদা সাবডোমেইন (`admin.omnivo.app`), সামনে **Cloudflare Access** বা VPN; সাধারণ ইন্টারনেট থেকে লগইন পেজই দেখা যাবে না।
+- MFA বাধ্যতামূলক।
+- রোল আলাদা: **Super Admin**, **Catalog Manager** (দাম ও প্রোডাক্ট), **Support** (টেন্যান্ট দেখা, দাম বদলানো নয়), **Finance** (পেমেন্ট ও রিফান্ড)।
+- ক্যাটালগের প্রতিটা পরিবর্তন audit log-এ (কে, কখন, আগের ও পরের মান)।
+- বড় পরিবর্তনে (দাম কমানো বা বাড়ানো) দ্বিতীয় জনের অনুমোদন (four-eyes) রাখা যায়।
+- পাবলিশের আগে প্রিভিউ বাধ্যতামূলক।
 
 ---
 
