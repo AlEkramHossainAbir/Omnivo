@@ -18,7 +18,10 @@ One platform for accounting, inventory, sales, purchasing, POS, HR and payroll. 
 | **Omnivo API** | Multi-tenant backend (modular monolith) | App, integrations |
 | **Omnivo Website** | Marketing site, landing page, pricing, blog, docs, and checkout where customers buy plans, modules and add-ons | Prospects, customers |
 | **Omnivo Admin** | Internal console for tenants, billing and support. It also manages the product catalog: which plans, modules and add-ons exist, their prices, and which ones the website shows | Omnivo team |
+| **Omnivo Storefront** | A public online shop for each tenant (`acme.omnivo.shop` or their own domain). Their customers browse products and order with cash on delivery or online payment; every order becomes a sales order and an automatic courier consignment. Controlled by the tenant from the ERP app | Tenants' own customers |
 | **Omnivo Mobile** *(later)* | Native wrapper around the PWA (Capacitor) for POS and field sales | Tenant users |
+
+> ⚠️ **Website and Storefront are two different things.** The *Website* is where businesses buy Omnivo. A *Storefront* is where a tenant's own customers buy that tenant's products. The design, data model, order flow and courier integration are in section 14 of [docs/system-design.bn.md](docs/system-design.bn.md).
 
 ## Core principles
 
@@ -33,7 +36,7 @@ One platform for accounting, inventory, sales, purchasing, POS, HR and payroll. 
 
 **Phase 1 (MVP):** Core platform (tenants, users, roles and permissions, audit log), Accounting and Finance, Inventory, Sales and Invoicing, Purchasing, POS, Reports and Dashboard
 
-**Phase 2:** HR and Payroll, CRM, Expense management, Multi-branch and multi-warehouse, Local tax and VAT compliance
+**Phase 2:** HR and Payroll, CRM, Expense management, Multi-branch and multi-warehouse, Local tax and VAT compliance, Storefront (public online shop with COD and online payment) and courier delivery
 
 **Phase 3:** Manufacturing (BOM, work orders), Projects and Timesheets, E-commerce integrations, Public API and Webhooks, AI assistant and forecasting
 
@@ -46,6 +49,7 @@ One platform for accounting, inventory, sales, purchasing, POS, HR and payroll. 
 | ERP frontend | React + Vite, TanStack Router/Query/Table, Tailwind CSS, shadcn/ui |
 | Offline | PWA (Workbox service worker), IndexedDB, sync engine using an outbox pattern |
 | Website / landing | Astro (static, near-zero JS) |
+| Tenant storefront | Astro (server-rendered, CDN-cached, multi-tenant by domain) |
 | Backend | NestJS on the Fastify adapter (modular monolith) |
 | Validation / contracts | Zod schemas shared by frontend and backend |
 | ORM | Drizzle ORM |
@@ -57,6 +61,8 @@ One platform for accounting, inventory, sales, purchasing, POS, HR and payroll. 
 | File storage | S3-compatible storage (Cloudflare R2 / AWS S3) |
 | Auth | OIDC (Zitadel or Keycloak), short-lived JWT, RBAC |
 | Billing | Stripe + SSLCommerz / bKash (Bangladesh) |
+| Storefront payments | Tenant's own gateway: SSLCommerz, bKash, Nagad, or cash on delivery |
+| Courier | Adapter per provider: Pathao, Steadfast, RedX, eCourier, Paperfly (+ manual fallback) |
 | Infrastructure | Docker, Kubernetes (k3s → EKS/GKE), OpenTofu (Terraform) |
 | CDN / edge / WAF | Cloudflare |
 | CI/CD | GitHub Actions, Argo CD |
@@ -70,11 +76,13 @@ The Bangla design document explains the reason, benefits and trade-offs behind e
 flowchart LR
   U[Users - Browser / PWA / Mobile] --> CF[Cloudflare CDN + WAF]
   CF --> WEB[Website - Astro, catalog pages from API]
+  CF --> SHOP[Storefront - Astro, one deploy, all tenant shops]
   CF --> APP[ERP App - static PWA bundle]
   CF --> LB[Load Balancer / Ingress]
   LB --> API1[API pod]
   LB --> API2[API pod]
   WEB -- published catalog --> LB
+  SHOP -- public catalog + checkout --> LB
   API1 & API2 --> PGB[PgBouncer]
   PGB --> PG[(PostgreSQL primary)]
   PG --> PGR[(Read replicas)]
@@ -83,6 +91,8 @@ flowchart LR
   Q --> W[Workers - reports, email, sync, imports]
   W --> PG
   W --> S3[(Object storage)]
+  W --> CR[Courier APIs - auto consignment]
+  CR -- tracking webhooks --> LB
   PG -. CDC .-> CH[(ClickHouse - analytics)]
 ```
 
@@ -92,6 +102,7 @@ flowchart LR
 omnivo/
 ├── apps/
 │   ├── web/            # Astro — marketing site, landing, pricing, blog
+│   ├── shop/           # Astro — tenant storefronts (multi-tenant by domain)
 │   ├── app/            # React + Vite — ERP PWA
 │   ├── admin/          # React — internal admin console (tenants, billing, product catalog)
 │   ├── api/            # NestJS — modular monolith
@@ -123,6 +134,8 @@ omnivo/
 
 Paid plans are billed monthly or yearly (yearly gets 2 months free). Add-on modules can be purchased separately.
 
+Storefront is a Phase 2 feature sold through the same catalog, gated by the `feature.storefront` entitlement rather than hard-coded plan checks.
+
 The table above is only a starting point. Plans, prices and what the website shows are **not hard-coded**: they live in the product catalog and are managed from the Admin panel. Pricing and product pages are rendered on the server, cached at the CDN, and refreshed when an admin publishes a change. Prices are versioned, so existing subscribers keep their price when it changes. Details are in section 13.3 of [docs/system-design.bn.md](docs/system-design.bn.md).
 
 ## Getting started
@@ -145,6 +158,7 @@ pnpm dev                                                  # runs all apps via tu
 - [ ] POS with offline support
 - [ ] Website + pricing + billing integration
 - [ ] Beta launch
+- [ ] Storefront (COD + online payment) and courier auto-consignment
 - [ ] HR and Payroll, CRM, VAT compliance
 - [ ] Manufacturing, public API, integrations
 

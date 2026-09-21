@@ -21,11 +21,12 @@
 11. [সিকিউরিটি](#১১-সিকিউরিটি)
 12. [DevOps: CI/CD, Infra, Monitoring, Backup](#১২-devops-cicd-infra-monitoring-backup)
 13. [Billing, Pricing Plan ও Feature Gating](#১৩-billing-pricing-plan-ও-feature-gating)
-14. [বাংলাদেশ-নির্দিষ্ট বিষয়](#১৪-বাংলাদেশ-নির্দিষ্ট-বিষয়)
-15. [আনুমানিক খরচ](#১৫-আনুমানিক-খরচ)
-16. [রোডম্যাপ ও টিম](#১৬-রোডম্যাপ-ও-টিম)
-17. [যে ভুলগুলো অবশ্যই এড়াবেন](#১৭-যে-ভুলগুলো-অবশ্যই-এড়াবেন)
-18. [ফাইনাল চেকলিস্ট](#১৮-ফাইনাল-চেকলিস্ট)
+14. [Storefront: টেন্যান্টের পাবলিক অনলাইন শপ ও কুরিয়ার ডেলিভারি](#১৪-storefront-টেন্যান্টের-পাবলিক-অনলাইন-শপ-ও-কুরিয়ার-ডেলিভারি)
+15. [বাংলাদেশ-নির্দিষ্ট বিষয়](#১৫-বাংলাদেশ-নির্দিষ্ট-বিষয়)
+16. [আনুমানিক খরচ](#১৬-আনুমানিক-খরচ)
+17. [রোডম্যাপ ও টিম](#১৭-রোডম্যাপ-ও-টিম)
+18. [যে ভুলগুলো অবশ্যই এড়াবেন](#১৮-যে-ভুলগুলো-অবশ্যই-এড়াবেন)
+19. [ফাইনাল চেকলিস্ট](#১৯-ফাইনাল-চেকলিস্ট)
 
 ---
 
@@ -45,6 +46,8 @@
 | Infra | শুরুতে **Docker Compose / k3s**, পরে **Kubernetes (EKS/GKE)** | শুরুতে কম খরচ, পরে অটো-স্কেল |
 | CDN/সিকিউরিটি | **Cloudflare** | ফ্রি টিয়ারেই CDN, WAF, DDoS সুরক্ষা |
 | Observability | **OpenTelemetry + Grafana stack + Sentry** | ভেন্ডর লক-ইন নেই |
+| টেন্যান্টের অনলাইন শপ | **Storefront** (Astro SSR + CDN, `acme.omnivo.shop`) | টেন্যান্ট নিজের প্রোডাক্ট বিক্রি করবে, স্টক ও হিসাব একই ERP-তে |
+| ডেলিভারি | **কুরিয়ার অ্যাডাপ্টার** (Pathao, Steadfast, RedX…), অর্ডার কনফার্ম হলেই অটো কনসাইনমেন্ট | হাতে বুকিং বন্ধ, COD-র টাকা অটো রিকনসাইল |
 
 > **সবচেয়ে গুরুত্বপূর্ণ কথা:** প্রথম দিন থেকে মিলিয়ন ইউজারের জন্য জটিল সিস্টেম বানাবেন না। বানাবেন এমন একটা সিস্টেম যেটা **সহজ**, কিন্তু যার **ডিজাইন স্কেল করার পথ খোলা রাখে**। প্রতিটা টেবিলে `tenant_id`, stateless API আর async jobs, এই তিনটা ঠিক থাকলে পরে স্কেল করা অনেক সহজ।
 
@@ -120,6 +123,8 @@ apps/api/src/modules/
 ├── sales/
 ├── purchase/
 ├── pos/
+├── storefront/    # পাবলিক অনলাইন শপ, কার্ট, চেকআউট, অর্ডার (§১৪)
+├── shipping/      # কুরিয়ার অ্যাডাপ্টার, কনসাইনমেন্ট, ট্র্যাকিং, COD রিকনসিলিয়েশন (§১৪)
 └── hr/
 ```
 
@@ -141,7 +146,8 @@ flowchart TB
   end
 
   subgraph Static
-    WEB[Astro Website]
+    WEB[Astro Website - omnivo.app]
+    SHOP[Astro Storefront - টেন্যান্টের শপ]
     APPB[ERP App Bundle]
   end
 
@@ -162,8 +168,17 @@ flowchart TB
     CH[(ClickHouse - Analytics)]
   end
 
+  subgraph External[বাইরের সার্ভিস]
+    CRR[কুরিয়ার API - Pathao / Steadfast / RedX]
+    PAY[পেমেন্ট গেটওয়ে]
+  end
+
+  WRK --> CRR & PAY
+  CRR -- webhook --> ING
+
   B & M --> CDN
-  CDN --> WEB & APPB
+  CDN --> WEB & SHOP & APPB
+  SHOP --> ING
   CDN --> ING --> API & SYNC
   API & SYNC --> PGB --> PG
   PG --> PGR
@@ -265,6 +280,7 @@ flowchart TB
 - ব্লগ ও ডক্স: Astro Content Collections (Markdown/MDX)। ডক্সের জন্য **Starlight** ব্যবহার করতে পারেন।
 - হোস্টিং: Cloudflare Pages, যেখানে ফ্রি আর গ্লোবাল CDN।
 - **প্রাইসিং ও প্রোডাক্ট পেজ ডায়নামিক:** কোন প্ল্যান বা মডিউল ওয়েবসাইটে দেখাবে, সেটা Admin Panel থেকে ঠিক হবে। তাই এই পেজগুলো Astro-র on-demand rendering দিয়ে সার্ভারে রেন্ডার হবে আর CDN-এ ক্যাশ থাকবে; বাকি পেজ (ব্লগ, ডক্স, About) স্ট্যাটিক থাকবে। বিস্তারিত [১৩.৩](#১৩৩-product-catalog-admin-panel-থেকে-website-নিয়ন্ত্রণ)-এ।
+- **টেন্যান্টের নিজের শপও একই স্ট্যাকে:** `apps/shop` একটা আলাদা Astro অ্যাপ, যেটা একই ডিপ্লয়মেন্ট থেকে সব টেন্যান্টের পাবলিক অনলাইন শপ সার্ভ করে (`acme.omnivo.shop`)। বিস্তারিত [১৪](#১৪-storefront-টেন্যান্টের-পাবলিক-অনলাইন-শপ-ও-কুরিয়ার-ডেলিভারি)-এ।
 - Lighthouse স্কোর টার্গেট: ৯৫+।
 
 ### ৩.১০ Authentication ও Authorization
@@ -318,6 +334,7 @@ flowchart LR
 ২. **কাস্টম ডোমেইন:** `erp.acme.com` → CNAME, Cloudflare for SaaS দিয়ে অটো SSL (Enterprise ফিচার)
 ৩. **JWT claim:** টোকেনে `tenant_id` থাকবে। সাবডোমেইন আর টোকেনের টেন্যান্ট না মিললে **403**।
 ৪. **API key:** পাবলিক API-র জন্য কী-টা নিজেই একটা টেন্যান্টের সাথে বাঁধা থাকবে।
+৫. **Storefront ডোমেইন:** `acme.omnivo.shop` বা টেন্যান্টের নিজের `shop.acme.com`; এখানে লগইন নেই, তাই টেন্যান্ট আসবে যাচাই করা `storefront_domains` রেকর্ড থেকে (§১৪.২)।
 
 > ⚠️ কখনো request body বা query param থেকে `tenant_id` নিয়ে বিশ্বাস করবেন না। টেন্যান্ট আসবে শুধু যাচাই করা টোকেন থেকে।
 
@@ -641,6 +658,7 @@ flowchart LR
                   ┌──────────────────────────────────────────┐
   Phase 2         │ HR & Payroll ★★ │ CRM ★★ │ Expense ★★      │
   "ব্যবসা বাড়ে"     │ Multi-branch/Warehouse ★★ │ VAT/Tax ★★★   │
+                  │ Storefront + Courier ★★★                   │
                   └──────────────────────────────────────────┘
                   ┌──────────────────────────────────────────┐
   Phase 3         │ Manufacturing ★ │ Projects ★ │ E-commerce ★ │
@@ -704,7 +722,14 @@ flowchart LR
 - স্ট্যান্ডার্ড রিপোর্ট (Sales, Stock, Aging, Tax, P&L) + ফিল্টার + Excel/PDF এক্সপোর্ট
 - শিডিউল করা রিপোর্ট ইমেইল
 
-**Phase 2:** HR (কর্মী, উপস্থিতি, ছুটি), Payroll (বেতন, বোনাস, ট্যাক্স, পেস্লিপ), CRM (লিড, পাইপলাইন, ফলো-আপ), Expense (রসিদের ছবি সহ), VAT রিটার্ন রিপোর্ট।
+**৮. Storefront ও Delivery (Phase 2, বিস্তারিত §১৪)**
+- টেন্যান্টের পাবলিক অনলাইন শপ: প্রোডাক্ট পাবলিশ, ক্যাটাগরি, কার্ট, চেকআউট
+- **COD ও অনলাইন পেমেন্ট** (টেন্যান্টের নিজের গেটওয়ে অ্যাকাউন্টে)
+- অর্ডার বোর্ড, অর্ডার → Sales Order → ইনভয়েস অটোমেশন
+- **কুরিয়ার ইন্টিগ্রেশন:** অর্ডার কনফার্ম হলেই অটো কনসাইনমেন্ট, ট্র্যাকিং, লেবেল প্রিন্ট, রিটার্ন
+- COD রিকনসিলিয়েশন: কুরিয়ারের কাছে কত টাকা আটকে আছে, রেমিট্যান্স ম্যাচিং
+
+**Phase 2:** HR (কর্মী, উপস্থিতি, ছুটি), Payroll (বেতন, বোনাস, ট্যাক্স, পেস্লিপ), CRM (লিড, পাইপলাইন, ফলো-আপ), Expense (রসিদের ছবি সহ), VAT রিটার্ন রিপোর্ট, Storefront + কুরিয়ার ডেলিভারি।
 
 **Phase 3:** Manufacturing (BOM, Work Order, কাঁচামাল খরচ), Projects ও Timesheet, Fixed Assets ও Depreciation, E-commerce সিঙ্ক (Shopify/WooCommerce/Daraz), Public REST API ও Webhooks, AI সহকারী (স্বাভাবিক ভাষায় রিপোর্ট প্রশ্ন, ডিমান্ড ফোরকাস্ট)।
 
@@ -943,7 +968,233 @@ Admin Panel দিয়ে দাম বদলানো যায় আর স
 
 ---
 
-## ১৪. বাংলাদেশ-নির্দিষ্ট বিষয়
+## ১৪. Storefront: টেন্যান্টের পাবলিক অনলাইন শপ ও কুরিয়ার ডেলিভারি
+
+১৩ নম্বর সেকশনের ওয়েবসাইট আর এই সেকশনের Storefront **দুইটা সম্পূর্ণ আলাদা জিনিস**। গুলিয়ে ফেললে পুরো ডিজাইন ভুল হবে:
+
+| | **Omnivo Website** (§১৩.৩) | **Tenant Storefront** (এই সেকশন) |
+|---|---|---|
+| ডোমেইন | `omnivo.app` | `acme.omnivo.shop` বা `shop.acme.com` |
+| কে কেনে | নতুন ব্যবসা (ভবিষ্যৎ টেন্যান্ট) | টেন্যান্টের নিজের ক্রেতা (সাধারণ মানুষ) |
+| কী বিক্রি হয় | ERP প্ল্যান, মডিউল, অ্যাড-অন | টেন্যান্টের নিজের প্রোডাক্ট (Inventory থেকে) |
+| পেমেন্ট | Stripe / SSLCommerz (Omnivo-র অ্যাকাউন্টে) | COD বা অনলাইন (**টেন্যান্টের নিজের** মার্চেন্ট অ্যাকাউন্টে) |
+| কে নিয়ন্ত্রণ করে | Omnivo Admin Panel | টেন্যান্ট নিজে, ERP অ্যাপের Storefront সেটিংস থেকে |
+| রেজাল্ট | নতুন টেন্যান্ট তৈরি | নতুন Sales Order + কুরিয়ার কনসাইনমেন্ট |
+
+### ১৪.১ কেন এটা Omnivo-র জন্য বড় সুযোগ
+
+বাংলাদেশের বেশিরভাগ ছোট ব্যবসা এখন ফেসবুক পেজে বিক্রি করে, হাতে অর্ডার লেখে, তারপর কুরিয়ারের আলাদা প্যানেলে গিয়ে আবার একই ঠিকানা টাইপ করে। মানে **একই অর্ডার তিন জায়গায় তিনবার**, আর স্টক কোথাও মেলে না।
+
+Omnivo-তে Inventory, Sales আর Accounting আগে থেকেই আছে। Storefront আসলে সেই ডেটার উপর বসানো একটা **পাবলিক রিড + অর্ডার-ইনটেক চ্যানেল**, নতুন কোনো ব্যবসায়িক লজিক না। তাই:
+
+- **স্টকের উৎস একটাই।** শপে যা দেখায় আর POS-এ যা বিক্রি হয়, দুটো একই `stock_movements` লেজার থেকে আসে। আলাদা Shopify/WooCommerce রাখলে সিঙ্ক সমস্যা চিরকাল থাকবে।
+- **অর্ডার এলেই হিসাব।** অর্ডার → Sales Order → ইনভয়েস → জার্নাল, সব অটো।
+- **কুরিয়ার অটোমেশন।** অর্ডার কনফার্ম হলেই কনসাইনমেন্ট তৈরি, ট্র্যাকিং ফিরে আসে, COD-র টাকা রিকনসাইল হয়। এটাই টেন্যান্টের সবচেয়ে বড় দৈনিক কষ্ট।
+
+> Phase 3-এর "E-commerce সিঙ্ক" (Shopify/WooCommerce/Daraz) এটার বিকল্প না, **পরিপূরক**। যারা আগে থেকেই অন্য প্ল্যাটফর্মে আছে তারা সিঙ্ক করবে; যাদের কিছু নেই তারা Omnivo Storefront ব্যবহার করবে।
+
+### ১৪.২ আর্কিটেকচার
+
+```
+apps/shop/     ← Astro (on-demand rendering + CDN cache), মাল্টি-টেন্যান্ট একটাই ডিপ্লয়মেন্ট
+apps/api/src/modules/
+├── storefront/   ← পাবলিক ক্যাটালগ, কার্ট, চেকআউট, অর্ডার ইনটেক
+└── shipping/     ← কুরিয়ার অ্যাডাপ্টার, কনসাইনমেন্ট, ট্র্যাকিং, COD রিকনসিলিয়েশন
+```
+
+- **একটাই Astro অ্যাপ সব টেন্যান্টের শপ সার্ভ করবে**, টেন্যান্ট চেনা যাবে `Host` হেডার থেকে (§৪.৩-এর একই নিয়ম, শুধু আলাদা ডোমেইন টেবিল)। প্রতি টেন্যান্টের জন্য আলাদা সাইট বিল্ড **কখনো করবেন না**, ১,০০০ টেন্যান্ট হলে CI-ই মরে যাবে।
+- **কাস্টম ডোমেইন:** `shop.acme.com` → CNAME → **Cloudflare for SaaS**, SSL অটো (§৪.৩-এর মতোই)।
+- **পাবলিক API আলাদা:** `/public/v1/*`, JWT নেই। টেন্যান্ট আসবে **শুধু যাচাই করা ডোমেইন থেকে**, কখনো query param থেকে না। এই এন্ডপয়েন্টগুলো একটা **read-mostly DB role** দিয়ে চলবে, যার RLS বাইপাস করার ক্ষমতা নেই, আর যে শুধু `published = true` লিস্টিং দেখতে পায়।
+- **রেন্ডারিং:** প্রোডাক্ট ও ক্যাটাগরি পেজ সার্ভারে রেন্ডার + CDN ক্যাশ (`s-maxage` ~৫ মিনিট), প্রোডাক্ট পাবলিশ/দাম বদলালে outbox ইভেন্ট → worker → **CDN purge**। §১৩.৩-এর ক্যাটালগ পাবলিশের ঠিক একই প্যাটার্ন, তাই কোড রিইউজ হবে।
+- **স্টক আর দাম ক্যাশে না রেখে** চেকআউটের সময় সার্ভারে আবার যাচাই হবে (পেজে "৫টা বাকি" পুরনো হতে পারে, কিন্তু অর্ডার নেওয়ার সময় ভুল হওয়া চলবে না)।
+- **ছবি:** R2-তে, Cloudflare Images/Resizing দিয়ে WebP/AVIF। শপের LCP টার্গেট < ২.৫ সেকেন্ড 3G-তে।
+- **কার্ট:** ব্রাউজারে `cart_token` (cookie) + সার্ভারে `storefront_carts` রো, যাতে abandoned cart রিপোর্ট ও রিমাইন্ডার SMS পাঠানো যায়।
+
+### ১৪.৩ ডেটা মডেল
+
+```
+storefront_settings                ← টেন্যান্টপ্রতি একটা রো
+  tenant_id (PK), enabled, domain, theme (JSONB), logo_url, contact_phone
+  cod_enabled, online_payment_enabled, gateway_credentials (encrypted)
+  min_order_amount, delivery_zones (JSONB: ঢাকার ভিতরে ৬০, বাইরে ১২০)
+  default_warehouse_id, default_courier_account_id
+  auto_consign (off | on_confirm | on_payment)    ← অটো কনসাইনমেন্ট নীতি
+  require_phone_otp (bool)
+
+storefront_domains                 ← Host → tenant রেজলিউশন
+  domain (UNIQUE), tenant_id, verified, ssl_status
+
+storefront_listings                ← Inventory-র product-কে শপে "প্রকাশ" করা
+  tenant_id, product_id (FK → products), variant_id
+  published, slug, seo_title, seo_description, description_html, images (JSONB)
+  price_override (NULL হলে price list থেকে), sale_price, sale_until
+  category_id, sort_order, badge
+  UNIQUE (tenant_id, slug)
+
+storefront_categories, storefront_banners, storefront_carts, storefront_cart_items
+
+storefront_orders
+  tenant_id, order_no, status (pending | confirmed | packed | shipped | delivered
+                               | cancelled | returned)
+  customer_name, phone, phone_verified, email, address, area, district, note
+  payment_method (cod | online), payment_status (unpaid | paid | refunded)
+  subtotal, delivery_charge, discount, total     ← সবই সার্ভারে হিসাব করা
+  sales_order_id (FK)                            ← confirm হলে ERP Sales Order তৈরি
+  source (web | facebook | manual), coupon_code
+  UNIQUE (tenant_id, order_no)
+
+courier_accounts                   ← টেন্যান্টের নিজের কুরিয়ার অ্যাকাউন্ট
+  tenant_id, courier_code (pathao | steadfast | redx | ecourier | paperfly | manual)
+  credentials (encrypted), store_id, is_default, enabled, webhook_secret
+
+shipments                          ← একটা কনসাইনমেন্ট
+  tenant_id, order_id, courier_account_id
+  consignment_id (কুরিয়ারের আইডি), tracking_code, label_url
+  status, cod_amount, delivery_fee, cod_collected_at, remittance_id
+  attempt_count, last_error, request_payload, response_payload (JSONB)
+  UNIQUE (tenant_id, order_id, courier_account_id)   ← ডাবল কনসাইনমেন্ট ঠেকানোর দেয়াল
+
+shipment_events                    ← append-only, কখনো আপডেট হয় না
+  shipment_id, status, raw_payload, occurred_at, received_at
+
+courier_remittances                ← কুরিয়ার কবে কত COD ফেরত দিল
+  tenant_id, courier_account_id, amount, fee, reference, received_at, journal_entry_id
+```
+
+**মূল নিয়ম:**
+- **প্রোডাক্ট ডুপ্লিকেট করবেন না।** `storefront_listings` শুধু Inventory-র প্রোডাক্টকে "প্রকাশ" করে, নতুন প্রোডাক্ট টেবিল না। দাম ও স্টকের সত্য একটাই জায়গায়।
+- **স্টক রিজার্ভেশন:** অর্ডার `pending` হলে স্টক "reserved" হবে (TTL সহ, যেমন ৬০ মিনিট বা কনফার্ম পর্যন্ত), `confirmed` হলে আসল মুভমেন্ট লিখবে। সরাসরি quantity আপডেট **কখনো না** (§১৭-এর ৬ নম্বর ভুল)।
+- **`storefront_orders` ≠ `sales_orders`।** শপের অর্ডার হলো "গ্রাহকের অনুরোধ", যেটা বাতিল বা স্প্যাম হতে পারে। কনফার্ম হলেই সেটা ERP-র Sales Order-এ পরিণত হবে। এতে ভুয়া অর্ডার দিয়ে হিসাব নষ্ট হবে না।
+- **সব টেবিলে `tenant_id` + RLS**, শপের কাস্টমার ডেটা (ফোন, ঠিকানা) সবচেয়ে সংবেদনশীল PII।
+
+### ১৪.৪ অর্ডার ফ্লো: COD ও অনলাইন পেমেন্ট
+
+```mermaid
+sequenceDiagram
+  participant C as ক্রেতা (শপ)
+  participant S as Storefront API
+  participant PG as PostgreSQL
+  participant W as Worker (BullMQ)
+  participant GW as পেমেন্ট গেটওয়ে
+  participant CR as কুরিয়ার API
+
+  C->>S: চেকআউট (cart_token, ঠিকানা, payment_method)
+  S->>S: দাম, স্টক, ডেলিভারি চার্জ সার্ভারে আবার হিসাব
+  alt COD
+    S->>PG: order (pending) + স্টক reserve + outbox
+    S-->>C: "অর্ডার পেয়েছি" + OTP/কল ভেরিফিকেশন
+    Note over S,PG: OTP বা সেলস টিম কনফার্ম করলে → confirmed
+  else অনলাইন পেমেন্ট
+    S->>GW: পেমেন্ট শুরু (amount সার্ভার থেকে)
+    GW-->>S: webhook: paid (idempotent)
+    S->>PG: order confirmed + payment_status = paid
+  end
+  PG-->>W: outbox event: OrderConfirmed
+  W->>PG: Sales Order + স্টক মুভমেন্ট + জার্নাল
+  W->>CR: কনসাইনমেন্ট তৈরি (idempotency key = order_id)
+  CR-->>W: consignment_id + tracking_code + label_url
+  W->>PG: shipments রো + order → packed/shipped
+  W-->>C: SMS/ইমেইল: ট্র্যাকিং নম্বর
+```
+
+- ⚠️ **ব্রাউজার থেকে আসা কোনো দাম, ডিসকাউন্ট বা ডেলিভারি চার্জ বিশ্বাস করবেন না।** ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে; টাকার অঙ্ক সার্ভার হিসাব করবে (§১৩.৩-এর একই সতর্কতা)।
+- **COD-এ কনফার্মেশন ধাপ বাধ্যতামূলক রাখুন** (OTP বা ফোন কল)। ভুয়া COD অর্ডার বাংলাদেশে বড় সমস্যা, আর কনসাইনমেন্ট হয়ে গেলে কুরিয়ার ফি ফেরত আসে না।
+- **অনলাইন পেমেন্টে গেটওয়ে টেন্যান্টের নিজের** (SSLCommerz/bKash মার্চেন্ট অ্যাকাউন্ট)। Omnivo শুধু কী সংরক্ষণ করে ও কল করে, টাকা কখনো Omnivo-র অ্যাকাউন্টে আসে না। এতে PCI ও মানি-ট্রান্সমিশন ঝুঁকি Omnivo-র ঘাড়ে পড়ে না।
+- গেটওয়ের webhook **idempotent** হবে (একই `transaction_id` দুইবার এলে দ্বিতীয়বার কিছুই হবে না)।
+
+### ১৪.৫ টেন্যান্ট তার শপ কীভাবে নিয়ন্ত্রণ করবে
+
+সব নিয়ন্ত্রণ ERP অ্যাপের ভেতরের **Storefront** মেনু থেকে, কোনো কোড বা ডিপ্লয় ছাড়াই:
+
+| সেকশন | কী করা যাবে |
+|---|---|
+| **Catalog** | কোন প্রোডাক্ট শপে দেখাবে, ছবি, বর্ণনা, SEO, ক্যাটাগরি, সাজানোর ক্রম, শপ-এর জন্য আলাদা দাম বা অফার |
+| **Appearance** | লোগো, রং, ব্যানার, হোমপেজ সেকশন, বাংলা/ইংরেজি |
+| **Delivery** | এলাকাভিত্তিক ডেলিভারি চার্জ, ফ্রি ডেলিভারির সীমা, কোন এলাকায় ডেলিভারি হবে |
+| **Payments** | COD চালু/বন্ধ, অনলাইন গেটওয়ে কী, ন্যূনতম অর্ডার |
+| **Couriers** | কুরিয়ার অ্যাকাউন্ট যোগ করা, ডিফল্ট কুরিয়ার, **অটো-কনসাইনমেন্ট নীতি** (বন্ধ / কনফার্মে / পেমেন্টে) |
+| **Orders** | অর্ডার বোর্ড (pending → confirmed → packed → shipped → delivered), বাল্ক লেবেল প্রিন্ট, বাল্ক কনসাইনমেন্ট, বাতিল ও রিটার্ন |
+| **Domain** | `acme.omnivo.shop` বা নিজের ডোমেইন সংযোগ (DNS ধাপ সহ) |
+
+- **Omnivo Admin Panel** এখানে শুধু একটা জায়গায় আসে: Storefront কোন প্ল্যানে থাকবে, সেটা `feature.storefront` entitlement দিয়ে ঠিক হবে (§১৩.২)। অর্থাৎ Storefront বিক্রি হবে Growth প্ল্যানের ফিচার বা আলাদা অ্যাড-অন হিসেবে, আর কোডে কখনো `if (plan === 'growth')` লেখা হবে না।
+- ⚠️ থিম কাস্টমাইজেশনের চাপ আসবেই। উত্তর হলো **কনফিগারেশন ও কয়েকটা রেডিমেড থিম**, টেন্যান্ট-ভিত্তিক কাস্টম কোড না (§৪.৮)।
+
+### ১৪.৬ কুরিয়ার ইন্টিগ্রেশন: অর্ডার হলেই অটো কনসাইনমেন্ট
+
+এটাই এই সেকশনের সবচেয়ে গুরুত্বপূর্ণ অংশ, আর এখানেই সবচেয়ে বেশি ভুল হয়।
+
+**অ্যাডাপ্টার প্যাটার্ন।** প্রতিটা কুরিয়ারের API আলাদা, তাই ব্যবসায়িক কোড কখনো সরাসরি কুরিয়ারের API চিনবে না:
+
+```ts
+// packages/contracts — সব কুরিয়ার এই ইন্টারফেস মেনে চলবে
+export interface CourierAdapter {
+  code: 'pathao' | 'steadfast' | 'redx' | 'ecourier' | 'paperfly';
+  checkServiceability(addr: Address): Promise<{ ok: boolean; zoneId?: string }>;
+  quote(input: ShipmentInput): Promise<{ fee: Money; etaDays: number }>;
+  createConsignment(input: ShipmentInput, idempotencyKey: string): Promise<Consignment>;
+  cancelConsignment(consignmentId: string): Promise<void>;
+  getStatus(consignmentId: string): Promise<ShipmentStatus>;   // webhook না থাকলে polling
+  parseWebhook(body: unknown, signature: string): ShipmentEvent; // সবসময় signature যাচাই
+  printLabel(consignmentId: string): Promise<{ url: string }>;
+}
+```
+
+প্রতিটা কুরিয়ারের নিজস্ব স্ট্যাটাস নাম (`in_review`, `pickup_pending`, `partial_delivered`…) অ্যাডাপ্টারেই Omnivo-র **একটাই স্ট্যাটাস সেটে** ম্যাপ হবে। ব্যবসায়িক কোড শুধু Omnivo-র স্ট্যাটাস জানবে।
+
+**কনসাইনমেন্ট তৈরির নিয়ম:**
+
+1. অর্ডার `confirmed` হলে (বা পেমেন্ট হলে, নীতি অনুযায়ী) DB transaction-এই **outbox** রো লেখা হবে: `OrderConfirmed`। কুরিয়ারের API কখনো HTTP রিকোয়েস্টের ভেতরে কল করবেন না, না হলে কুরিয়ার ধীর হলে আপনার চেকআউটও ধীর হবে।
+2. Worker সেই ইভেন্ট নিয়ে `createConsignment` কল করবে, **idempotency key = `order_id`**, আর `shipments`-এ `UNIQUE (tenant_id, order_id, courier_account_id)` থাকবে। দুইটা মিলে নিশ্চিত করবে: নেটওয়ার্ক টাইমআউটে জব আবার চললেও **এক অর্ডারে দুইটা পার্সেল যাবে না**।
+3. টাইমআউট হলে আগে `getStatus` দিয়ে দেখবে কনসাইনমেন্ট আসলে তৈরি হয়ে গিয়েছিল কিনা, তারপরই আবার চেষ্টা করবে।
+4. **Retry:** exponential backoff-এ ৫ বার। তারপরও ব্যর্থ হলে অর্ডার `needs_attention` হবে, টেন্যান্টকে নোটিফিকেশন যাবে, আর অ্যাডমিন বোর্ডে "Retry" বাটন থাকবে। **কখনো নীরবে ব্যর্থ হবেন না**, তাহলে ক্রেতার পার্সেল কখনোই যাবে না।
+5. কুরিয়ারের অ্যাকাউন্ট ভুল/ক্রেডিট শেষ হলে ভিন্ন এরর মেসেজ দেখাবে, কারণ এটা টেন্যান্টের সমস্যা, Omnivo-র বাগ না।
+
+**স্ট্যাটাস আপডেট (দুই পথ):**
+- **Webhook** (যারা দেয়): `POST /public/v1/couriers/:code/webhook` → signature ও timestamp যাচাই → `shipment_events`-এ append → shipment ও order স্ট্যাটাস আপডেট। একই ইভেন্ট দুইবার এলে কিছুই বদলাবে না (idempotent)।
+- **Polling fallback:** যেসব কুরিয়ারে webhook নেই, তাদের জন্য শিডিউলড জব (যেমন ১৫ মিনিট পরপর, শুধু চলমান শিপমেন্টের জন্য)। কুরিয়ারের rate limit মাথায় রেখে টেন্যান্টপ্রতি ব্যাচে।
+- ক্রেতা ট্র্যাকিং দেখবে `acme.omnivo.shop/track/:code`-এ, আর গুরুত্বপূর্ণ ধাপে SMS পাবে।
+
+**COD-র টাকা: সবচেয়ে বেশি অবহেলিত অংশ।** কুরিয়ার ক্রেতার কাছ থেকে টাকা তোলে, কিন্তু আপনাকে দেয় ৩–৭ দিন পরে, চার্জ কেটে। তাই হিসাব হবে এভাবে:
+
+| ঘটনা | জার্নাল |
+|---|---|
+| ইনভয়েস তৈরি | Dr Accounts Receivable / Cr Sales + VAT |
+| কুরিয়ারে হস্তান্তর (shipped) | Dr **COD Receivable – Pathao** / Cr Accounts Receivable |
+| ডেলিভারি সম্পন্ন | (স্ট্যাটাস আপডেট, হিসাব একই থাকে) |
+| রেমিট্যান্স এলো | Dr Bank + Dr Courier Charge (খরচ) / Cr COD Receivable – Pathao |
+| রিটার্ন হলো | স্টক ফেরত + COD Receivable বিপরীত এন্ট্রি, কিন্তু কুরিয়ার ফি খরচ হিসেবেই থাকবে |
+
+- প্রতিটা কুরিয়ারের জন্য আলাদা **control account**, তাই "কোন কুরিয়ারের কাছে কত টাকা আটকে আছে" এক রিপোর্টেই দেখা যাবে। এটা টেন্যান্টদের কাছে বিশাল ভ্যালু।
+- রেমিট্যান্স CSV আপলোড বা API দিয়ে এলে অটো-ম্যাচিং (consignment_id ধরে), না মিললে "unmatched" তালিকা।
+- **Partial delivery ও exchange** (কিছু আইটেম ফেরত) শুরু থেকেই ডেটা মডেলে ধরে রাখুন; বাংলাদেশে এটা খুবই সাধারণ।
+
+**চেকআউটে ডেলিভারি চার্জ:** `quote()` দিয়ে লাইভ দাম আনা যায়, কিন্তু কুরিয়ার API ধীর বা ডাউন হলে চেকআউট আটকে যাবে। তাই ডিফল্ট হবে টেন্যান্টের নিজের **zone-ভিত্তিক চার্জ টেবিল**, আর লাইভ quote হবে ঐচ্ছিক ও ক্যাশড (টাইমআউট ১ সেকেন্ড, ব্যর্থ হলে zone চার্জে ফলব্যাক)।
+
+### ১৪.৭ নিরাপত্তা ও অপব্যবহার প্রতিরোধ
+
+- **ভুয়া COD অর্ডার:** ফোন OTP, ব্ল্যাকলিস্ট করা নম্বর, একই ফোন/IP থেকে অর্ডারের হার সীমিত করা, আর কুরিয়ারের "ডেলিভারি সাকসেস রেশিও" API থাকলে চেকআউটে ঝুঁকির ইঙ্গিত দেখানো।
+- **পাবলিক এন্ডপয়েন্টে rate limit** IP + ফোন + টেন্যান্ট ভিত্তিক (§৪.৬-এর noisy neighbor নিয়ন্ত্রণের মতোই), সামনে Cloudflare WAF ও bot protection।
+- **Oversell ঠেকানো:** চেকআউটে স্টক লক + রিজার্ভেশন; রিজার্ভেশনের TTL শেষ হলে জব দিয়ে ছেড়ে দেওয়া।
+- **কুরিয়ার ও গেটওয়ে ক্রেডেনশিয়াল** এনক্রিপ্টেড (KMS/envelope encryption), লগে কখনো যাবে না, অ্যাডমিন UI-তে মাস্কড দেখাবে। ক্রেডেনশিয়াল দেখা বা বদলানোর জন্য আলাদা পারমিশন।
+- **Webhook:** signature যাচাই, timestamp উইন্ডো (replay ঠেকাতে), অজানা পেলোড `shipment_events`-এ raw হিসেবে রেখে দেওয়া (ডিবাগের জন্য অমূল্য)।
+- **PII:** ক্রেতার ফোন ও ঠিকানা টেন্যান্ট-স্কোপড ও RLS-এর ভেতরে; এক্সপোর্টে অডিট লগ; কুরিয়ারকে শুধু প্রয়োজনীয় ফিল্ড পাঠানো।
+
+### ১৪.৮ কখন বানাবেন ও কী কী ঝুঁকি
+
+**Phase 2**, Sales + Inventory + Accounting শক্ত হওয়ার পরে। Storefront আসলে ঐ তিন মডিউলের উপর নির্ভরশীল; ভিত দুর্বল রেখে শপ বানালে স্টক ও হিসাব দুটোই ভাঙবে।
+
+| ঝুঁকি | সমাধান |
+|---|---|
+| কুরিয়ার API অস্থির, ডকুমেন্টেশন দুর্বল, rate limit কম | queue + backoff retry + ম্যানুয়াল ফলব্যাক (লেবেল প্রিন্ট করে হাতে বুকিং), আর "manual" নামে একটা অ্যাডাপ্টার যেটা শুধু CSV এক্সপোর্ট দেয় |
+| এক অর্ডারে দুইটা কনসাইনমেন্ট | idempotency key + DB unique constraint (দুটোই লাগবে, একটা যথেষ্ট না) |
+| কাস্টম ডোমেইনে SSL ঝামেলা | Cloudflare for SaaS, DNS ধাপের চেকলিস্ট UI ও স্ট্যাটাস ইন্ডিকেটর |
+| শপ ধীর হলে বিক্রি কমে | SSR + CDN ক্যাশ, ছবি অপ্টিমাইজ, Lighthouse ৯০+ CI গেট |
+| টেন্যান্টের বিশাল ট্রাফিক (ক্যাম্পেইন) অন্য টেন্যান্টকে ভোগায় | পাবলিক এন্ডপয়েন্ট আলাদা API pod-এ, আলাদা HPA ও rate limit |
+| রিটার্ন ও partial delivery-র হিসাব গোলমাল | শুরু থেকেই রিটার্ন ফ্লো ও COD control account, পরে যোগ করা খুব কঠিন |
+
+---
+
+## ১৫. বাংলাদেশ-নির্দিষ্ট বিষয়
 
 বাংলাদেশের বাজার দিয়ে শুরু করলে এগুলো আপনাকে বিদেশি ERP (Odoo, Zoho, SAP B1) থেকে আলাদা করবে:
 
@@ -951,6 +1202,8 @@ Admin Panel দিয়ে দাম বদলানো যায় আর স
 - **বাংলা ভাষা:** পুরো UI বাংলায়, বাংলা সংখ্যা (১২৩) দেখানোর অপশন, বাংলায় ইনভয়েস প্রিন্ট।
 - **সংখ্যার ফরম্যাট:** লাখ/কোটি (১২,৩৪,৫৬৭.০০), আর "কথায় টাকা" (Amount in words) বাংলা ও ইংরেজিতে।
 - **মোবাইল ফাইন্যান্স:** bKash/Nagad পেমেন্ট রেকর্ড ও রিকনসিলিয়েশন।
+- **কুরিয়ার ও COD:** দেশের বিক্রির বড় অংশ ক্যাশ-অন-ডেলিভারি, আর ডেলিভারি হয় Pathao, Steadfast, RedX, eCourier, Paperfly-র মতো স্থানীয় কুরিয়ারে। এদের API সরাসরি ইন্টিগ্রেট করা আর COD-র টাকা অটো রিকনসাইল করা বিদেশি ERP কেউ করে না, এটা Omnivo-র সবচেয়ে বড় স্থানীয় সুবিধা (§১৪.৬)।
+- **ফেসবুক-ভিত্তিক বিক্রি:** অনেক ব্যবসার কোনো ওয়েবসাইট নেই। এক ক্লিকে চালু হওয়া Storefront + অর্ডার লিংক তাদের জন্য বিশাল ভ্যালু (§১৪)।
 - **SMS:** বাংলাদেশি SMS গেটওয়ে (যেমন SSL Wireless, BulkSMSBD) দিয়ে ইনভয়েস বা বকেয়ার রিমাইন্ডার।
 - **ফিসক্যাল ইয়ার:** জুলাই–জুন (কনফিগারযোগ্য রাখবেন, কারণ অন্য দেশে জানুয়ারি–ডিসেম্বর)।
 - **কম দামি ডিভাইস ও ধীর নেটওয়ার্ক:** হালকা অ্যাপ আর অফলাইন সাপোর্ট এখানে সবচেয়ে বড় সুবিধা।
@@ -959,7 +1212,7 @@ Admin Panel দিয়ে দাম বদলানো যায় আর স
 
 ---
 
-## ১৫. আনুমানিক খরচ
+## ১৬. আনুমানিক খরচ
 
 > আনুমানিক মাসিক ইনফ্রা খরচ (USD), শুধু ধারণার জন্য। আসল খরচ ব্যবহারের ধরনের উপর নির্ভর করবে।
 
@@ -973,9 +1226,9 @@ Admin Panel দিয়ে দাম বদলানো যায় আর স
 
 ---
 
-## ১৬. রোডম্যাপ ও টিম
+## ১৭. রোডম্যাপ ও টিম
 
-### ১৬.১ টাইমলাইন (৩–৫ জনের টিম ধরে)
+### ১৭.১ টাইমলাইন (৩–৫ জনের টিম ধরে)
 
 | মাস | কাজ |
 |---|---|
@@ -985,9 +1238,9 @@ Admin Panel দিয়ে দাম বদলানো যায় আর স
 | **৫–৬** | POS + অফলাইন sync, মোবাইল রেসপন্সিভ পলিশ |
 | **৬** | ওয়েবসাইট + প্রাইসিং + বিলিং, ক্লোজড বেটা (১০–২০টা আসল ব্যবসা) |
 | **৭–৯** | বেটা ফিডব্যাক, পারফরম্যান্স, সিকিউরিটি অডিট, **পাবলিক লঞ্চ** |
-| **১০–১৮** | HR/Payroll, CRM, VAT কমপ্লায়েন্স, মাল্টি-ব্রাঞ্চ, Capacitor মোবাইল অ্যাপ, পাবলিক API |
+| **১০–১৮** | HR/Payroll, CRM, VAT কমপ্লায়েন্স, মাল্টি-ব্রাঞ্চ, **Storefront + কুরিয়ার ইন্টিগ্রেশন**, Capacitor মোবাইল অ্যাপ, পাবলিক API |
 
-### ১৬.২ ন্যূনতম টিম
+### ১৭.২ ন্যূনতম টিম
 
 - ১ জন টেক লিড / আর্কিটেক্ট (ব্যাকএন্ড + DevOps)
 - ১–২ জন ফুলস্ট্যাক (TypeScript/React)
@@ -997,7 +1250,7 @@ Admin Panel দিয়ে দাম বদলানো যায় আর স
 
 ---
 
-## ১৭. যে ভুলগুলো অবশ্যই এড়াবেন
+## ১৮. যে ভুলগুলো অবশ্যই এড়াবেন
 
 1. ❌ **শুরু থেকে মাইক্রোসার্ভিস।** টিম ছোট হলে এতে গতি কমবে, খরচ বাড়বে, আর ERP transaction ভেঙে যাবে।
 2. ❌ **কোনো টেবিলে `tenant_id` না রাখা**, "এটা তো গ্লোবাল টেবিল" ভেবে। পরে বুঝবেন ওটাও টেন্যান্ট-নির্দিষ্ট ছিল।
@@ -1013,10 +1266,14 @@ Admin Panel দিয়ে দাম বদলানো যায় আর স
 12. ❌ **Observability পরে যোগ করব বলে ফেলে রাখা।** প্রোডাকশনে সমস্যা হলে তখন কিছুই দেখতে পাবেন না।
 13. ❌ **ডেটা এক্সপোর্ট অপশন না রাখা।** কাস্টমার আটকে আছে মনে করলে বিশ্বাস হারাবে।
 14. ❌ **বাজেট ছাড়া ফ্রন্টএন্ড বড় হতে দেওয়া।** "হালকা ও দ্রুত" একদিনে নষ্ট হয় না, ধীরে ধীরে হয়।
+15. ❌ **শপের জন্য আলাদা প্রোডাক্ট বা স্টক টেবিল রাখা।** স্টকের সত্য একটাই জায়গায় থাকবে, না হলে POS আর অনলাইন বিক্রি কখনো মিলবে না।
+16. ❌ **HTTP রিকোয়েস্টের ভেতরেই কুরিয়ারের API কল করা।** কুরিয়ার ধীর বা ডাউন হলে আপনার চেকআউটও পড়ে যাবে। সবসময় outbox + worker।
+17. ❌ **কনসাইনমেন্ট তৈরিতে idempotency না রাখা।** টাইমআউটে জব আবার চললে এক অর্ডারে দুইটা পার্সেল যাবে, আর টাকাটা আপনার পকেট থেকেই যাবে।
+18. ❌ **COD-র টাকা ডেলিভারির দিনই "পেয়েছি" ধরে নেওয়া।** কুরিয়ার টাকা দেয় দিন কয়েক পরে, চার্জ কেটে। আলাদা COD Receivable অ্যাকাউন্ট ছাড়া হিসাব মিলবে না।
 
 ---
 
-## ১৮. ফাইনাল চেকলিস্ট
+## ১৯. ফাইনাল চেকলিস্ট
 
 ### আর্কিটেকচার
 - [ ] Modular monolith, মডিউল বাউন্ডারি lint দিয়ে enforce করা
@@ -1054,6 +1311,19 @@ Admin Panel দিয়ে দাম বদলানো যায় আর স
 - [ ] Conflict কৌশল ডেটা-টাইপ অনুযায়ী
 - [ ] মোবাইলে কার্ড-ভিউ, বটম নেভিগেশন
 - [ ] কম দামি Android ফোনে টেস্ট
+
+### Storefront ও কুরিয়ার
+- [ ] Storefront ডোমেইন → টেন্যান্ট রেজলিউশন (কাস্টম ডোমেইন + SSL)
+- [ ] পাবলিক এন্ডপয়েন্টে JWT নেই, তাই rate limit + WAF + read-only DB role
+- [ ] দাম, ডিসকাউন্ট ও ডেলিভারি চার্জ শুধু সার্ভারে হিসাব
+- [ ] স্টক রিজার্ভেশন (TTL সহ), oversell টেস্ট
+- [ ] COD-তে OTP/কনফার্মেশন ধাপ
+- [ ] কুরিয়ার অ্যাডাপ্টার ইন্টারফেস + অন্তত একটা `manual` ফলব্যাক
+- [ ] কনসাইনমেন্টে idempotency key + DB unique constraint
+- [ ] Retry, backoff আর `needs_attention` কিউ (নীরব ব্যর্থতা নয়)
+- [ ] Webhook signature + replay protection + idempotent হ্যান্ডলার
+- [ ] কুরিয়ারপ্রতি COD Receivable অ্যাকাউন্ট ও রেমিট্যান্স ম্যাচিং
+- [ ] রিটার্ন ও partial delivery ফ্লো
 
 ### DevOps ও সিকিউরিটি
 - [ ] IaC (OpenTofu), GitOps (Argo CD)
