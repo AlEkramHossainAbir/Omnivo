@@ -4,7 +4,9 @@
 
 One platform for accounting, inventory, sales, purchasing, POS, HR and payroll. Every company (tenant) gets its own isolated workspace, such as `acme.omnivo.app`, and can keep working when the internet drops.
 
-> 📘 The full system design, architecture decisions, scaling strategy and roadmap are in Bangla: **[docs/system-design.bn.md](docs/system-design.bn.md)**
+> 📘 **Why** the system is built this way — full architecture, scaling strategy and trade-offs, in Bangla: **[docs/system-design.bn.md](docs/system-design.bn.md)**
+>
+> 🛠️ **What gets built, in what order** — the step-by-step build plan with time estimates, in Bangla: **[docs/build-plan.bn.md](docs/build-plan.bn.md)**
 >
 > 🧭 Architecture decision records (ADRs) are in [docs/adr/](docs/adr/). The first is [0001: PostgreSQL over MongoDB](docs/adr/0001-postgresql-over-mongodb.md).
 
@@ -119,7 +121,9 @@ omnivo/
 │   ├── k8s/            # Helm charts / manifests
 │   └── terraform/      # OpenTofu IaC
 ├── docs/
-│   └── system-design.bn.md
+│   ├── system-design.bn.md   # architecture and why
+│   ├── build-plan.bn.md      # step-by-step build order
+│   └── adr/                  # architecture decision records
 └── .github/workflows/  # CI/CD
 ```
 
@@ -151,16 +155,22 @@ pnpm dev                                                  # runs all apps via tu
 
 ## Roadmap
 
-- [ ] Monorepo scaffold, CI, local Docker environment
-- [ ] Core platform: tenancy, auth, RBAC, audit log
-- [ ] Accounting core (chart of accounts, journal, ledger)
-- [ ] Inventory + Sales + Purchasing
-- [ ] POS with offline support
-- [ ] Website + pricing + billing integration
-- [ ] Beta launch
-- [ ] Storefront (COD + online payment) and courier auto-consignment
-- [ ] HR and Payroll, CRM, VAT compliance
-- [ ] Manufacturing, public API, integrations
+| Steps | What | Milestone |
+|---|---|---|
+| 0–3 | Monorepo scaffold, CI, local Docker environment, database foundation with row-level security, auth and RBAC | Signup → login → tenant dashboard |
+| 4–5 | Shared design system, contract and typed-client codegen pipeline | Every new endpoint reaches the UI type-safe |
+| 6–8 | Core platform: settings, branches, numbering, audit log, users and roles, queue and worker, transactional outbox | First async job running |
+| 9–11 | Accounting: chart of accounts, double-entry journal, financial statements | A trial balance that balances |
+| 12–14 | Inventory: products with batch/serial tracking, append-only stock ledger, valuation posting to the ledger | Stock receipt moves the balance sheet |
+| 15–17 | Sales and Purchasing, invoice PDF | Invoice → stock → ledger → PDF |
+| 18–20 | Offline sync engine, PWA shell, POS | Selling with the network off |
+| 21 | Reports and dashboard | 🏁 **MVP** |
+| 22–24 | Website, admin console, product catalog, billing | Publish a price, the site shows it |
+| 25 | Observability, backups, security review, closed beta | 🚀 **Public launch** |
+| 26–28 | Storefront (COD + online payment) and courier auto-consignment | Order → sales order → consignment → COD reconciliation |
+| 29+ | HR and Payroll, CRM, VAT compliance, mobile app, public API, manufacturing | |
+
+Each step lists what to build on both sides, what you should be able to see in the browser when it is done, and a time estimate: **[docs/build-plan.bn.md](docs/build-plan.bn.md)**.
 
 ## License
 
