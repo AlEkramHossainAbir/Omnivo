@@ -80,3 +80,16 @@ once and used everywhere).
 টাইপ নাম ইত্যাদি টেকনিক্যাল টার্ম যেমন আছে তেমনই (ইংরেজিতে) থাকবে — শুধু অনুবাদ
 করার দরকার নেই। ছোট illustrative কোড স্নিপেট ব্যাখ্যার ভেতরে দেখানো যাবে, কিন্তু
 তার comment/description বাংলাতেই হবে।
+
+## Website / Landing page
+
+কখনো marketing website বা landing page তৈরির দরকার হলে, সেটা plain/static স্ক্রলের
+বদলে **3D scroll animation** কেন্দ্রিক (scroll position-এর সাথে sync করা 3D/parallax
+মোশন, Awwwards-ঘরানার scroll-triggered ইন্টারঅ্যাকশন) হতে হবে — এটা ডিফল্ট প্রত্যাশা।
+
+- ইমপ্লিমেন্টেশন শুরুর আগে stack confirm করে নিতে হবে: scroll-driven animation-এর
+  জন্য GSAP (ScrollTrigger) বা Framer Motion, আর আসল 3D-এর জন্য Three.js /
+  React Three Fiber — এগুলোর মধ্যে কোনটা নেওয়া হবে সেটা প্রতিটা landing page শুরুর
+  আগে আলাদা করে ঠিক করতে হবে (rule 1 অনুযায়ী guidance আগে, কোড পরে)।
+- performance trade-off মাথায় রাখতে হবে — ভারী 3D/scroll effect মোবাইল বা লো-এন্ড
+  ডিভাইসে স্লো হতে পারে, তাই lazy-load এবং reduced-motion fallback বিবেচনা করা উচিত।
