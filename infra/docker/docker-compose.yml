@@ -1,0 +1,54 @@
+name: omnivo
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: omnivo
+    ports:
+      - '5432:5432'
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d omnivo']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  cache:
+    image: valkey/valkey:8-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - cache-data:/data
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mail:
+    image: axllent/mailpit:latest
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+
+  storage:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: omnivo
+      MINIO_ROOT_PASSWORD: omnivo-dev-secret
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - storage-data:/data
+
+volumes:
+  db-data:
+  cache-data:
+  storage-data:
