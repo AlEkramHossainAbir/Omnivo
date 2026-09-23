@@ -1,0 +1,40 @@
+{
+  "name": "omnivo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "boundaries": "depcruise apps packages",
+    "test:integration": "echo 'skipped: lands in step 2 (Testcontainers)'",
+    "test:tenant-leak": "echo 'skipped: lands in step 2'",
+    "test:bundle-size": "echo 'skipped: lands in step 4'",
+    "db:up": "docker compose -f infra/docker/docker-compose.yml up -d --wait",
+    "db:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "db:psql": "docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo"
+  },
+  "devDependencies": {
+    "@omnivo/config": "workspace:*",
+    "dependency-cruiser": "^18.4.0",
+    "eslint": "^10.11.0",
+    "prettier": "^3.9.8",
+    "turbo": "^2.11.2",
+    "typescript": "^6.0.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "@swc/core",
+      "unrs-resolver"
+    ]
+  }
+}
