@@ -44,8 +44,20 @@ export type Db = ReturnType<typeof createDb>;
 export const db = createDb(process.env.DATABASE_URL ?? '');
 ```
 
-(`!` এর বদলে `?? ''` — কারণ import-time-এ env এখনো লোড না-ও হতে পারে; `postgres()` lazy, প্রথম
-query না চালানো পর্যন্ত আসলে কানেক্ট করে না, তাই খালি স্ট্রিং দিয়েও import নিরাপদ।)
+**কোন লাইন কেন:**
+
+- `export function createDb(connectionString: string)` — আগে `db` module-load-time singleton
+  ছিল। সমস্যা: leak test চালাতে হবে Testcontainers-এর একটা random port-এ ওঠা Postgres-এর
+  বিপরীতে, যার connection string শুধু runtime-এ জানা যায়। Singleton হলে সেটা override করার
+  উপায় নেই — তাই connection string-কে parameter বানানো হয়েছে, production-এ একবার কল হবে,
+  test-এ প্রতিবার নিজের container-এর URL দিয়ে।
+- `export type Db = ReturnType<typeof createDb>` — হাতে ইন্টারফেস না লিখে আসল return type থেকে
+  derive করা (rule ২), যাতে drizzle/schema বদলালে এই টাইপ নিজে থেকেই sync থাকে।
+- `export const db = createDb(process.env.DATABASE_URL ?? '')` — backward-compatible singleton
+  export, যাতে বাকি অ্যাপ কোড (যেটা এখনো `db` সরাসরি import করে) না ভাঙে।
+- `!` এর বদলে `?? ''` — import-time-এ env এখনো লোড না-ও হতে পারে (import order-নির্ভর); `postgres()`
+  lazy — constructor-এ আসলে connect করে না, প্রথম query-তে করে। তাই খালি স্ট্রিং দিয়েও import
+  নিরাপদ, সমস্যা হবে শুধু env লোড হওয়ার আগে কেউ আসলে query চালালে।
 
 ## ২.২ — `apps/api`-এ env লোডিং
 
@@ -84,6 +96,18 @@ async function bootstrap(): Promise<void> {
 void bootstrap();
 ```
 
+**কোন লাইন কেন:**
+
+- `env.ts`-এ `path.resolve(..., '../../..')` দিয়ে `repoRoot` বের করা — `pnpm --filter <pkg>
+  <script>` চালালে cwd হয় প্যাকেজের নিজের ফোল্ডার (`apps/api`), repo root না। `dotenv/config`-এর
+  ডিফল্ট cwd-based lookup তাই root `.env` খুঁজে পায় না। `import.meta.url` থেকে ফাইলের নিজের
+  ডিস্ক-লোকেশন জেনে সেখান থেকে resolve করা হচ্ছে — এটা deterministic, `pnpm` কোথা থেকে চালানো
+  হলো তার ওপর নির্ভর করে না।
+- `main.ts`-এ `import './env'` সবচেয়ে প্রথম লাইন — ES module import hoisting-এর নিয়মে, নিচে যত
+  `import { NestFactory } ...` থাকুক, `./env` আগে থাকলে সেটার side-effect (dotenv `config()` কল)
+  আগে রান হয়। প্রথমে না থাকলে `NestFactory.create` চলার সময় `DATABASE_URL` undefined থাকতে
+  পারে — এটাই ঠিক ২.১-এর `?? ''` fallback যে সমস্যা এড়াতে চাইছে তার root cause।
+
 ## ২.৩ — AsyncLocalStorage tenant context
 
 **ফাইল: `apps/api/src/common/tenant/tenant-context.ts`** (নতুন ফাইল)
@@ -109,6 +133,20 @@ export function runWithTenant<T>(tenantId: string, fn: () => T): T {
   return tenantStorage.run({ tenantId }, fn);
 }
 ```
+
+**কোন লাইন কেন:**
+
+- `export const tenantStorage = new AsyncLocalStorage<TenantStore>()` — প্রতিটা layer-এ
+  (middleware → guard → service → repository) `tenantId` ম্যানুয়ালি প্যারামিটার হিসেবে পাস
+  করলে একটা জায়গায় ভুলে গেলেই leak-এর ঝুঁকি থাকে। `AsyncLocalStorage` request-এর পুরো async
+  call chain-এ context implicitly carry করে, তাই কোনো লেয়ারে ভুলে বাদ পড়ার সুযোগ কম।
+- `getTenantId()`-এ `if (!store) throw new Error(...)` — silent `undefined` রিটার্ন না করে
+  explicit throw, কারণ এটাই tenant-isolation নিরাপত্তার ভিত্তি: `tenantId` না থাকলে কোনো query
+  চালানো উচিত না। Fail-loud এখানে ইচ্ছাকৃত — fail-silent হলে tenant filter ছাড়াই query চলে
+  যাওয়ার মতো bug চুপচাপ ঘটে যেতে পারত।
+- `runWithTenant<T>(tenantId, fn)` `tenantStorage.run(...)`-কে wrap করছে শুধু call-site-এ
+  পরিষ্কার নাম দেওয়ার জন্য না — raw `tenantStorage.run` প্রতিটা call-site-এ সরাসরি ছড়িয়ে থাকলে
+  store-এর shape (`{ tenantId }`) বারবার মনে রাখতে হতো; একটা জায়গায় বেঁধে রাখলে leak-surface কম।
 
 ## ২.৪ — `withTenant()` helper
 
@@ -138,6 +176,28 @@ export const withTenant = createWithTenant(db);
 
 > ⚠️ কখনো `SET app.tenant_id = ...` লিখবেন না, সবসময় `set_config(..., true)` — `SET`
 > PgBouncer-এর transaction pooling মোডে connection-এর মধ্যে leak করতে পারে।
+
+**কোন লাইন কেন:**
+
+- `type Transaction = Parameters<Parameters<Db['transaction']>[0]>[0]` — `Db['transaction']`
+  মেথডের callback প্যারামিটারের টাইপ বের করছে, হাতে duplicate টাইপ না লিখে (rule ২)। Drizzle-এর
+  transaction টাইপ জটিল ও ভার্সনে বদলাতে পারে বলে এভাবে derive করাই একমাত্র নিরাপদ উপায় — হাতে
+  লিখলে drizzle আপডেট হলে সাইলেন্টলি out-of-sync হয়ে যেত।
+- `createWithTenant(database: Db)` ফ্যাক্টরি — ঠিক `createDb`-এর মতো কারণে: leak test-এ
+  Testcontainers-এর `Db` ইনস্ট্যান্স দিয়ে আলাদা `withTenant` লাগবে, production `db` দিয়ে না।
+- `database.transaction(async (tx) => { ... })` — `set_config` আর আসল query একই transaction-এ,
+  কারণ Postgres session variable transaction-scope-এ set করলে সেটা commit/rollback-এর সাথে
+  automatically পরিষ্কার হয়ে যায়। আলাদা query হিসেবে set করলে connection pooling-এর সাথে leak
+  হওয়ার ঝুঁকি থাকত।
+- `set_config('app.tenant_id', ${tenantId}, true)`-এর তৃতীয় আর্গুমেন্ট `true` মানে "is_local =
+  true", অর্থাৎ transaction-local, session-wide না — উপরের comment-টাই এটা বলছে।
+- warning-এর কারণ: `SET app.tenant_id = ...` (ordinary SQL SET) ব্যবহার না করার কারণ — PgBouncer-এর
+  transaction pooling মোডে একই physical connection একাধিক client-এর মধ্যে reuse হয়। `SET` দিয়ে
+  করা session-level change transaction শেষেও connection-এ থেকে যেতে পারে, ফলে পরের client (অন্য
+  tenant) সেই leaked `tenant_id` নিয়ে query চালিয়ে ফেলতে পারে — এটাই সবচেয়ে বিপজ্জনক tenant-leak
+  vector, তাই `set_config(..., true)` বাধ্যতামূলক।
+- `` sql`...${tenantId}` `` — string concatenation না করার কারণ SQL injection এড়ানো; drizzle-এর
+  `sql` tag নিজে থেকেই parameterize করে।
 
 ## ২.৫ — Middleware + Guard
 
@@ -186,6 +246,29 @@ export class TenantGuard implements CanActivate {
 }
 ```
 
+**কোন লাইন কেন:**
+
+- `const UUID_RE = /^[0-9a-f]{8}-.../i` — header থেকে আসা যেকোনো স্ট্রিং সরাসরি tenant context-এ
+  বসানো বিপজ্জনক (পরে সেটা `set_config` SQL-এ যাবে)। UUID শেপ validate করে নেওয়া হচ্ছে প্রাথমিক
+  sanity-check হিসেবে — যদিও এটা authorization check না (valid-shaped যেকোনো UUID পাঠালেই সেই
+  tenant হিসেবে চলে যাবে), সেটা পরের ধাপে JWT দিয়ে ঠিক হবে, TODO কমেন্টে সেটাই লেখা আছে।
+- `Array.isArray(header) ? header[0] : header` — Fastify-তে duplicate header থাকলে
+  `req.headers[...]`-এর টাইপ `string | string[] | undefined` হয়। এই লাইনটা টাইপ normalize
+  করছে যাতে regex test-এ single string যায় — টাইপ-নিরাপত্তার (rule ২) জন্যও দরকার, `.test()`
+  `string[]`-এ কাজ করবে না।
+- `if (tenantId && UUID_RE.test(tenantId)) { runWithTenant(tenantId, next); return; }` — `next`
+  কে সরাসরি না ডেকে `runWithTenant`-এর ভেতর দিয়ে ডাকা হচ্ছে, কারণ `AsyncLocalStorage.run()`-এর
+  callback-এর ভেতরে যা কিছু sync/async চলবে (পুরো বাকি request lifecycle) সেটাই ওই tenant
+  context পাবে। `next()` কে বাইরে থেকে normally কল করলে middleware-এর পরের async কোড
+  context-এর বাইরে চলে যেত।
+- header না থাকলে বা invalid UUID হলে প্লেইন `next()` — tenant ছাড়া request-কে block না করে pass
+  করে দেওয়া হচ্ছে, কারণ `/health`-এর মতো পাবলিক রুটে tenant লাগবে না। Enforcement-এর দায়িত্ব
+  middleware-এর না, `TenantGuard`-এর — এই আলাদা করাটাই route-ভিত্তিক নিয়ন্ত্রণ সম্ভব করছে।
+- `TenantGuard.canActivate` `tenantStorage.getStore()`-কে সরাসরি চেক করছে, `getTenantId()` কল
+  করে exception ধরার বদলে — কারণ এখানে NestJS-এর `ForbiddenException` (403) ছুঁড়তে হবে,
+  `getTenantId()`-এর generic `Error` (যেটা internal invariant-violation বোঝায়, যেমন middleware-ই
+  না চলা) না।
+
 **ফাইল: `apps/api/src/app.module.ts`** (আপডেট)
 
 ```ts
@@ -203,6 +286,10 @@ export class AppModule implements NestModule {
   }
 }
 ```
+
+**কোন লাইন কেন:** `consumer.apply(TenantMiddleware).forRoutes('*')` — middleware সব রুটে চলে
+(parse করে context বসায়, কিন্তু enforce করে না), যাতে যেকোনো নতুন রুটে ভুলে guard বসাতে ভুলে
+গেলেও অন্তত middleware চলবে এবং পরে guard-ভিত্তিক enforcement যোগ করা সহজ হয়।
 
 ## ২.৬ — Testcontainers দিয়ে leak test (এই ধাপের মূল লক্ষ্য)
 
@@ -299,6 +386,33 @@ describe('tenant isolation (RLS)', () => {
   });
 });
 ```
+
+**কোন লাইন কেন:**
+
+- Mock/in-memory DB না, real Testcontainers Postgres — কারণ tenant isolation-এর আসল গ্যারান্টিটা
+  আসছে Postgres RLS policy থেকে, mock DB সেই policy বুঝবেই না; bug-ভরা RLS policy দিয়েও mock
+  টেস্ট pass করে যেতে পারত।
+- তিনটা আলাদা role দিয়ে তিনটা ধাপ চালানো হচ্ছে, প্রতিটা আলাদা জিনিস প্রমাণ করার জন্য:
+  - `postgres` (superuser) দিয়ে `01-roles.sql` রান করা — এটাই docker-compose-এ production-এ যা
+    চলে ঠিক সেই bootstrap script, যাতে টেস্ট আর real environment-এর role setup ড্রিফট না করে।
+  - `omnivo_migrator` role দিয়ে migration — migration role-এর DDL privilege লাগে, কিন্তু app
+    role-এর সেটা থাকা উচিত না (least privilege)।
+  - `omnivo_app` role দিয়ে আসল টেস্ট query (`appDb = createDb(...)`) — এটাই সবচেয়ে গুরুত্বপূর্ণ
+    লাইন, comment-এই বলা আছে: এটাই আসল প্রোডাকশন কানেকশন, RLS bypass করতে পারে না। ভুল করে
+    superuser role দিয়ে চললে RLS policy থাকলেও superuser সেটা bypass করে ফেলতে পারত এবং টেস্ট
+    false-positive pass দিত।
+- `seedTenant`-এর `membership` insert `runWithTenant(tenant.id, () => withTenant(...))`-এর
+  ভেতরে — কারণ RLS policy সাধারণত `app.tenant_id`-এর ওপর নির্ভর করে insert-ও গেট করে; সেই
+  context ছাড়া insert-ই fail করতে পারে বা ভুল tenant-এ যেতে পারে।
+- মূল assertion: `runWithTenant(tenantAId, ...)` context-এর ভেতরে থেকে explicitly
+  `eq(memberships.tenantId, tenantBId)` দিয়ে filter করে B-এর row চাওয়া হচ্ছে, এবং
+  `expect(leaked).toHaveLength(0)` — এটা ইচ্ছাকৃতভাবে সবচেয়ে খারাপ কেসটা টেস্ট করছে: অ্যাপ কোডে
+  বাগ থাকলেও (কেউ ভুল tenant-এর ID দিয়ে filter লিখে ফেললেও), RLS policy-টাই যেন শেষ লাইন অফ
+  ডিফেন্স হিসেবে ডেটা আটকায়। শুধু "নিজের tenant-এর ডেটা পাওয়া যায়" টেস্ট করলে এই
+  defense-in-depth গ্যারান্টিটা প্রমাণ হতো না।
+- `own` assertion আলাদা করে থাকার কারণ — এটা নিশ্চিত করছে RLS policy শুধু leak আটকাচ্ছে না,
+  বরং একেবারেই সব data hide করে দিচ্ছে না (over-blocking না)। দুটো assertion মিলিয়েই প্রমাণ হয়
+  policy-টা ঠিক exactly tenant-scoped, বেশিও না কমও না।
 
 ## ২.৭ — রান করুন
 

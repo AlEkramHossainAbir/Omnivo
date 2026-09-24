@@ -83,6 +83,14 @@ once and used everywhere). **The chosen variant is Stroke Rounded** (the free
 করার দরকার নেই। ছোট illustrative কোড স্নিপেট ব্যাখ্যার ভেতরে দেখানো যাবে, কিন্তু
 তার comment/description বাংলাতেই হবে।
 
+কোনো ধাপ/phase-এর বিস্তারিত ইমপ্লিমেন্টেশন গাইড লেখার সময় (যেমন
+`docs/step-*.bn.md`-এর মতো ডকুমেন্ট, যেখানে ফাইল-বাই-ফাইল কোড দেখানো হয়), শুধু
+উপরের সেকশনের overall "কেন" যথেষ্ট না — প্রতিটা উল্লেখযোগ্য কোড লাইন বা ব্লকের
+ঠিক কারণটাও বলতে হবে: এই লাইনটা কেন এভাবে লেখা, অন্যভাবে লিখলে কী সমস্যা হতো, এটা
+কোন edge case/bug/constraint সামলাচ্ছে। এই ব্যাখ্যা কোড ব্লকের ঠিক পরে prose হিসেবে
+বা কোড লাইনের পাশে ছোট বাংলা comment হিসেবে দিতে হবে — শুধু ফাইলের নাম আর কোড বসিয়ে
+দিলে চলবে না।
+
 ## App UI design system (approved 2026-09-24)
 
 Every screen in the ERP app, Admin console and auth flows (login, sign-up) uses this
