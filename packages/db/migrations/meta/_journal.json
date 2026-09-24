@@ -15,6 +15,27 @@
       "when": 1790239378683,
       "tag": "0001_enable-rls",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790244301073,
+      "tag": "0002_fix-rls-empty-guc",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790244642842,
+      "tag": "0003_rbac-hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790244663359,
+      "tag": "0004_rls-rbac",
+      "breakpoints": true
     }
   ]
 }

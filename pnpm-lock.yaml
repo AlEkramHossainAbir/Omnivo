@@ -274,35 +274,35 @@ importers:
   packages/db:
     dependencies:
       drizzle-orm:
-        specifier: '*'
+        specifier: ^0.45.3
         version: 0.45.3(postgres@3.4.9)
       postgres:
-        specifier: '*'
+        specifier: ^3.4.9
         version: 3.4.9
       uuidv7:
-        specifier: '*'
+        specifier: ^1.2.1
         version: 1.2.1
     devDependencies:
       '@omnivo/config':
         specifier: workspace:*
         version: link:../config
       '@types/node':
-        specifier: '*'
+        specifier: ^26.6.2
         version: 26.6.2
       dotenv:
         specifier: ^18.0.3
         version: 18.0.3
       drizzle-kit:
-        specifier: '*'
+        specifier: ^0.31.11
         version: 0.31.11
       tsx:
-        specifier: '*'
+        specifier: ^4.23.15
         version: 4.23.15
       typescript:
-        specifier: '*'
+        specifier: ^6.0.3
         version: 6.0.3
       vitest:
-        specifier: '*'
+        specifier: ^5.0.1
         version: 5.0.1(@types/node@26.6.2)(vite@8.3.0(@types/node@26.6.2)(esbuild@0.28.2)(tsx@4.23.15))
 
 packages:

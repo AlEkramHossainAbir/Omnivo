@@ -15,7 +15,10 @@ export const memberships = pgTable(
       .references(() => users.id),
   },
   (table) => [
-    index('memberships_tenant_idx').on(table.tenantId),
     uniqueIndex('memberships_tenant_user_idx').on(table.tenantId, table.userId),
+    // membership_roles-এর composite FK-এর target
+    uniqueIndex('memberships_tenant_id_idx').on(table.tenantId, table.id),
+    // লগইনে "এই ইউজার কোন কোন টেন্যান্টে আছে" — ইচ্ছাকৃতভাবে cross-tenant lookup, তাই tenant_id দিয়ে শুরু না
+    index('memberships_user_idx').on(table.userId),
   ],
 );

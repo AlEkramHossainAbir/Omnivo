@@ -21,6 +21,7 @@
     "db:up": "docker compose -f infra/docker/docker-compose.yml up -d --wait",
     "db:down": "docker compose -f infra/docker/docker-compose.yml down",
     "db:psql": "docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo",
+    "db:psql:app": "docker compose -f infra/docker/docker-compose.yml exec db psql postgres://omnivo_app:app_dev_password@localhost:5432/omnivo",
     "db:generate": "pnpm --filter @omnivo/db generate",
     "db:migrate": "pnpm --filter @omnivo/db migrate",
     "db:seed": "pnpm --filter @omnivo/db seed",

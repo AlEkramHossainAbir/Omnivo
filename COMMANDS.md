@@ -44,6 +44,9 @@ pnpm db:down
 pnpm db:up      # start db + cache + mail + storage containers
 pnpm db:down    # stop them
 pnpm db:psql    # open a psql shell to the omnivo db
+pnpm db:psql:app # psql as omnivo_app (NOBYPASSRLS) — RLS applies, use to see isolation
+pnpm db:migrate # apply pending migrations (as omnivo_migrator)
+pnpm db:seed    # idempotent seed: Acme tenant, admin user, Owner role + permissions
 ```
 
 ## Checks

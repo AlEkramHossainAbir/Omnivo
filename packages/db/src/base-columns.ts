@@ -8,7 +8,10 @@ export function baseColumns() {
       .$defaultFn(() => uuidv7()),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdBy: uuid('created_by'),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
     updatedBy: uuid('updated_by'),
     version: integer('version').notNull().default(1),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),

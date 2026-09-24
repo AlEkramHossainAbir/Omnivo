@@ -15,17 +15,17 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "drizzle-orm": "*",
-    "postgres": "*",
-    "uuidv7": "*"
+    "drizzle-orm": "^0.45.3",
+    "postgres": "^3.4.9",
+    "uuidv7": "^1.2.1"
   },
   "devDependencies": {
     "@omnivo/config": "workspace:*",
-    "@types/node": "*",
+    "@types/node": "^26.6.2",
     "dotenv": "^18.0.3",
-    "drizzle-kit": "*",
-    "tsx": "*",
-    "typescript": "*",
-    "vitest": "*"
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1"
   }
 }
