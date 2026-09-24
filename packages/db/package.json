@@ -1,0 +1,31 @@
+{
+  "name": "@omnivo/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "generate": "drizzle-kit generate",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts",
+    "studio": "drizzle-kit studio",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "drizzle-orm": "*",
+    "postgres": "*",
+    "uuidv7": "*"
+  },
+  "devDependencies": {
+    "@omnivo/config": "workspace:*",
+    "@types/node": "*",
+    "dotenv": "^18.0.3",
+    "drizzle-kit": "*",
+    "tsx": "*",
+    "typescript": "*",
+    "vitest": "*"
+  }
+}
