@@ -1,2 +1,6 @@
 pnpm-lock.yaml
 packages/db/migrations/meta/
+
+# Markdown docs: Prettier re-pads Bangla tables (and misjudges Bangla glyph widths), so
+# formatting them adds noise without aligning anything
+*.md

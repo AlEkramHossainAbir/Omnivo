@@ -408,8 +408,8 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 
 ## ৯. অগ্রগতি
 
-- [ ] **ধাপ ০** — Monorepo, Docker Compose, CI কঙ্কাল
-- [ ] **ধাপ ১** — DB ভিত্তি + RLS
+- [x] **ধাপ ০** — Monorepo, Docker Compose, CI কঙ্কাল
+- [x] **ধাপ ১** — DB ভিত্তি + RLS
 - [ ] **ধাপ ২** — Tenant context + leak test
 - [ ] **ধাপ ৩** — Auth + RBAC + প্রথম ড্যাশবোর্ড
 - [ ] **ধাপ ৪–৫** — ডিজাইন সিস্টেম + কন্ট্র্যাক্ট codegen
