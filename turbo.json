@@ -6,6 +6,7 @@
       "outputs": ["dist/**"]
     },
     "dev": {
+      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     },
@@ -14,6 +15,14 @@
     },
     "test": {
       "dependsOn": ["^build"]
+    },
+    "test:integration": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "test:tenant-leak": {
+      "dependsOn": ["^build"],
+      "cache": false
     }
   }
 }

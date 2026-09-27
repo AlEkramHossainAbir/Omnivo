@@ -2,12 +2,15 @@
   "name": "@omnivo/api",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main.js",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests --exclude \"**/*.int.spec.ts\"",
+    "test:integration": "vitest run --passWithNoTests .int.spec --exclude \"**/tenant-leak.int.spec.ts\"",
+    "test:tenant-leak": "vitest run tenant-leak.int.spec"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.3",
