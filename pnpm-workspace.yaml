@@ -6,3 +6,6 @@ allowBuilds:
   esbuild: true
   '@swc/core': true
   unrs-resolver: true
+  cpu-features: false # testcontainers-এর SSH-এর optional native addon — লোকাল Docker-এ লাগে না
+  protobufjs: false # postinstall শুধু version-চেক করে
+  ssh2: false # remote Docker host-এর জন্য, আমাদের দরকার নেই

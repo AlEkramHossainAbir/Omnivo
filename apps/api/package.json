@@ -13,7 +13,10 @@
     "@nestjs/cli": "^12.0.3",
     "@nestjs/schematics": "^12.0.4",
     "@omnivo/config": "workspace:*",
+    "@testcontainers/postgresql": "^12.1.0",
     "@types/node": "^26.6.2",
+    "postgres": "^3.4.9",
+    "testcontainers": "^12.1.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"
   },
