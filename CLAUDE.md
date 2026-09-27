@@ -56,7 +56,10 @@ commented place instead of spreading it.
 
 ### 4. HugeIcons for all icons
 
-Every icon comes from [HugeIcons](https://hugeicons.com) (`hugeicons-react`). Do not
+Every icon comes from [HugeIcons](https://hugeicons.com): the `HugeiconsIcon` component
+from `@hugeicons/react` plus icon data from `@hugeicons/core-free-icons`
+(`<HugeiconsIcon icon={Mail01Icon} size={17} strokeWidth={1.5} />`). The older
+`hugeicons-react` package is not used. Do not
 introduce lucide-react, react-icons, heroicons, Font Awesome or inline SVG icon sets,
 and do not mix icon libraries — even if a shadcn/ui snippet ships with lucide by
 default; swap it for the HugeIcons equivalent.
@@ -146,11 +149,14 @@ Rules:
 
 - **Family:** `Geist` (400, 500, 600) for everything, and `Geist Mono` (400, 500) only
   for code-like values: workspace URLs in monospace contexts, IDs, keyboard hints.
-  Fallback stack: `"Geist", "Noto Sans Bengali", "Segoe UI", system-ui, sans-serif`.
-  `Noto Sans Bengali` is in the stack for the `৳` glyph and Bangla text. Self-host the
-  fonts (`@fontsource-variable/geist`, `@fontsource-variable/geist-mono`,
-  `@fontsource/noto-sans-bengali`) rather than calling Google Fonts at runtime (the app
-  is offline-first).
+  Fallback stack: `"Geist Variable", "Noto Sans Bengali", "Segoe UI", system-ui,
+  sans-serif`. `Noto Sans Bengali` is in the stack for the `৳` glyph and Bangla text.
+  Self-host the fonts (`@fontsource-variable/geist`, `@fontsource-variable/geist-mono`,
+  `@fontsource/noto-sans-bengali` weights 400/500/600) rather than calling Google Fonts
+  at runtime (the app is offline-first).
+- **Font-family names:** the variable fontsource packages register the families as
+  `"Geist Variable"` and `"Geist Mono Variable"`, not `"Geist"`. Writing `"Geist"` in a
+  stack silently falls back to the system font, with no error.
 - **No other families.** No serif display faces. Hierarchy comes from size and weight
   only.
 - Headings use weight 600, `letter-spacing: -0.02em` and `text-wrap: balance`. Large
@@ -188,6 +194,9 @@ Rules:
   - `shadow-lg`: `0 2px 4px rgba(16,24,40,.04), 0 24px 48px -12px rgba(16,24,40,.16)`
     on floating previews, popovers and toasts.
   - The dark theme uses the same offsets with black at 30–60%.
+  - Tailwind utilities (see "Tailwind wiring"): `shadow-sm`, `shadow-md` (the design's
+    `shadow`, because Tailwind v4 has no bare `shadow`), `shadow-lg`, plus `shadow-ring`
+    and `shadow-ring-crit` for the focus rings.
 - **Borders:** 1px `line` on every card. Lift with a shadow only when an element
   floats. Not everything needs to be a card.
 - **Layout:** the app shell is a 244px sidebar plus fluid content. Below 860px the
@@ -318,12 +327,32 @@ Tokens live as CSS variables in the global stylesheet. Map them with Tailwind v4
   --color-brand-line: var(--brand-line);
   --color-brand-ink: var(--brand-ink);
   /* good / warn / crit এবং তাদের -bg একই ভাবে */
-  --font-sans: "Geist", "Noto Sans Bengali", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
-  --radius-control: 10px;
-  --radius-card: 14px;
+  --font-sans: "Geist Variable", "Noto Sans Bengali", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
+  --radius-control: 10px; /* rounded-control */
+  --radius-card: 14px; /* rounded-card */
+  --radius-panel: 20px; /* rounded-panel — শুধু auth side panel; 8px-এর জন্য rounded-lg */
+  /* shadow: :root-এ --elev-sm / --elev / --elev-lg / --focus-ring (light + dark) */
+  --shadow-sm: var(--elev-sm);
+  --shadow-md: var(--elev);
+  --shadow-lg: var(--elev-lg);
+  --shadow-ring: var(--focus-ring);
+  --shadow-ring-crit: 0 0 0 4px var(--crit-bg);
+}
+
+/* টাইপ স্কেল — মান স্থির, তাই inline ছাড়া; text-body, text-label ইত্যাদি utility */
+@theme {
+  --text-display: 34px;
+  --text-display--line-height: 1.15;
+  --text-h1: 26px;
+  --text-h1--line-height: 1.2;
+  /* h2, kpi, h3, body, body-sm, label, caption, micro — Typography টেবিলের মান একই ভাবে */
 }
 ```
+
+Use the named utilities (`text-body`, `text-label`, `rounded-control`, `shadow-ring`)
+instead of arbitrary values like `text-[14.5px]`. The full stylesheet lives in
+`apps/app/src/styles.css` (moves to `packages/ui` in step 4).
 
 shadcn/ui's own variables (`--primary`, `--border`, `--ring`, `--muted` and so on)
 must point at these tokens (`--primary: var(--brand)`, `--border: var(--line)`,
