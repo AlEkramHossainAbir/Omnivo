@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { loadRootEnv, requireEnv } from './env.js';
+import { OWNER_ROLE_NAME, PERMISSIONS, syncPermissions } from './permission-catalog.js';
 import {
   tenants,
   users,
@@ -13,13 +14,6 @@ import {
 } from './schema/index.js';
 
 loadRootEnv();
-
-// সিস্টেম-জোড়া permission তালিকা; নতুন permission এলে এখানে যোগ হবে
-const PERMISSIONS = [
-  { key: 'core.user.read', description: 'View users in the workspace' },
-  { key: 'core.user.invite', description: 'Invite users to the workspace' },
-  { key: 'core.role.manage', description: 'Create roles and assign permissions' },
-] as const;
 
 // noUncheckedIndexedAccess-এর কারণে rows[0] হলো T | undefined — এখানে একবার narrow করা
 function one<T>(rows: T[], what: string): T {
@@ -36,12 +30,7 @@ async function main() {
 
   // সব insert idempotent — বারবার চালালেও একই অবস্থা থাকবে
   await db.transaction(async (tx) => {
-    await tx
-      .insert(permissions)
-      .values([...PERMISSIONS])
-      .onConflictDoNothing({
-        target: permissions.key,
-      });
+    await syncPermissions(tx);
     const permissionRows = await tx
       .select({ id: permissions.id })
       .from(permissions)
@@ -89,13 +78,13 @@ async function main() {
 
     await tx
       .insert(roles)
-      .values({ tenantId: tenant.id, name: 'Owner' })
+      .values({ tenantId: tenant.id, name: OWNER_ROLE_NAME })
       .onConflictDoNothing({ target: [roles.tenantId, roles.name] });
     const owner = one(
       await tx
         .select({ id: roles.id })
         .from(roles)
-        .where(and(eq(roles.tenantId, tenant.id), eq(roles.name, 'Owner'))),
+        .where(and(eq(roles.tenantId, tenant.id), eq(roles.name, OWNER_ROLE_NAME))),
       'Owner role',
     );
 
