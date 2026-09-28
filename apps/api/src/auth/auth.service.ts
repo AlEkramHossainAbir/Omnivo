@@ -169,7 +169,7 @@ export class AuthService {
         'You no longer have access to this workspace. Sign in again.',
       );
     }
-    return this.auth.issueTokens({
+    return this.reissue({
       sessionId: grant.sessionId,
       sessionExpiresAt: grant.sessionExpiresAt,
       claims: { userId: grant.userId, tenantId: grant.activeTenantId, ...membership },
@@ -194,7 +194,7 @@ export class AuthService {
       throw new UnauthorizedException('Your session has ended. Sign in again.');
     }
 
-    return this.auth.issueTokens({
+    return this.reissue({
       sessionId: grant.sessionId,
       sessionExpiresAt: grant.sessionExpiresAt,
       claims: { userId: principal.userId, tenantId, ...membership },
@@ -247,6 +247,19 @@ export class AuthService {
     if (!refreshToken) throw new UnauthorizedException('Your session has ended. Sign in again.');
     try {
       return await this.auth.rotateRefreshToken(refreshToken);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw new UnauthorizedException('Your session has ended. Sign in again.');
+      }
+      throw error;
+    }
+  }
+
+  // rotate-এর পরে টোকেন বসানোর আগেই session মুছে যেতে পারে (একই টোকেনে সমান্তরাল refresh-এ
+  // অন্যটা reuse ধরে session মোছে) — তখন AuthError('SESSION_ENDED'), সেটাও 401
+  private async reissue(input: Parameters<Auth['issueTokens']>[0]): Promise<IssuedTokens> {
+    try {
+      return await this.auth.issueTokens(input);
     } catch (error) {
       if (error instanceof AuthError) {
         throw new UnauthorizedException('Your session has ended. Sign in again.');

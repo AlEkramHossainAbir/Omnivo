@@ -5,7 +5,7 @@
 >
 > এই গাইডের প্রতিটা ফাইল রিপোর একটা আলাদা কপিতে বসিয়ে যাচাই করা (২০২৬-০৯-২৭), `dist` মুছে একদম
 > শুরু থেকে: `pnpm dedupe --check`, `pnpm lint`, `pnpm format`, `pnpm typecheck`, `pnpm test`
-> (১৬টা টেস্ট), `pnpm test:integration` (Testcontainers-এ ১৯টা), `pnpm test:tenant-leak` (৯টা),
+> (১৬টা টেস্ট), `pnpm test:integration` (Testcontainers-এ ২০টা), `pnpm test:tenant-leak` (৯টা),
 > `pnpm build`, `pnpm boundaries`, `pnpm dev` — সব পাস। তারপর headless Chrome-এ আসল ব্রাউজার flow:
 > sign-up → ড্যাশবোর্ড → reload-এ session ফেরত → sign-out → ভুল পাসওয়ার্ড → লগইন → মেয়াদোত্তীর্ণ
 > access token-এ নিজে থেকে refresh → tenant switch → API বন্ধ থাকলে লগইন পেজ; ডেস্কটপ আর মোবাইল
@@ -1064,7 +1064,11 @@ pnpm dedupe
 ```ts
 // facade-এর বাইরে Better Auth-এর নিজস্ব error কোড যায় না — API শুধু এই কয়টা কোড চেনে
 export type AuthErrorCode =
-  'INVALID_CREDENTIALS' | 'EMAIL_TAKEN' | 'INVALID_REFRESH_TOKEN' | 'REFRESH_TOKEN_REUSED';
+  | 'INVALID_CREDENTIALS'
+  | 'EMAIL_TAKEN'
+  | 'INVALID_REFRESH_TOKEN'
+  | 'REFRESH_TOKEN_REUSED'
+  | 'SESSION_ENDED';
 
 export class AuthError extends Error {
   readonly code: AuthErrorCode;
@@ -1078,7 +1082,8 @@ export class AuthError extends Error {
 ```
 
 **কেন:** Better Auth-এর `APIError` এই প্যাকেজের বাইরে গেলে API-কে Better Auth-এর error কোড চিনতে
-হতো — facade-এর উদ্দেশ্যই ভেঙে যেত। বাইরে যায় শুধু এই চারটা কোড। `AuthErrorCode` একটা union, তাই
+হতো — facade-এর উদ্দেশ্যই ভেঙে যেত। বাইরে যায় শুধু এই পাঁচটা কোড। `SESSION_ENDED` — টোকেন বানানোর
+মাঝপথে session মুছে গেছে (নিচে `createRefreshToken` দেখুন)। `AuthErrorCode` একটা union, তাই
 `error.code === 'EMAIL_TAKN'`-এর মতো বানান ভুল compile error। `this.name` — লগে "AuthError" দেখাবে,
 সাধারণ "Error" না।
 
@@ -1228,17 +1233,39 @@ export function hashRefreshToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+// drizzle Postgres error-কে DrizzleQueryError-এ মুড়ে দেয়; আসল কোড থাকে .cause-এ
+function isSessionGone(error: unknown): boolean {
+  for (let current: unknown = error; current instanceof Error; current = current.cause) {
+    if (
+      'code' in current &&
+      current.code === '23503' &&
+      'constraint_name' in current &&
+      current.constraint_name === 'refresh_tokens_session_id_sessions_id_fk'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function createRefreshToken(
   db: Db,
   input: { sessionId: string; activeTenantId: string; expiresAt: Date },
 ): Promise<string> {
   const token = randomBytes(32).toString('base64url');
-  await db.insert(refreshTokens).values({
-    sessionId: input.sessionId,
-    tokenHash: hashRefreshToken(token),
-    activeTenantId: input.activeTenantId,
-    expiresAt: input.expiresAt,
-  });
+  try {
+    await db.insert(refreshTokens).values({
+      sessionId: input.sessionId,
+      tokenHash: hashRefreshToken(token),
+      activeTenantId: input.activeTenantId,
+      expiresAt: input.expiresAt,
+    });
+  } catch (error) {
+    // rotate আর এই insert-এর মাঝে অন্য request (reuse detection, logout) session মুছে দিলে
+    // FK ভাঙে — এটা DB-র গোলমাল না, session শেষ; caller 401 দেবে, 500 না
+    if (isSessionGone(error)) throw new AuthError('SESSION_ENDED');
+    throw error;
+  }
   return token;
 }
 
@@ -1312,8 +1339,20 @@ export async function revokeSessionByRefreshToken(db: Db, token: string): Promis
 - **একটা atomic `UPDATE … WHERE used_at IS NULL … RETURNING`** — এটাই পুরো ফাইলের মূল লাইন। "আগে
   SELECT, তারপর UPDATE" লিখলে দুটো request একসাথে একই টোকেন পড়ে দুজনেই "চালু" দেখত, আর দুটো নতুন
   টোকেন বেরিয়ে যেত। এক statement-এ Postgres row lock নেয়: প্রথমজন `used_at` বসায়, দ্বিতীয়জন শর্ত
-  মেলাতে না পেরে 0 রো পায়। "দুটো একসাথে refresh → ঠিক একটা 200" টেস্ট এটাই প্রমাণ করে, আর mutation
-  test-এ `isNull(refreshTokens.usedAt)` মুছলে সেটা fail করে।
+  মেলাতে না পেরে 0 রো পায়। "দুটো একসাথে refresh → বড়জোর একটা 200" টেস্ট এটাই প্রমাণ করে, আর mutation
+  test-এ `isNull(refreshTokens.usedAt)` মুছলে (দুটোই 200) সেটা fail করে।
+- **`createRefreshToken`-এ FK violation → `AuthError('SESSION_ENDED')`** — একই টোকেনে দুটো refresh একসাথে
+  এলে এই ক্রম সম্ভব: A টোকেন খরচ করে session পায়; B দেখে টোকেন আগেই ব্যবহৃত, reuse ধরে পুরো session
+  মুছে দেয়; তারপর A নতুন টোকেন insert করতে যায় — কিন্তু `refresh_tokens.session_id`-এর FK-র ওপাশে session
+  আর নেই, Postgres `23503` দেয়। এটা না ধরলে error সোজা 500 হয়ে বের হতো (যাচাই করা: চাপের মধ্যে ৮ বারে
+  একবার `[401, 500]`)। অথচ ঘটনাটা DB-র গোলমাল না — session সত্যিই শেষ, তাই সঠিক উত্তর 401। শুধু এই
+  একটা constraint-এর নাম মেলানো হয় (`refresh_tokens_session_id_sessions_id_fk`), যাতে `active_tenant_id`-এর
+  FK-র মতো অন্য violation ভুল করে "session শেষ" না হয় — সেগুলো আসল bug, 500-ই থাকা উচিত। `isSessionGone`
+  `auth.service.ts`-এর `isUniqueViolation`-এর মতোই `.cause`-এর শিকল ধরে হাঁটে (drizzle আসল Postgres
+  error-কে `DrizzleQueryError`-এ মুড়ে দেয়)।
+- **কেন transaction/lock দিয়ে না:** consume আর insert-এর মাঝে API membership পড়ে (৩.৫-এর `refresh`), তাই
+  এক transaction-এ session row lock ধরে রাখলে সেই পুরো সময় অন্য request আটকে থাকত। race-টা বিরল আর তার
+  সঠিক ফল এমনিতেও "session শেষ" — তাই error-টাকে ঠিক নাম দেওয়াই যথেষ্ট আর সস্তা।
 - ``sql`now()` ``, `new Date()` না — সময়ের তুলনা হয় DB-র ঘড়িতে। একাধিক API instance-এর ঘড়ি কয়েক
   সেকেন্ড এদিক-ওদিক হলেও ফলাফল একই থাকে।
 - টোকেন পাওয়ার পর session আলাদা করে চেক — Better Auth-এর session-এর মেয়াদ শেষ হয়ে থাকলে (বা কেউ মুছে
@@ -2399,7 +2438,7 @@ export class AuthService {
         'You no longer have access to this workspace. Sign in again.',
       );
     }
-    return this.auth.issueTokens({
+    return this.reissue({
       sessionId: grant.sessionId,
       sessionExpiresAt: grant.sessionExpiresAt,
       claims: { userId: grant.userId, tenantId: grant.activeTenantId, ...membership },
@@ -2424,7 +2463,7 @@ export class AuthService {
       throw new UnauthorizedException('Your session has ended. Sign in again.');
     }
 
-    return this.auth.issueTokens({
+    return this.reissue({
       sessionId: grant.sessionId,
       sessionExpiresAt: grant.sessionExpiresAt,
       claims: { userId: principal.userId, tenantId, ...membership },
@@ -2477,6 +2516,19 @@ export class AuthService {
     if (!refreshToken) throw new UnauthorizedException('Your session has ended. Sign in again.');
     try {
       return await this.auth.rotateRefreshToken(refreshToken);
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw new UnauthorizedException('Your session has ended. Sign in again.');
+      }
+      throw error;
+    }
+  }
+
+  // rotate-এর পরে টোকেন বসানোর আগেই session মুছে যেতে পারে (একই টোকেনে সমান্তরাল refresh-এ
+  // অন্যটা reuse ধরে session মোছে) — তখন AuthError('SESSION_ENDED'), সেটাও 401
+  private async reissue(input: Parameters<Auth['issueTokens']>[0]): Promise<IssuedTokens> {
+    try {
+      return await this.auth.issueTokens(input);
     } catch (error) {
       if (error instanceof AuthError) {
         throw new UnauthorizedException('Your session has ended. Sign in again.');
@@ -2611,6 +2663,13 @@ export class AuthService {
   পাঠালে টোকেন খরচ হয়ে যেত কিন্তু নতুন টোকেন আসত না — ইউজার লগআউট হয়ে যেত ("keeps the session" টেস্ট)।
   `grant.userId !== principal.userId` — access token একজনের আর cookie আরেকজনের, এমন অবস্থা স্বাভাবিক
   ব্যবহারে হয় না; তাই সন্দেহজনক ধরে session বাতিল।
+- **`reissue`** — `refresh` আর `switchTenant` দুজনেই আগে `rotate` করে, তারপর নতুন টোকেন বসায়। এই দুইয়ের
+  মাঝে অন্য request (একই টোকেনে সমান্তরাল refresh-এর reuse detection, বা অন্য ট্যাবের logout) session মুছে
+  দিতে পারে; তখন `issueTokens` `AuthError('SESSION_ENDED')` ছোড়ে (৩.৩-এর `createRefreshToken`)। `rotate`
+  শুধু `rotateRefreshToken`-এর error ধরে, তাই এই আলাদা wrapper না থাকলে সেটা 500 হতো। 401 হলে controller
+  cookie-ও মুছে দেয়, আর ফ্রন্টএন্ড ইউজারকে লগইনে পাঠায়। `Parameters<Auth['issueTokens']>[0]` — input-এর
+  টাইপ facade থেকেই নেওয়া, হাতে আলাদা interface লিখে duplicate করা হয়নি। `signUp` আর `login`-এ `reissue`
+  লাগে না: সেখানে session এই মুহূর্তেই তৈরি, অন্য কেউ সেটার টোকেন জানে না যে মুছে দেবে।
 - **`me`:** `users` আর `tenants` global, তাই সাধারণ `db`। membership-এর তালিকা সব টেন্যান্ট জুড়ে, তাই
   `withUser` (আগের অংশ দেখুন)। `roles` নেওয়া হয় টোকেন থেকে (দেখানোর জন্য যথেষ্ট); `permissions` নেওয়া
   হয় `PermissionService` থেকে — cache/DB, অর্থাৎ যা guard আসলে চেক করে ঠিক সেটাই। UI সেই তালিকা দেখে
@@ -3720,11 +3779,14 @@ container/role/migration-এর কোড → `startPostgres()`; `appDb` বা�
 **ফাইল: `apps/api/src/auth/auth.int.spec.ts`** (নতুন ফাইল)
 
 ```ts
+import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { Auth } from '@omnivo/auth';
 import { apiErrorSchema, meResponseSchema, type SignUpInput } from '@omnivo/contracts';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { AUTH } from '../infra/tokens.js';
 import { PermissionService } from '../rbac/permission.service.js';
 import { createTestApp, testConfig } from '../testing/app.js';
 import {
@@ -3926,7 +3988,7 @@ describe('refresh token rotation', () => {
     expect((await refresh(second)).statusCode).toBe(401);
   });
 
-  it('lets only one of two parallel refreshes win', async () => {
+  it('lets at most one of two parallel refreshes through, and never fails with a 5xx', async () => {
     const { refreshToken } = sessionOf(
       await login({
         workspace: rahman.workspaceSlug,
@@ -3935,7 +3997,39 @@ describe('refresh token rotation', () => {
       }),
     );
     const results = await Promise.all([refresh(refreshToken), refresh(refreshToken)]);
-    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401]);
+
+    // হেরে যাওয়াটা reuse ধরে পুরো session মোছে; জয়ীটা তার আগে শেষ করলে 200, মাঝপথে থাকলে 401
+    const statuses = results.map((r) => r.statusCode).sort();
+    expect([
+      [200, 401],
+      [401, 401],
+    ]).toContainEqual(statuses);
+
+    // যে-ই জিতুক, session শেষ — 200 পাওয়া নতুন টোকেনও অচল
+    for (const won of results.filter((r) => r.statusCode === 200)) {
+      expect((await refresh(refreshCookieOf(won))).statusCode).toBe(401);
+    }
+  });
+
+  it('reports a session deleted mid-refresh as ended, not as a database error', async () => {
+    // সমান্তরাল refresh-এর race নির্ভরযোগ্যভাবে ঘটানো যায় না, তাই সরাসরি: নেই এমন session-এ টোকেন
+    const [tenant] = await superuser<
+      { id: string }[]
+    >`SELECT id FROM tenants WHERE slug = ${rahman.workspaceSlug}`;
+    if (!tenant) throw new Error('setup: tenant missing');
+
+    await expect(
+      app.get<Auth>(AUTH).issueTokens({
+        sessionId: randomUUID(),
+        sessionExpiresAt: new Date(Date.now() + 60_000),
+        claims: {
+          userId: randomUUID(),
+          tenantId: tenant.id,
+          membershipId: randomUUID(),
+          roles: [],
+        },
+      }),
+    ).rejects.toMatchObject({ name: 'AuthError', code: 'SESSION_ENDED' });
   });
 
   it('rejects a missing or made-up refresh token', async () => {
@@ -4120,8 +4214,16 @@ describe('permissions', () => {
 - **login:** ঠিক পাসওয়ার্ডে 200; ভুল পাসওয়ার্ডে 401; অচেনা workspace-এ 404; অন্য workspace-এর আসল
   ইউজার 403।
 - **refresh token rotation:** প্রতিবার নতুন টোকেন; পুরনো টোকেন আবার এলে 401, cookie খালি, **আর আসল
-  ইউজারের নতুন টোকেনও অচল** (family বাতিল); একই টোকেনে একসাথে দুটো refresh-এ ঠিক একটা 200; cookie না
-  থাকলে বা বানানো টোকেনে 401।
+  ইউজারের নতুন টোকেনও অচল** (family বাতিল); cookie না থাকলে বা বানানো টোকেনে 401।
+- **একই টোকেনে একসাথে দুটো refresh:** ফল হয় `[200, 401]` বা `[401, 401]` — দুটোই সঠিক, আর কোনটা আসবে সেটা
+  সময়ের ওপর নির্ভর করে। হেরে যাওয়া request reuse ধরে পুরো session মোছে; জয়ী request তার আগে শেষ করলে
+  200, মাঝপথে থাকলে 401। তাই টেস্ট "ঠিক একটা 200" চায় না (সেটা flaky হতো), চায় বড়জোর একটা 200, কোনো 5xx
+  না, আর 200 পাওয়া নতুন টোকেনও পরে অচল — session সত্যিই শেষ। `toContainEqual` — দুটো গ্রহণযোগ্য ফলের
+  তালিকায় আসল ফল আছে কিনা।
+- **session মাঝপথে মুছে গেলে:** উপরের race নির্ভরযোগ্যভাবে ঘটানো যায় না (চাপের মধ্যে ৮ বারে একবার), তাই
+  তার পরিণতি আলাদা করে সরাসরি পরীক্ষা: নেই এমন `sessionId` দিয়ে `issueTokens` → `SESSION_ENDED`, DB error
+  না। `tenantId` আসল টেন্যান্টের — নাহলে `active_tenant_id`-এর FK আগে ভাঙত আর টেস্ট ভুল কারণে পাস/fail
+  করত। `app.get<Auth>(AUTH)` — `AUTH` একটা symbol token, তাই টাইপ generic দিয়ে দিতে হয়।
 - **logout:** এরপর সেই refresh token অচল।
 - **tenant switcher:** দুই workspace-এর সদস্য switch করতে পারে, নতুন টোকেনে নতুন টেন্যান্ট; রোল ছাড়া
   membership-এ permission শূন্য। অন্যের workspace-এ switch-এ 403, **আর refresh token খরচ হয়নি**।
@@ -4233,6 +4335,7 @@ endpoint এলেই এখানে তার জন্য একটা কে
 | ইচ্ছাকৃত bug | যে টেস্ট fail করল |
 |---|---|
 | `consumeRefreshToken`-এ `isNull(refreshTokens.usedAt)` মুছে ফেলা | reuse detection আর "দুটো একসাথে" — ২টা |
+| `createRefreshToken`-এ `SESSION_ENDED`-এ রূপান্তর বাদ | "session deleted mid-refresh" — ১টা |
 | `PermissionGuard`-এ সব request খুলে দেওয়া | "blocks a member without the permission" আর cache — ২টা |
 | `switchTenant`-এ membership যাচাই বাদ | "refuses to switch tenant A into tenant B" — ১টা |
 | `app.module.ts`-এ দুটো `APP_GUARD`-এর ক্রম উল্টানো | "asks for a sign-in (401) before … (403)" — ১টা |
@@ -6021,7 +6124,7 @@ pnpm lint
 pnpm format
 pnpm typecheck
 pnpm test                    # ১৬টা: contracts ৩ + auth ৭ + api middleware ৬ — Docker লাগে না
-pnpm test:integration        # ১৯টা — Docker চালু থাকতে হবে
+pnpm test:integration        # ২০টা — Docker চালু থাকতে হবে
 pnpm test:tenant-leak        # ৯টা: ধাপ ২-এর ৬ + HTTP-স্তরের ৩
 pnpm build
 pnpm boundaries

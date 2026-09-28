@@ -17,17 +17,39 @@ export function hashRefreshToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+// drizzle Postgres error-কে DrizzleQueryError-এ মুড়ে দেয়; আসল কোড থাকে .cause-এ
+function isSessionGone(error: unknown): boolean {
+  for (let current: unknown = error; current instanceof Error; current = current.cause) {
+    if (
+      'code' in current &&
+      current.code === '23503' &&
+      'constraint_name' in current &&
+      current.constraint_name === 'refresh_tokens_session_id_sessions_id_fk'
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function createRefreshToken(
   db: Db,
   input: { sessionId: string; activeTenantId: string; expiresAt: Date },
 ): Promise<string> {
   const token = randomBytes(32).toString('base64url');
-  await db.insert(refreshTokens).values({
-    sessionId: input.sessionId,
-    tokenHash: hashRefreshToken(token),
-    activeTenantId: input.activeTenantId,
-    expiresAt: input.expiresAt,
-  });
+  try {
+    await db.insert(refreshTokens).values({
+      sessionId: input.sessionId,
+      tokenHash: hashRefreshToken(token),
+      activeTenantId: input.activeTenantId,
+      expiresAt: input.expiresAt,
+    });
+  } catch (error) {
+    // rotate আর এই insert-এর মাঝে অন্য request (reuse detection, logout) session মুছে দিলে
+    // FK ভাঙে — এটা DB-র গোলমাল না, session শেষ; caller 401 দেবে, 500 না
+    if (isSessionGone(error)) throw new AuthError('SESSION_ENDED');
+    throw error;
+  }
   return token;
 }
 

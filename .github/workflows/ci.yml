@@ -20,6 +20,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Lockfile dedupe
+        run: pnpm dedupe --check
+
       - name: Lint
         run: pnpm lint
 

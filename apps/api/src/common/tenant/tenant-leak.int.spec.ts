@@ -1,20 +1,12 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDb, type Db, memberships, tenants, users } from '@omnivo/db';
 
+import { startPostgres, type TestPostgres } from '../../testing/containers.js';
 import { runWithTenant } from './tenant-context.js';
 import { createWithTenant, type WithTenant } from './with-tenant.js';
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../../..');
-
-let container: StartedPostgreSqlContainer;
+let pg: TestPostgres;
 let appDb: Db;
 let withTenant: WithTenant;
 let tenantAId: string;
@@ -37,33 +29,10 @@ async function seedTenant(slug: string): Promise<string> {
 }
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer('postgres:17-alpine')
-    .withDatabase('omnivo')
-    .withUsername('postgres')
-    .withPassword('postgres')
-    .start();
+  // role, migration আর permission sync — সব shared harness-এ (src/testing/containers.ts)
+  pg = await startPostgres();
 
-  // superuser URL থেকে বাকি দুই role-এর URL বানানো — host/port হাতে জোড়া লাগাতে হয় না
-  const urlFor = (username: string, password: string): string => {
-    const url = new URL(container.getConnectionUri());
-    url.username = username;
-    url.password = password;
-    return url.toString();
-  };
-
-  const admin = postgres(container.getConnectionUri(), { max: 1 });
-  await admin.unsafe(
-    readFileSync(path.join(repoRoot, 'infra/docker/postgres/init/01-roles.sql'), 'utf-8'),
-  );
-  await admin.end();
-
-  const migratorClient = postgres(urlFor('omnivo_migrator', 'migrator_dev_password'), { max: 1 });
-  await migrate(drizzle(migratorClient), {
-    migrationsFolder: path.join(repoRoot, 'packages/db/migrations'),
-  });
-  await migratorClient.end();
-
-  appDb = createDb(urlFor('omnivo_app', 'app_dev_password'), { max: 1 });
+  appDb = createDb(pg.appUrl, { max: 1 });
   withTenant = createWithTenant(appDb);
 
   tenantAId = await seedTenant('tenant-a');
@@ -72,7 +41,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await appDb.$client.end();
-  await container.stop();
+  await pg.container.stop();
 });
 
 describe('tenant isolation (RLS)', () => {
