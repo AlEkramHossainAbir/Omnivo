@@ -177,6 +177,10 @@ Rules:
 | `caption` | 12px / 1.35 | 500 | Pills, KPI labels, table headers, footnotes |
 | `micro` | 11px / 1.3 | 400 | Chart axes only |
 
+Exception: the auth side-panel product preview (`apps/app/src/components/auth-preview.tsx`)
+is a scaled-down illustration of the real UI, so it may use the mockup's smaller sizes
+(20px KPI value, 12.5px and 11.5px text) as arbitrary values. Only that file.
+
 ### Shape, spacing, elevation
 
 - **Radius:** `10px` for controls (inputs, buttons, list rows, industry cards). `14px`

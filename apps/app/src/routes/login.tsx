@@ -14,6 +14,7 @@ import { loginInputSchema } from '@omnivo/contracts';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type SubmitEvent, useState } from 'react';
 
+import { AuthPreview } from '../components/auth-preview';
 import { Button } from '../components/button';
 import { FormAlert } from '../components/form-alert';
 import { Logo } from '../components/logo';
@@ -162,31 +163,36 @@ export function LoginPage() {
 
       <aside
         aria-label="What Omnivo does"
-        className="m-3 ml-0 hidden flex-col justify-center rounded-panel border border-brand-line bg-brand-soft px-[72px] py-14 min-[1040px]:flex"
+        className="relative m-3 ml-0 hidden flex-col justify-center gap-10 overflow-hidden rounded-panel border border-brand-line bg-brand-soft px-[clamp(24px,5vw,72px)] py-14 min-[1040px]:flex"
       >
-        <h2 className="max-w-lg text-display tracking-[-0.03em]">
-          Production, stock and accounts. One system.
-        </h2>
-        <p className="mt-3 max-w-md text-[15px] text-ink-2">
-          From buyer orders to payroll, every department works from the same numbers, even when the
-          internet is down.
-        </p>
-        <ul className="mt-[18px] flex flex-wrap gap-2">
-          {INDUSTRIES.map((industry) => (
-            <li
-              key={industry.label}
-              className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface py-1 pr-2.5 pl-2 text-[12.5px] font-medium text-ink-2"
-            >
-              <HugeiconsIcon
-                icon={industry.icon}
-                size={14}
-                strokeWidth={1.5}
-                className="text-brand"
-              />
-              {industry.label}
-            </li>
-          ))}
-        </ul>
+        <div aria-hidden="true" className="auth-grid pointer-events-none absolute inset-0" />
+        {/* গ্রিড absolute, তাই লেখাকেও relative না দিলে লাইন লেখার উপরে আঁকা হতো */}
+        <div className="relative max-w-lg">
+          <h2 className="text-display tracking-[-0.03em]">
+            Production, stock and accounts. One system.
+          </h2>
+          <p className="mt-3 max-w-md text-[15px] text-ink-2">
+            From buyer orders to payroll, every department works from the same numbers, even when
+            the internet is down.
+          </p>
+          <ul className="mt-[18px] flex flex-wrap gap-2">
+            {INDUSTRIES.map((industry) => (
+              <li
+                key={industry.label}
+                className="inline-flex items-center gap-1.5 rounded-full border border-line bg-surface py-1 pr-2.5 pl-2 text-[12.5px] font-medium text-ink-2"
+              >
+                <HugeiconsIcon
+                  icon={industry.icon}
+                  size={14}
+                  strokeWidth={1.5}
+                  className="text-brand"
+                />
+                {industry.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <AuthPreview />
       </aside>
     </div>
   );
