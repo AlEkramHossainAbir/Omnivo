@@ -5,15 +5,14 @@ import {
   Mail01Icon,
   UserIcon,
 } from '@hugeicons/core-free-icons';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { signUpInputSchema } from '@omnivo/contracts';
+import { Button, FormAlert, Logo, TextField } from '@omnivo/ui';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { type SubmitEvent, useState } from 'react';
+import type { ChangeEvent } from 'react';
+import { useForm } from 'react-hook-form';
 
-import { Button } from '../components/button';
-import { FormAlert } from '../components/form-alert';
-import { Logo } from '../components/logo';
-import { TextField } from '../components/text-field';
-import { type FieldErrors, fromApiError, validate } from '../lib/field-errors';
+import { applyApiError } from '../lib/field-errors';
 import { signUp } from '../lib/session';
 
 // "Rahman Garments Ltd." → "rahman-garments" (Workspace Setup mockup-এর নিয়ম)
@@ -28,40 +27,26 @@ function slugify(name: string): string {
 
 export function SignUpPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({
-    companyName: '',
-    workspaceSlug: '',
-    fullName: '',
-    email: '',
-    password: '',
+  const {
+    register,
+    handleSubmit,
+    setError,
+    setValue,
+    getFieldState,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: zodResolver(signUpInputSchema),
+    defaultValues: { companyName: '', workspaceSlug: '', fullName: '', email: '', password: '' },
   });
-  // ইউজার নিজে slug-এ হাত দিলে কোম্পানির নাম থেকে আর অটো-বসানো হবে না
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [formError, setFormError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
 
-  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const result = validate(signUpInputSchema, form);
-    if ('errors' in result) {
-      setErrors(result.errors);
-      return;
-    }
-    setErrors({});
-    setFormError(null);
-    setSubmitting(true);
+  const onSubmit = handleSubmit(async (values) => {
     try {
-      await signUp(result.data);
+      await signUp(values);
       await navigate({ to: '/' });
     } catch (error) {
-      const { fields, form: message } = fromApiError(error);
-      setErrors(fields);
-      setFormError(message);
-    } finally {
-      setSubmitting(false);
+      applyApiError(error, signUpInputSchema.keyof().options, setError);
     }
-  }
+  });
 
   return (
     <div className="min-h-dvh">
@@ -87,82 +72,71 @@ export function SignUpPage() {
           </p>
 
           <form noValidate onSubmit={(event) => void onSubmit(event)} className="mt-7 grid gap-5">
-            {formError && <FormAlert message={formError} />}
+            {errors.root?.server?.message && <FormAlert message={errors.root.server.message} />}
             <TextField
-              id="companyName"
               label="Company name"
               icon={Building03Icon}
               autoComplete="organization"
               placeholder="Rahman Garments Ltd."
-              value={form.companyName}
-              onChange={(e) => {
-                const companyName = e.target.value;
-                setForm({
-                  ...form,
-                  companyName,
-                  workspaceSlug: slugTouched ? form.workspaceSlug : slugify(companyName),
-                });
-              }}
-              error={errors.companyName}
+              {...register('companyName', {
+                // ইউজার নিজে ঠিকানায় হাত দিলে (isDirty) আর অটো-বসানো হবে না — আলাদা
+                // "slugTouched" state লাগে না। setValue ডিফল্টে dirty বানায় না, তাই অটো-বসানো
+                // মান পরের অক্ষরে আবার বদলাতে পারে
+                onChange: (event: ChangeEvent<HTMLInputElement>) => {
+                  if (!getFieldState('workspaceSlug').isDirty) {
+                    setValue('workspaceSlug', slugify(event.target.value));
+                  }
+                },
+              })}
+              error={errors.companyName?.message}
             />
             <TextField
-              id="workspaceSlug"
               label="Workspace address"
               icon={Globe02Icon}
               suffix=".omnivo.app"
+              // ফোনের কীবোর্ড প্রথম অক্ষর বড় হাতের না করে; বাকিটা schema-র toLowerCase() সামলায়
+              autoCapitalize="none"
               spellCheck={false}
               placeholder="rahman-garments"
-              value={form.workspaceSlug}
-              onChange={(e) => {
-                setSlugTouched(true);
-                setForm({ ...form, workspaceSlug: e.target.value.toLowerCase() });
-              }}
-              error={errors.workspaceSlug}
+              {...register('workspaceSlug')}
+              error={errors.workspaceSlug?.message}
             />
             <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
               <TextField
-                id="fullName"
                 label="Full name"
                 icon={UserIcon}
                 autoComplete="name"
                 placeholder="Farhana Rahman"
-                value={form.fullName}
-                onChange={(e) => {
-                  setForm({ ...form, fullName: e.target.value });
-                }}
-                error={errors.fullName}
+                {...register('fullName')}
+                error={errors.fullName?.message}
               />
               <TextField
-                id="email"
                 label="Work email"
                 icon={Mail01Icon}
                 type="email"
                 autoComplete="email"
                 placeholder="name@company.com"
-                value={form.email}
-                onChange={(e) => {
-                  setForm({ ...form, email: e.target.value });
-                }}
-                error={errors.email}
+                {...register('email')}
+                error={errors.email?.message}
               />
             </div>
             <TextField
-              id="password"
               label="Password"
               icon={LockPasswordIcon}
               type="password"
               autoComplete="new-password"
               placeholder="At least 8 characters"
-              value={form.password}
-              onChange={(e) => {
-                setForm({ ...form, password: e.target.value });
-              }}
-              error={errors.password}
+              {...register('password')}
+              error={errors.password?.message}
             />
 
             <div className="mt-2 flex justify-end border-t border-line pt-6">
-              <Button type="submit" disabled={submitting} className="w-full sm:w-auto sm:min-w-40">
-                {submitting ? 'Creating workspace…' : 'Create workspace'}
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full sm:w-auto sm:min-w-40"
+              >
+                {isSubmitting ? 'Creating workspace…' : 'Create workspace'}
               </Button>
             </div>
           </form>

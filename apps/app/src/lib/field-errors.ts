@@ -1,31 +1,30 @@
-import { z } from 'zod';
+import type { FieldValues, Path, UseFormSetError } from 'react-hook-form';
 
 import { ApiRequestError } from './api';
 
-export type FieldErrors = Partial<Record<string, string>>;
-
-// ক্লায়েন্টে একই Zod schema — সার্ভারে যাওয়ার আগেই একই মেসেজ দেখানো
-export function validate<TSchema extends z.ZodType>(
-  schema: TSchema,
-  value: unknown,
-): { data: z.output<TSchema> } | { errors: FieldErrors } {
-  const result = schema.safeParse(value);
-  if (result.success) return { data: result.data };
-  const errors: FieldErrors = {};
-  for (const [field, messages] of Object.entries(z.flattenError(result.error).fieldErrors)) {
-    if (Array.isArray(messages) && typeof messages[0] === 'string') errors[field] = messages[0];
-  }
-  return { errors };
-}
-
-// সার্ভারের error → ফিল্ডের পাশে (fieldErrors থাকলে) নয়তো ফর্মের উপরে
-export function fromApiError(error: unknown): { fields: FieldErrors; form: string | null } {
+// সার্ভারের error → react-hook-form: fieldErrors থাকলে সেই ফিল্ডের নিচে, নয়তো ফর্মের উপরে
+// ('root.server' — পরের submit-এ react-hook-form নিজেই মুছে দেয়)
+export function applyApiError<TValues extends FieldValues>(
+  error: unknown,
+  // schema.keyof().options থেকে — সার্ভারের পাঠানো string নামকে টাইপ-চেকড ফিল্ড নামে মেলাতে
+  fieldNames: readonly Path<TValues>[],
+  setError: UseFormSetError<TValues>,
+): void {
   if (!(error instanceof ApiRequestError)) {
-    return { fields: {}, form: 'Could not reach the server. Check your connection and try again.' };
+    setError('root.server', {
+      message: 'Could not reach the server. Check your connection and try again.',
+    });
+    return;
   }
-  const fields: FieldErrors = {};
+  let placed = false;
   for (const [field, messages] of Object.entries(error.body.fieldErrors ?? {})) {
-    if (messages[0]) fields[field] = messages[0];
+    // find: cast ছাড়াই string → Path<TValues>; ফর্মে নেই এমন নাম বাদ পড়ে
+    const name = fieldNames.find((candidate) => candidate === field);
+    const message = messages[0];
+    if (name && message) {
+      setError(name, { message });
+      placed = true;
+    }
   }
-  return { fields, form: Object.keys(fields).length > 0 ? null : error.body.message };
+  if (!placed) setError('root.server', { message: error.body.message });
 }

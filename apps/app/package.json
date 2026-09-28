@@ -7,12 +7,14 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
+    "test": "vitest run --passWithNoTests",
+    "test:bundle-size": "node scripts/check-bundle-size.ts"
   },
   "devDependencies": {
     "@omnivo/config": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
@@ -22,15 +24,16 @@
     "vitest": "^5.0.1"
   },
   "dependencies": {
-    "@fontsource-variable/geist": "^5.3.0",
-    "@fontsource-variable/geist-mono": "^5.3.0",
-    "@fontsource/noto-sans-bengali": "^5.3.0",
+    "@hookform/resolvers": "^5.9.1",
     "@hugeicons/core-free-icons": "^4.3.5",
     "@hugeicons/react": "^1.1.10",
     "@omnivo/contracts": "workspace:*",
+    "@omnivo/i18n": "workspace:*",
+    "@omnivo/ui": "workspace:*",
     "@tanstack/react-router": "^1.170.39",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "react-hook-form": "^7.89.0",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"
   }

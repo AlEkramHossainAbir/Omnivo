@@ -23,6 +23,9 @@
     "test:tenant-leak": {
       "dependsOn": ["^build"],
       "cache": false
+    },
+    "test:bundle-size": {
+      "dependsOn": ["build"]
     }
   }
 }

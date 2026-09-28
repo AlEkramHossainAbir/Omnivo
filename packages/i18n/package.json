@@ -1,0 +1,32 @@
+{
+  "name": "@omnivo/i18n",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "i18next": "^26.4.2",
+    "react-i18next": "^17.0.15"
+  },
+  "devDependencies": {
+    "@omnivo/config": "workspace:*",
+    "@types/react": "^19.3.0",
+    "react": "^19.3.0",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1"
+  },
+  "peerDependencies": {
+    "react": "^19.3.0"
+  }
+}

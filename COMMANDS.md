@@ -31,6 +31,8 @@ important commands come up.
 
    - API (`@omnivo/api`, NestJS/Fastify): http://localhost:3000
    - App (`@omnivo/app`, Vite/React): http://localhost:5173
+   - Kitchen sink (every shared ui component, both themes and languages):
+     http://localhost:5173/kitchen-sink — only in `pnpm dev`, needs a signed-in user
 
 Stop infra when done:
 
@@ -72,6 +74,7 @@ pnpm test       # vitest unit tests across all workspaces (no Docker needed)
 pnpm test:integration # API integration tests on Testcontainers (Docker must be running)
 pnpm test:tenant-leak # RLS + HTTP-level tenant isolation tests (Docker must be running)
 pnpm build      # build every package and app
+pnpm test:bundle-size # build the app, then fail if first-load JS > 200 KB gz or a route chunk > 100 KB gz
 pnpm boundaries # dependency-cruiser on apps/packages
 pnpm dedupe --check # fail if the lockfile has duplicate copies (e.g. drizzle-orm)
 ```

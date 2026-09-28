@@ -2,18 +2,18 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   redirect,
 } from '@tanstack/react-router';
 
 import { restoreSession } from './lib/session';
 import { sessionStore } from './lib/session-store';
-import { AppShell } from './routes/app-shell';
-import { DashboardPage } from './routes/dashboard';
-import { LoginPage } from './routes/login';
-import { SignUpPage } from './routes/sign-up';
 
 const rootRoute = createRootRoute({ component: Outlet });
+
+// প্রতিটা পেজ আলাদা chunk (lazyRouteComponent): লগইন পেজ খুলতে ড্যাশবোর্ডের DataTable বা
+// সাইডবারের মেনু ডাউনলোড করতে হয় না। বাজেট: প্রথম লোড < 200 KB gz (scripts/check-bundle-size.ts)
 
 // লগইন করা ইউজার /login বা /sign-up-এ এলে সোজা ড্যাশবোর্ডে
 async function redirectIfSignedIn(): Promise<void> {
@@ -27,14 +27,14 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/login',
   beforeLoad: redirectIfSignedIn,
-  component: LoginPage,
+  component: lazyRouteComponent(() => import('./routes/login'), 'LoginPage'),
 });
 
 const signUpRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sign-up',
   beforeLoad: redirectIfSignedIn,
-  component: SignUpPage,
+  component: lazyRouteComponent(() => import('./routes/sign-up'), 'SignUpPage'),
 });
 
 // pathless layout route: এর নিচের সব পেজ protected, আর সবগুলো AppShell-এর ভেতরে
@@ -47,19 +47,32 @@ const appRoute = createRoute({
       throw redirect({ to: '/login' });
     }
   },
-  component: AppShell,
+  // layout-ও lazy: সাইডবারের Radix মেনু (~৩০ KB gz) লগইনের আগে লাগে না
+  component: lazyRouteComponent(() => import('./routes/app-shell'), 'AppShell'),
 });
 
 const dashboardRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/',
-  component: DashboardPage,
+  component: lazyRouteComponent(() => import('./routes/dashboard'), 'DashboardPage'),
 });
+
+// শুধু `pnpm dev`-এ। production build-এ Vite import.meta.env.DEV-কে false বসায়, minifier পুরো
+// শাখা মুছে দেয় — import() হারায়, তাই kitchen-sink-এর chunk তৈরিই হয় না
+const devRoutes = import.meta.env.DEV
+  ? [
+      createRoute({
+        getParentRoute: () => appRoute,
+        path: '/kitchen-sink',
+        component: lazyRouteComponent(() => import('./routes/kitchen-sink'), 'KitchenSinkPage'),
+      }),
+    ]
+  : [];
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
   signUpRoute,
-  appRoute.addChildren([dashboardRoute]),
+  appRoute.addChildren([dashboardRoute, ...devRoutes]),
 ]);
 
 export const router = createRouter({ routeTree });

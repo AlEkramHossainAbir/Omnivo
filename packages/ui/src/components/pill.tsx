@@ -1,7 +1,7 @@
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import type { ReactNode } from 'react';
 
-import { cx } from '../lib/cx';
+import { cn } from '../lib/cn.js';
 
 export type PillTone = 'good' | 'warn' | 'crit' | 'brand' | 'neutral';
 
@@ -24,7 +24,7 @@ interface PillProps {
 export function Pill({ tone, icon, children }: PillProps) {
   return (
     <span
-      className={cx(
+      className={cn(
         'inline-flex items-center gap-[5px] rounded-full py-0.5 pr-2 pl-1.5 text-caption font-medium whitespace-nowrap',
         toneClass[tone],
       )}

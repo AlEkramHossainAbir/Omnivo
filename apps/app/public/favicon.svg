@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 26">
+  <!-- Logo-র দুই বর্গ। favicon CSS token পড়তে পারে না, তাই brand-এর hex এখানে হাতে — token বদলালে এটাও -->
+  <style>
+    .fill { fill: #1f47b5; }
+    .line { fill: #ffffff; stroke: #1f47b5; }
+    @media (prefers-color-scheme: dark) {
+      .fill { fill: #7c9cf2; }
+      .line { fill: #0b0f17; stroke: #7c9cf2; }
+    }
+  </style>
+  <rect class="fill" x="0" y="0" width="16" height="16" rx="5" />
+  <rect class="line" x="11" y="11" width="14" height="14" rx="4" stroke-width="2" />
+</svg>

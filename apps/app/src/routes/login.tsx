@@ -10,16 +10,15 @@ import {
   ViewOffIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { loginInputSchema } from '@omnivo/contracts';
+import { Button, Checkbox, FormAlert, Logo, TextField } from '@omnivo/ui';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { type SubmitEvent, useState } from 'react';
+import { useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 
 import { AuthPreview } from '../components/auth-preview';
-import { Button } from '../components/button';
-import { FormAlert } from '../components/form-alert';
-import { Logo } from '../components/logo';
-import { TextField } from '../components/text-field';
-import { type FieldErrors, fromApiError, validate } from '../lib/field-errors';
+import { applyApiError } from '../lib/field-errors';
 import { login } from '../lib/session';
 
 const INDUSTRIES = [
@@ -31,33 +30,29 @@ const INDUSTRIES = [
 
 export function LoginPage() {
   const navigate = useNavigate();
-  const [form, setForm] = useState({ workspace: '', email: '', password: '', keepSignedIn: true });
-  const [errors, setErrors] = useState<FieldErrors>({});
-  const [formError, setFormError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  // zodResolver: API যে schema দিয়ে যাচাই করে, ফর্মও ঠিক সেটা দিয়ে — একই মেসেজ, একই নিয়ম
+  const {
+    register,
+    control,
+    handleSubmit,
+    setError,
+    formState: { errors, isSubmitting },
+  } = useForm({
+    resolver: zodResolver(loginInputSchema),
+    defaultValues: { workspace: '', email: '', password: '', keepSignedIn: true },
+  });
 
-  async function onSubmit(event: SubmitEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const result = validate(loginInputSchema, form);
-    if ('errors' in result) {
-      setErrors(result.errors);
-      return;
-    }
-    setErrors({});
-    setFormError(null);
-    setSubmitting(true);
+  // handleSubmit: আগে Zod যাচাই, পাস করলে তবেই এই ফাংশন — values-এর টাইপ LoginInput
+  // (trim/lowercase হয়ে গেছে)। চলার সময় isSubmitting নিজে থেকেই true
+  const onSubmit = handleSubmit(async (values) => {
     try {
-      await login(result.data);
+      await login(values);
       await navigate({ to: '/' });
     } catch (error) {
-      const { fields, form: message } = fromApiError(error);
-      setErrors(fields);
-      setFormError(message);
-    } finally {
-      setSubmitting(false);
+      applyApiError(error, loginInputSchema.keyof().options, setError);
     }
-  }
+  });
 
   return (
     <div className="grid min-h-dvh bg-surface min-[1040px]:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
@@ -73,46 +68,35 @@ export function LoginPage() {
               onSubmit={(event) => void onSubmit(event)}
               className="mt-8 grid gap-[18px]"
             >
-              {formError && <FormAlert message={formError} />}
+              {errors.root?.server?.message && <FormAlert message={errors.root.server.message} />}
               <TextField
-                id="workspace"
                 label="Workspace"
                 icon={Building03Icon}
                 suffix=".omnivo.app"
                 autoComplete="organization"
+                autoCapitalize="none"
                 spellCheck={false}
                 placeholder="rahman-garments"
-                value={form.workspace}
-                onChange={(e) => {
-                  setForm({ ...form, workspace: e.target.value });
-                }}
-                error={errors.workspace}
+                {...register('workspace')}
+                error={errors.workspace?.message}
               />
               <TextField
-                id="email"
                 label="Email"
                 icon={Mail01Icon}
                 type="email"
                 autoComplete="email"
                 placeholder="name@company.com"
-                value={form.email}
-                onChange={(e) => {
-                  setForm({ ...form, email: e.target.value });
-                }}
-                error={errors.email}
+                {...register('email')}
+                error={errors.email?.message}
               />
               <TextField
-                id="password"
                 label="Password"
                 icon={LockPasswordIcon}
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 placeholder="Enter your password"
-                value={form.password}
-                onChange={(e) => {
-                  setForm({ ...form, password: e.target.value });
-                }}
-                error={errors.password}
+                {...register('password')}
+                error={errors.password?.message}
                 trailing={
                   <button
                     type="button"
@@ -130,20 +114,24 @@ export function LoginPage() {
                   </button>
                 }
               />
-              <label htmlFor="keep" className="flex items-start gap-2.5 text-body-sm text-ink-2">
-                <input
-                  id="keep"
-                  type="checkbox"
-                  checked={form.keepSignedIn}
-                  onChange={(e) => {
-                    setForm({ ...form, keepSignedIn: e.target.checked });
-                  }}
-                  className="mt-px size-[17px] shrink-0 rounded-[5px] accent-brand"
-                />
-                Keep me signed in on this device
-              </label>
-              <Button type="submit" disabled={submitting} className="w-full">
-                {submitting ? 'Signing in…' : 'Sign in'}
+              {/* Radix Checkbox আসল <input> না, তাই register চলে না — Controller মান আর onChange জোড়ে */}
+              <Controller
+                control={control}
+                name="keepSignedIn"
+                render={({ field }) => (
+                  <Checkbox
+                    id="keepSignedIn"
+                    label="Keep me signed in on this device"
+                    checked={field.value}
+                    // Radix-এর মান true | false | 'indeterminate' — আমাদের schema শুধু boolean
+                    onCheckedChange={(checked) => {
+                      field.onChange(checked === true);
+                    }}
+                  />
+                )}
+              />
+              <Button type="submit" disabled={isSubmitting} className="w-full">
+                {isSubmitting ? 'Signing in…' : 'Sign in'}
               </Button>
             </form>
 

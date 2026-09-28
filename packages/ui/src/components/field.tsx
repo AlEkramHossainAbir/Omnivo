@@ -1,0 +1,131 @@
+import { Alert02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { useLocale } from '@omnivo/i18n';
+import { type ComponentProps, type ReactNode, useId } from 'react';
+
+import { cn } from '../lib/cn.js';
+
+// control-এর aria-describedby: error থাকলে স্ক্রিন রিডার error পড়বে, নাহলে hint
+export function describedBy(
+  id: string,
+  error: string | undefined,
+  hint: string | undefined,
+): string | undefined {
+  if (error) return `${id}-error`;
+  if (hint) return `${id}-hint`;
+  return undefined;
+}
+
+export interface FieldProps {
+  id: string;
+  label: string;
+  // `| undefined`: exactOptionalPropertyTypes-এ caller নিজের optional prop সরাসরি পাঠাতে পারে
+  optional?: boolean | undefined;
+  hint?: string | undefined;
+  error?: string | undefined;
+  children: ReactNode;
+}
+
+// সব ফর্ম-ফিল্ডের একই কাঠামো: উপরে label, মাঝে control, নিচে error (নয়তো hint)
+export function Field({ id, label, optional = false, hint, error, children }: FieldProps) {
+  const { t } = useLocale();
+  return (
+    // content-start: পাশের ফিল্ডে hint থাকলে grid-এর সারি উঁচু হয়; তখন এই ফিল্ডের ভেতরের
+    // সারিগুলো টেনে লম্বা না করে উপরে জড়ো থাকে — ইনপুটের উচ্চতা সব জায়গায় ৪২px
+    <div className="grid content-start gap-1.5">
+      <label htmlFor={id} className="text-label font-medium text-ink">
+        {label}
+        {optional && <span className="font-normal text-ink-3"> {t('common.optional')}</span>}
+      </label>
+      {children}
+      {error ? (
+        <p id={`${id}-error`} className="flex items-center gap-1.5 text-label text-crit">
+          <HugeiconsIcon icon={Alert02Icon} size={15} strokeWidth={1.5} className="shrink-0" />
+          {error}
+        </p>
+      ) : (
+        hint && (
+          <p id={`${id}-hint`} className="text-label text-ink-3">
+            {hint}
+          </p>
+        )
+      )}
+    </div>
+  );
+}
+
+// input আর date picker-এর বাটন — দুটোই দেখতে একই বাক্স, তাই class এক জায়গায়
+export function controlBoxClass(invalid: boolean): string {
+  return cn(
+    'flex min-h-[42px] items-center gap-2.5 rounded-control border bg-surface px-3 shadow-sm transition-[border-color,box-shadow] duration-150',
+    invalid
+      ? 'border-crit focus-within:shadow-ring-crit'
+      : 'border-line-strong hover:border-ink-3 focus-within:border-brand focus-within:shadow-ring',
+  );
+}
+
+// `prefix` HTML-এর নিজস্ব attribute (RDFa) — এখানে অন্য মানে, তাই Omit করে নতুন করে বলা
+export interface InputProps extends Omit<ComponentProps<'input'>, 'className' | 'prefix'> {
+  icon?: IconSvgElement | undefined;
+  prefix?: string | undefined;
+  suffix?: string | undefined;
+  trailing?: ReactNode;
+  invalid?: boolean | undefined;
+  align?: 'start' | 'end';
+}
+
+export function Input({
+  icon,
+  prefix,
+  suffix,
+  trailing,
+  invalid = false,
+  align = 'start',
+  ...input
+}: InputProps) {
+  return (
+    <div className={controlBoxClass(invalid)}>
+      {icon && (
+        <HugeiconsIcon icon={icon} size={17} strokeWidth={1.5} className="shrink-0 text-ink-3" />
+      )}
+      {prefix && <span className="text-body text-ink-2">{prefix}</span>}
+      <input
+        aria-invalid={invalid || undefined}
+        className={cn(
+          'min-w-0 flex-1 bg-transparent py-2.5 text-body outline-none placeholder:text-ink-3',
+          // টাকার মতো সংখ্যা ডানে মেলানো, আর প্রতিটা অঙ্ক সমান চওড়া — কলামে সারি মেলে
+          align === 'end' && 'text-right tabular-nums',
+        )}
+        {...input}
+      />
+      {suffix && <span className="text-body-sm whitespace-nowrap text-ink-3">{suffix}</span>}
+      {trailing}
+    </div>
+  );
+}
+
+export interface TextFieldProps extends Omit<InputProps, 'invalid' | 'id'> {
+  label: string;
+  id?: string;
+  optional?: boolean | undefined;
+  hint?: string | undefined;
+  // exactOptionalPropertyTypes: caller `errors.email?.message` (string | undefined) সরাসরি দিতে পারে
+  error?: string | undefined;
+}
+
+// react-hook-form-এর register('email') সরাসরি spread করা যায়: name, ref, onChange, onBlur
+export function TextField({ id, label, optional, hint, error, ...input }: TextFieldProps) {
+  const autoId = useId();
+  // register() id দেয় না, name দেয় — label-এর htmlFor-এর জন্য সেটাই যথেষ্ট
+  const fieldId = id ?? input.name ?? autoId;
+  return (
+    <Field id={fieldId} label={label} optional={optional} hint={hint} error={error}>
+      <Input
+        id={fieldId}
+        invalid={Boolean(error)}
+        aria-describedby={describedBy(fieldId, error, hint)}
+        {...input}
+      />
+    </Field>
+  );
+}

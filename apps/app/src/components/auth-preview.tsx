@@ -1,8 +1,6 @@
 import { CheckmarkCircle02Icon, ScissorIcon, Tick02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-
-import { cx } from '../lib/cx';
-import { Pill } from './pill';
+import { cn, Pill } from '@omnivo/ui';
 
 // auth side panel-এর product preview — নকল data দিয়ে আসল UI-এর ছোট ছবি।
 // illustration, তাই mockup-এর ছোট size (20 / 12.5 / 11.5px) শুধু এই ফাইলে (CLAUDE.md → Typography)
@@ -14,7 +12,7 @@ const card = 'rounded-card border border-line bg-surface shadow-lg';
 export function AuthPreview() {
   return (
     <div aria-hidden="true" className="relative max-w-[560px] pt-[34px] pb-9">
-      <div className={cx(card, 'p-5')}>
+      <div className={cn(card, 'p-5')}>
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <span className="grid size-8 place-items-center rounded-lg bg-brand text-[12.5px] font-semibold text-brand-ink">
@@ -52,7 +50,7 @@ export function AuthPreview() {
             <i
               key={DAYS[index]}
               // শেষ দিন (আজ) brand, বাকিগুলো de-emphasized brand-line (CLAUDE.md → Charts)
-              className={cx(
+              className={cn(
                 'flex-1 rounded-t',
                 index === BAR_HEIGHTS.length - 1 ? 'bg-brand' : 'bg-brand-line',
               )}
@@ -70,7 +68,7 @@ export function AuthPreview() {
       </div>
 
       {/* aside-এর padding ৭২px, তাই -28px offset কাটা পড়ে না */}
-      <div className={cx(card, 'absolute -right-7 bottom-0 w-[min(270px,62%)] px-4 py-3.5')}>
+      <div className={cn(card, 'absolute -right-7 bottom-0 w-[min(270px,62%)] px-4 py-3.5')}>
         <div className="flex items-center justify-between gap-2">
           <b className="text-label font-semibold">PO-1182 · Knit polo</b>
           <Pill tone="brand" icon={ScissorIcon}>
@@ -90,7 +88,7 @@ export function AuthPreview() {
       </div>
 
       <div
-        className={cx(card, 'absolute -top-1.5 -left-7 flex items-center gap-2.5 px-3.5 py-2.5')}
+        className={cn(card, 'absolute -top-1.5 -left-7 flex items-center gap-2.5 px-3.5 py-2.5')}
       >
         <span className="grid size-7 place-items-center rounded-full bg-good-bg text-good">
           <HugeiconsIcon icon={Tick02Icon} size={16} strokeWidth={1.5} />
