@@ -1840,7 +1840,10 @@ function createRedis(url: string): Redis {
   });
   const logger = new Logger('Redis');
   redis.on('error', (error: Error) => {
-    logger.warn(error.message);
+    // localhost-এ ::1 আর 127.0.0.1 দুটোই ব্যর্থ হলে AggregateError আসে, যার message ফাঁকা —
+    // তখন code (ECONNREFUSED) দেখানো, আর কী করতে হবে সেটা বলা
+    const code = 'code' in error ? String(error.code) : error.name;
+    logger.warn(error.message || `Can't reach Redis (${code}). Start it with pnpm db:up.`);
   });
   return redis;
 }
@@ -1890,6 +1893,14 @@ export class InfraModule implements OnApplicationShutdown {
   `PermissionService` DB-তে চলে যায়। cache না থাকলে অ্যাপ একটু ধীর হয়, কিন্তু বন্ধ হয় না।
 - `redis.on('error', …)` — listener না থাকলে ioredis প্রতিটা reconnect ব্যর্থতায় "Unhandled error
   event" ছাপে। Nest-এর Logger দিয়ে warning হিসেবে লেখা।
+- `error.message || …` — `localhost` দিলে Node `::1` আর `127.0.0.1` দুটোতেই connect চেষ্টা করে; দুটোই
+  ব্যর্থ হলে ioredis একটা `AggregateError` দেয় যার `message` হলো `""`, আসল কারণ থাকে `code`-এ
+  (`ECONNREFUSED`)। শুধু `error.message` লিখলে লগে ফাঁকা `WARN [Redis]` আসত — ঠিক যখন মেসেজটা সবচেয়ে
+  দরকার। (যাচাই করা: Redis বন্ধ রেখে চালালে এখন লেখে `Can't reach Redis (ECONNREFUSED). Start it with
+  pnpm db:up.`)
+- `'code' in error` — এতে টাইপ `Error & Record<'code', unknown>`-এ narrow হয়; `String(...)` দিয়ে
+  স্ট্রিং বানানো, কোনো cast বা `any` লাগে না। `??` না, `||` — কারণ ফাঁকা স্ট্রিং `""` `null`/`undefined`
+  না, `??` সেটাকে পার হতে দিত।
 - `onApplicationShutdown` — module class নিজেই provider inject করে বন্ধ করে। `useFactory`-তে তৈরি
   object-এ lifecycle hook বসানো যায় না, তাই এই জায়গাটা। pool খোলা থাকলে টেস্টে `app.close()`-এর পর
   Vitest ঝুলে থাকত, আর production-এ SIGTERM-এর পর process শেষ হতো না।

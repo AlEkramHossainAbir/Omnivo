@@ -23,7 +23,10 @@ function createRedis(url: string): Redis {
   });
   const logger = new Logger('Redis');
   redis.on('error', (error: Error) => {
-    logger.warn(error.message);
+    // localhost-এ ::1 আর 127.0.0.1 দুটোই ব্যর্থ হলে AggregateError আসে, যার message ফাঁকা —
+    // তখন code (ECONNREFUSED) দেখানো, আর কী করতে হবে সেটা বলা
+    const code = 'code' in error ? String(error.code) : error.name;
+    logger.warn(error.message || `Can't reach Redis (${code}). Start it with pnpm db:up.`);
   });
   return redis;
 }
