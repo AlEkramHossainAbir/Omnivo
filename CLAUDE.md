@@ -222,7 +222,16 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Form label:** sits above the input, 13px/500 `ink`. Optional fields say
   "(optional)" in `ink-3`. Errors show below the input as `crit` text with an
   `Alert02` icon, and the message says what to fix.
-- **Checkbox:** 17px, radius 5px, checked fill `brand`.
+- **Checkbox:** 17px, radius 5px, checked fill `brand` with a `brand-ink` `Tick02` icon.
+  The label sits to the right (13.5px `ink-2`) and clicking it toggles the box.
+- **Money input:** a `৳` prefix inside the control, the value right-aligned and
+  `tabular-nums`, shown grouped (`18,42,600.50`) when not focused. The input always
+  shows ASCII digits; Bangla digits typed on a Bangla keyboard are accepted and
+  converted. The form value is a decimal string, never a `number`.
+- **Date picker:** the trigger looks exactly like an input, with a `Calendar03` leading
+  icon. The calendar opens in a popover; the selected day is filled `brand` with
+  `brand-ink` text, today is `brand` text at weight 600. Form values are ISO date
+  strings (`2026-09-23`), read and written with local date parts, never UTC.
 - **Pill / status badge:** 12px/500, radius 999px, padding 2px 8px 2px 6px, soft
   background plus a matching icon. Variants: `good` (Active, Synced), `warn` (Sync
   delayed), `crit` (Payment due), `brand` (Trial, Recommended), neutral (`subtle` +
@@ -237,13 +246,33 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   right-aligned and `tabular-nums`. The first column is a 30px avatar tile
   (`brand-soft`/`brand` initials) plus the name and an `ink-3` sub-line. Wrap tables
   in an `overflow-x-auto` container.
+- **Data table:** the table is itself a card (`surface`, `line` border, radius 14px,
+  `shadow-sm`), so never nest it inside another card; put a section header above it.
+  Long lists are virtualized, with a sticky header. Sortable headers show an
+  `ArrowUpDown`/`ArrowUp01`/`ArrowDown01` icon and set `aria-sort`. Below 860px every
+  table becomes a list of cards: each column opts in with `meta.card` (`title`,
+  `subtitle`, `trailing`, `detail`), and columns without it are hidden on phones.
+- **Page header:** the 26px `h1` page title, a 13px `ink-3` description below it, and
+  the view's actions on the right (they wrap below the title on phones).
+- **Section header:** a 15px/600 title plus a 13px `ink-3` subtitle with no card and no
+  padding, used above content that is already a card (such as a data table).
+- **Empty state:** centered, a 40px `brand-soft`/`brand` icon tile (radius 8px), a
+  15px/600 title, a 13.5px `ink-2` description that says what to do to fill the view,
+  and an optional action button.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background.
 - **Sidebar nav:** 14px/500 `ink-2` items with `ink-3` icons, radius 8px, hover
   `subtle`. The active item uses a `brand-soft` background with `brand` text and icon.
   Group labels are 11.5px/500 `ink-3`. Counts are right-aligned (`crit` when they need
-  action).
+  action). The active state comes from `aria-current="page"`, not a separate prop. On
+  phones the nav is one horizontally scrolling row and group labels are hidden.
+- **Icon button:** 18px `ink-3` icon, radius 8px, 8px padding, hover `subtle` with an
+  `ink` icon. It always has an accessible label.
+- **Dropdown menu / popover:** `surface`, 1px `line`, radius 10px, `shadow-lg`, 4px
+  padding (12px for a popover). Items are 13.5px `ink-2`, radius 8px, highlighted
+  (hover or keyboard) `subtle` with `ink` text. Group labels are 12px/500 `ink-3`. The
+  selected radio item shows a `brand` `Tick02` icon.
 - **Stepper (wizards):** numbered 26px circles, which is valid because the steps are a
   real sequence. The current step has a `brand` border and ring. Done steps are filled
   `brand` with a `Tick02` icon.
@@ -263,9 +292,17 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 
 - **Money:** BDT with lakh/crore grouping via `Intl.NumberFormat('en-IN')`, prefixed
   `৳` (e.g. `৳18,42,600`). No decimals unless the value is a unit price. Chart axes
-  may abbreviate as `৳18L`.
-- **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. The fiscal year
-  defaults to July – June.
+  may abbreviate as `৳18L`. In Bangla the grouping is the same with Bangla digits
+  (`bn-BD`), and `৳` still comes first (`৳১৮,৪২,৬০০`). Money is a decimal string end
+  to end, never a JavaScript `number`; round with `decimal.js`.
+- **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. In Bangla, `২৩ সেপ, ২০২৬`
+  and `সেপ্টেম্বর ২০২৬`. The fiscal year defaults to July – June.
+- **Language:** every user-facing string goes through `t()` from `@omnivo/i18n`, and
+  money, numbers and dates through its `useLocale().format`. New keys go into `en.ts`
+  first, then `bn.ts` (the type check fails if `bn.ts` is missing a key). Keep common
+  office terms such as PO, LC, workspace and role in English inside Bangla text.
+  Exceptions until step 5 moves errors to codes: the login and sign-up pages. The
+  dev-only kitchen sink stays English.
 - **Copy:** sentence case everywhere and active voice. Buttons say exactly what happens
   ("Create workspace", "Retry", "Export"). Errors say how to fix the problem, without
   apologies.
@@ -304,6 +341,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   that selects something) must add Tailwind's `cursor-pointer` class. Prefer a real
   `<button>` or `<a>` over a clickable `<div>`. shadcn/ui components copied into the
   repo must follow this too, so check their class strings.
+- **Class names:** merge them with `cn()` from `@omnivo/ui` (tailwind-merge extended
+  with our type scale, radius and shadow names), never by string concatenation, so a
+  caller's `className` reliably overrides a component's default.
 - **Transitions:** 150ms for color, border and shadow only. No bounce and no scale.
   Respect `prefers-reduced-motion`.
 - **Focus:** every interactive element shows a visible focus state, either the `brand`
@@ -355,8 +395,13 @@ Tokens live as CSS variables in the global stylesheet. Map them with Tailwind v4
 ```
 
 Use the named utilities (`text-body`, `text-label`, `rounded-control`, `shadow-ring`)
-instead of arbitrary values like `text-[14.5px]`. The full stylesheet lives in
-`apps/app/src/styles.css` (moves to `packages/ui` in step 4).
+instead of arbitrary values like `text-[14.5px]`. From step 4 on, the full stylesheet
+lives in `packages/ui/src/styles.css` (before step 4 is implemented it is still
+`apps/app/src/styles.css`). It does not import Tailwind itself: each app's own
+stylesheet starts with `@import 'tailwindcss';` and then `@import '@omnivo/ui/styles.css';`,
+and the ui stylesheet declares `@source './'` so Tailwind scans the ui components.
+App-specific utilities (such as `auth-grid` for the login page) stay in the app's
+stylesheet.
 
 shadcn/ui's own variables (`--primary`, `--border`, `--ring`, `--muted` and so on)
 must point at these tokens (`--primary: var(--brand)`, `--border: var(--line)`,

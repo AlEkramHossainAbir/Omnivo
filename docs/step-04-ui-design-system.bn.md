@@ -4961,24 +4961,17 @@ module.exports = {
 
 ## ৪.১২ — ডকুমেন্ট হালনাগাদ
 
-**CLAUDE.md** — "If something is missing, extend this section first" নিয়মে:
+**CLAUDE.md** — ইতিমধ্যে হালনাগাদ করা (২০২৬-০৯-২৮, "If something is missing, extend this section first" নিয়মে),
+তাই এই ধাপে হাতে কিছু করতে হবে না। যা যোগ হয়েছে:
 
-- Tailwind wiring-এর শেষ বাক্য: "The full stylesheet lives in `apps/app/src/styles.css` (moves to `packages/ui` in
-  step 4)." → "The full stylesheet lives in `packages/ui/src/styles.css`. Apps import it right after
-  `@import 'tailwindcss'` in their own stylesheet."
-- Components অংশে যোগ:
-  - **Section header:** 15px/600 title + 13px `ink-3` subtitle, no card, directly above a `DataTable` (the table is
-    already a card; never nest it inside another card).
-  - **Data table on phones:** below 860px every table becomes a list of cards. Each column opts in with
-    `meta.card` (`title`, `subtitle`, `trailing`, `detail`); columns without it are hidden on phones.
-  - **Dropdown menu / popover:** `surface`, 1px `line`, radius 10px, `shadow-lg`, 4px padding. Items 13.5px `ink-2`,
-    radius 8px, highlighted `subtle` + `ink`. The selected radio item shows a `brand` `Tick02` icon.
-  - **Money input:** `৳` prefix inside the control, value right-aligned and `tabular-nums`, grouped `18,42,600.50`
-    when not focused. Always ASCII digits inside the input; Bangla digits are accepted while typing.
-  - **Date picker:** the trigger looks exactly like an input with a `Calendar03` icon; the calendar uses a `brand`
-    fill for the selected day and `brand` text for today.
-- Interaction অংশে এক লাইন: "Merge class names with `cn()` from `@omnivo/ui` (tailwind-merge that knows our type
-  scale), never string concatenation."
+- Components: Checkbox-এর টিক আর label, Money input, Date picker, Data table (ফোনে কার্ড, `meta.card`, কার্ডের
+  ভেতরে কার্ড না), Page header, Section header, Empty state, Icon button, Dropdown menu / popover; Sidebar nav-এ
+  `aria-current` আর ফোনের আড়াআড়ি সারি।
+- Content: বাংলায় টাকা আর তারিখের রূপ, টাকা সবসময় decimal string, আর নতুন **Language** নিয়ম (সব লেখা `t()` দিয়ে,
+  আগে `en.ts` পরে `bn.ts`; লগইন/সাইনআপ ধাপ ৫ পর্যন্ত ব্যতিক্রম)।
+- Interaction: class জোড়া শুধু `cn()` দিয়ে।
+- Tailwind wiring: stylesheet-এর জায়গা `packages/ui/src/styles.css` (ধাপ ৪ ইমপ্লিমেন্ট হওয়ার আগে পর্যন্ত
+  `apps/app/src/styles.css`), app-এর `@import` ক্রম আর `@source`।
 
 **COMMANDS.md** — "Checks" অংশে:
 
