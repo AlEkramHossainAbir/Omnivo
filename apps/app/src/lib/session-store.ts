@@ -10,6 +10,8 @@ interface SessionState {
   me: MeResponse | null;
   setAccessToken: (accessToken: string) => void;
   signIn: (me: MeResponse) => void;
+  // লগইনের পরে me-র অংশ বদলালে (কোম্পানির নাম, পছন্দ) — status না ছুঁয়ে
+  setMe: (me: MeResponse) => void;
   signOut: () => void;
 }
 
@@ -23,6 +25,9 @@ export const sessionStore = createStore<SessionState>()((set) => ({
   },
   signIn: (me) => {
     set({ status: 'signed-in', me });
+  },
+  setMe: (me) => {
+    set({ me });
   },
   signOut: () => {
     set({ status: 'signed-out', accessToken: null, me: null });

@@ -1,13 +1,16 @@
+import type { LanguageCode } from '@omnivo/contracts';
 import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import { bn } from './locales/bn.js';
 import { en } from './locales/en.js';
 
+// satisfies: সার্ভারে সেভ হওয়া ভাষা (contracts-এর LANGUAGE_CODES) আর এই তালিকা একই — চুক্তিতে নেই এমন
+// ভাষা এখানে যোগ করলে compile error। import type: runtime-এ contracts লাগে না
 export const LANGUAGES = [
   { code: 'en', label: 'English' },
   { code: 'bn', label: 'বাংলা' },
-] as const;
+] as const satisfies readonly { code: LanguageCode; label: string }[];
 
 export type Language = (typeof LANGUAGES)[number]['code'];
 

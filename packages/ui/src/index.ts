@@ -14,6 +14,7 @@ export {
   type SortingState,
 } from './components/data-table.js';
 export { DatePicker } from './components/date-picker.js';
+export { Dialog, DialogClose, DialogContent, DialogTrigger } from './components/dialog.js';
 export {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,8 +29,13 @@ export { EmptyState } from './components/empty-state.js';
 export {
   Field,
   Input,
+  SelectField,
+  TextAreaField,
   TextField,
   type InputProps,
+  type SelectFieldProps,
+  type SelectOption,
+  type TextAreaFieldProps,
   type TextFieldProps,
 } from './components/field.js';
 export { FormAlert } from './components/form-alert.js';

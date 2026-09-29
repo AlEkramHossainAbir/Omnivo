@@ -77,7 +77,7 @@ Inventory-র স্কিমায় **শুরু থেকেই** batch/lo
 - [ ] `tenant_id` কলাম + RLS policy আছে, index `tenant_id` দিয়ে শুরু
 - [ ] টাকা `NUMERIC(19,4)`, কোডে `decimal.js`
 - [ ] Permission guard লাগানো
-- [ ] Audit log-এ লেখা হচ্ছে
+- [ ] `audit()` একই transaction-এ লিখছে, শুধু বদলানো ঘর
 - [ ] Tenant-leak টেস্ট পাস (টেন্যান্ট A, টেন্যান্ট B-র ID দিয়ে 404 পায়)
 - [ ] মোবাইল viewport-এ কাজ করে (টেবিল → কার্ড)
 - [ ] বাংলা + ইংরেজি দুই ভাষায় লেবেল আছে
@@ -156,7 +156,7 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 | ধাপ | কাজ | ব্যাকএন্ড | ফ্রন্টএন্ড | সময় |
 |---|---|---|---|---|
-| **৬** | সেটিংস ও ভিত্তি | tenant settings (currency, fiscal year, timezone, ভাষা), **numbering series** (`INV-2026-0001`), branches/locations, **audit log interceptor**, attachments (MinIO presigned URL) | Settings পেজ, ব্রাঞ্চ CRUD, Audit log viewer (কে কখন কী বদলাল) | ~২ সপ্তাহ |
+| **৬** | সেটিংস ও ভিত্তি | tenant settings (currency, fiscal year, timezone, ভাষা), **numbering series** (`INV-2026-0001`), branches/locations, **audit()** (বদলের সাথে একই transaction-এ, request-এর id/IP নিজে থেকে), attachments (MinIO presigned URL) | Settings পেজ, ব্রাঞ্চ CRUD, Audit log viewer (কে কখন কী বদলাল), ইউজারের ভাষা/থিম, Playwright e2e (MSW) | ~২ সপ্তাহ |
 | **৭** | ইউজার ও রোল | invite flow, কাস্টম রোল তৈরি, permission matrix API | ইউজার লিস্ট, ইনভাইট মডাল, **permission matrix গ্রিড** (চেকবক্সের ছক) | ~১.৫ সপ্তাহ |
 | **৮** | Queue, Worker, Outbox | `apps/worker/` (BullMQ), `outbox` টেবিল + relay, **idempotent tenant provisioning job**, ইমেইল (Mailpit), notifications | Onboarding wizard (ব্যবসার ধরন বাছাই → ডিফল্ট সেটআপ), in-app notification bell, job status | ~২ সপ্তাহ |
 
@@ -370,7 +370,7 @@ lint → typecheck → unit test → integration test (Testcontainers)
 | **Sync engine গিলে ফেলা** (ধাপ ১৮) | টাইমবক্স করুন। ৬ সপ্তাহ পেরোলে PowerSync/ElectricSQL-এ read-sync অফলোড করুন; write outbox নিজের রাখুন |
 | **পার্টটাইমে গতি হারানো** | প্রতি ধাপ শেষে **একটা দৃশ্যমান জিনিস** — প্রতিটা ধাপের "যা দেখবেন" অংশটাই জ্বালানি |
 | **Scope creep** (নতুন মডিউলের লোভ) | ধাপ ২১-এর আগে কোনো Phase 2 মডিউল ছোঁবেন না |
-| **নতুন টেবিলে RLS ভুলে যাওয়া** | migration লিন্ট: `tenant_id`-ওয়ালা টেবিলে RLS না থাকলে CI fail |
+| **নতুন টেবিলে RLS ভুলে যাওয়া** | rls-coverage টেস্ট (tenant-leak স্যুট): tenant_id-ওয়ালা প্রতিটা টেবিলে FORCE RLS না থাকলে CI fail |
 | **PgBouncer + `SET` বাগ** | ধাপ ২-এ `set_config(..., true)` ছাড়া কিছু লেখা হবে না; PgBouncer transaction mode-এ টেস্ট |
 
 ---

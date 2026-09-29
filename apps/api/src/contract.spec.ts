@@ -95,6 +95,27 @@ describe('error envelope', () => {
   });
 });
 
+describe('CORS', () => {
+  it('lets the app send every method the contract uses, not only GET and POST', async () => {
+    // ব্রাউজার PUT/PATCH-এর আগে এই preflight পাঠায়; উত্তরে method না থাকলে আসল request যায়ই না
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/settings',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'PUT',
+      },
+    });
+    expect(res.statusCode).toBe(204);
+    const allowed = String(res.headers['access-control-allow-methods']).split(/,\s*/);
+    const registry: Record<string, Record<string, RouteDef>> = routes;
+    const used = new Set(
+      Object.values(registry).flatMap((group) => Object.values(group).map((route) => route.method)),
+    );
+    for (const method of used) expect(allowed).toContain(method);
+  });
+});
+
 describe('docs', () => {
   it('serves the OpenAPI document with this server as its base URL', async () => {
     const res = await app.inject({ method: 'GET', url: '/openapi.json' });

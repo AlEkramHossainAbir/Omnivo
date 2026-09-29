@@ -1,6 +1,7 @@
 import { type AuthSession, type LoginInput, routes, type SignUpInput } from '@omnivo/contracts';
 
 import { call, refreshSession } from './api';
+import { applyPreferences } from './preferences';
 import { queryClient } from './query-client';
 import { sessionStore } from './session-store';
 
@@ -10,7 +11,14 @@ async function startSession(session: AuthSession): Promise<void> {
   // আগের ইউজার বা workspace-এর ক্যাশ করা ডেটা (টিম, ইনভয়েস) নতুন session-এ এক মুহূর্তের জন্যও
   // দেখা যাবে না — signIn-এর আগে মোছা, তাই নতুন পেজ খালি ক্যাশ থেকে আনে
   queryClient.clear();
+  // signIn-এর আগে: প্রথম পেজটাই ইউজারের ভাষা আর থিমে আঁকা হয়, এক ঝলক ভুল ভাষায় না
+  await applyPreferences(me.preferences);
   sessionStore.getState().signIn(me);
+}
+
+// কোম্পানির নাম বদলানোর পরে switcher আর সাইডবারে নতুন নাম
+export async function refreshMe(): Promise<void> {
+  sessionStore.getState().setMe(await call(routes.auth.me));
 }
 
 // পেজ reload-এ memory-র টোকেন হারায়; httpOnly cookie দিয়ে নতুন টোকেন আনা।

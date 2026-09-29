@@ -11,6 +11,8 @@ import {
   permissions,
   rolePermissions,
   membershipRoles,
+  branches,
+  tenantSettings,
 } from './schema/index.js';
 
 loadRootEnv();
@@ -99,6 +101,13 @@ async function main() {
       .insert(membershipRoles)
       .values({ tenantId: tenant.id, membershipId: membership.id, roleId: owner.id })
       .onConflictDoNothing();
+
+    // signup-এর provisioning যা দেয় seed-ও তা-ই দেয়: settings রো (ডিফল্ট মান) আর একটা ব্রাঞ্চ
+    await tx.insert(tenantSettings).values({ tenantId: tenant.id }).onConflictDoNothing();
+    await tx
+      .insert(branches)
+      .values({ tenantId: tenant.id, code: 'HO', name: 'Head office' })
+      .onConflictDoNothing({ target: [branches.tenantId, branches.code] });
   });
 
   await client.end();

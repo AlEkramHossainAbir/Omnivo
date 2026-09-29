@@ -1,4 +1,4 @@
-import type { Member, MeResponse } from '@omnivo/contracts';
+import type { Member, MeResponse, Preferences } from '@omnivo/contracts';
 
 // আসল ইন্ডাস্ট্রির উদাহরণ (CLAUDE.md → Content): এক গার্মেন্টস আর এক ফার্মা, একই মালিক দুটোতে
 export const WORKSPACES = [
@@ -14,13 +14,30 @@ const owner = {
   fullName: 'Farhana Rahman',
 };
 
-export function meIn(workspace: Workspace): MeResponse {
+export const OWNER = owner;
+
+// Owner = সব permission (আসল API-র মতো)
+export const OWNER_PERMISSIONS = [
+  'core.audit.read',
+  'core.branch.manage',
+  'core.role.manage',
+  'core.settings.manage',
+  'core.user.invite',
+  'core.user.read',
+];
+
+export function meIn(
+  workspace: Workspace,
+  companyName: string,
+  preferences: Preferences,
+): MeResponse {
   return {
     user: owner,
-    tenant: { id: workspace.tenantId, name: workspace.name, slug: workspace.slug },
+    tenant: { id: workspace.tenantId, name: companyName, slug: workspace.slug },
     roles: ['Owner'],
-    permissions: ['core.role.manage', 'core.user.invite', 'core.user.read'],
+    permissions: OWNER_PERMISSIONS,
     memberships: [...WORKSPACES],
+    preferences,
   };
 }
 

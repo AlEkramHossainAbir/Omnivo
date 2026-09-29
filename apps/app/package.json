@@ -8,12 +8,14 @@
     "dev:mock": "vite --mode mock",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts && tsc --noEmit -p e2e",
     "test": "vitest run --passWithNoTests",
-    "test:bundle-size": "node scripts/check-bundle-size.ts"
+    "test:bundle-size": "node scripts/check-bundle-size.ts",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts"
   },
   "devDependencies": {
     "@omnivo/config": "workspace:*",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.2",
     "@types/react": "^19.3.0",

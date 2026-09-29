@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { errorCode } from './errors.js';
 import { defineRoute } from './http.js';
+import { preferencesSchema } from './preferences.js';
 
 // workspace-এর ঠিকানা হবে `{slug}.omnivo.app` — তাই DNS label-এর নিয়ম মানতে হবে
 const workspaceSlugFormat = z
@@ -45,8 +46,15 @@ const newPasswordSchema = z
   .min(8, errorCode('password_too_short'))
   .max(128, errorCode('password_too_long'));
 
+// সাইনআপ আর সেটিংস দুই জায়গায় একই নিয়ম — কোম্পানির নাম tenants.name-এ বসে
+export const companyNameSchema = z
+  .string()
+  .trim()
+  .min(2, errorCode('company_name_required'))
+  .max(120);
+
 export const signUpInputSchema = z.object({
-  companyName: z.string().trim().min(2, errorCode('company_name_required')).max(120),
+  companyName: companyNameSchema,
   workspaceSlug: newWorkspaceSlugSchema,
   fullName: z.string().trim().min(2, errorCode('full_name_required')).max(120),
   email: emailSchema,
@@ -80,6 +88,7 @@ export const meResponseSchema = z.object({
   roles: z.array(z.string()),
   permissions: z.array(z.string()),
   memberships: z.array(z.object({ tenantId: z.uuid(), name: z.string(), slug: z.string() })),
+  preferences: preferencesSchema,
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 

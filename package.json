@@ -18,6 +18,7 @@
     "boundaries": "depcruise apps packages",
     "test:integration": "turbo run test:integration",
     "test:tenant-leak": "turbo run test:tenant-leak",
+    "test:e2e": "turbo run test:e2e",
     "test:bundle-size": "turbo run test:bundle-size",
     "gen:openapi": "turbo run gen:openapi",
     "test:openapi": "turbo run test:openapi",

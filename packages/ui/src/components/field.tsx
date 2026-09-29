@@ -1,4 +1,4 @@
-import { Alert02Icon } from '@hugeicons/core-free-icons';
+import { Alert02Icon, ArrowDown01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { useLocale } from '@omnivo/i18n';
 import { type ComponentProps, type ReactNode, useId } from 'react';
@@ -127,6 +127,104 @@ export function TextField({ id, label, optional, hint, error, ...input }: TextFi
         aria-describedby={describedBy(fieldId, error, hint)}
         {...input}
       />
+    </Field>
+  );
+}
+
+export interface SelectOption {
+  value: string;
+  label: string;
+}
+
+export interface SelectFieldProps extends Omit<ComponentProps<'select'>, 'className' | 'id'> {
+  label: string;
+  id?: string;
+  options: readonly SelectOption[];
+  icon?: IconSvgElement | undefined;
+  optional?: boolean | undefined;
+  hint?: string | undefined;
+  error?: string | undefined;
+}
+
+// আসল <select>, Radix-এর বানানো না: ফোনে OS-এর নিজের চাকা/তালিকা খোলে (বড়, আঙুলে সহজ), কীবোর্ড আর
+// স্ক্রিন রিডার বিনা খরচে, আর bundle-এ এক লাইনও JS যোগ হয় না। দেখতে Input-এর মতোই বাক্স।
+// register('x', { valueAsNumber: true }) সরাসরি spread করা যায় — সংখ্যার ঘরে string আসে না
+export function SelectField({
+  id,
+  label,
+  options,
+  icon,
+  optional,
+  hint,
+  error,
+  ...select
+}: SelectFieldProps) {
+  const autoId = useId();
+  const fieldId = id ?? select.name ?? autoId;
+  return (
+    <Field id={fieldId} label={label} optional={optional} hint={hint} error={error}>
+      <div className={controlBoxClass(Boolean(error))}>
+        {icon && (
+          <HugeiconsIcon icon={icon} size={17} strokeWidth={1.5} className="shrink-0 text-ink-3" />
+        )}
+        <select
+          id={fieldId}
+          aria-invalid={Boolean(error) || undefined}
+          aria-describedby={describedBy(fieldId, error, hint)}
+          // appearance-none: ব্রাউজারের নিজের তীর মুছে আমাদের আইকন; bg-transparent: dark mode-এ
+          // Windows-এর সাদা বাক্স না
+          className="min-w-0 flex-1 appearance-none bg-transparent py-2.5 text-body outline-none"
+          {...select}
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <HugeiconsIcon
+          icon={ArrowDown01Icon}
+          size={16}
+          strokeWidth={1.5}
+          // pointer-events-none: তীরে ক্লিক করলেও নিচের select খোলে
+          className="pointer-events-none shrink-0 text-ink-3"
+        />
+      </div>
+    </Field>
+  );
+}
+
+export interface TextAreaFieldProps extends Omit<ComponentProps<'textarea'>, 'className' | 'id'> {
+  label: string;
+  id?: string;
+  optional?: boolean | undefined;
+  hint?: string | undefined;
+  error?: string | undefined;
+}
+
+// ঠিকানার মতো কয়েক লাইনের লেখা — Input-এর একই বাক্স, উচ্চতা ৩ লাইন, নিচে টেনে বড় করা যায়
+export function TextAreaField({
+  id,
+  label,
+  optional,
+  hint,
+  error,
+  ...textarea
+}: TextAreaFieldProps) {
+  const autoId = useId();
+  const fieldId = id ?? textarea.name ?? autoId;
+  return (
+    <Field id={fieldId} label={label} optional={optional} hint={hint} error={error}>
+      <div className={cn(controlBoxClass(Boolean(error)), 'items-stretch')}>
+        <textarea
+          id={fieldId}
+          rows={3}
+          aria-invalid={Boolean(error) || undefined}
+          aria-describedby={describedBy(fieldId, error, hint)}
+          className="min-w-0 flex-1 resize-y bg-transparent py-2.5 text-body outline-none placeholder:text-ink-3"
+          {...textarea}
+        />
+      </div>
     </Field>
   );
 }

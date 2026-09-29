@@ -34,6 +34,8 @@
   --elev: 0 1px 2px rgb(16 24 40 / 0.04), 0 8px 24px -6px rgb(16 24 40 / 0.1);
   --elev-lg: 0 2px 4px rgb(16 24 40 / 0.04), 0 24px 48px -12px rgb(16 24 40 / 0.16);
   --focus-ring: 0 0 0 4px rgb(31 71 181 / 0.14);
+  /* dialog-এর পেছনের পর্দা: ink-এর রঙে ৪৫% — পেজ দেখা যায় কিন্তু মনোযোগ dialog-এ */
+  --overlay: rgb(15 23 40 / 0.45);
 }
 
 /* OS dark হলে dark — কিন্তু data-theme="light" থাকলে সেটাই জিতবে */
@@ -63,6 +65,7 @@
     --elev: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -6px rgb(0 0 0 / 0.5);
     --elev-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 24px 48px -12px rgb(0 0 0 / 0.6);
     --focus-ring: 0 0 0 4px rgb(124 156 242 / 0.2);
+    --overlay: rgb(0 0 0 / 0.6);
   }
 }
 
@@ -91,6 +94,7 @@
   --elev: 0 1px 2px rgb(0 0 0 / 0.3), 0 8px 24px -6px rgb(0 0 0 / 0.5);
   --elev-lg: 0 2px 4px rgb(0 0 0 / 0.3), 0 24px 48px -12px rgb(0 0 0 / 0.6);
   --focus-ring: 0 0 0 4px rgb(124 156 242 / 0.2);
+  --overlay: rgb(0 0 0 / 0.6);
 }
 
 /* shadcn/ui-র নিজের নাম আমাদের token-এ পয়েন্ট করা — shadcn থেকে কপি করা component
@@ -137,6 +141,7 @@
   --color-warn-bg: var(--warn-bg);
   --color-crit: var(--crit);
   --color-crit-bg: var(--crit-bg);
+  --color-overlay: var(--overlay);
 
   /* shadcn নাম (উপরের :root দেখুন) */
   --color-background: var(--background);

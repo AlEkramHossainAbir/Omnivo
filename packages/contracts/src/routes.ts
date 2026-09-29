@@ -1,8 +1,14 @@
 import { z } from 'zod';
 
+import { attachmentRoutes } from './attachments.js';
+import { auditRoutes } from './audit.js';
 import { authRoutes } from './auth.js';
+import { branchRoutes } from './branches.js';
 import { defineRoute } from './http.js';
 import { memberRoutes } from './members.js';
+import { numberSeriesRoutes } from './numbering.js';
+import { meRoutes } from './preferences.js';
+import { settingsRoutes } from './settings.js';
 
 export const healthRoutes = {
   check: defineRoute({
@@ -20,5 +26,11 @@ export const healthRoutes = {
 export const routes = {
   health: healthRoutes,
   auth: authRoutes,
+  me: meRoutes,
   members: memberRoutes,
+  settings: settingsRoutes,
+  branches: branchRoutes,
+  numberSeries: numberSeriesRoutes,
+  audit: auditRoutes,
+  attachments: attachmentRoutes,
 };

@@ -3,8 +3,10 @@ import './types.js';
 export { i18n, isLanguage, LANGUAGES, setLanguage, type Language } from './i18n.js';
 export {
   formatDate,
+  formatDateTime,
   formatMoney,
   formatMonth,
+  formatMonthName,
   formatNumber,
   isDecimalString,
   type MoneyFormatOptions,

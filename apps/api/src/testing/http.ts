@@ -1,5 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { authSessionSchema, type SignUpInput } from '@omnivo/contracts';
+import { authSessionSchema, type LoginInput, type SignUpInput } from '@omnivo/contracts';
 import { expect } from 'vitest';
 
 type InjectResponse = Awaited<ReturnType<NestFastifyApplication['inject']>>;
@@ -29,4 +29,10 @@ export async function signUp(app: NestFastifyApplication, input: SignUpInput): P
 
 export function bearer(accessToken: string): { authorization: string } {
   return { authorization: `Bearer ${accessToken}` };
+}
+
+export async function logIn(app: NestFastifyApplication, input: LoginInput): Promise<SignedIn> {
+  const response = await app.inject({ method: 'POST', url: '/auth/login', payload: input });
+  expect(response.statusCode).toBe(200);
+  return sessionOf(response);
 }

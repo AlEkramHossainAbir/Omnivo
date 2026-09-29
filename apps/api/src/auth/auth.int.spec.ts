@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { Auth } from '@omnivo/auth';
 import { meResponseSchema, problemSchema, type SignUpInput } from '@omnivo/contracts';
+import { PERMISSIONS } from '@omnivo/db';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -85,7 +86,8 @@ describe('sign-up', () => {
     expect(me.user.email).toBe(rahman.email);
     expect(me.tenant.slug).toBe(rahman.workspaceSlug);
     expect(me.roles).toEqual(['Owner']);
-    expect(me.permissions).toEqual(['core.role.manage', 'core.user.invite', 'core.user.read']);
+    // Owner = catalog-এর সব permission; তালিকা হাতে লিখলে প্রতিটা নতুন permission-এ এই টেস্ট ভাঙত
+    expect(me.permissions).toEqual(PERMISSIONS.map((permission) => permission.key).sort());
     expect(me.memberships).toHaveLength(1);
   });
 

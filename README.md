@@ -151,6 +151,8 @@ pnpm db:migrate
 pnpm dev          # API + app + package watchers via turbo
 ```
 
+`.env` needs the `S3_*` lines from `.env.example` (step 6).
+
 Once `pnpm dev` is running:
 
 | What | URL | Notes |
@@ -160,6 +162,7 @@ Once `pnpm dev` is running:
 | API docs | http://localhost:3000/docs | Scalar UI, generated from the `@omnivo/contracts` route registry. Dev and test only, never served in production |
 | OpenAPI spec | http://localhost:3000/openapi.json | The same spec is committed at `packages/contracts/openapi.json` (`pnpm gen:openapi` rewrites it) |
 | Kitchen sink | http://localhost:5173/kitchen-sink | Every shared UI component. Dev only, needs a signed-in user |
+| MinIO console | http://localhost:9001 | `omnivo` / `omnivo-dev-secret`. Uploaded files are under the `omnivo` bucket, `tenants/<tenant-id>/…` |
 
 To work on the UI without the API, Postgres or Docker, run `pnpm dev:mock` (the app on MSW
 mocks). [COMMANDS.md](COMMANDS.md) lists every command.

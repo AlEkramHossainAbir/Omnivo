@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
-import { syncPermissions } from '@omnivo/db';
+import { grantOwnerPermissions, syncPermissions } from '@omnivo/db';
 
 // src/testing → src → api → apps → repo root
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -42,6 +42,7 @@ export async function startPostgres(): Promise<TestPostgres> {
   const migratorDb = drizzle(migratorClient);
   await migrate(migratorDb, { migrationsFolder: path.join(repoRoot, 'packages/db/migrations') });
   await syncPermissions(migratorDb);
+  await grantOwnerPermissions(migratorDb);
   await migratorClient.end();
 
   return {
@@ -65,5 +66,25 @@ export async function startRedis(): Promise<TestRedis> {
   return {
     container,
     url: `redis://${container.getHost()}:${String(container.getMappedPort(6379))}`,
+  };
+}
+
+export interface TestStorage {
+  container: StartedTestContainer;
+  url: string;
+}
+
+// docker-compose-এর storage সার্ভিসের একই image আর চাবি। bucket বানায় API নিজেই
+// (StorageService.onApplicationBootstrap), ঠিক `pnpm dev`-এর মতো
+export async function startStorage(): Promise<TestStorage> {
+  const container = await new GenericContainer('quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z')
+    .withCommand(['server', '/data'])
+    .withEnvironment({ MINIO_ROOT_USER: 'omnivo', MINIO_ROOT_PASSWORD: 'omnivo-dev-secret' })
+    .withExposedPorts(9000)
+    .withWaitStrategy(Wait.forHttp('/minio/health/ready', 9000))
+    .start();
+  return {
+    container,
+    url: `http://${container.getHost()}:${String(container.getMappedPort(9000))}`,
   };
 }

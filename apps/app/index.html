@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Omnivo</title>
+    <!-- প্রথম রং আঁকার আগেই থিম: React লোড হতে কয়েকশো ms লাগে, ততক্ষণ dark বাছাই করা ইউজার সাদা পেজ
+         দেখত। key আর মান src/lib/theme.ts-এর সাথে এক -->
+    <script>
+      try {
+        var theme = localStorage.getItem('omnivo.theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch (error) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

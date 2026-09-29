@@ -87,3 +87,46 @@ const MONTH = {
 export function formatMonth(date: Date, language: Language): string {
   return MONTH[language].format(date);
 }
+
+const dateTimeFormats = new Map<string, Intl.DateTimeFormat>();
+
+// audit log-এর "কখন": টেন্যান্টের টাইমজোনে, ব্রাউজারের না — ঢাকার অফিসের ঘটনা দুবাই থেকে দেখলেও
+// ঢাকার সময় দেখায়, যাতে ফোনে "৪টার সময় কে বদলেছিল" কথাটা সবার কাছে একই মানে রাখে
+function dateTimeFormat(language: Language, timeZone: string): Intl.DateTimeFormat {
+  const key = `${language}:${timeZone}`;
+  let format = dateTimeFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(language === 'bn' ? 'bn-BD' : 'en-US', {
+      timeZone,
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    });
+    dateTimeFormats.set(key, format);
+  }
+  return format;
+}
+
+// "23 Sep 2026, 16:05" / "২৩ সেপ, ২০২৬, ১৬:০৫" — formatDate-এর একই ছাঁদ, পেছনে ২৪ ঘণ্টার সময়
+export function formatDateTime(date: Date, language: Language, timeZone: string): string {
+  const parts = dateTimeFormat(language, timeZone).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  const day =
+    language === 'bn' ? `${part('day')} ${part('month')},` : `${part('day')} ${part('month')}`;
+  return `${day} ${part('year')}, ${part('hour')}:${part('minute')}`;
+}
+
+const MONTH_NAME = {
+  en: new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' }),
+  bn: new Intl.DateTimeFormat('bn-BD', { month: 'long', timeZone: 'UTC' }),
+} satisfies Record<Language, Intl.DateTimeFormat>;
+
+// ১–১২ → "July" / "জুলাই" (অর্থবছরের শুরু বাছার তালিকা)। UTC-তে: ১ তারিখ মধ্যরাত স্থানীয় সময়ে
+// আগের মাসে পড়ে যেতে পারত (UTC-র পশ্চিমে)
+export function formatMonthName(month: number, language: Language): string {
+  return MONTH_NAME[language].format(Date.UTC(2026, month - 1, 1));
+}

@@ -3,8 +3,10 @@ import { useTranslation } from 'react-i18next';
 
 import {
   formatDate,
+  formatDateTime,
   formatMoney,
   formatMonth,
+  formatMonthName,
   formatNumber,
   type MoneyFormatOptions,
 } from './format.js';
@@ -34,6 +36,8 @@ export function useLocale() {
         formatNumber(value, language, decimals),
       date: (date: Date) => formatDate(date, language),
       month: (date: Date) => formatMonth(date, language),
+      dateTime: (date: Date, timeZone: string) => formatDateTime(date, language, timeZone),
+      monthName: (month: number) => formatMonthName(month, language),
     }),
     [language],
   );

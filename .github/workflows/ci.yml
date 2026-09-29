@@ -41,6 +41,12 @@ jobs:
       - name: Tenant leak tests
         run: pnpm test:tenant-leak
 
+      - name: Install Playwright browser
+        run: pnpm --filter @omnivo/app exec playwright install --with-deps chromium
+
+      - name: E2E (Playwright on MSW mocks)
+        run: pnpm test:e2e
+
       - name: Build
         run: pnpm build
 

@@ -1,12 +1,17 @@
 import {
   DashboardSquare01Icon,
   LayoutGridIcon,
+  LeftToRightListNumberIcon,
   Logout01Icon,
+  Settings02Icon,
+  Store01Icon,
   UnfoldMoreIcon,
   UserCircleIcon,
+  WorkHistoryIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { isLanguage, LANGUAGES, setLanguage, useLocale } from '@omnivo/i18n';
+import { THEMES } from '@omnivo/contracts';
+import { isLanguage, LANGUAGES, useLocale } from '@omnivo/i18n';
 import {
   AppShell as Shell,
   DropdownMenu,
@@ -27,8 +32,10 @@ import {
 import { createLink, Outlet, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
+import { savePreference } from '../lib/preferences';
 import { logout, switchTenant } from '../lib/session';
 import { useSession } from '../lib/session-store';
+import { isTheme } from '../lib/theme';
 
 // ui-র সাধারণ <a> → TanStack-এর টাইপ-চেকড লিংক: to="/kitchn-sink" লিখলে compile error,
 // আর সক্রিয় রুটে Link নিজেই aria-current="page" বসায়
@@ -133,20 +140,36 @@ function WorkspaceSwitcher() {
 // ডেস্কটপের সাইডবার-তলা আর ফোনের টপ বার — দুই trigger, একই মেনু
 function UserMenuContent({ align }: { align: 'start' | 'end' }) {
   const { t, language } = useLocale();
+  const theme = useSession((state) => state.me?.preferences.theme ?? 'system');
   return (
     <DropdownMenuContent align={align}>
       <DropdownMenuLabel>{t('common.language')}</DropdownMenuLabel>
       <DropdownMenuRadioGroup
         value={language}
         onValueChange={(value) => {
-          // Radix মান দেয় string হিসেবে — type guard দিয়ে Language-এ নামানো, cast না
-          if (isLanguage(value)) void setLanguage(value);
+          // Radix মান দেয় string হিসেবে — type guard দিয়ে Language-এ নামানো, cast না।
+          // এই ডিভাইসে সাথে সাথে, আর অ্যাকাউন্টে সেভ — অন্য ফোন/ল্যাপটপে লগইন করলেও একই ভাষা
+          if (isLanguage(value)) void savePreference({ language: value });
         }}
       >
         {LANGUAGES.map((option) => (
           // lang: স্ক্রিন রিডার "বাংলা" বাংলা উচ্চারণে পড়ে
           <DropdownMenuRadioItem key={option.code} value={option.code} lang={option.code}>
             {option.label}
+          </DropdownMenuRadioItem>
+        ))}
+      </DropdownMenuRadioGroup>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>{t('shell.theme')}</DropdownMenuLabel>
+      <DropdownMenuRadioGroup
+        value={theme}
+        onValueChange={(value) => {
+          if (isTheme(value)) void savePreference({ theme: value });
+        }}
+      >
+        {THEMES.map((option) => (
+          <DropdownMenuRadioItem key={option} value={option}>
+            {t(`shell.themes.${option}`)}
           </DropdownMenuRadioItem>
         ))}
       </DropdownMenuRadioGroup>
@@ -168,6 +191,8 @@ export function AppShell() {
   const navigate = useNavigate();
   const status = useSession((state) => state.status);
   const me = useSession((state) => state.me);
+  // লুকানো শুধু সুবিধা — আসল পাহারা API-র PermissionGuard। যেটা খুললেই 403, সেটা মেনুতে না দেখানো
+  const can = (permission: string) => me?.permissions.includes(permission) ?? false;
 
   // refresh ব্যর্থ হলে (session শেষ, অন্য ট্যাবে লগআউট) api.ts store-এ signed-out বসায়
   useEffect(() => {
@@ -198,6 +223,24 @@ export function AppShell() {
                 {t('nav.kitchenSink')}
               </NavLink>
             )}
+          </NavGroup>
+          <NavGroup label={t('nav.workspace')}>
+            <NavLink to="/branches" icon={Store01Icon}>
+              {t('nav.branches')}
+            </NavLink>
+            {can('core.settings.manage') && (
+              <NavLink to="/numbering" icon={LeftToRightListNumberIcon}>
+                {t('nav.numbering')}
+              </NavLink>
+            )}
+            {can('core.audit.read') && (
+              <NavLink to="/audit-log" icon={WorkHistoryIcon}>
+                {t('nav.auditLog')}
+              </NavLink>
+            )}
+            <NavLink to="/settings" icon={Settings02Icon}>
+              {t('nav.settings')}
+            </NavLink>
           </NavGroup>
         </SidebarNav>
       }

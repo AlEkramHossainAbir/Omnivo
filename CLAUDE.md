@@ -134,6 +134,7 @@ only the tokens in components, never raw hex values.
 | `good` / `good-bg` | `#0A7A4B` / `#ECF8F1` | `#4CC98F` / `#0E2A1E` | Success, active, synced, positive change |
 | `warn` / `warn-bg` | `#B25E09` / `#FEF6E7` | `#F2B35A` / `#2C2211` | Pending, delayed sync, attention |
 | `crit` / `crit-bg` | `#B42318` / `#FEF1F0` | `#F4837A` / `#321614` | Errors, failed payment, overdue, destructive |
+| `overlay` | `rgb(15 23 40 / .45)` | `rgb(0 0 0 / .6)` | Dialog backdrop only |
 
 Rules:
 - Status colors (`good`/`warn`/`crit`) are semantic only. Never use them as a second
@@ -275,6 +276,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   padding (12px for a popover). Items are 13.5px `ink-2`, radius 8px, highlighted
   (hover or keyboard) `subtle` with `ink` text. Group labels are 12px/500 `ink-3`. The
   selected radio item shows a `brand` `Tick02` icon.
+- **Dialog:** `surface`, 1px `line`, radius 14px, `shadow-lg`, max-width 520px, padding 24px (18px on phones),
+  16px from the screen edges on phones and scrolls inside when tall. The backdrop is `overlay`, no blur. Header is
+  the card header (15px/600 title, 13px `ink-3` description) with a Close icon button; the footer is a right-aligned
+  button row above a 1px `line` rule, destructive or secondary actions pushed left. No animation.
+- **Select:** a native `<select>` inside the input box (same height, border, radius, focus), with an `ArrowDown01`
+  icon in `ink-3` on the right. Use it for fixed lists (currency, month, time zone); use a dropdown menu for actions.
+- **Text area:** the input box, three rows tall, resizes vertically only.
 - **Stepper (wizards):** numbered 26px circles, which is valid because the steps are a
   real sequence. The current step has a `brand` border and ring. Done steps are filled
   `brand` with a `Tick02` icon.

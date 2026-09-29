@@ -10,6 +10,7 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
+import type { Theme } from '@omnivo/contracts';
 import { isLanguage, LANGUAGES, setLanguage, useLocale } from '@omnivo/i18n';
 import {
   Button,
@@ -36,6 +37,8 @@ import {
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
+
+import { applyTheme, currentTheme } from '../lib/theme';
 
 // শুধু dev-এ (router.tsx দেখুন) — তাই এই পেজের নিজের লেখা ইংরেজিতেই; ভাষা বদলালে
 // component-এর নিজের লেখা, তারিখ, টাকা আর ক্যালেন্ডার কীভাবে বদলায় সেটা দেখাই উদ্দেশ্য
@@ -245,23 +248,16 @@ function LetterOfCreditForm() {
   );
 }
 
-type Theme = 'system' | 'light' | 'dark';
-
-const THEMES = [
+const THEME_OPTIONS = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
 ] as const;
 
-// CLAUDE.md: data-theme OS-এর পছন্দকে দুই দিকেই হারায়; না থাকলে prefers-color-scheme
-function applyTheme(theme: Theme): void {
-  if (theme === 'system') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.dataset.theme = theme;
-}
-
 export function KitchenSinkPage() {
   const { language, format } = useLocale();
-  const [theme, setTheme] = useState<Theme>('system');
+  // শুধু এই ডিভাইসে দেখার জন্য — অ্যাকাউন্টে সেভ হয় user মেনু থেকে (savePreference)
+  const [theme, setTheme] = useState<Theme>(currentTheme);
   const today = new Date();
 
   return (
@@ -274,7 +270,7 @@ export function KitchenSinkPage() {
             <SegmentedControl
               label="Theme"
               value={theme}
-              options={THEMES}
+              options={THEME_OPTIONS}
               onChange={(next) => {
                 setTheme(next);
                 applyTheme(next);

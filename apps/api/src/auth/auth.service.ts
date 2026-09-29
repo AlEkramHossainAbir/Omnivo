@@ -8,19 +8,29 @@ import {
   type Principal,
   type RefreshGrant,
 } from '@omnivo/auth';
-import type { LoginInput, MeResponse, SignUpInput } from '@omnivo/contracts';
+import type {
+  LoginInput,
+  MeResponse,
+  Preferences,
+  SignUpInput,
+  UpdatePreferencesInput,
+} from '@omnivo/contracts';
 import {
   type Db,
   OWNER_ROLE_NAME,
+  branches,
   membershipRoles,
   memberships,
   permissions,
   rolePermissions,
   roles,
+  tenantSettings,
   tenants,
   users,
 } from '@omnivo/db';
 
+import { audit, created } from '../common/audit/audit.js';
+import { isUniqueViolation } from '../common/db/pg-errors.js';
 import { AppError } from '../common/http/app-error.js';
 import { runWithTenant } from '../common/tenant/tenant-context.js';
 import { setTenantContext, type WithTenant } from '../common/tenant/with-tenant.js';
@@ -41,21 +51,6 @@ function workspaceTaken(slug: string): AppError {
 
 function sessionEnded(): AppError {
   return new AppError(401, 'session_ended', 'The session has ended. Sign in again.');
-}
-
-// drizzle Postgres error-কে DrizzleQueryError-এ মুড়ে দেয়; আসল কোড থাকে .cause-এ
-function isUniqueViolation(error: unknown, constraint: string): boolean {
-  for (let current: unknown = error; current instanceof Error; current = current.cause) {
-    if (
-      'code' in current &&
-      current.code === '23505' &&
-      'constraint_name' in current &&
-      current.constraint_name === constraint
-    ) {
-      return true;
-    }
-  }
-  return false;
 }
 
 @Injectable()
@@ -147,6 +142,13 @@ export class AuthService {
       );
     }
 
+    await this.recordInTenant(tenant.id, {
+      action: 'auth.signed_in',
+      entityType: 'user',
+      entityId: identity.userId,
+      actorUserId: identity.userId,
+    });
+
     return this.auth.issueTokens({
       sessionId: identity.sessionId,
       sessionExpiresAt: identity.sessionExpiresAt,
@@ -191,6 +193,14 @@ export class AuthService {
       throw sessionEnded();
     }
 
+    // যে workspace-এ ঢুকল তার audit-এ — সেই কোম্পানির মালিক দেখবে কে কখন এসেছিল
+    await this.recordInTenant(tenantId, {
+      action: 'auth.switched_in',
+      entityType: 'user',
+      entityId: principal.userId,
+      actorUserId: principal.userId,
+    });
+
     return this.reissue({
       sessionId: grant.sessionId,
       sessionExpiresAt: grant.sessionExpiresAt,
@@ -204,7 +214,13 @@ export class AuthService {
 
   async me(principal: Principal): Promise<MeResponse> {
     const [user] = await this.db
-      .select({ id: users.id, email: users.email, fullName: users.fullName })
+      .select({
+        id: users.id,
+        email: users.email,
+        fullName: users.fullName,
+        language: users.language,
+        theme: users.theme,
+      })
       .from(users)
       .where(eq(users.id, principal.userId));
     const [tenant] = await this.db
@@ -232,12 +248,38 @@ export class AuthService {
     const granted = await this.permissionService.forPrincipal(principal);
 
     return {
-      user,
+      user: { id: user.id, email: user.email, fullName: user.fullName },
       tenant,
       roles: [...principal.roles],
       permissions: [...granted].sort(),
       memberships: workspaces,
+      preferences: { language: user.language, theme: user.theme },
     };
+  }
+
+  // users-এ RLS নেই (global টেবিল) — তাই শুধু টোকেনের userId-র রো, body থেকে কোনো id নেওয়া হয় না
+  async updatePreferences(
+    principal: Principal,
+    input: UpdatePreferencesInput,
+  ): Promise<Preferences> {
+    const [row] = await this.db
+      .update(users)
+      .set({
+        // exactOptionalPropertyTypes: না পাঠানো ফিল্ড undefined-ও না, একেবারে নেই — তাই drizzle
+        // সেই কলাম ছোঁয় না। ভাষা বদলালে থিম অক্ষত থাকে
+        ...(input.language !== undefined && { language: input.language }),
+        ...(input.theme !== undefined && { theme: input.theme }),
+        updatedBy: principal.userId,
+      })
+      .where(eq(users.id, principal.userId))
+      .returning({ language: users.language, theme: users.theme });
+    if (!row) throw sessionEnded();
+    return row;
+  }
+
+  // public রুট (লগইন) বা অন্য টেন্যান্টে (switch) — তখনো ALS-এ ঠিক টেন্যান্ট বসিয়ে audit
+  private recordInTenant(tenantId: string, event: Parameters<typeof audit>[1]): Promise<void> {
+    return runWithTenant(tenantId, () => this.withTenant((tx) => audit(tx, event)));
   }
 
   private async rotate(refreshToken: string | undefined): Promise<RefreshGrant> {
@@ -351,6 +393,21 @@ export class AuthService {
         membershipId: membership.id,
         roleId: owner.id,
         createdBy: userId,
+      });
+
+      // settings রো (বাকি সব DB-র ডিফল্ট: BDT, জুলাই, Asia/Dhaka) আর একটা ব্রাঞ্চ — প্রতিটা
+      // workspace-এ অন্তত একটা চালু ব্রাঞ্চ থাকে, archive-এর নিয়ম সেটা ধরে রাখে (branches.service.ts)
+      await tx.insert(tenantSettings).values({ tenantId: tenant.id, updatedBy: userId });
+      await tx
+        .insert(branches)
+        .values({ tenantId: tenant.id, code: 'HO', name: 'Head office', createdBy: userId });
+
+      await audit(tx, {
+        action: 'workspace.created',
+        entityType: 'workspace',
+        entityId: tenant.id,
+        actorUserId: userId,
+        changes: created({ name: input.companyName, slug: input.workspaceSlug }),
       });
 
       return { tenantId: tenant.id, membershipId: membership.id, roles: [OWNER_ROLE_NAME] };

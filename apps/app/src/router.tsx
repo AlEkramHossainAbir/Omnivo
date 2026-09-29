@@ -57,6 +57,30 @@ const dashboardRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/dashboard'), 'DashboardPage'),
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/settings',
+  component: lazyRouteComponent(() => import('./routes/settings'), 'SettingsPage'),
+});
+
+const numberingRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/numbering',
+  component: lazyRouteComponent(() => import('./routes/numbering'), 'NumberingPage'),
+});
+
+const branchesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/branches',
+  component: lazyRouteComponent(() => import('./routes/branches'), 'BranchesPage'),
+});
+
+const auditLogRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/audit-log',
+  component: lazyRouteComponent(() => import('./routes/audit-log'), 'AuditLogPage'),
+});
+
 // শুধু `pnpm dev`-এ। production build-এ Vite import.meta.env.DEV-কে false বসায়, minifier পুরো
 // শাখা মুছে দেয় — import() হারায়, তাই kitchen-sink-এর chunk তৈরিই হয় না
 const devRoutes = import.meta.env.DEV
@@ -72,7 +96,14 @@ const devRoutes = import.meta.env.DEV
 const routeTree = rootRoute.addChildren([
   loginRoute,
   signUpRoute,
-  appRoute.addChildren([dashboardRoute, ...devRoutes]),
+  appRoute.addChildren([
+    dashboardRoute,
+    settingsRoute,
+    numberingRoute,
+    branchesRoute,
+    auditLogRoute,
+    ...devRoutes,
+  ]),
 ]);
 
 export const router = createRouter({ routeTree });

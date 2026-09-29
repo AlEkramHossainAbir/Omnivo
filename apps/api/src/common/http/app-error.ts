@@ -25,3 +25,18 @@ export class AppError extends Error {
     this.options = options;
   }
 }
+
+// id দিয়ে খোঁজা রো নেই — অথবা অন্য টেন্যান্টের (RLS সেটা লুকায়)। দুটোই একই 404: "অন্য কোম্পানির এই id
+// আছে" সেটুকুও বাইরে জানানো হয় না
+export function notFound(what: string): AppError {
+  return new AppError(404, 'not_found', `${what} not found.`);
+}
+
+// optimistic locking: ফর্ম খোলার পরে কেউ রো-টা বদলেছে
+export function versionConflict(): AppError {
+  return new AppError(
+    409,
+    'version_conflict',
+    'The record changed after it was loaded. Reload it and try again.',
+  );
+}

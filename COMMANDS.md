@@ -34,6 +34,8 @@ important commands come up.
    - Kitchen sink (every shared ui component, both themes and languages):
      http://localhost:5173/kitchen-sink — only in `pnpm dev`, needs a signed-in user
    - API docs (Scalar, from the contract registry): http://localhost:3000/docs — dev only
+   - MinIO console: http://localhost:9001 (omnivo / omnivo-dev-secret) — uploaded files are under the
+     omnivo bucket, tenants/<tenant-id>/…
 
    To run the app alone, without the API, Postgres or Docker:
 
@@ -83,6 +85,8 @@ pnpm format     # prettier --check .
 pnpm test       # vitest unit tests across all workspaces (no Docker needed)
 pnpm test:integration # API integration tests on Testcontainers (Docker must be running)
 pnpm test:tenant-leak # RLS + HTTP-level tenant isolation tests (Docker must be running)
+pnpm test:e2e     # Playwright on the MSW mocks, desktop + 390px — no API or Docker needed
+pnpm --filter @omnivo/app exec playwright install chromium   # once per machine, before the first test:e2e
 pnpm build      # build every package and app
 pnpm test:bundle-size # build the app, then fail if first-load JS > 200 KB gz or a route chunk > 100 KB gz
 pnpm boundaries # dependency-cruiser on apps/packages

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, formatMoney, formatMonth, formatNumber } from './format.js';
+import {
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  formatMonth,
+  formatMonthName,
+  formatNumber,
+} from './format.js';
 
 describe('formatMoney', () => {
   it('uses lakh/crore grouping with a leading taka sign', () => {
@@ -49,5 +56,21 @@ describe('dates', () => {
   it('writes periods as month and year', () => {
     expect(formatMonth(date, 'en')).toBe('September 2026');
     expect(formatMonth(date, 'bn')).toBe('সেপ্টেম্বর ২০২৬');
+  });
+});
+
+describe('formatDateTime', () => {
+  it("shows the moment in the workspace's time zone, not the browser's", () => {
+    const moment = new Date('2026-09-23T10:05:00Z');
+    expect(formatDateTime(moment, 'en', 'Asia/Dhaka')).toBe('23 Sep 2026, 16:05');
+    expect(formatDateTime(moment, 'en', 'UTC')).toBe('23 Sep 2026, 10:05');
+    expect(formatDateTime(moment, 'bn', 'Asia/Dhaka')).toBe('২৩ সেপ, ২০২৬, ১৬:০৫');
+  });
+});
+
+describe('formatMonthName', () => {
+  it('names the month in both languages', () => {
+    expect(formatMonthName(7, 'en')).toBe('July');
+    expect(formatMonthName(7, 'bn')).toBe('জুলাই');
   });
 });

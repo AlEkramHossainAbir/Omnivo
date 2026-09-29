@@ -9,4 +9,7 @@ coverage/
 .env.*
 !.env.example
 .DS_Store
+# Playwright-এর fail-এর রেকর্ড (trace, screenshot) — প্রতিটা রানে নতুন
+test-results/
+playwright-report/
 *.log

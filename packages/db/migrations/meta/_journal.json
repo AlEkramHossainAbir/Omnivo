@@ -50,6 +50,20 @@
       "when": 1790505570332,
       "tag": "0006_drop-users-password-hash",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790674503927,
+      "tag": "0007_core-platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790674511978,
+      "tag": "0008_core-platform-rls",
+      "breakpoints": true
     }
   ]
 }
