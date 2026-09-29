@@ -5,6 +5,7 @@ import {
   type Column,
   createColumnHelper,
   createSortedRowModel,
+  functionalUpdate,
   type Header,
   metaHelper,
   type ReactTable,
@@ -14,12 +15,20 @@ import {
   sortFn_alphanumeric,
   sortFn_basic,
   sortFn_text,
+  type SortingState,
   type TableOptions,
   tableFeatures,
   useTable,
 } from '@tanstack/react-table';
 import { useVirtualizer, useWindowVirtualizer } from '@tanstack/react-virtual';
-import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import { cn } from '../lib/cn.js';
 import { DESKTOP_QUERY, useMediaQuery } from '../lib/use-media-query.js';
@@ -43,6 +52,9 @@ export const dataTableFeatures = tableFeatures({
 
 type Features = typeof dataTableFeatures;
 
+// app-কে TanStack Table সরাসরি import করতে হয় না — sort-এর অবস্থা [{ id, desc }]
+export type { SortingState };
+
 // app-এ column লেখার helper: accessor-এর key আর মানের টাইপ TData থেকে আসে
 export function dataTableColumns<TData extends RowData>() {
   return createColumnHelper<Features, TData>();
@@ -64,7 +76,17 @@ interface DataTableProps<TData extends RowData> {
   maxHeight?: number;
   // নিচে "10,000 rows" — বড় তালিকায় কাজের, ৩ জনের টিমে শুধু গোলমাল
   showCount?: boolean;
+  // সার্ভার সাজায়: পাতায় পাতায় আসা তালিকার পুরোটা ক্লায়েন্টে নেই, তাই নিজে sort করলে শুধু আনা
+  // রো-গুলো সাজাত — ভুল ফল। দিলে টেবিল নিজে sort করে না, শুধু হেডারের ক্লিক জানায়
+  sorting?: { state: SortingState; onChange: (next: SortingState) => void } | undefined;
+  // শেষ রো-র কাছে scroll পৌঁছালে — পরের পাতা আনার সংকেত (infinite scroll)
+  onEndReached?: (() => void) | undefined;
+  // তালিকার নিচে, যেমন "Loading more…"
+  footer?: ReactNode;
 }
+
+// শেষ রো-র এতগুলো আগে থেকেই পরের পাতা চাওয়া — ব্যবহারকারী তলায় পৌঁছানোর আগেই ডেটা এসে যায়
+const END_THRESHOLD = 10;
 
 // টেবিল নিজেই একটা কার্ড (border, কোণ, ছায়া) — তাই আরেকটা Card-এর ভেতরে না বসিয়ে
 // section শিরোনামের নিচে সরাসরি বসান, নাহলে কার্ডের ভেতরে কার্ড হয় (CLAUDE.md: সব কিছু কার্ড না)
@@ -77,6 +99,9 @@ export function DataTable<TData extends RowData>({
   onRowClick,
   maxHeight = 560,
   showCount = false,
+  sorting,
+  onEndReached,
+  footer,
 }: DataTableProps<TData>) {
   const { t, format } = useLocale();
   const table = useTable({
@@ -84,6 +109,16 @@ export function DataTable<TData extends RowData>({
     data,
     columns,
     getRowId: (row) => getRowId(row),
+    ...(sorting && {
+      manualSorting: true,
+      // সার্ভার সবসময় কোনো না কোনো ক্রমে দেয়, তাই তৃতীয় ক্লিকে "sort নেই" অবস্থা মিথ্যা হতো
+      enableSortingRemoval: false,
+      state: { sorting: sorting.state },
+      // TanStack মান বা updater-ফাংশন দুটোই পাঠাতে পারে — functionalUpdate দুটোকেই মান বানায়
+      onSortingChange: (updater) => {
+        sorting.onChange(functionalUpdate(updater, sorting.state));
+      },
+    }),
   });
   // দুই রকম DOM (টেবিল আর কার্ড), কারণ virtualizer-কে মাপার জন্য আসল দৃশ্যমান element লাগে —
   // CSS দিয়ে একটা লুকালে লুকানোটার উচ্চতা ০, virtualizer ভুল হিসাব করত
@@ -101,10 +136,18 @@ export function DataTable<TData extends RowData>({
           label={label}
           maxHeight={maxHeight}
           onRowClick={onRowClick}
+          onEndReached={onEndReached}
         />
       ) : (
-        <MobileCards rows={rows} table={table} label={label} onRowClick={onRowClick} />
+        <MobileCards
+          rows={rows}
+          table={table}
+          label={label}
+          onRowClick={onRowClick}
+          onEndReached={onEndReached}
+        />
       )}
+      {footer}
       {showCount && (
         <p className="text-caption text-ink-3">
           {t('ui.dataTable.rowCount', {
@@ -137,6 +180,22 @@ interface ViewProps<TData extends RowData> {
   rows: Row<Features, TData>[];
   label: string;
   onRowClick: ((row: TData) => void) | undefined;
+  onEndReached: (() => void) | undefined;
+}
+
+// virtualizer যে শেষ রো-টা আঁকছে সেটা তালিকার শেষের কাছে হলে onEndReached। scroll event না শুনে
+// virtual item-এর index দেখা — virtualizer এটা এমনিতেই হিসাব করে, আর প্রথম পাতা পর্দার চেয়ে ছোট
+// হলে scroll ছাড়াই পরের পাতা চায়
+function useEndReached(
+  lastIndex: number | undefined,
+  rowCount: number,
+  onEndReached: (() => void) | undefined,
+): void {
+  useEffect(() => {
+    if (onEndReached && lastIndex !== undefined && lastIndex >= rowCount - 1 - END_THRESHOLD) {
+      onEndReached();
+    }
+  }, [lastIndex, rowCount, onEndReached]);
 }
 
 // টেবিলের প্রতিটা রো প্রায় এত উঁচু: 13.5px × 1.45 লাইন + 24px padding + 1px রেখা
@@ -148,6 +207,7 @@ function DesktopTable<TData extends RowData>({
   label,
   maxHeight,
   onRowClick,
+  onEndReached,
 }: ViewProps<TData> & { maxHeight: number }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const virtualizer = useVirtualizer({
@@ -159,6 +219,7 @@ function DesktopTable<TData extends RowData>({
     overscan: 10,
   });
   const items = virtualizer.getVirtualItems();
+  useEndReached(items.at(-1)?.index, rows.length, onEndReached);
   // শুধু দৃশ্যমান রো DOM-এ; উপরে-নিচে ফাঁকা রো দিয়ে মোট উচ্চতা ঠিক রাখা, তাই scrollbar সঠিক।
   // <table> রাখা হয়েছে (div-grid না): কলামের চওড়া ব্রাউজার নিজে মেলায়, স্ক্রিন রিডারও টেবিল চেনে
   const paddingTop = items[0]?.start ?? 0;
@@ -298,7 +359,13 @@ function HeaderCell<TData extends RowData>({
 
 // ফোনের কার্ড-তালিকা পুরো পেজের scroll ব্যবহার করে (window virtualizer): ফোনে বাক্সের ভেতরে
 // আলাদা scroll আঙুলে আটকে যায়, আর পেজের scroll-এর সাথে লড়াই করে
-function MobileCards<TData extends RowData>({ table, rows, label, onRowClick }: ViewProps<TData>) {
+function MobileCards<TData extends RowData>({
+  table,
+  rows,
+  label,
+  onRowClick,
+  onEndReached,
+}: ViewProps<TData>) {
   const listRef = useRef<HTMLUListElement>(null);
   // তালিকার শুরু পেজের উপর থেকে কত নিচে — window scroll থেকে এটা বাদ দিয়ে কোন কার্ড দেখা যাচ্ছে বোঝা যায়
   const [scrollMargin, setScrollMargin] = useState(0);
@@ -314,6 +381,7 @@ function MobileCards<TData extends RowData>({ table, rows, label, onRowClick }: 
     overscan: 6,
     scrollMargin,
   });
+  useEndReached(virtualizer.getVirtualItems().at(-1)?.index, rows.length, onEndReached);
 
   return (
     <ul

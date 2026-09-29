@@ -1,9 +1,10 @@
 import { Controller, Get, type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
-import { APP_GUARD, NestFactory } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, NestFactory } from '@nestjs/core';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { createAccessTokens } from '@omnivo/auth';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
+import { ProblemFilter } from '../common/http/problem.filter.js';
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import { AUTH } from '../infra/tokens.js';
 import { AuthGuard } from './auth.guard.js';
@@ -51,6 +52,8 @@ class ProbeController {
   providers: [
     { provide: AUTH, useValue: { getPrincipal: tokens.verify } },
     { provide: APP_GUARD, useClass: AuthGuard },
+    // AuthGuard AppError ছোড়ে — ফিল্টার ছাড়া Nest সেটাকে অচেনা error ভেবে 500 দিত
+    { provide: APP_FILTER, useClass: ProblemFilter },
   ],
 })
 class ProbeModule implements NestModule {

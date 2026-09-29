@@ -252,6 +252,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `ArrowUpDown`/`ArrowUp01`/`ArrowDown01` icon and set `aria-sort`. Below 860px every
   table becomes a list of cards: each column opts in with `meta.card` (`title`,
   `subtitle`, `trailing`, `detail`), and columns without it are hidden on phones.
+  Paged lists sort on the server (`sorting` prop) and load the next page with
+  `onEndReached`.
 - **Page header:** the 26px `h1` page title, a 13px `ink-3` description below it, and
   the view's actions on the right (they wrap below the title on phones).
 - **Section header:** a 15px/600 title plus a 13px `ink-3` subtitle with no card and no
@@ -301,8 +303,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   money, numbers and dates through its `useLocale().format`. New keys go into `en.ts`
   first, then `bn.ts` (the type check fails if `bn.ts` is missing a key). Keep common
   office terms such as PO, LC, workspace and role in English inside Bangla text.
-  Exceptions until step 5 moves errors to codes: the login and sign-up pages. The
-  dev-only kitchen sink stays English.
+  Error messages are never written in code: the API and the Zod schemas send an
+  error code (`slug_taken`, see `ERROR_CODES` in `@omnivo/contracts`), and the text
+  lives in `errors.*` in `en.ts`/`bn.ts`. The dev-only kitchen sink stays English.
 - **Copy:** sentence case everywhere and active voice. Buttons say exactly what happens
   ("Create workspace", "Retry", "Export"). Errors say how to fix the problem, without
   apologies.

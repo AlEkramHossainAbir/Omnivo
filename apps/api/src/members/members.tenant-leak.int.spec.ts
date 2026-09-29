@@ -1,5 +1,5 @@
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
-import { memberListResponseSchema, meResponseSchema } from '@omnivo/contracts';
+import { memberPageSchema, meResponseSchema } from '@omnivo/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createTestApp, testConfig } from '../testing/app.js';
@@ -56,8 +56,8 @@ describe('tenant isolation over HTTP', () => {
       url: '/members',
       headers: bearer(tenantA.accessToken),
     });
-    const { members } = memberListResponseSchema.parse(res.json());
-    expect(members.map((m) => m.email)).toEqual(['farhana@rahmangarments.com']);
+    const { items } = memberPageSchema.parse(res.json());
+    expect(items.map((m) => m.email)).toEqual(['farhana@rahmangarments.com']);
   });
 
   it('ignores a tenant id smuggled in through the old header', async () => {
@@ -66,8 +66,8 @@ describe('tenant isolation over HTTP', () => {
       url: '/members',
       headers: { ...bearer(tenantA.accessToken), 'x-tenant-id': tenantBId },
     });
-    const { members } = memberListResponseSchema.parse(res.json());
-    expect(members.map((m) => m.email)).toEqual(['farhana@rahmangarments.com']);
+    const { items } = memberPageSchema.parse(res.json());
+    expect(items.map((m) => m.email)).toEqual(['farhana@rahmangarments.com']);
   });
 
   it('refuses to switch tenant A into tenant B', async () => {

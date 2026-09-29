@@ -1,12 +1,13 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller } from '@nestjs/common';
+import { type RouteResponse, routes } from '@omnivo/contracts';
 
-import { Public } from '../auth/public.decorator.js';
+import { Endpoint } from '../common/http/endpoint.js';
 
-@Public()
-@Controller('health')
+@Controller()
 export class HealthController {
-  @Get()
-  check(): { status: 'ok' } {
+  // public চুক্তি থেকে — আলাদা @Public() লাগে না
+  @Endpoint(routes.health.check)
+  check(): RouteResponse<typeof routes.health.check> {
     return { status: 'ok' };
   }
 }

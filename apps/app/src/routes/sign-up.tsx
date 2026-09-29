@@ -6,12 +6,14 @@ import {
   UserIcon,
 } from '@hugeicons/core-free-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { signUpInputSchema } from '@omnivo/contracts';
+import { contractErrorMap, signUpInputSchema } from '@omnivo/contracts';
+import { useLocale } from '@omnivo/i18n';
 import { Button, FormAlert, Logo, TextField } from '@omnivo/ui';
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { ChangeEvent } from 'react';
 import { useForm } from 'react-hook-form';
 
+import { LanguageSwitch } from '../components/language-switch';
 import { applyApiError } from '../lib/field-errors';
 import { signUp } from '../lib/session';
 
@@ -26,6 +28,7 @@ function slugify(name: string): string {
 }
 
 export function SignUpPage() {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const {
     register,
@@ -35,7 +38,7 @@ export function SignUpPage() {
     getFieldState,
     formState: { errors, isSubmitting },
   } = useForm({
-    resolver: zodResolver(signUpInputSchema),
+    resolver: zodResolver(signUpInputSchema, { error: contractErrorMap }),
     defaultValues: { companyName: '', workspaceSlug: '', fullName: '', email: '', password: '' },
   });
 
@@ -52,31 +55,32 @@ export function SignUpPage() {
     <div className="min-h-dvh">
       <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line bg-surface px-4 py-5 sm:px-10">
         <Logo />
-        <p className="text-body-sm text-ink-2">
-          Already have a workspace?{' '}
-          <Link
-            to="/login"
-            className="font-medium text-brand underline-offset-[3px] hover:underline"
-          >
-            Sign in
-          </Link>
-        </p>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <p className="text-body-sm text-ink-2">
+            {t('auth.signUp.haveWorkspace')}{' '}
+            <Link
+              to="/login"
+              className="font-medium text-brand underline-offset-[3px] hover:underline"
+            >
+              {t('auth.signUp.signIn')}
+            </Link>
+          </p>
+          <LanguageSwitch />
+        </div>
       </header>
 
       <main className="mx-auto max-w-[640px] px-4 pt-10 pb-16">
         <div className="rounded-card border border-line bg-surface px-[18px] py-[22px] shadow-md sm:p-8">
-          <h1 className="text-h2">Create your workspace</h1>
-          <p className="mt-1.5 text-ink-2">
-            You&apos;ll be the workspace owner. You can invite your accountants, managers and store
-            staff after setup.
-          </p>
+          <h1 className="text-h2">{t('auth.signUp.title')}</h1>
+          <p className="mt-1.5 text-ink-2">{t('auth.signUp.subtitle')}</p>
 
           <form noValidate onSubmit={(event) => void onSubmit(event)} className="mt-7 grid gap-5">
             {errors.root?.server?.message && <FormAlert message={errors.root.server.message} />}
             <TextField
-              label="Company name"
+              label={t('auth.signUp.companyName')}
               icon={Building03Icon}
               autoComplete="organization"
+              // উদাহরণ ডেটা (নাম, ঠিকানা, ইমেইল) — দুই ভাষাতেই একই, তাই অনুবাদের ফাইলে না
               placeholder="Rahman Garments Ltd."
               {...register('companyName', {
                 // ইউজার নিজে ঠিকানায় হাত দিলে (isDirty) আর অটো-বসানো হবে না — আলাদা
@@ -91,7 +95,7 @@ export function SignUpPage() {
               error={errors.companyName?.message}
             />
             <TextField
-              label="Workspace address"
+              label={t('auth.signUp.workspaceAddress')}
               icon={Globe02Icon}
               suffix=".omnivo.app"
               // ফোনের কীবোর্ড প্রথম অক্ষর বড় হাতের না করে; বাকিটা schema-র toLowerCase() সামলায়
@@ -103,7 +107,7 @@ export function SignUpPage() {
             />
             <div className="grid gap-5 sm:grid-cols-2 sm:gap-4">
               <TextField
-                label="Full name"
+                label={t('auth.signUp.fullName')}
                 icon={UserIcon}
                 autoComplete="name"
                 placeholder="Farhana Rahman"
@@ -111,7 +115,7 @@ export function SignUpPage() {
                 error={errors.fullName?.message}
               />
               <TextField
-                label="Work email"
+                label={t('auth.signUp.workEmail')}
                 icon={Mail01Icon}
                 type="email"
                 autoComplete="email"
@@ -121,11 +125,11 @@ export function SignUpPage() {
               />
             </div>
             <TextField
-              label="Password"
+              label={t('auth.password')}
               icon={LockPasswordIcon}
               type="password"
               autoComplete="new-password"
-              placeholder="At least 8 characters"
+              placeholder={t('auth.signUp.passwordPlaceholder')}
               {...register('password')}
               error={errors.password?.message}
             />
@@ -136,7 +140,7 @@ export function SignUpPage() {
                 disabled={isSubmitting}
                 className="w-full sm:w-auto sm:min-w-40"
               >
-                {isSubmitting ? 'Creating workspace…' : 'Create workspace'}
+                {isSubmitting ? t('auth.signUp.submitting') : t('auth.signUp.submit')}
               </Button>
             </div>
           </form>

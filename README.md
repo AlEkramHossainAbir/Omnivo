@@ -158,7 +158,7 @@ pnpm dev                                                  # runs all apps via tu
 | Steps | What | Milestone |
 |---|---|---|
 | 0–3 | Monorepo scaffold, CI, local Docker environment, database foundation with row-level security, auth and RBAC | Signup → login → tenant dashboard |
-| 4–5 | Shared design system, contract and typed-client codegen pipeline | Every new endpoint reaches the UI type-safe |
+| 4–5 | Shared design system; API contracts: Zod route registry, error codes, keyset pagination, OpenAPI | Every new endpoint reaches the UI type-safe |
 | 6–8 | Core platform: settings, branches, numbering, audit log, users and roles, queue and worker, transactional outbox | First async job running |
 | 9–11 | Accounting: chart of accounts, double-entry journal, financial statements | A trial balance that balances |
 | 12–14 | Inventory: products with batch/serial tracking, append-only stock ledger, valuation posting to the ledger | Stock receipt moves the balance sheet |

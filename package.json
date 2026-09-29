@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "turbo run dev",
+    "dev:mock": "turbo run dev:mock",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
@@ -18,6 +19,8 @@
     "test:integration": "turbo run test:integration",
     "test:tenant-leak": "turbo run test:tenant-leak",
     "test:bundle-size": "turbo run test:bundle-size",
+    "gen:openapi": "turbo run gen:openapi",
+    "test:openapi": "turbo run test:openapi",
     "db:up": "docker compose -f infra/docker/docker-compose.yml up -d --wait",
     "db:down": "docker compose -f infra/docker/docker-compose.yml down",
     "db:psql": "docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo",

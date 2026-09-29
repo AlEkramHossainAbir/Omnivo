@@ -1,9 +1,9 @@
 import { NestFactory } from '@nestjs/core';
-import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
+import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 
 import { AppModule } from '../app.module.js';
 import { type Config, loadConfig } from '../config.js';
-import { configureApp } from '../configure-app.js';
+import { configureApp, createAdapter } from '../configure-app.js';
 
 // .env না পড়ে টেস্টের নিজস্ব মান — loadConfig দিয়ে গেলে production-এর একই যাচাই চলে
 export function testConfig(urls: { databaseUrl: string; redisUrl: string }): Config {
@@ -21,7 +21,7 @@ export function testConfig(urls: { databaseUrl: string; redisUrl: string }): Con
 export async function createTestApp(config: Config): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.register(config),
-    new FastifyAdapter(),
+    createAdapter(),
     { logger: false },
   );
   await configureApp(app, config);

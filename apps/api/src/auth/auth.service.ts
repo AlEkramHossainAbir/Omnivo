@@ -1,11 +1,4 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import {
   type Auth,
@@ -28,6 +21,7 @@ import {
   users,
 } from '@omnivo/db';
 
+import { AppError } from '../common/http/app-error.js';
 import { runWithTenant } from '../common/tenant/tenant-context.js';
 import { setTenantContext, type WithTenant } from '../common/tenant/with-tenant.js';
 import type { WithUser } from '../common/tenant/with-user.js';
@@ -39,12 +33,14 @@ interface MembershipGrant {
   roles: string[];
 }
 
-function workspaceTaken(slug: string): ConflictException {
-  return new ConflictException({
-    statusCode: 409,
-    message: `${slug}.omnivo.app is taken.`,
-    fieldErrors: { workspaceSlug: [`${slug}.omnivo.app is taken. Try adding your city.`] },
+function workspaceTaken(slug: string): AppError {
+  return new AppError(409, 'slug_taken', `${slug}.omnivo.app is taken.`, {
+    fieldErrors: { workspaceSlug: ['slug_taken'] },
   });
+}
+
+function sessionEnded(): AppError {
+  return new AppError(401, 'session_ended', 'The session has ended. Sign in again.');
 }
 
 // drizzle Postgres error-কে DrizzleQueryError-এ মুড়ে দেয়; আসল কোড থাকে .cause-এ
@@ -87,10 +83,8 @@ export class AuthService {
       });
     } catch (error) {
       if (error instanceof AuthError && error.code === 'EMAIL_TAKEN') {
-        throw new ConflictException({
-          statusCode: 409,
-          message: 'An account with this email already exists.',
-          fieldErrors: { email: ['An account with this email already exists. Sign in instead.'] },
+        throw new AppError(409, 'email_taken', 'An account with this email already exists.', {
+          fieldErrors: { email: ['email_taken'] },
         });
       }
       throw error;
@@ -118,13 +112,14 @@ export class AuthService {
   async login(input: LoginInput): Promise<IssuedTokens> {
     const tenant = await this.findTenantBySlug(input.workspace);
     if (!tenant) {
-      throw new NotFoundException({
-        statusCode: 404,
-        message: `We couldn't find ${input.workspace}.omnivo.app.`,
-        fieldErrors: {
-          workspace: [`We couldn't find ${input.workspace}.omnivo.app. Check the address.`],
+      throw new AppError(
+        404,
+        'workspace_not_found',
+        `No workspace at ${input.workspace}.omnivo.app.`,
+        {
+          fieldErrors: { workspace: ['workspace_not_found'] },
         },
-      });
+      );
     }
 
     let identity: Identity;
@@ -136,9 +131,7 @@ export class AuthService {
       });
     } catch (error) {
       if (error instanceof AuthError && error.code === 'INVALID_CREDENTIALS') {
-        throw new UnauthorizedException(
-          'Email or password is incorrect. Check them and try again.',
-        );
+        throw new AppError(401, 'invalid_credentials', 'Email or password is incorrect.');
       }
       throw error;
     }
@@ -147,8 +140,10 @@ export class AuthService {
     if (!membership) {
       // পাসওয়ার্ড ঠিক, কিন্তু এই workspace-এ নেই — Better Auth যে session বানিয়েছে সেটা ফেলে দেওয়া
       await this.auth.revokeSession(identity.sessionId);
-      throw new ForbiddenException(
-        `This account isn't a member of ${tenant.slug}.omnivo.app. Ask a workspace owner to invite you.`,
+      throw new AppError(
+        403,
+        'not_a_member',
+        `This account isn't a member of ${tenant.slug}.omnivo.app.`,
       );
     }
 
@@ -165,8 +160,10 @@ export class AuthService {
     const membership = await this.findMembership(grant.activeTenantId, grant.userId);
     if (!membership) {
       await this.auth.revokeSession(grant.sessionId);
-      throw new UnauthorizedException(
-        'You no longer have access to this workspace. Sign in again.',
+      throw new AppError(
+        401,
+        'access_revoked',
+        'The user is no longer a member of this workspace.',
       );
     }
     return this.reissue({
@@ -184,14 +181,14 @@ export class AuthService {
     // refresh token খরচ করার আগে membership যাচাই — নাহলে ভুল tenantId দিলেই লগআউট হয়ে যেত
     const membership = await this.findMembership(tenantId, principal.userId);
     if (!membership) {
-      throw new ForbiddenException("You aren't a member of that workspace.");
+      throw new AppError(403, 'switch_denied', 'The user is not a member of that workspace.');
     }
 
     const grant = await this.rotate(refreshToken);
     if (grant.userId !== principal.userId) {
       // access token এক ইউজারের, cookie আরেকজনের — এমন অবস্থা স্বাভাবিকভাবে হয় না
       await this.auth.revokeSession(grant.sessionId);
-      throw new UnauthorizedException('Your session has ended. Sign in again.');
+      throw sessionEnded();
     }
 
     return this.reissue({
@@ -214,7 +211,7 @@ export class AuthService {
       .select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
       .from(tenants)
       .where(eq(tenants.id, principal.tenantId));
-    if (!user || !tenant) throw new UnauthorizedException('Your session has ended. Sign in again.');
+    if (!user || !tenant) throw sessionEnded();
 
     // tenant switcher-এর তালিকা: সব টেন্যান্ট জুড়ে নিজের membership — তাই withTenant না, withUser
     const workspaces = await this.withUser(principal.userId, (tx) =>
@@ -244,12 +241,12 @@ export class AuthService {
   }
 
   private async rotate(refreshToken: string | undefined): Promise<RefreshGrant> {
-    if (!refreshToken) throw new UnauthorizedException('Your session has ended. Sign in again.');
+    if (!refreshToken) throw sessionEnded();
     try {
       return await this.auth.rotateRefreshToken(refreshToken);
     } catch (error) {
       if (error instanceof AuthError) {
-        throw new UnauthorizedException('Your session has ended. Sign in again.');
+        throw sessionEnded();
       }
       throw error;
     }
@@ -262,7 +259,7 @@ export class AuthService {
       return await this.auth.issueTokens(input);
     } catch (error) {
       if (error instanceof AuthError) {
-        throw new UnauthorizedException('Your session has ended. Sign in again.');
+        throw sessionEnded();
       }
       throw error;
     }

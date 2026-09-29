@@ -61,7 +61,7 @@ Inventory-র স্কিমায় **শুরু থেকেই** batch/lo
 ২. packages/db-এ migration + Drizzle schema   → টেবিল, index (tenant_id দিয়ে শুরু), RLS policy
 ৩. apps/api-তে repository + service           → business rule, ট্রানজ্যাকশন, outbox
 ৪. apps/api-তে controller + permission guard  → REST endpoint, OpenAPI auto-doc
-৫. `pnpm gen:client` চালান                    → typed API client অটো তৈরি
+৫. `pnpm gen:openapi` চালান                   → openapi.json হালনাগাদ (client-এর টাইপ চুক্তি থেকে নিজেই আসে)
 ৬. apps/app-এ পেজ + form + list                → TanStack Query + RHF + packages/ui
 ৭. টেস্ট: unit (rule) + integration (endpoint) + tenant-leak + Playwright (UI)
 ```
@@ -145,9 +145,9 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 #### ধাপ ৫: কন্ট্র্যাক্ট ও codegen পাইপলাইন · ~১ সপ্তাহ
 
-`packages/contracts/` — Zod schema (একই schema সার্ভারে validation, ক্লায়েন্টে form validation)। NestJS-এ OpenAPI স্পেক জেনারেট → `orval`/`openapi-typescript` দিয়ে typed client + TanStack Query hooks। সাথে ঠিক হবে: error envelope ফরম্যাট, **keyset pagination** কনভেনশন, MSW mock setup।
+`packages/contracts/` — Zod schema (একই schema সার্ভারে validation, ক্লায়েন্টে form validation)। Zod route রেজিস্ট্রি (টাইপ সরাসরি Zod থেকে, codegen নেই) + রেজিস্ট্রি থেকে OpenAPI 3.1 + TanStack Query hooks। সাথে ঠিক হবে: error envelope ফরম্যাট, **keyset pagination** কনভেনশন, MSW mock setup।
 
-**যা দেখবেন:** API-তে একটা ফিল্ডের নাম বদলান → `pnpm gen:client` → ফ্রন্টএন্ডে লাল দাগ। **এটাই parallel dev-এর ইঞ্জিন।**
+**যা দেখবেন:** contracts-এ একটা ফিল্ডের নাম বদলান → সাথে সাথে API আর ফ্রন্টএন্ডে লাল দাগ; `pnpm gen:openapi` → স্পেকের diff। **এটাই parallel dev-এর ইঞ্জিন।**
 **শিখবেন:** OpenAPI, code generation, contract-first ডেভেলপমেন্ট।
 
 ---
@@ -412,7 +412,7 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [x] **ধাপ ১** — DB ভিত্তি + RLS
 - [x] **ধাপ ২** — Tenant context + leak test
 - [x] **ধাপ ৩** — Auth + RBAC + প্রথম ড্যাশবোর্ড
-- [ ] **ধাপ ৪–৫** — ডিজাইন সিস্টেম + কন্ট্র্যাক্ট codegen
+- [x] **ধাপ ৪–৫** — ডিজাইন সিস্টেম + API কন্ট্র্যাক্ট
 - [ ] **ধাপ ৬–৮** — Core Platform
 - [ ] **ধাপ ৯–১১** — Accounting
 - [ ] **ধাপ ১২–১৪** — Inventory

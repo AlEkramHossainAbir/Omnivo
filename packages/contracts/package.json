@@ -3,23 +3,32 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./openapi": {
+      "types": "./dist/openapi.d.ts",
+      "default": "./dist/openapi.js"
     }
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
+    "test": "vitest run --passWithNoTests",
+    "gen:openapi": "node scripts/gen-openapi.ts",
+    "test:openapi": "node scripts/gen-openapi.ts --check"
   },
   "dependencies": {
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
     "@omnivo/config": "workspace:*",
+    "@types/node": "^26.6.2",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"
   }

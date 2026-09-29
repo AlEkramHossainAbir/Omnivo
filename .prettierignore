@@ -1,6 +1,10 @@
 pnpm-lock.yaml
 packages/db/migrations/meta/
 
+# জেনারেট করা ফাইল: প্রথমটা `pnpm gen:openapi` লেখে, দ্বিতীয়টা `msw init`
+packages/contracts/openapi.json
+apps/app/public/mockServiceWorker.js
+
 # Markdown docs: Prettier re-pads Bangla tables (and misjudges Bangla glyph widths), so
 # formatting them adds noise without aligning anything
 *.md

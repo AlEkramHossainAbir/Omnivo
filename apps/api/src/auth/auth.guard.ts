@@ -1,11 +1,7 @@
-import {
-  type CanActivate,
-  type ExecutionContext,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 
+import { AppError } from '../common/http/app-error.js';
 import { tenantStorage } from '../common/tenant/tenant-context.js';
 import { IS_PUBLIC_KEY } from './public.decorator.js';
 
@@ -22,7 +18,7 @@ export class AuthGuard implements CanActivate {
     if (isPublic === true) return true;
 
     if (!tenantStorage.getStore()?.principal) {
-      throw new UnauthorizedException('Sign in to continue.');
+      throw new AppError(401, 'sign_in_required', 'This route needs a valid access token.');
     }
     return true;
   }

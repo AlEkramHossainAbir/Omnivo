@@ -1,41 +1,69 @@
 import { CheckmarkCircle02Icon, UserMultipleIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { memberListResponseSchema, type MemberListResponse } from '@omnivo/contracts';
+import { type Member, type MemberSort, routes } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { Card, DataTable, dataTableColumns, PageHeader, SectionHeader } from '@omnivo/ui';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  Card,
+  DataTable,
+  dataTableColumns,
+  PageHeader,
+  SectionHeader,
+  type SortingState,
+} from '@omnivo/ui';
+import { infiniteQueryOptions, keepPreviousData, useInfiniteQuery } from '@tanstack/react-query';
+import { useCallback, useMemo, useState } from 'react';
 
-import { apiFetch } from '../lib/api';
+import { call } from '../lib/api';
 import { useSession } from '../lib/session-store';
-
-type Member = MemberListResponse['members'][number];
 
 // module-level: প্রতি render-এ নতুন helper বানানোর দরকার নেই
 const column = dataTableColumns<Member>();
 
-function MembersCard({ tenantId }: { tenantId: string }) {
-  const { t } = useLocale();
-  const [members, setMembers] = useState<Member[] | null>(null);
-  const [failed, setFailed] = useState(false);
+// query-র key আর কীভাবে আনবে এক জায়গায় — অন্য পেজও (যেমন ধাপ ৭-এর invite মডাল) একই key দিয়ে
+// ক্যাশ মুছতে বা আগে থেকে আনতে পারবে
+function membersQuery(tenantId: string, sort: MemberSort) {
+  return infiniteQueryOptions({
+    // tenantId key-তে: workspace বদলালে আগের টেন্যান্টের পাতা এই key-তে কখনো মিলবে না
+    queryKey: ['members', tenantId, sort],
+    // pageParam-এর টাইপ লেখা: শুধু initialPageParam: null থেকে TanStack ভাবত পাতার cursor সবসময়
+    // null, আর getNextPageParam-এর string মেলাত না। এখান থেকে সে string | null শেখে — cast ছাড়া
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.members.list, {
+        query: { sort, limit: 50, ...(pageParam !== null && { cursor: pageParam }) },
+      }),
+    initialPageParam: null,
+    // null = শেষ পাতা; TanStack তখন hasNextPage = false
+    getNextPageParam: (page) => page.nextCursor,
+    // sort বদলালে নতুন key — নতুন পাতা আসা পর্যন্ত আগেরটা দেখানো, টেবিল ফাঁকা হয়ে ঝলকায় না
+    placeholderData: keepPreviousData,
+  });
+}
 
-  // tenantId বদলালে (switcher) আবার আনা; পুরনো request-এর উত্তর দেরিতে এলে ফেলে দেওয়া
-  useEffect(() => {
-    let cancelled = false;
-    apiFetch('/members', memberListResponseSchema).then(
-      (response) => {
-        if (!cancelled) {
-          setMembers(response.members);
-          setFailed(false);
-        }
+function MembersSection({ tenantId }: { tenantId: string }) {
+  const { t } = useLocale();
+  const [sort, setSort] = useState<MemberSort>('name');
+  const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
+    membersQuery(tenantId, sort),
+  );
+
+  // সব পাতা জোড়া একটা তালিকা; data না বদলালে একই array, তাই টেবিল অকারণে আবার হিসাব করে না
+  const members = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
+
+  const loadMore = useCallback(() => {
+    // চলতি request শেষ না হলে আবার না — নাহলে একই cursor দুবার চাওয়া হতো
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+
+  // টেবিলের sort অবস্থা ↔ API-র sort প্যারামিটার। শুধু নাম-কলাম সার্ভারে sort হয়
+  const sorting = useMemo(
+    () => ({
+      state: [{ id: 'fullName', desc: sort === '-name' }],
+      onChange: (next: SortingState) => {
+        setSort(next[0]?.desc ? '-name' : 'name');
       },
-      () => {
-        if (!cancelled) setFailed(true);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [tenantId]);
+    }),
+    [sort],
+  );
 
   // header-এ অনুবাদ আছে, তাই ভাষা (t) বদলালে column নতুন করে; নাহলে একই array — টেবিল আবার হিসাব করে না
   const columns = useMemo(
@@ -60,6 +88,8 @@ function MembersCard({ tenantId }: { tenantId: string }) {
         column.accessor((member) => member.roles.join(', '), {
           id: 'roles',
           header: t('dashboard.columns.roles'),
+          // সার্ভার রোল দিয়ে সাজাতে পারে না (চুক্তিতে শুধু name) — তাই হেডারে sort বাটনই নেই
+          enableSorting: false,
           meta: { card: 'trailing' },
           cell: ({ getValue }) => getValue() || t('dashboard.noRole'),
         }),
@@ -71,7 +101,7 @@ function MembersCard({ tenantId }: { tenantId: string }) {
     // DataTable নিজেই কার্ড — তাই Card-এ না মুড়ে শুধু শিরোনাম + টেবিল
     <section className="grid gap-3">
       <SectionHeader title={t('dashboard.teamTitle')} subtitle={t('dashboard.teamSubtitle')} />
-      {failed ? (
+      {isError ? (
         <p className="text-body-sm text-crit">{t('dashboard.teamLoadFailed')}</p>
       ) : (
         members && (
@@ -80,6 +110,13 @@ function MembersCard({ tenantId }: { tenantId: string }) {
             data={members}
             columns={columns}
             getRowId={(member) => member.membershipId}
+            sorting={sorting}
+            onEndReached={loadMore}
+            footer={
+              isFetchingNextPage && (
+                <p className="text-caption text-ink-3">{t('dashboard.loadingMore')}</p>
+              )
+            }
           />
         )
       )}
@@ -111,7 +148,7 @@ export function DashboardPage() {
       </Card>
 
       {canSeeTeam ? (
-        <MembersCard tenantId={me.tenant.id} />
+        <MembersSection tenantId={me.tenant.id} />
       ) : (
         <p className="flex items-center gap-2 text-body-sm text-ink-3">
           <HugeiconsIcon icon={UserMultipleIcon} size={16} strokeWidth={1.5} />

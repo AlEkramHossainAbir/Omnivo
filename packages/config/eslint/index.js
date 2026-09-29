@@ -5,7 +5,14 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/build/**', '**/coverage/**', '**/.turbo/**'],
+    // mockServiceWorker.js: MSW-এর জেনারেট করা ফাইল (`msw init`), হাতে বদলানো হয় না
+    ignores: [
+      '**/dist/**',
+      '**/build/**',
+      '**/coverage/**',
+      '**/.turbo/**',
+      '**/mockServiceWorker.js',
+    ],
   },
   js.configs.recommended,
   tseslint.configs.strictTypeChecked,

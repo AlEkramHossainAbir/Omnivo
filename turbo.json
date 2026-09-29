@@ -26,6 +26,18 @@
     },
     "test:bundle-size": {
       "dependsOn": ["build"]
+    },
+    "dev:mock": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "gen:openapi": {
+      "dependsOn": ["build"],
+      "cache": false
+    },
+    "test:openapi": {
+      "dependsOn": ["build"]
     }
   }
 }

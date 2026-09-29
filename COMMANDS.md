@@ -33,6 +33,16 @@ important commands come up.
    - App (`@omnivo/app`, Vite/React): http://localhost:5173
    - Kitchen sink (every shared ui component, both themes and languages):
      http://localhost:5173/kitchen-sink — only in `pnpm dev`, needs a signed-in user
+   - API docs (Scalar, from the contract registry): http://localhost:3000/docs — dev only
+
+   To run the app alone, without the API, Postgres or Docker:
+
+   ```sh
+   pnpm dev:mock   # the app alone on MSW mocks — no API, Postgres or Docker needed
+   ```
+
+   Mock sign-in: any password works except `wrong-password`; the sign-up address
+   `rahman-garments` is already taken.
 
 Stop infra when done:
 
@@ -77,4 +87,6 @@ pnpm build      # build every package and app
 pnpm test:bundle-size # build the app, then fail if first-load JS > 200 KB gz or a route chunk > 100 KB gz
 pnpm boundaries # dependency-cruiser on apps/packages
 pnpm dedupe --check # fail if the lockfile has duplicate copies (e.g. drizzle-orm)
+pnpm gen:openapi  # rewrite packages/contracts/openapi.json from the route registry — commit it
+pnpm test:openapi # fail if openapi.json is out of date, and validate it as OpenAPI 3.1
 ```

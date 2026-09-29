@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { Auth } from '@omnivo/auth';
-import { apiErrorSchema, meResponseSchema, type SignUpInput } from '@omnivo/contracts';
+import { meResponseSchema, problemSchema, type SignUpInput } from '@omnivo/contracts';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -96,7 +96,11 @@ describe('sign-up', () => {
       payload: { ...karim, workspaceSlug: rahman.workspaceSlug },
     });
     expect(res.statusCode).toBe(409);
-    expect(apiErrorSchema.parse(res.json()).fieldErrors?.workspaceSlug).toBeDefined();
+    expect(res.headers['content-type']).toMatch(/^application\/problem\+json/);
+    const problem = problemSchema.parse(res.json());
+    expect(problem.code).toBe('slug_taken');
+    expect(problem.fieldErrors).toEqual({ workspaceSlug: ['slug_taken'] });
+    expect(problem.requestId).toBe(res.headers['x-request-id']);
 
     const [row] = await superuser<
       { n: number }[]
@@ -111,7 +115,7 @@ describe('sign-up', () => {
       payload: { ...karim, email: rahman.email },
     });
     expect(res.statusCode).toBe(409);
-    expect(apiErrorSchema.parse(res.json()).fieldErrors?.email).toBeDefined();
+    expect(problemSchema.parse(res.json()).fieldErrors).toEqual({ email: ['email_taken'] });
   });
 
   it('returns field errors for invalid input', async () => {
@@ -121,8 +125,12 @@ describe('sign-up', () => {
       payload: { ...karim, email: 'not-an-email', password: 'short' },
     });
     expect(res.statusCode).toBe(400);
-    const error = apiErrorSchema.parse(res.json());
-    expect(Object.keys(error.fieldErrors ?? {}).sort()).toEqual(['email', 'password']);
+    const problem = problemSchema.parse(res.json());
+    expect(problem.code).toBe('invalid_input');
+    expect(problem.fieldErrors).toEqual({
+      email: ['email_invalid'],
+      password: ['password_too_short'],
+    });
   });
 
   it('never stores the password in plain text', async () => {
@@ -152,6 +160,7 @@ describe('login', () => {
       password: 'wrong-password',
     });
     expect(res.statusCode).toBe(401);
+    expect(problemSchema.parse(res.json()).code).toBe('invalid_credentials');
   });
 
   it('rejects an unknown workspace with 404', async () => {
@@ -161,6 +170,9 @@ describe('login', () => {
       password: rahman.password,
     });
     expect(res.statusCode).toBe(404);
+    expect(problemSchema.parse(res.json()).fieldErrors).toEqual({
+      workspace: ['workspace_not_found'],
+    });
   });
 
   it('rejects a real user who is not a member of that workspace with 403', async () => {
@@ -171,6 +183,7 @@ describe('login', () => {
       password: karim.password,
     });
     expect(res.statusCode).toBe(403);
+    expect(problemSchema.parse(res.json()).code).toBe('not_a_member');
   });
 });
 
@@ -362,6 +375,7 @@ describe('permissions', () => {
     // AuthGuard আগে না চললে এখানে 403 আসত (বা principal ছাড়া PermissionGuard crash করত)
     const res = await app.inject({ method: 'GET', url: '/members' });
     expect(res.statusCode).toBe(401);
+    expect(problemSchema.parse(res.json()).code).toBe('sign_in_required');
   });
 
   it('lets the owner list members and blocks a member without the permission', async () => {
@@ -393,6 +407,10 @@ describe('permissions', () => {
       headers: bearer(nabil.accessToken),
     });
     expect(denied.statusCode).toBe(403);
+    expect(problemSchema.parse(denied.json())).toMatchObject({
+      code: 'permission_missing',
+      params: { permissions: 'core.user.read' },
+    });
   });
 
   it('serves permissions from the Redis cache until they are invalidated', async () => {

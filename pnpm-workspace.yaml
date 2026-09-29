@@ -9,3 +9,4 @@ allowBuilds:
   cpu-features: false # testcontainers-এর SSH-এর optional native addon — লোকাল Docker-এ লাগে না
   protobufjs: false # postinstall শুধু version-চেক করে
   ssh2: false # remote Docker host-এর জন্য, আমাদের দরকার নেই
+  msw: false # postinstall শুধু worker ফাইল কপি করে; আমরা `msw init` নিজে চালিয়ে ফাইলটা commit করি

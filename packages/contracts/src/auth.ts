@@ -1,16 +1,16 @@
 import { z } from 'zod';
 
+import { errorCode } from './errors.js';
+import { defineRoute } from './http.js';
+
 // workspace-এর ঠিকানা হবে `{slug}.omnivo.app` — তাই DNS label-এর নিয়ম মানতে হবে
 const workspaceSlugFormat = z
   .string()
   .trim()
   .toLowerCase()
-  .min(3, 'Use at least 3 letters or numbers.')
-  .max(32, 'Use 32 characters or fewer.')
-  .regex(
-    /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
-    'Use lowercase letters, numbers and single hyphens, like rahman-garments.',
-  );
+  .min(3, errorCode('slug_too_short'))
+  .max(32, errorCode('slug_too_long'))
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, errorCode('slug_format'));
 
 // আমাদের নিজের সাবডোমেইনের জন্য রাখা নাম — কোনো টেন্যান্ট এগুলো নিতে পারবে না
 const RESERVED_SLUGS: ReadonlySet<string> = new Set([
@@ -29,7 +29,7 @@ const RESERVED_SLUGS: ReadonlySet<string> = new Set([
 
 export const newWorkspaceSlugSchema = workspaceSlugFormat.refine(
   (slug) => !RESERVED_SLUGS.has(slug),
-  'This address is reserved. Try adding your city, like rahman-gazipur.',
+  errorCode('slug_reserved'),
 );
 
 // trim/lowercase আগে, তারপর email যাচাই — ক্রম উল্টালে " A@b.com" ভুল হিসেবে ধরা পড়ত
@@ -37,18 +37,18 @@ const emailSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .pipe(z.email('Enter an email like name@company.com.'));
+  .pipe(z.email(errorCode('email_invalid')));
 
 // Better Auth-এর maxPasswordLength ডিফল্ট 128 — দুই জায়গায় একই সীমা
 const newPasswordSchema = z
   .string()
-  .min(8, 'Use at least 8 characters.')
-  .max(128, 'Use 128 characters or fewer.');
+  .min(8, errorCode('password_too_short'))
+  .max(128, errorCode('password_too_long'));
 
 export const signUpInputSchema = z.object({
-  companyName: z.string().trim().min(2, 'Enter your company name.').max(120),
+  companyName: z.string().trim().min(2, errorCode('company_name_required')).max(120),
   workspaceSlug: newWorkspaceSlugSchema,
-  fullName: z.string().trim().min(2, 'Enter your full name.').max(120),
+  fullName: z.string().trim().min(2, errorCode('full_name_required')).max(120),
   email: emailSchema,
   password: newPasswordSchema,
 });
@@ -57,7 +57,7 @@ export type SignUpInput = z.infer<typeof signUpInputSchema>;
 export const loginInputSchema = z.object({
   workspace: workspaceSlugFormat,
   email: emailSchema,
-  password: z.string().min(1, 'Enter your password.').max(128),
+  password: z.string().min(1, errorCode('password_required')).max(128),
   keepSignedIn: z.boolean(),
 });
 export type LoginInput = z.infer<typeof loginInputSchema>;
@@ -83,24 +83,57 @@ export const meResponseSchema = z.object({
 });
 export type MeResponse = z.infer<typeof meResponseSchema>;
 
-export const memberListResponseSchema = z.object({
-  members: z.array(
-    z.object({
-      membershipId: z.uuid(),
-      userId: z.uuid(),
-      fullName: z.string(),
-      email: z.string(),
-      roles: z.array(z.string()),
-    }),
-  ),
-});
-export type MemberListResponse = z.infer<typeof memberListResponseSchema>;
-
-// Nest-এর built-in exception ({ statusCode, message, error }) আর আমাদের validation error
-// ({ ..., fieldErrors }) — দুটোই এই আকারে মেলে
-export const apiErrorSchema = z.object({
-  statusCode: z.number(),
-  message: z.string(),
-  fieldErrors: z.record(z.string(), z.array(z.string())).optional(),
-});
-export type ApiError = z.infer<typeof apiErrorSchema>;
+export const authRoutes = {
+  signUp: defineRoute({
+    method: 'POST',
+    path: '/auth/sign-up',
+    summary: 'Create a workspace and its owner, and start a session',
+    auth: 'public',
+    status: 201,
+    body: signUpInputSchema,
+    response: authSessionSchema,
+  }),
+  login: defineRoute({
+    method: 'POST',
+    path: '/auth/login',
+    summary: 'Sign in to a workspace',
+    auth: 'public',
+    status: 200,
+    body: loginInputSchema,
+    response: authSessionSchema,
+  }),
+  // access token-এর মেয়াদ শেষ হতে পারে, তাই public — প্রমাণ শুধু httpOnly refresh cookie
+  refresh: defineRoute({
+    method: 'POST',
+    path: '/auth/refresh',
+    summary: 'Rotate the refresh cookie and issue a new access token',
+    auth: 'public',
+    status: 200,
+    response: authSessionSchema,
+  }),
+  switchTenant: defineRoute({
+    method: 'POST',
+    path: '/auth/switch-tenant',
+    summary: 'Move the session into another workspace the user belongs to',
+    auth: 'bearer',
+    status: 200,
+    body: switchTenantInputSchema,
+    response: authSessionSchema,
+  }),
+  logout: defineRoute({
+    method: 'POST',
+    path: '/auth/logout',
+    summary: 'End the session behind the refresh cookie',
+    auth: 'public',
+    status: 204,
+    response: z.void(),
+  }),
+  me: defineRoute({
+    method: 'GET',
+    path: '/auth/me',
+    summary: 'The signed-in user, the active workspace and its permissions',
+    auth: 'bearer',
+    status: 200,
+    response: meResponseSchema,
+  }),
+};

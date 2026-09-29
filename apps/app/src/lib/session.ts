@@ -1,17 +1,15 @@
-import {
-  type AuthSession,
-  authSessionSchema,
-  type LoginInput,
-  meResponseSchema,
-  type SignUpInput,
-} from '@omnivo/contracts';
+import { type AuthSession, type LoginInput, routes, type SignUpInput } from '@omnivo/contracts';
 
-import { apiFetch, logoutRequest, refreshSession } from './api';
+import { call, refreshSession } from './api';
+import { queryClient } from './query-client';
 import { sessionStore } from './session-store';
 
 async function startSession(session: AuthSession): Promise<void> {
   sessionStore.getState().setAccessToken(session.accessToken);
-  const me = await apiFetch('/auth/me', meResponseSchema);
+  const me = await call(routes.auth.me);
+  // আগের ইউজার বা workspace-এর ক্যাশ করা ডেটা (টিম, ইনভয়েস) নতুন session-এ এক মুহূর্তের জন্যও
+  // দেখা যাবে না — signIn-এর আগে মোছা, তাই নতুন পেজ খালি ক্যাশ থেকে আনে
+  queryClient.clear();
   sessionStore.getState().signIn(me);
 }
 
@@ -29,7 +27,7 @@ export function restoreSession(): Promise<void> {
       }
     } catch {
       // API বন্ধ বা নেটওয়ার্ক নেই — reject হলে প্রতিটা route চিরতরে ভাঙত; লগইন পেজ দেখানোই নিরাপদ,
-      // সেখানে চেষ্টা করলে "Could not reach the server" দেখাবে
+      // সেখানে চেষ্টা করলে network_error-এর লেখা দেখাবে
     }
     sessionStore.getState().signOut();
   })();
@@ -37,31 +35,23 @@ export function restoreSession(): Promise<void> {
 }
 
 export async function login(input: LoginInput): Promise<void> {
-  await startSession(
-    await apiFetch('/auth/login', authSessionSchema, { method: 'POST', body: input }),
-  );
+  await startSession(await call(routes.auth.login, { body: input }));
 }
 
 export async function signUp(input: SignUpInput): Promise<void> {
-  await startSession(
-    await apiFetch('/auth/sign-up', authSessionSchema, { method: 'POST', body: input }),
-  );
+  await startSession(await call(routes.auth.signUp, { body: input }));
 }
 
 export async function switchTenant(tenantId: string): Promise<void> {
-  await startSession(
-    await apiFetch('/auth/switch-tenant', authSessionSchema, {
-      method: 'POST',
-      body: { tenantId },
-    }),
-  );
+  await startSession(await call(routes.auth.switchTenant, { body: { tenantId } }));
 }
 
 export async function logout(): Promise<void> {
   try {
-    await logoutRequest();
+    await call(routes.auth.logout);
   } finally {
-    // নেটওয়ার্ক ব্যর্থ হলেও এই ট্যাবে লগআউট দেখাতে হবে
+    // নেটওয়ার্ক ব্যর্থ হলেও এই ট্যাবে লগআউট দেখাতে হবে, আর আগের ইউজারের ক্যাশ মুছতে হবে
+    queryClient.clear();
     sessionStore.getState().signOut();
   }
 }

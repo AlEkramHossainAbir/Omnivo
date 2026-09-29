@@ -28,7 +28,7 @@ export interface FieldProps {
 
 // সব ফর্ম-ফিল্ডের একই কাঠামো: উপরে label, মাঝে control, নিচে error (নয়তো hint)
 export function Field({ id, label, optional = false, hint, error, children }: FieldProps) {
-  const { t } = useLocale();
+  const { t, errorText } = useLocale();
   return (
     // content-start: পাশের ফিল্ডে hint থাকলে grid-এর সারি উঁচু হয়; তখন এই ফিল্ডের ভেতরের
     // সারিগুলো টেনে লম্বা না করে উপরে জড়ো থাকে — ইনপুটের উচ্চতা সব জায়গায় ৪২px
@@ -41,7 +41,8 @@ export function Field({ id, label, optional = false, hint, error, children }: Fi
       {error ? (
         <p id={`${id}-error`} className="flex items-center gap-1.5 text-label text-crit">
           <HugeiconsIcon icon={Alert02Icon} size={15} strokeWidth={1.5} className="shrink-0" />
-          {error}
+          {/* ফর্মের error এখন code ('slug_taken') — বর্তমান ভাষায় লেখা এখানেই */}
+          {errorText(error)}
         </p>
       ) : (
         hint && (

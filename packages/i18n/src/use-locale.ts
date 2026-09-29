@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -9,6 +9,15 @@ import {
   type MoneyFormatOptions,
 } from './format.js';
 import { isLanguage, type Language } from './i18n.js';
+import { en } from './locales/en.js';
+
+type ErrorKey = keyof typeof en.errors;
+
+// en.errors-এর key আর contracts-এর ErrorCode একই তালিকা (en.ts-এর satisfies সেটা নিশ্চিত করে),
+// তাই runtime-এ contracts import না করেই চেনা যায় কোনটা error code
+function isErrorKey(value: string): value is ErrorKey {
+  return Object.hasOwn(en.errors, value);
+}
 
 // component-এ ভাষা + ভাষা-অনুযায়ী formatter একসাথে। useTranslation ভাষা বদলের event-এ
 // subscribe করে, তাই ভাষা বদলালে এই hook-ওয়ালা সব component নিজে থেকেই আবার render হয়
@@ -29,5 +38,13 @@ export function useLocale() {
     [language],
   );
 
-  return { t, language, format };
+  // ফর্মের error-এ থাকে একটা code ('slug_taken') — সেটা বর্তমান ভাষায়। code না হলে (যেমন
+  // kitchen sink-এর নিজের ইংরেজি মেসেজ) যেমন আছে তেমন, যাতে পুরনো ফর্ম না ভাঙে
+  const errorText = useCallback(
+    (message: string, params?: Record<string, string | number>): string =>
+      isErrorKey(message) ? t(`errors.${message}`, { ...params }) : message,
+    [t],
+  );
+
+  return { t, language, format, errorText };
 }

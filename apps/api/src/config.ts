@@ -24,6 +24,9 @@ export function loadConfig(env: Record<string, string | undefined>) {
   const e = parsed.data;
   return {
     port: e.PORT,
+    apiBaseUrl: e.API_BASE_URL,
+    // /openapi.json আর /docs — production-এ API-র পুরো নকশা বাইরে দেখানো হয় না
+    exposeDocs: e.NODE_ENV !== 'production',
     databaseUrl: e.DATABASE_URL,
     redisUrl: e.REDIS_URL,
     appOrigin: e.APP_ORIGIN,

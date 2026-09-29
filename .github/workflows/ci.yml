@@ -47,5 +47,8 @@ jobs:
       - name: Bundle size
         run: pnpm test:bundle-size
 
+      - name: OpenAPI spec up to date
+        run: pnpm test:openapi
+
       - name: Module boundaries
         run: pnpm boundaries

@@ -1,12 +1,8 @@
-import {
-  type CanActivate,
-  type ExecutionContext,
-  ForbiddenException,
-  Injectable,
-} from '@nestjs/common';
+import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import type { PermissionKey } from '@omnivo/db';
 
+import { AppError } from '../common/http/app-error.js';
 import { currentPrincipal } from '../common/tenant/tenant-context.js';
 import { PermissionService } from './permission.service.js';
 import { REQUIRED_PERMISSIONS_KEY } from './require-permission.decorator.js';
@@ -29,9 +25,11 @@ export class PermissionGuard implements CanActivate {
     const granted = await this.permissions.forPrincipal(currentPrincipal());
     const missing = required.filter((key) => !granted.has(key));
     if (missing.length > 0) {
-      throw new ForbiddenException(
-        `You need the ${missing.join(', ')} permission. Ask a workspace owner to grant it.`,
-      );
+      const permissions = missing.join(', ');
+      // params: UI অনুবাদের ভেতরে কোন অনুমতি লাগবে সেটা বসায় ("You need the {{permissions}} …")
+      throw new AppError(403, 'permission_missing', `Missing permission: ${permissions}.`, {
+        params: { permissions },
+      });
     }
     return true;
   }

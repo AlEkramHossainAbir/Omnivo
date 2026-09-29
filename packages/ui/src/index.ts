@@ -11,6 +11,7 @@ export {
   dataTableColumns,
   dataTableFeatures,
   type DataTableColumnMeta,
+  type SortingState,
 } from './components/data-table.js';
 export { DatePicker } from './components/date-picker.js';
 export {
