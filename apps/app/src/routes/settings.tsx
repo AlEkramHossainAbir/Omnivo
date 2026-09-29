@@ -313,7 +313,7 @@ function LogoCard({ settings, canManage }: { settings: Settings; canManage: bool
     <Card>
       <CardHeader title={t('settings.logoTitle')} subtitle={t('settings.logoSubtitle')} />
       <div className="flex flex-wrap items-center gap-4 p-5">
-        <div className="grid h-20 w-40 shrink-0 place-items-center rounded-control border border-line bg-subtle p-2">
+        <div className="flex h-20 w-40 shrink-0 items-center justify-center overflow-hidden rounded-control border border-line bg-subtle p-2">
           {settings.logo ? (
             <img
               src={settings.logo.url}
