@@ -144,14 +144,25 @@ The table above is only a starting point. Plans, prices and what the website sho
 
 ## Getting started
 
-> The codebase is not scaffolded yet. The intended local workflow is:
-
 ```bash
 pnpm install
-docker compose -f infra/docker/docker-compose.yml up -d   # postgres, redis, meilisearch
+pnpm db:up        # Postgres, Valkey, Mailpit, MinIO in Docker (Docker Desktop must be running)
 pnpm db:migrate
-pnpm dev                                                  # runs all apps via turbo
+pnpm dev          # API + app + package watchers via turbo
 ```
+
+Once `pnpm dev` is running:
+
+| What | URL | Notes |
+|---|---|---|
+| App | http://localhost:5173 | Sign up to create a workspace |
+| API | http://localhost:3000 | NestJS on Fastify |
+| API docs | http://localhost:3000/docs | Scalar UI, generated from the `@omnivo/contracts` route registry. Dev and test only, never served in production |
+| OpenAPI spec | http://localhost:3000/openapi.json | The same spec is committed at `packages/contracts/openapi.json` (`pnpm gen:openapi` rewrites it) |
+| Kitchen sink | http://localhost:5173/kitchen-sink | Every shared UI component. Dev only, needs a signed-in user |
+
+To work on the UI without the API, Postgres or Docker, run `pnpm dev:mock` (the app on MSW
+mocks). [COMMANDS.md](COMMANDS.md) lists every command.
 
 ## Roadmap
 
