@@ -86,13 +86,23 @@ once and used everywhere). **The chosen variant is Stroke Rounded** (the free
 করার দরকার নেই। ছোট illustrative কোড স্নিপেট ব্যাখ্যার ভেতরে দেখানো যাবে, কিন্তু
 তার comment/description বাংলাতেই হবে।
 
-কোনো ধাপ/phase-এর বিস্তারিত ইমপ্লিমেন্টেশন গাইড লেখার সময় (যেমন
-`docs/step-*.bn.md`-এর মতো ডকুমেন্ট, যেখানে ফাইল-বাই-ফাইল কোড দেখানো হয়), শুধু
-উপরের সেকশনের overall "কেন" যথেষ্ট না — প্রতিটা উল্লেখযোগ্য কোড লাইন বা ব্লকের
-ঠিক কারণটাও বলতে হবে: এই লাইনটা কেন এভাবে লেখা, অন্যভাবে লিখলে কী সমস্যা হতো, এটা
-কোন edge case/bug/constraint সামলাচ্ছে। এই ব্যাখ্যা কোড ব্লকের ঠিক পরে prose হিসেবে
-বা কোড লাইনের পাশে ছোট বাংলা comment হিসেবে দিতে হবে — শুধু ফাইলের নাম আর কোড বসিয়ে
-দিলে চলবে না।
+#### Writing docs (step guides, notes, ADRs)
+
+Docs are written in **simple English**, not Bangla. This overrides the Bangla rule
+above for anything saved to a file; the chat discussion stays in Bangla.
+
+- Use short sentences and common words. Avoid idioms, jargon and long, nested
+  sentences. If a technical term is needed, explain it once in plain words.
+- Name new docs `docs/step-*.en.md` (`.en` instead of `.bn`, to show the language).
+  Existing `.bn.md` files stay as they are until I ask for a translation.
+- Comments inside code snippets in docs are also simple English.
+
+When writing a detailed implementation guide for a step or phase (like `docs/step-*.en.md`,
+where code is shown file by file), the overall "why" is not enough. Explain the reason
+for every notable line or block: why it is written this way, what would go wrong if it
+were written differently, and which edge case, bug or constraint it handles. Put this
+explanation as prose right after the code block, or as a short English comment next to
+the line. Never just list file names and paste code.
 
 ## App UI design system (approved 2026-09-24)
 
