@@ -7,6 +7,8 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // লেখা i18n-এর audit.actions.*-এ রাখে (en.ts-এর satisfies নতুন action-এর অনুবাদ ভুলতে দেয় না)
 export const AUDIT_ACTIONS = [
   'workspace.created',
+  'workspace.setup_started',
+  'workspace.provisioned',
   'auth.signed_in',
   'auth.switched_in',
   'settings.updated',
@@ -64,7 +66,7 @@ export const auditEntrySchema = z.object({
   action: z.string(),
   entityType: z.string(),
   entityId: z.uuid(),
-  // null = সিস্টেম নিজে (পরে ধাপ ৮-এর background job)
+  // null = the system itself: a background job in the worker (step 8)
   actor: z.object({ id: z.uuid(), fullName: z.string() }).nullable(),
   changes: auditChangesSchema,
   ipAddress: z.string().nullable(),

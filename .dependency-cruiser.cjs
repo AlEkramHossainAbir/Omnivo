@@ -42,11 +42,37 @@ module.exports = {
         dependencyTypesNot: ['dynamic-import'],
       },
     },
-    // Module boundary rules inside apps/api (accounting must not import inventory internals,
-    // etc.) get added as the modular monolith takes shape — steps 6-8.
+    {
+      name: 'queue-only-in-worker',
+      severity: 'error',
+      comment:
+        'The API hands work to the worker by writing an outbox row with emit(), in the same transaction as the change. A job put on the queue straight from a request is lost when that transaction rolls back after it, or runs before the data it needs is committed.',
+      from: {
+        path: '^apps/api/src/',
+        pathNot: ['^apps/api/src/worker/', '^apps/api/src/worker\\.ts$', '\\.spec\\.ts$'],
+      },
+      to: { path: 'node_modules/bullmq/' },
+    },
+    {
+      name: 'api-not-to-worker',
+      severity: 'error',
+      comment:
+        'worker/ is the other process (relay, queues, job runner). Feature code provides handlers that worker/ imports; it never imports worker/ itself, so the HTTP process never starts queue workers by accident.',
+      from: {
+        path: '^apps/api/src/',
+        pathNot: ['^apps/api/src/worker/', '^apps/api/src/worker\\.ts$', '^apps/api/src/testing/'],
+      },
+      to: { path: '^apps/api/src/worker/' },
+    },
+    // More module boundary rules inside apps/api (accounting must not import inventory internals,
+    // etc.) get added as the modular monolith takes shape.
   ],
   options: {
     doNotFollow: { path: 'node_modules' },
-    exclude: { path: '(^|/)(node_modules|dist|build|coverage)(/|$)' },
+    // Only our own build output. node_modules must stay in the graph (doNotFollow above already
+    // stops the cruise there): excluding it — or any path with /dist/ in it, which is where most
+    // packages keep their code — removed the packages themselves, so rules that point at a package
+    // (contracts-only-zod, queue-only-in-worker) could never fire.
+    exclude: { path: '^(apps|packages)/[^/]+/(dist|dist-worker|build|coverage)/' },
   },
 };

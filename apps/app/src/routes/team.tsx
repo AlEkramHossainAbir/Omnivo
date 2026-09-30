@@ -7,22 +7,11 @@ import {
   UserMultipleIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { zodResolver } from '@hookform/resolvers/zod';
-import {
-  contractErrorMap,
-  createInvitationInputSchema,
-  type Invitation,
-  type Member,
-  type MemberSort,
-  type MeResponse,
-  type Role,
-  routes,
-} from '@omnivo/contracts';
+import { type Invitation, type Member, type MemberSort, routes } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
   Button,
   CheckboxGroup,
-  type CheckboxOption,
   DataTable,
   dataTableColumns,
   Dialog,
@@ -33,22 +22,19 @@ import {
   Pill,
   SectionHeader,
   type SortingState,
-  TextField,
   toast,
 } from '@omnivo/ui';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
 
+import { InviteForm, useRoleOptions } from '../components/invite-form';
 import { ApiRequestError, call } from '../lib/api';
-import { applyApiError } from '../lib/field-errors';
 import { useCan } from '../lib/permissions';
 import { invitationsQuery, membersQuery, rolesQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 
 const memberColumn = dataTableColumns<Member>();
 const invitationColumn = dataTableColumns<Invitation>();
-const INVITE_FIELDS = createInvitationInputSchema.keyof().options;
 
 function initials(name: string): string {
   return name
@@ -65,138 +51,6 @@ function failureOf(error: Error | null): string | undefined {
   return error instanceof ApiRequestError ? error.code : 'unknown_error';
 }
 
-// এই রোল আমি দিতে (বা কেড়ে নিতে) পারি কি না — API-র grants.ts-এর একই নিয়ম, শুধু আগেভাগে বাক্সটা বন্ধ
-// রাখার জন্য। owner-কে owner চেনা যায় me.roles-এ owner রোলের নাম দেখে (সেই নাম বদলানো যায় না)
-function useGrantable(roles: readonly Role[] | undefined, me: MeResponse | null) {
-  return useCallback(
-    (role: Role): 'ok' | 'ownerOnly' | 'cantGrant' => {
-      if (!me || !roles) return 'cantGrant';
-      const ownerName = roles.find((candidate) => candidate.kind === 'owner')?.name;
-      if (ownerName !== undefined && me.roles.includes(ownerName)) return 'ok';
-      if (role.kind === 'owner') return 'ownerOnly';
-      return role.permissions.every((key) => me.permissions.includes(key)) ? 'ok' : 'cantGrant';
-    },
-    [roles, me],
-  );
-}
-
-// invite আর সদস্যের ফর্ম — দুটোতেই একই রোলের তালিকা: নাম, নিচে কী দেয়, আর দিতে না পারলে কেন
-function useRoleOptions(roles: readonly Role[] | undefined): CheckboxOption[] {
-  const { t } = useLocale();
-  const me = useSession((state) => state.me);
-  const grantable = useGrantable(roles, me);
-  return useMemo(
-    () =>
-      (roles ?? []).map((role) => {
-        const verdict = grantable(role);
-        const detail =
-          verdict === 'ownerOnly'
-            ? t('team.ownerOnly')
-            : verdict === 'cantGrant'
-              ? t('team.cantGrant')
-              : role.kind === 'owner'
-                ? t('team.allPermissions')
-                : t('team.permissionCount', { count: role.permissions.length });
-        return {
-          value: role.id,
-          disabled: verdict !== 'ok',
-          label: (
-            <span className="grid">
-              <span className="font-medium text-ink">{role.name}</span>
-              <span className="text-caption text-ink-3">{detail}</span>
-            </span>
-          ),
-        };
-      }),
-    [roles, grantable, t],
-  );
-}
-
-function InviteForm({ onDone }: { onDone: () => void }) {
-  const { t } = useLocale();
-  const me = useSession((state) => state.me);
-  const tenantId = me?.tenant.id ?? '';
-  const queryClient = useQueryClient();
-  const { data: roles } = useQuery(rolesQuery(tenantId));
-  const options = useRoleOptions(roles);
-  const {
-    register,
-    control,
-    handleSubmit,
-    setError,
-    formState: { errors, isSubmitting },
-  } = useForm({
-    resolver: zodResolver(createInvitationInputSchema, { error: contractErrorMap }),
-    defaultValues: { email: '', roleIds: [] },
-  });
-
-  const onSubmit = handleSubmit(async (values) => {
-    try {
-      const invitation = await call(routes.invitations.create, { body: values });
-      await queryClient.invalidateQueries({ queryKey: ['invitations', tenantId] });
-      // চিঠি না গেলেও invitation তৈরি — সেটা স্পষ্ট করে বলা, "পাঠানো হয়েছে" বলে ভুল ধারণা না দেওয়া
-      toast(
-        invitation.sentAt === null
-          ? t('team.notSent')
-          : t('team.invited', { email: invitation.email }),
-      );
-      onDone();
-    } catch (error) {
-      applyApiError(error, INVITE_FIELDS, setError);
-    }
-  });
-
-  return (
-    <DialogContent
-      title={t('team.inviteTitle')}
-      description={t('team.inviteDescription', { workspace: me?.tenant.name ?? '' })}
-      footer={
-        <>
-          <DialogClose asChild>
-            <Button variant="secondary">{t('common.cancel')}</Button>
-          </DialogClose>
-          <Button type="submit" form="invite-form" disabled={isSubmitting}>
-            {isSubmitting ? t('team.sending') : t('team.send')}
-          </Button>
-        </>
-      }
-    >
-      <form
-        id="invite-form"
-        noValidate
-        onSubmit={(event) => void onSubmit(event)}
-        className="grid gap-5"
-      >
-        {errors.root?.server?.message && <FormAlert message={errors.root.server.message} />}
-        <TextField
-          label={t('team.email')}
-          icon={Mail01Icon}
-          type="email"
-          autoComplete="off"
-          placeholder="tanvir@rahmangarments.com"
-          {...register('email')}
-          error={errors.email?.message}
-        />
-        {/* Radix Checkbox আসল <input> না, তাই register চলে না — Controller মান আর onChange জোড়ে */}
-        <Controller
-          control={control}
-          name="roleIds"
-          render={({ field }) => (
-            <CheckboxGroup
-              legend={t('team.roles')}
-              hint={t('team.rolesHint')}
-              options={options}
-              value={field.value}
-              onChange={field.onChange}
-              error={errors.roleIds?.message}
-            />
-          )}
-        />
-      </form>
-    </DialogContent>
-  );
-}
-
 function InvitationPanel({ invitation, onDone }: { invitation: Invitation; onDone: () => void }) {
   const { t, format } = useLocale();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
@@ -211,7 +65,7 @@ function InvitationPanel({ invitation, onDone }: { invitation: Invitation; onDon
       }),
     onSuccess: async (saved) => {
       await refresh();
-      toast(saved.sentAt === null ? t('team.notSent') : t('team.resent', { email: saved.email }));
+      toast(t('team.resent', { email: saved.email }));
       onDone();
     },
   });
@@ -287,18 +141,27 @@ function InvitationStatus({ invitation }: { invitation: Invitation }) {
       </Pill>
     );
   }
-  if (invitation.sentAt === null) {
-    return (
-      <Pill tone="warn" icon={Alert02Icon}>
-        {t('team.statuses.notSent')}
-      </Pill>
-    );
+  // The worker's result: still being sent (or retried), gone out, or given up
+  switch (invitation.delivery) {
+    case 'sending':
+      return (
+        <Pill tone="neutral" icon={Mail01Icon}>
+          {t('team.statuses.sending')}
+        </Pill>
+      );
+    case 'failed':
+      return (
+        <Pill tone="warn" icon={Alert02Icon}>
+          {t('team.statuses.notSent')}
+        </Pill>
+      );
+    case 'sent':
+      return (
+        <Pill tone="brand" icon={MailSend01Icon}>
+          {t('team.statuses.sent')}
+        </Pill>
+      );
   }
-  return (
-    <Pill tone="brand" icon={MailSend01Icon}>
-      {t('team.statuses.sent')}
-    </Pill>
-  );
 }
 
 function MemberForm({ member, onDone }: { member: Member; onDone: () => void }) {

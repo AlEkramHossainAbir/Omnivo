@@ -1,11 +1,14 @@
+import type { INestApplicationContext } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   auditPageSchema,
+  type Invitation,
   invitationListSchema,
   invitationPreviewSchema,
   invitationSchema,
   memberPageSchema,
   meResponseSchema,
+  notificationPageSchema,
   problemSchema,
   type Role,
   roleSchema,
@@ -13,9 +16,14 @@ import {
 } from '@omnivo/contracts';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { z } from 'zod';
 
-import { createTestApp, testConfig } from '../testing/app.js';
+import {
+  createTestApp,
+  createTestWorker,
+  eventually,
+  testConfig,
+  testWorkerConfig,
+} from '../testing/app.js';
 import {
   startMail,
   startPostgres,
@@ -25,21 +33,34 @@ import {
   type TestRedis,
 } from '../testing/containers.js';
 import { bearer, refreshCookieOf, type SignedIn, sessionOf, signUp } from '../testing/http.js';
+import { invitationTokenOf, lastMailTo } from '../testing/mailpit.js';
 import { hashInvitationToken } from './invitation-token.js';
 
 let pg: TestPostgres;
 let redis: TestRedis;
 let mail: TestMail;
 let app: NestFastifyApplication;
+let worker: INestApplicationContext;
 let owner: SignedIn;
 let accountant: Role;
 let merchandiser: Role;
 
+function startWorker(mailUrl?: string): Promise<INestApplicationContext> {
+  return createTestWorker(
+    testWorkerConfig({
+      databaseUrl: pg.appUrl,
+      workerDatabaseUrl: pg.workerUrl,
+      redisUrl: redis.url,
+      ...(mailUrl !== undefined && { mailUrl }),
+    }),
+  );
+}
+
 beforeAll(async () => {
   [pg, redis, mail] = await Promise.all([startPostgres(), startRedis(), startMail()]);
-  app = await createTestApp(
-    testConfig({ databaseUrl: pg.appUrl, redisUrl: redis.url, mailUrl: mail.smtpUrl }),
-  );
+  app = await createTestApp(testConfig({ databaseUrl: pg.appUrl, redisUrl: redis.url }));
+  // The API does not send email any more — the worker does, from the outbox
+  worker = await startWorker(mail.smtpUrl);
   owner = await signUp(app, {
     companyName: 'Rahman Garments Ltd.',
     workspaceSlug: 'rahman-garments',
@@ -68,6 +89,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  await worker.close();
   await app.close();
   await Promise.all([pg.container.stop(), redis.container.stop(), mail.container.stop()]);
 });
@@ -92,29 +114,20 @@ async function invite(email: string, roleIds: string[]) {
   return invitationSchema.parse(res.json());
 }
 
-// Mailpit-এর HTTP API — বাইরের ডেটা, তাই schema দিয়ে পড়া (cast না)
-const mailboxSchema = z.object({
-  messages: z.array(
-    z.object({
-      ID: z.string(),
-      Subject: z.string(),
-      To: z.array(z.object({ Address: z.string() })),
-    }),
-  ),
-});
-const messageSchema = z.object({ Text: z.string(), HTML: z.string() });
+async function openInvitation(email: string): Promise<Invitation> {
+  const { items } = invitationListSchema.parse((await send('GET', '/invitations')).json());
+  const found = items.find((item) => item.email === email);
+  if (!found) throw new Error(`no open invitation for ${email}`);
+  return found;
+}
 
-// এই ঠিকানায় সবশেষ চিঠি আর তার লিংকের token (Mailpit নতুন আগে দেয়)
-async function lastMailTo(address: string) {
-  const mailbox = mailboxSchema.parse(await (await fetch(`${mail.apiUrl}/api/v1/messages`)).json());
-  const found = mailbox.messages.find((message) => message.To.some((to) => to.Address === address));
-  if (!found) throw new Error(`no mail to ${address}`);
-  const message = messageSchema.parse(
-    await (await fetch(`${mail.apiUrl}/api/v1/message/${found.ID}`)).json(),
-  );
-  const token = /http:\/\/localhost:5173\/invite#([\w-]+)/.exec(message.Text)?.[1];
-  if (!token) throw new Error('no invitation link in the mail');
-  return { subject: found.Subject, html: message.HTML, token };
+// The newest link sent to this address, waiting for the worker to send it
+async function tokenSentTo(address: string, notToken?: string): Promise<string> {
+  return eventually(async () => {
+    const token = invitationTokenOf(await lastMailTo(mail.apiUrl, address));
+    if (token === notToken) throw new Error('still the old email');
+    return token;
+  });
 }
 
 function lookup(token: string) {
@@ -126,28 +139,32 @@ function accept(payload: object) {
 }
 
 describe('inviting', () => {
-  it('emails a one-time link and lists the invitation as sent', async () => {
+  it('answers at once with "sending", then the worker emails a one-time link', async () => {
     const invitation = await invite(' Tanvir@RahmanGarments.com ', [accountant.id]);
     expect(invitation).toMatchObject({
       email: 'tanvir@rahmangarments.com',
       roles: [{ id: accountant.id, name: 'Accountant' }],
       invitedBy: { fullName: 'Farhana Rahman' },
+      delivery: 'sending',
     });
-    expect(invitation.sentAt).not.toBeNull();
 
-    const sent = await lastMailTo('tanvir@rahmangarments.com');
+    const sent = await eventually(() => lastMailTo(mail.apiUrl, 'tanvir@rahmangarments.com'));
     expect(sent.subject).toBe('Farhana Rahman invited you to Rahman Garments Ltd. on Omnivo');
+    await eventually(async () => {
+      expect((await openInvitation('tanvir@rahmangarments.com')).delivery).toBe('sent');
+    });
 
-    // DB-তে token নিজে নেই, শুধু তার hash
+    // DB-তে token নিজে নেই, শুধু তার hash — and the outbox row holds ids only, never the token
+    const token = invitationTokenOf(sent);
     const superuser = postgres(pg.superuserUrl, { max: 1 });
     const [row] = await superuser<{ token_hash: string }[]>`
       SELECT token_hash FROM invitations WHERE email = 'tanvir@rahmangarments.com'`;
+    const outbox = await superuser<{ payload: unknown }[]>`
+      SELECT payload FROM outbox_events WHERE type = 'invitation.issued'`;
     await superuser.end();
-    expect(row?.token_hash).toBe(hashInvitationToken(sent.token));
-    expect(row?.token_hash).not.toContain(sent.token);
-
-    const { items } = invitationListSchema.parse((await send('GET', '/invitations')).json());
-    expect(items.map((item) => item.email)).toEqual(['tanvir@rahmangarments.com']);
+    expect(row?.token_hash).toBe(hashInvitationToken(token));
+    expect(JSON.stringify(outbox)).not.toContain(token);
+    expect(JSON.stringify(outbox)).not.toContain('tanvir@');
   });
 
   it('escapes names in the HTML mail, so a company name cannot become a link', async () => {
@@ -156,7 +173,7 @@ describe('inviting', () => {
       companyName: '<a href="https://evil.example">Rahman</a>',
     });
     await invite('rupa@rahmangarments.com', [merchandiser.id]);
-    const sent = await lastMailTo('rupa@rahmangarments.com');
+    const sent = await eventually(() => lastMailTo(mail.apiUrl, 'rupa@rahmangarments.com'));
     expect(sent.html).not.toContain('<a href="https://evil.example">');
     expect(sent.html).toContain('&lt;a href=&quot;https://evil.example&quot;&gt;');
     await send('PUT', '/settings', {
@@ -190,7 +207,7 @@ describe('inviting', () => {
 
 describe('accepting', () => {
   it('shows who invited whom, then creates the account and signs in', async () => {
-    const { token } = await lastMailTo('tanvir@rahmangarments.com');
+    const token = await tokenSentTo('tanvir@rahmangarments.com');
     const preview = invitationPreviewSchema.parse((await lookup(token)).json());
     expect(preview).toMatchObject({
       workspace: { name: 'Rahman Garments Ltd.', slug: 'rahman-garments' },
@@ -230,8 +247,20 @@ describe('accepting', () => {
     });
   });
 
+  it('tells the inviter in the bell', async () => {
+    const page = await eventually(async () => {
+      const list = notificationPageSchema.parse((await send('GET', '/notifications')).json());
+      if (!list.items.some((item) => item.type === 'member.joined')) throw new Error('not yet');
+      return list;
+    });
+    expect(page.items.find((item) => item.type === 'member.joined')).toMatchObject({
+      params: { name: 'Tanvir Hossain' },
+      readAt: null,
+    });
+  });
+
   it('works only once', async () => {
-    const { token } = await lastMailTo('tanvir@rahmangarments.com');
+    const token = await tokenSentTo('tanvir@rahmangarments.com');
     const res = await lookup(token);
     expect(res.statusCode).toBe(404);
     expect(problemSchema.parse(res.json()).code).toBe('invitation_invalid');
@@ -239,7 +268,7 @@ describe('accepting', () => {
 
   it('adds an existing account only after checking its password', async () => {
     await invite('karim@karimpharma.com', [merchandiser.id]);
-    const { token } = await lastMailTo('karim@karimpharma.com');
+    const token = await tokenSentTo('karim@karimpharma.com');
     expect(invitationPreviewSchema.parse((await lookup(token)).json()).accountExists).toBe(true);
 
     const wrong = await accept({ account: 'existing', token, password: 'not-his-password' });
@@ -278,8 +307,9 @@ describe('accepting', () => {
     );
     expect(removed.statusCode).toBe(204);
 
+    const used = await tokenSentTo('tanvir@rahmangarments.com');
     await invite('tanvir@rahmangarments.com', [merchandiser.id]);
-    const { token } = await lastMailTo('tanvir@rahmangarments.com');
+    const token = await tokenSentTo('tanvir@rahmangarments.com', used);
     const res = await accept({ account: 'existing', token, password: 'Konabari-cut-2026' });
     expect(res.statusCode).toBe(200);
 
@@ -292,27 +322,29 @@ describe('accepting', () => {
 });
 
 describe('resending and revoking', () => {
-  it('sends a fresh link on resend; the old one stops working', async () => {
-    const first = await lastMailTo('rupa@rahmangarments.com');
-    const { items } = invitationListSchema.parse((await send('GET', '/invitations')).json());
-    const rupa = items.find((item) => item.email === 'rupa@rahmangarments.com');
-    if (!rupa) throw new Error('setup: Rupa missing');
+  it('kills the old link at once on resend, then sends a fresh one', async () => {
+    const first = await tokenSentTo('rupa@rahmangarments.com');
+    const rupa = await openInvitation('rupa@rahmangarments.com');
 
     const res = await send('POST', `/invitations/${rupa.id}/resend`, { version: rupa.version });
     expect(res.statusCode).toBe(200);
-    expect(invitationSchema.parse(res.json()).version).toBe(rupa.version + 1);
+    expect(invitationSchema.parse(res.json())).toMatchObject({
+      version: rupa.version + 1,
+      delivery: 'sending',
+    });
+    // Before the new email even exists: the old link is already dead (token_hash is NULL)
+    expect((await lookup(first)).statusCode).toBe(404);
 
-    const second = await lastMailTo('rupa@rahmangarments.com');
-    expect(second.token).not.toBe(first.token);
-    expect((await lookup(first.token)).statusCode).toBe(404);
-    expect((await lookup(second.token)).statusCode).toBe(200);
+    const second = await tokenSentTo('rupa@rahmangarments.com', first);
+    expect((await lookup(second)).statusCode).toBe(200);
   });
 
   it('closes the link on revoke', async () => {
-    const { token } = await lastMailTo('rupa@rahmangarments.com');
-    const { items } = invitationListSchema.parse((await send('GET', '/invitations')).json());
-    const rupa = items.find((item) => item.email === 'rupa@rahmangarments.com');
-    if (!rupa) throw new Error('setup: Rupa missing');
+    await eventually(async () => {
+      expect((await openInvitation('rupa@rahmangarments.com')).delivery).toBe('sent');
+    });
+    const token = invitationTokenOf(await lastMailTo(mail.apiUrl, 'rupa@rahmangarments.com'));
+    const rupa = await openInvitation('rupa@rahmangarments.com');
     const res = await send('DELETE', `/invitations/${rupa.id}?version=${String(rupa.version)}`);
     expect(res.statusCode).toBe(204);
     expect((await lookup(token)).statusCode).toBe(404);
@@ -323,7 +355,7 @@ describe('resending and revoking', () => {
 
   it('replaces an expired invitation instead of blocking a new one', async () => {
     await invite('mahbub@rahmangarments.com', [merchandiser.id]);
-    const { token } = await lastMailTo('mahbub@rahmangarments.com');
+    const token = await tokenSentTo('mahbub@rahmangarments.com');
     const superuser = postgres(pg.superuserUrl, { max: 1 });
     await superuser`
       UPDATE invitations SET expires_at = now() - interval '1 day'
@@ -332,28 +364,41 @@ describe('resending and revoking', () => {
     expect((await lookup(token)).statusCode).toBe(404);
 
     const again = await invite('mahbub@rahmangarments.com', [merchandiser.id]);
-    expect(again.sentAt).not.toBeNull();
+    expect(again.delivery).toBe('sending');
   });
 });
 
 describe('when the mail server is down', () => {
-  it('still creates the invitation, and says it was not sent', async () => {
-    // একই DB আর Redis, কিন্তু অচল SMTP (testConfig-এর ডিফল্ট)
-    const offline = await createTestApp(
-      testConfig({ databaseUrl: pg.appUrl, redisUrl: redis.url }),
-    );
-    try {
-      const res = await offline.inject({
-        method: 'POST',
-        url: '/invitations',
-        headers: bearer(owner.accessToken),
-        payload: { email: 'sharmin@rahmangarments.com', roleIds: [merchandiser.id] },
-      });
-      expect(res.statusCode).toBe(201);
-      expect(invitationSchema.parse(res.json()).sentAt).toBeNull();
-    } finally {
-      await offline.close();
-    }
+  it('still creates the invitation, then says "failed" and tells the sender', async () => {
+    // The same queues, but now served by a worker whose SMTP address is dead
+    await worker.close();
+    worker = await startWorker();
+
+    const invitation = await invite('sharmin@rahmangarments.com', [merchandiser.id]);
+    expect(invitation.delivery).toBe('sending');
+    await eventually(async () => {
+      expect((await openInvitation('sharmin@rahmangarments.com')).delivery).toBe('failed');
+    });
+    const { items } = notificationPageSchema.parse((await send('GET', '/notifications')).json());
+    expect(items[0]).toMatchObject({
+      type: 'invitation.failed',
+      params: { email: 'sharmin@rahmangarments.com' },
+    });
+  });
+
+  it('sends it on Resend once the mail server is back', async () => {
+    await worker.close();
+    worker = await startWorker(mail.smtpUrl);
+
+    const failed = await openInvitation('sharmin@rahmangarments.com');
+    const res = await send('POST', `/invitations/${failed.id}/resend`, {
+      version: failed.version,
+    });
+    expect(invitationSchema.parse(res.json()).delivery).toBe('sending');
+    await tokenSentTo('sharmin@rahmangarments.com');
+    await eventually(async () => {
+      expect((await openInvitation('sharmin@rahmangarments.com')).delivery).toBe('sent');
+    });
   });
 });
 

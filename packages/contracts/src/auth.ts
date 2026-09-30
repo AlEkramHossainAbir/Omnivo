@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { errorCode } from './errors.js';
 import { defineRoute } from './http.js';
 import { preferencesSchema } from './preferences.js';
+import { SETUP_STATUSES } from './setup.js';
 
 // workspace-এর ঠিকানা হবে `{slug}.omnivo.app` — তাই DNS label-এর নিয়ম মানতে হবে
 const workspaceSlugFormat = z
@@ -87,7 +88,13 @@ export type AuthSession = z.infer<typeof authSessionSchema>;
 
 export const meResponseSchema = z.object({
   user: z.object({ id: z.uuid(), email: z.string(), fullName: z.string() }),
-  tenant: z.object({ id: z.uuid(), name: z.string(), slug: z.string() }),
+  // setupStatus: the app sends an owner to the onboarding wizard while it is 'pending'
+  tenant: z.object({
+    id: z.uuid(),
+    name: z.string(),
+    slug: z.string(),
+    setupStatus: z.enum(SETUP_STATUSES),
+  }),
   roles: z.array(z.string()),
   permissions: z.array(z.string()),
   memberships: z.array(z.object({ tenantId: z.uuid(), name: z.string(), slug: z.string() })),

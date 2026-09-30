@@ -12,11 +12,13 @@ import {
   findMember,
   findRole,
   isOpen,
+  MOCK_SEND_DELAY_MS,
   newToken,
   roleList,
   toInvitation,
   toRole,
 } from './people-data';
+import { settleSetup, startSetup } from './setup-data';
 import {
   assertCodeFree,
   checkVersion,
@@ -25,6 +27,7 @@ import {
   findBranch,
   record,
   seriesList,
+  startFresh,
 } from './workspace-data';
 
 // mock সার্ভারের অবস্থা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে
@@ -36,12 +39,16 @@ let preferences: Preferences = { language: null, theme: 'system' };
 const uploads = new Map<string, { contentType: string; sizeBytes: number; url?: string }>();
 const MOCK_STORAGE = `${API_URL}/mock-storage`;
 
+// settleSetup: a started setup "finishes" on the first read after its delay, like the worker would
 function current() {
-  return dataOf(workspace);
+  const data = dataOf(workspace);
+  settleSetup(data);
+  return data;
 }
 
 function me() {
-  return meIn(workspace, current().settings.companyName, preferences);
+  const data = current();
+  return meIn(workspace, data.settings.companyName, preferences, data.setup.status);
 }
 
 // handler-এর ভেতরে MockProblem ছুড়লেই আসল API-র মতো problem response — প্রতিটা নিয়মে আলাদা
@@ -113,6 +120,9 @@ export const handlers = [
     if (body.workspaceSlug === WORKSPACES[0].slug) {
       return problem(409, 'slug_taken', { workspaceSlug: ['slug_taken'] });
     }
+    // A new workspace: setup 'pending', so the app goes on to the onboarding wizard
+    workspace = WORKSPACES[0];
+    startFresh(workspace, body.companyName);
     signedIn = true;
     return reply(routes.auth.signUp, session());
   }),
@@ -304,8 +314,7 @@ export const handlers = [
           return { id: held.id, name: held.name };
         }),
         invitedBy: { id: OWNER.id, fullName: OWNER.fullName },
-        // "bounce" থাকা ঠিকানায় চিঠি "যায় না" — UI-র "Email not sent" পথ দেখার জন্য
-        sentAt: body.email.includes('bounce') ? null : new Date().toISOString(),
+        sendsAt: Date.now() + MOCK_SEND_DELAY_MS,
         expiresAt: expiry(),
         createdAt: new Date().toISOString(),
         version: 1,
@@ -337,7 +346,7 @@ export const handlers = [
       Object.assign(invitation, {
         token: newToken(),
         expiresAt: expiry(),
-        sentAt: new Date().toISOString(),
+        sendsAt: Date.now() + MOCK_SEND_DELAY_MS,
         version: version + 1,
       });
       console.info(`[mock] invitation link: ${window.location.origin}/invite#${invitation.token}`);
@@ -544,6 +553,62 @@ export const handlers = [
     const items = all.slice(start, start + query.limit);
     const end = start + items.length;
     return reply(routes.audit.list, { items, nextCursor: end < all.length ? String(end) : null });
+  }),
+
+  mock(routes.setup.get, () => reply(routes.setup.get, current().setup)),
+
+  mock(
+    routes.setup.start,
+    guarded(async ({ request }) => {
+      const { industry } = await readBody(routes.setup.start.body, request);
+      await delay();
+      return reply(routes.setup.start, startSetup(current(), industry));
+    }),
+  ),
+
+  mock(
+    routes.setup.retry,
+    guarded(() => {
+      const data = current();
+      if (data.setup.status !== 'failed') throw new MockProblem(409, 'setup_not_failed');
+      return reply(routes.setup.retry, data.setup);
+    }),
+  ),
+
+  mock(routes.notifications.list, ({ request }) => {
+    const query = readQuery(routes.notifications.list.query, request);
+    // mock-এ cursor শুধু offset (members-এর মতো)
+    const start = query.cursor === undefined ? 0 : Number(query.cursor);
+    const all = current().notifications;
+    const items = all.slice(start, start + query.limit);
+    const end = start + items.length;
+    return reply(routes.notifications.list, {
+      items,
+      nextCursor: end < all.length ? String(end) : null,
+    });
+  }),
+
+  mock(routes.notifications.unreadCount, () =>
+    reply(routes.notifications.unreadCount, {
+      count: current().notifications.filter((item) => item.readAt === null).length,
+    }),
+  ),
+
+  mock(
+    routes.notifications.markRead,
+    guarded(({ params }) => {
+      const { id } = routes.notifications.markRead.params.parse(params);
+      const found = current().notifications.find((item) => item.id === id);
+      if (!found) throw new MockProblem(404, 'not_found');
+      found.readAt ??= new Date().toISOString();
+      return reply(routes.notifications.markRead, undefined);
+    }),
+  ),
+
+  mock(routes.notifications.markAllRead, () => {
+    const readAt = new Date().toISOString();
+    for (const item of current().notifications) item.readAt ??= readAt;
+    return reply(routes.notifications.markAllRead, undefined);
   }),
 
   mock(routes.attachments.createUpload, async ({ request }) => {

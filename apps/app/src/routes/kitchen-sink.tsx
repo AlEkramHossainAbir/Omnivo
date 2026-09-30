@@ -1,7 +1,9 @@
 import {
   CheckmarkCircle02Icon,
   Clock01Icon,
+  DeliveryTruck01Icon,
   InboxIcon,
+  Medicine02Icon,
   PauseCircleIcon,
   PlusSignIcon,
   ScissorIcon,
@@ -30,6 +32,8 @@ import {
   type PillTone,
   SectionHeader,
   SegmentedControl,
+  SelectableCardGroup,
+  Stepper,
   TextField,
   toast,
   toIsoDate,
@@ -248,6 +252,59 @@ function LetterOfCreditForm() {
   );
 }
 
+// The wizard's pieces, with the same kind of content as onboarding.tsx (English: the kitchen sink
+// is a dev tool and stays English)
+const WIZARD_STEPS = ['Business type', 'Company details', 'Invite team'];
+const INDUSTRY_OPTIONS = [
+  {
+    value: 'garments',
+    icon: TShirtIcon,
+    title: 'Garments & textiles',
+    description: 'Buyer POs, LCs, cutting and sewing',
+  },
+  {
+    value: 'pharma',
+    icon: Medicine02Icon,
+    title: 'Pharmaceuticals',
+    description: 'Batches, expiry dates and depots',
+  },
+  {
+    value: 'distribution',
+    icon: DeliveryTruck01Icon,
+    title: 'Distribution',
+    description: 'Depots, deliveries and retailer credit',
+  },
+] as const;
+
+function WizardParts() {
+  const [step, setStep] = useState(1);
+  const [industry, setIndustry] = useState<(typeof INDUSTRY_OPTIONS)[number]['value'] | null>(
+    'garments',
+  );
+  return (
+    <div className="grid gap-5 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Stepper label="Setup steps" steps={WIZARD_STEPS} current={step} />
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => {
+            setStep((step + 1) % WIZARD_STEPS.length);
+          }}
+        >
+          Next step
+        </Button>
+      </div>
+      <SelectableCardGroup
+        legend="Business type"
+        options={INDUSTRY_OPTIONS}
+        value={industry}
+        onChange={setIndustry}
+      />
+    </div>
+  );
+}
+
 const THEME_OPTIONS = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
@@ -340,6 +397,11 @@ export function KitchenSinkPage() {
           subtitle="React Hook Form + Zod, with money, date and checkbox controls"
         />
         <LetterOfCreditForm />
+      </Card>
+
+      <Card>
+        <CardHeader title="Wizard" subtitle="Stepper and selectable cards, from onboarding" />
+        <WizardParts />
       </Card>
 
       <Card>

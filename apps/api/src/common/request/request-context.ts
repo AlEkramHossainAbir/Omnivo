@@ -19,6 +19,13 @@ export function currentRequest(): RequestMeta | undefined {
   return requestStorage.getStore();
 }
 
+// The worker runs each job inside the id of the request that caused it (from the outbox row). Then
+// audit rows written by the job carry that id, and one click can be traced to all its effects.
+// IP and user agent stay null: a job has no client.
+export function runWithRequest<T>(meta: RequestMeta, fn: () => T): T {
+  return requestStorage.run(meta, fn);
+}
+
 // Nest-এর Fastify adapter middleware-কে Node-এর কাঁচা request দেয়; @fastify/middie তাতে Fastify-র
 // id (genReqId, configure-app.ts) আর ip বসিয়ে দেয়। Node-এর টাইপে এরা নেই — তাই `in` দিয়ে narrow,
 // cast না। middie ছাড়া চললেও (ভবিষ্যতে অন্য adapter) request ভাঙবে না, নিজের id বানাবে

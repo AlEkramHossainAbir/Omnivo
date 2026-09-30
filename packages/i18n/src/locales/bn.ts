@@ -28,6 +28,9 @@ export const bn: Messages = {
       dark: 'ডার্ক',
     },
     preferenceNotSaved: 'আপনার অ্যাকাউন্টে সেভ করা যায়নি। আপাতত শুধু এই ডিভাইসে থাকবে।',
+    notifications: 'নোটিফিকেশন',
+    notificationsUnread_one: 'নোটিফিকেশন, {{count}}টা পড়া হয়নি',
+    notificationsUnread_other: 'নোটিফিকেশন, {{count}}টা পড়া হয়নি',
   },
   nav: {
     overview: 'সারসংক্ষেপ',
@@ -208,6 +211,7 @@ export const bn: Messages = {
       status: 'অবস্থা',
     },
     statuses: {
+      sending: 'পাঠানো হচ্ছে',
       sent: 'পাঠানো হয়েছে',
       notSent: 'ইমেইল যায়নি',
       expired: 'মেয়াদ শেষ',
@@ -216,7 +220,7 @@ export const bn: Messages = {
     actionsFor: '{{email}}-এর কাজ',
     resend: 'আবার পাঠান',
     revoke: 'আমন্ত্রণ বাতিল করুন',
-    resent: '{{email}}-এ নতুন লিংক পাঠানো হয়েছে',
+    resent: '{{email}}-এ নতুন লিংক পাঠানো হচ্ছে',
     revoked: '{{email}}-এর আমন্ত্রণ বাতিল হয়েছে',
     inviteTitle: 'আমন্ত্রণ পাঠান',
     inviteDescription: '{{workspace}}-এ যোগ দেওয়ার লিংকসহ একটা ইমেইল যাবে।',
@@ -227,8 +231,7 @@ export const bn: Messages = {
     cantGrant: 'এতে এমন অনুমতি আছে যা আপনার নেই',
     send: 'আমন্ত্রণ পাঠান',
     sending: 'পাঠানো হচ্ছে…',
-    invited: '{{email}}-এ আমন্ত্রণ পাঠানো হয়েছে',
-    notSent: 'আমন্ত্রণ সেভ হয়েছে, কিন্তু ইমেইল যায়নি। তালিকা থেকে আবার পাঠান।',
+    invited: '{{email}}-এ আমন্ত্রণ পাঠানো হচ্ছে',
     permissionCount_one: '{{count}}টা অনুমতি',
     permissionCount_other: '{{count}}টা অনুমতি',
     allPermissions: 'সব অনুমতি',
@@ -336,7 +339,11 @@ export const bn: Messages = {
     allowed: 'অনুমতি আছে',
     notAllowed: 'অনুমতি নেই',
     actions: {
-      workspace: { created: 'ওয়ার্কস্পেস তৈরি করেছেন' },
+      workspace: {
+        created: 'ওয়ার্কস্পেস তৈরি করেছেন',
+        setup_started: 'ওয়ার্কস্পেসের সেটআপ শুরু করেছেন',
+        provisioned: 'শুরুর রোলগুলো যোগ করেছে',
+      },
       auth: { signed_in: 'সাইন ইন করেছেন', switched_in: 'এই ওয়ার্কস্পেসে এসেছেন' },
       settings: { updated: 'সেটিংস বদলেছেন', logo_changed: 'লোগো বদলেছেন' },
       branch: {
@@ -380,8 +387,69 @@ export const bn: Messages = {
       padding: 'অঙ্ক',
       roles: 'রোল',
       description: 'বিবরণ',
+      industry: 'ব্যবসার ধরন',
     },
     loadFailed: 'অডিট লগ আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
+  },
+  onboarding: {
+    title: '{{company}} সেটআপ করুন',
+    stepsLabel: 'সেটআপের ধাপ',
+    steps: {
+      business: 'ব্যবসার ধরন',
+      company: 'কোম্পানির তথ্য',
+      team: 'টিমকে ডাকুন',
+    },
+    stepOf: 'ধাপ {{current}} / {{total}}',
+    continue: 'এগিয়ে যান',
+    starting: 'শুরু হচ্ছে…',
+    skip: 'এখন না',
+    business: {
+      title: '{{company}} কী করে?',
+      subtitle:
+        'এমন কোম্পানিতে সাধারণত যে রোলগুলো লাগে, সেগুলো দিয়ে শুরু করা হবে। পরে যেকোনো সময় নাম বা অনুমতি বদলানো যায়।',
+      label: 'ব্যবসার ধরন',
+    },
+    industries: {
+      garments: { name: 'গার্মেন্টস ও টেক্সটাইল', description: 'বায়ার PO, LC, কাটিং আর সেলাই' },
+      pharma: { name: 'ফার্মাসিউটিক্যালস', description: 'ব্যাচ, মেয়াদ আর ডিপো' },
+      distribution: { name: 'ডিস্ট্রিবিউশন', description: 'ডিপো, ডেলিভারি আর দোকানের বাকি' },
+      manufacturing: {
+        name: 'ম্যানুফ্যাকচারিং',
+        description: 'প্রোডাকশন অর্ডার আর কাঁচামালের স্টক',
+      },
+      retail: { name: 'রিটেইল', description: 'দোকান, কাউন্টার আর দিনের ক্যাশ' },
+      other: { name: 'অন্য কিছু', description: 'সাধারণ শুরু, নিজের মতো সাজিয়ে নিন' },
+    },
+    company: {
+      title: 'কোম্পানির তথ্য',
+      subtitle: 'ইনভয়েস আর Mushak 6.3-এ ছাপা হয়। পরে Settings থেকে বদলানো যায়।',
+    },
+    team: {
+      title: 'টিমকে ডাকুন',
+      subtitle: 'আপনার অ্যাকাউন্ট্যান্ট আর ম্যানেজারদের এখনই যোগ করুন, অথবা পরে Team পেজ থেকে।',
+      preparing: '{{industry}}-এর রোলগুলো তৈরি হচ্ছে…',
+      ready: 'রোল তৈরি: {{roles}}',
+      failed: 'সেটআপ শেষ হয়নি। আবার চেষ্টা করুন — আপনার দেওয়া কোনো তথ্য হারায়নি।',
+      retry: 'আবার চেষ্টা করুন',
+      invite: 'আমন্ত্রণ পাঠান',
+      invited: 'আমন্ত্রিত',
+      finish: 'ড্যাশবোর্ডে যান',
+    },
+  },
+  notifications: {
+    title: 'নোটিফিকেশন',
+    markAllRead: 'সব পড়া হয়েছে',
+    unread: 'পড়া হয়নি',
+    emptyTitle: 'এখনো কোনো নোটিফিকেশন নেই',
+    emptyBody: 'আপনার আমন্ত্রণে কেউ যোগ দিলে, বা কোনো ইমেইল পাঠানো না গেলে এখানে জানতে পারবেন।',
+    loadFailed: 'নোটিফিকেশন আনা যায়নি। একটু পরে আবার চেষ্টা করুন।',
+    types: {
+      workspace: { ready: 'আপনার ওয়ার্কস্পেস সেটআপ হয়ে গেছে। শুরুর রোলগুলো ব্যবহার করা যাবে।' },
+      member: { joined: '{{name}} ওয়ার্কস্পেসে যোগ দিয়েছেন' },
+      invitation: {
+        failed: '{{email}}-এ আমন্ত্রণের ইমেইল পাঠানো যায়নি। Team পেজ থেকে আবার পাঠান।',
+      },
+    },
   },
   errors: {
     invalid_input: 'চিহ্নিত ঘরগুলো ঠিক করে আবার চেষ্টা করুন।',
@@ -437,6 +505,8 @@ export const bn: Messages = {
     own_membership: 'নিজের রোল বদলানো বা নিজেকে সরানো যায় না। আরেকজন অ্যাডমিনকে বলুন।',
     role_in_use:
       'এই রোল কারো আছে, বা কোনো খোলা আমন্ত্রণে আছে। আগে তাঁদের রোল বদলান বা আমন্ত্রণ বাতিল করুন।',
+    setup_started: 'সেটআপ আগেই শুরু হয়েছে। কতদূর হলো দেখতে পেজটা রিলোড করুন।',
+    setup_not_failed: 'সেটআপ ব্যর্থ হয়নি। কতদূর হলো দেখতে পেজটা রিলোড করুন।',
     invalid_cursor: 'তালিকাটা বদলে গেছে। পেজটা রিলোড করে আবার চেষ্টা করুন।',
     version_conflict:
       'আপনি বদলানোর সময় আরেকজন পরিবর্তন সেভ করেছেন। রিলোড করে তাঁরটা দেখুন, তারপর আবার বদলান।',

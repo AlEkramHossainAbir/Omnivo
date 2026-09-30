@@ -46,4 +46,6 @@ export { PageHeader, SectionHeader } from './components/page-header.js';
 export { Pill, type PillTone } from './components/pill.js';
 export { Popover, PopoverContent, PopoverTrigger } from './components/popover.js';
 export { SegmentedControl } from './components/segmented-control.js';
+export { SelectableCardGroup, type SelectableCardOption } from './components/selectable-card.js';
+export { Stepper } from './components/stepper.js';
 export { Toaster, toast } from './components/toast.js';

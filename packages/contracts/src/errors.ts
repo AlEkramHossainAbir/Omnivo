@@ -54,6 +54,9 @@ export const ERROR_CODES = [
   'last_owner',
   'own_membership',
   'role_in_use',
+  // workspace setup (onboarding)
+  'setup_started',
+  'setup_not_failed',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

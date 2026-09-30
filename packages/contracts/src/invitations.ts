@@ -18,14 +18,19 @@ export function invitationLink(appOrigin: string, token: string): string {
 // এক সপ্তাহ: সাপ্তাহিক ছুটি পেরিয়েও কাজ করে, আবার পুরনো ইমেইলে পড়ে থাকা লিংক চিরকাল খোলা থাকে না
 export const INVITATION_TTL_DAYS = 7;
 
+// Where the email is. The worker sends it after the request has finished (outbox, step 8):
+// sending = queued or being retried, sent = the mail server took it, failed = the worker gave up
+// after its retries. Resend starts again from sending.
+export const INVITATION_DELIVERIES = ['sending', 'sent', 'failed'] as const;
+export type InvitationDelivery = (typeof INVITATION_DELIVERIES)[number];
+
 export const invitationSchema = z.object({
   id: z.uuid(),
   email: z.string(),
   roles: z.array(roleRefSchema),
   // null = যিনি পাঠিয়েছিলেন তাঁর অ্যাকাউন্ট আর নেই
   invitedBy: z.object({ id: z.uuid(), fullName: z.string() }).nullable(),
-  // null = ইমেইল যায়নি (mail server বন্ধ ছিল) — UI "Not sent" দেখায়, "Resend" নতুন লিংক পাঠায়
-  sentAt: z.iso.datetime().nullable(),
+  delivery: z.enum(INVITATION_DELIVERIES),
   expiresAt: z.iso.datetime(),
   createdAt: z.iso.datetime(),
   version: z.number().int(),

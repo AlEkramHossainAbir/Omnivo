@@ -6,6 +6,8 @@ import { cn } from '../lib/cn.js';
 interface AppShellProps {
   // সাইডবারের মাথায় (ডেস্কটপ) / টপ বারের বাঁয়ে (ফোন) — সাধারণত <Logo />
   brand: ReactNode;
+  // Next to the logo on every screen size — the notification bell
+  actions?: ReactNode;
   // শুধু ফোনে, টপ বারের ডানে (যেমন user menu) — ডেস্কটপে সেই কাজ sidebarFooter-এর
   topBarActions?: ReactNode;
   // workspace switcher
@@ -20,6 +22,7 @@ interface AppShellProps {
 // যায় আর nav আড়াআড়ি। ui রাউটার চেনে না — লিংক, ইউজার, টেন্যান্ট সব app slot-এ পাঠায়
 export function AppShell({
   brand,
+  actions,
   topBarActions,
   sidebarHeader,
   nav,
@@ -31,7 +34,10 @@ export function AppShell({
       <aside className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 min-[860px]:sticky min-[860px]:top-0 min-[860px]:h-dvh min-[860px]:gap-5 min-[860px]:border-r min-[860px]:border-b-0 min-[860px]:px-3 min-[860px]:py-5">
         <div className="flex items-center justify-between gap-3 px-2">
           {brand}
-          {topBarActions && <div className="min-[860px]:hidden">{topBarActions}</div>}
+          <div className="flex items-center gap-1">
+            {actions}
+            {topBarActions && <div className="min-[860px]:hidden">{topBarActions}</div>}
+          </div>
         </div>
         {sidebarHeader}
         {nav}

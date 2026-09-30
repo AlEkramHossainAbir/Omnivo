@@ -23,11 +23,18 @@ export interface MockRole {
   updatedAt: string;
 }
 
-export interface MockInvitation extends Invitation {
+// delivery is not stored: it is worked out from sendsAt, the way the real worker would move it
+// along a moment after the request (see toInvitation)
+export interface MockInvitation extends Omit<Invitation, 'delivery'> {
   token: string;
   acceptedAt: string | null;
   revokedAt: string | null;
+  // When the pretend worker "sends" it (ms since epoch)
+  sendsAt: number;
 }
+
+// How long the pretend worker takes — long enough to see "Sending" in the list
+export const MOCK_SEND_DELAY_MS = 1_500;
 
 export interface People {
   roles: MockRole[];
@@ -172,7 +179,13 @@ export function toInvitation(invitation: MockInvitation): Invitation {
     email: invitation.email,
     roles: invitation.roles,
     invitedBy: invitation.invitedBy,
-    sentAt: invitation.sentAt,
+    // Addresses with "bounce" in them never arrive — the UI's "Email not sent" path
+    delivery:
+      Date.now() < invitation.sendsAt
+        ? 'sending'
+        : invitation.email.includes('bounce')
+          ? 'failed'
+          : 'sent',
     expiresAt: invitation.expiresAt,
     createdAt: invitation.createdAt,
     version: invitation.version,

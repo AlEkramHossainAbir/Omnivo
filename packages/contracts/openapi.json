@@ -37,6 +37,12 @@
     },
     {
       "name": "attachments"
+    },
+    {
+      "name": "setup"
+    },
+    {
+      "name": "notifications"
     }
   ],
   "paths": {
@@ -411,12 +417,22 @@
                         },
                         "slug": {
                           "type": "string"
+                        },
+                        "setupStatus": {
+                          "type": "string",
+                          "enum": [
+                            "pending",
+                            "provisioning",
+                            "ready",
+                            "failed"
+                          ]
                         }
                       },
                       "required": [
                         "id",
                         "name",
-                        "slug"
+                        "slug",
+                        "setupStatus"
                       ]
                     },
                     "roles": {
@@ -988,16 +1004,12 @@
                               }
                             ]
                           },
-                          "sentAt": {
-                            "anyOf": [
-                              {
-                                "type": "string",
-                                "format": "date-time",
-                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-                              },
-                              {
-                                "type": "null"
-                              }
+                          "delivery": {
+                            "type": "string",
+                            "enum": [
+                              "sending",
+                              "sent",
+                              "failed"
                             ]
                           },
                           "expiresAt": {
@@ -1021,7 +1033,7 @@
                           "email",
                           "roles",
                           "invitedBy",
-                          "sentAt",
+                          "delivery",
                           "expiresAt",
                           "createdAt",
                           "version"
@@ -1144,16 +1156,12 @@
                         }
                       ]
                     },
-                    "sentAt": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-                        },
-                        {
-                          "type": "null"
-                        }
+                    "delivery": {
+                      "type": "string",
+                      "enum": [
+                        "sending",
+                        "sent",
+                        "failed"
                       ]
                     },
                     "expiresAt": {
@@ -1177,7 +1185,7 @@
                     "email",
                     "roles",
                     "invitedBy",
-                    "sentAt",
+                    "delivery",
                     "expiresAt",
                     "createdAt",
                     "version"
@@ -1298,16 +1306,12 @@
                         }
                       ]
                     },
-                    "sentAt": {
-                      "anyOf": [
-                        {
-                          "type": "string",
-                          "format": "date-time",
-                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
-                        },
-                        {
-                          "type": "null"
-                        }
+                    "delivery": {
+                      "type": "string",
+                      "enum": [
+                        "sending",
+                        "sent",
+                        "failed"
                       ]
                     },
                     "expiresAt": {
@@ -1331,7 +1335,7 @@
                     "email",
                     "roles",
                     "invitedBy",
-                    "sentAt",
+                    "delivery",
                     "expiresAt",
                     "createdAt",
                     "version"
@@ -4086,6 +4090,436 @@
                 }
               }
             }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/setup": {
+      "get": {
+        "operationId": "setup.get",
+        "tags": [
+          "setup"
+        ],
+        "summary": "Where the workspace setup is: pending, provisioning, ready or failed",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "provisioning",
+                        "ready",
+                        "failed"
+                      ]
+                    },
+                    "industry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "garments",
+                            "pharma",
+                            "distribution",
+                            "manufacturing",
+                            "retail",
+                            "other"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "industry"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "setup.start",
+        "tags": [
+          "setup"
+        ],
+        "summary": "Pick the business type and start the background setup job",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `core.settings.manage` permission.",
+        "x-permission": "core.settings.manage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "industry": {
+                    "type": "string",
+                    "enum": [
+                      "garments",
+                      "pharma",
+                      "distribution",
+                      "manufacturing",
+                      "retail",
+                      "other"
+                    ]
+                  }
+                },
+                "required": [
+                  "industry"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "provisioning",
+                        "ready",
+                        "failed"
+                      ]
+                    },
+                    "industry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "garments",
+                            "pharma",
+                            "distribution",
+                            "manufacturing",
+                            "retail",
+                            "other"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "industry"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/setup/retry": {
+      "post": {
+        "operationId": "setup.retry",
+        "tags": [
+          "setup"
+        ],
+        "summary": "Run the setup job again after it failed",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `core.settings.manage` permission.",
+        "x-permission": "core.settings.manage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "provisioning",
+                        "ready",
+                        "failed"
+                      ]
+                    },
+                    "industry": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "garments",
+                            "pharma",
+                            "distribution",
+                            "manufacturing",
+                            "retail",
+                            "other"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "industry"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "operationId": "notifications.list",
+        "tags": [
+          "notifications"
+        ],
+        "summary": "The signed-in user's notifications in this workspace, newest first",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "params": {
+                            "type": "object",
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "additionalProperties": {
+                              "type": [
+                                "string",
+                                "number"
+                              ]
+                            }
+                          },
+                          "readAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "type",
+                          "params",
+                          "readAt",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/notifications/unread-count": {
+      "get": {
+        "operationId": "notifications.unreadCount",
+        "tags": [
+          "notifications"
+        ],
+        "summary": "How many notifications are unread",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "count": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "count"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/notifications/{id}/read": {
+      "post": {
+        "operationId": "notifications.markRead",
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Mark one notification as read",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/notifications/read-all": {
+      "post": {
+        "operationId": "notifications.markAllRead",
+        "tags": [
+          "notifications"
+        ],
+        "summary": "Mark every notification as read",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "No content"
           },
           "default": {
             "$ref": "#/components/responses/Problem"

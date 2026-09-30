@@ -34,6 +34,7 @@ import {
 import { createLink, Outlet, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
+import { NotificationBell } from '../components/notification-bell';
 import { savePreference } from '../lib/preferences';
 import { logout, switchTenant } from '../lib/session';
 import { useCan } from '../lib/permissions';
@@ -205,6 +206,7 @@ export function AppShell() {
   return (
     <Shell
       brand={<Logo />}
+      actions={<NotificationBell />}
       topBarActions={
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

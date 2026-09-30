@@ -8,6 +8,7 @@ export default tseslint.config(
     // mockServiceWorker.js: MSW-এর জেনারেট করা ফাইল (`msw init`), হাতে বদলানো হয় না
     ignores: [
       '**/dist/**',
+      '**/dist-worker/**',
       '**/build/**',
       '**/coverage/**',
       '**/.turbo/**',

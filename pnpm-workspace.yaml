@@ -10,3 +10,4 @@ allowBuilds:
   protobufjs: false # postinstall শুধু version-চেক করে
   ssh2: false # remote Docker host-এর জন্য, আমাদের দরকার নেই
   msw: false # postinstall শুধু worker ফাইল কপি করে; আমরা `msw init` নিজে চালিয়ে ফাইলটা commit করি
+  msgpackr-extract: false # bullmq: the prebuilt binary comes as an optional platform package; the script only compiles when none matches

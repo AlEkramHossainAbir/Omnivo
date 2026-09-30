@@ -7,7 +7,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
-    "dev": "turbo run dev",
+    "dev": "turbo run dev dev:worker",
     "dev:mock": "turbo run dev:mock",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",

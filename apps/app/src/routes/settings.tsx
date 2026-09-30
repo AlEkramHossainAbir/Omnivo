@@ -36,35 +36,14 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ChangeEvent, useMemo, useRef } from 'react';
 import { useForm } from 'react-hook-form';
-import type { z } from 'zod';
 
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { settingsQuery } from '../lib/queries';
+import { settingsToForm } from '../lib/settings-form';
 import { refreshMe } from '../lib/session';
 import { useCan } from '../lib/permissions';
 import { useSession } from '../lib/session-store';
-
-// ফর্মে যা থাকে: parse-এর আগের মান (z.input) — ফাঁকা ঘর '' (null না, <input>-এ null বসানো যায় না)
-type FormValues = z.input<typeof updateSettingsInputSchema>;
-
-// version ফর্মের লুকানো মান: ফর্ম যে version দেখে খোলা হয়েছিল, সেভে সেটাই যায়। সেভের মুহূর্তে ক্যাশ
-// থেকে সর্বশেষ version নিলে optimistic locking-এর মানেই থাকত না — ব্যাকগ্রাউন্ডে refetch হয়ে নতুন
-// version এলে অন্যের বদল চুপচাপ মুছে যেত
-function toForm(settings: Settings): FormValues {
-  return {
-    version: settings.version,
-    companyName: settings.companyName,
-    legalName: settings.legalName ?? '',
-    bin: settings.bin ?? '',
-    phone: settings.phone ?? '',
-    email: settings.email ?? '',
-    address: settings.address ?? '',
-    baseCurrency: settings.baseCurrency,
-    fiscalYearStartMonth: settings.fiscalYearStartMonth,
-    timezone: settings.timezone,
-  };
-}
 
 const FIELD_NAMES = updateSettingsInputSchema.keyof().options;
 const CURRENCY_OPTIONS = CURRENCIES.map((currency) => ({ value: currency, label: currency }));
@@ -92,7 +71,7 @@ function SettingsForm({ settings, canManage }: { settings: Settings; canManage: 
     formState: { errors, isSubmitting, isDirty },
   } = useForm({
     resolver: zodResolver(updateSettingsInputSchema, { error: contractErrorMap }),
-    defaultValues: toForm(settings),
+    defaultValues: settingsToForm(settings),
   });
 
   const monthOptions = useMemo(
@@ -106,7 +85,7 @@ function SettingsForm({ settings, canManage }: { settings: Settings; canManage: 
       const saved = await call(routes.settings.update, { body: values });
       queryClient.setQueryData(settingsQuery(tenantId).queryKey, saved);
       // নতুন version সহ ফর্ম নতুন করে — পরের সেভ এই version থেকে
-      reset(toForm(saved));
+      reset(settingsToForm(saved));
       toast(t('settings.saved'));
       // কোম্পানির নাম বদলালে switcher-এও নতুন নাম
       await refreshMe();
@@ -119,7 +98,7 @@ function SettingsForm({ settings, canManage }: { settings: Settings; canManage: 
   // query(): TanStack v5.104-এ fetchQuery-র নতুন নাম (পুরনোটা deprecated)
   const reload = async () => {
     const fresh = await queryClient.query({ ...settingsQuery(tenantId), staleTime: 0 });
-    reset(toForm(fresh));
+    reset(settingsToForm(fresh));
   };
 
   const serverError = errors.root?.server?.message;

@@ -1,7 +1,6 @@
-import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
+import { Inject, Injectable, type OnApplicationShutdown } from '@nestjs/common';
 import { createTransport } from 'nodemailer';
 
-import type { Config } from '../config.js';
 import { CONFIG } from '../infra/tokens.js';
 
 export interface MailMessage {
@@ -12,18 +11,24 @@ export interface MailMessage {
   html: string;
 }
 
+// Only the part of the config this service reads. The worker's CONFIG is a WorkerConfig, and a
+// narrow type lets the service accept it without knowing about the rest.
+interface MailConfig {
+  mail: { url: string; from: string };
+}
+
 // SMTP-র একমাত্র জায়গা। dev-এ Mailpit, production-এ আসল SMTP — কোড একই, শুধু SMTP_URL আলাদা।
-// ধাপ ৮-এ পাঠানো সরবে worker-এ (outbox থেকে); তখনো এই service-ই পাঠাবে, শুধু ডাকবে worker
+// Since step 8 only the worker uses it: the API never talks to the mail server during a request.
 @Injectable()
 export class MailService implements OnApplicationShutdown {
-  private readonly logger = new Logger(MailService.name);
   private readonly transport: ReturnType<typeof createTransport>;
   private readonly from: string;
 
-  constructor(@Inject(CONFIG) config: Config) {
+  constructor(@Inject(CONFIG) config: MailConfig) {
     this.from = config.mail.from;
-    // nodemailer-এর ডিফল্ট connectionTimeout ২ মিনিট — mail server বন্ধ থাকলে "Invite" বাটন দুই মিনিট
-    // ঘুরত। এখন request-এর ভেতরে পাঠানো হয়, তাই কয়েক সেকেন্ডেই হার মানা
+    // nodemailer's default connection timeout is 2 minutes. A job holds its queue lock for 30
+    // seconds (BullMQ's lockDuration), so a slow mail server must fail well before that; the
+    // queue then retries the job instead of thinking the worker died.
     this.transport = createTransport({
       url: config.mail.url,
       connectionTimeout: 5_000,
@@ -32,16 +37,11 @@ export class MailService implements OnApplicationShutdown {
     });
   }
 
-  // true = SMTP সার্ভার চিঠিটা নিয়েছে। false = নেয়নি — throw না: চিঠি না গেলেও invitation তৈরি হয়ে গেছে
-  // (commit), caller সেটা "পাঠানো হয়নি" হিসেবে জানায়। লগে ঠিকানা বা লিংক না — লিংকে token থাকে
-  async send(message: MailMessage): Promise<boolean> {
-    try {
-      await this.transport.sendMail({ from: this.from, ...message });
-      return true;
-    } catch (error) {
-      this.logger.warn(`sending "${message.subject}" failed: ${String(error)}`);
-      return false;
-    }
+  // Throws when the mail server does not take the message. The queue catches that and runs the
+  // job again later — that is the whole retry mechanism, so nothing is swallowed here. Never log
+  // the address or the body: an invitation email carries a link that lets you into a workspace.
+  async send(message: MailMessage): Promise<void> {
+    await this.transport.sendMail({ from: this.from, ...message });
   }
 
   onApplicationShutdown(): void {

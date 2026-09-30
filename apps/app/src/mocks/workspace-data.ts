@@ -10,10 +10,12 @@ import {
   DOCUMENT_TYPES,
   type DocumentType,
   formatDocumentNumber,
+  type Notification,
   type NumberFormat,
   type NumberSeries,
   periodOf,
   type Settings,
+  type Setup,
   todayIn,
 } from '@omnivo/contracts';
 
@@ -29,6 +31,10 @@ export interface WorkspaceData {
   series: Map<DocumentType, NumberFormat & { version: number }>;
   audit: AuditEntry[];
   people: People;
+  setup: Setup;
+  // When a started setup "finishes" (ms since epoch) — the pretend worker, see setup-data.ts
+  setupReadyAt: number | null;
+  notifications: Notification[];
 }
 
 function now(): string {
@@ -74,6 +80,10 @@ function seed(workspace: Workspace): WorkspaceData {
     series: new Map(),
     audit: [],
     people: seedPeople(workspace),
+    // The fixture workspaces were set up long ago; a signed-up one starts at 'pending'
+    setup: { status: 'ready', industry: garments ? 'garments' : 'pharma' },
+    setupReadyAt: null,
+    notifications: garments ? seedNotifications() : [],
   };
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
@@ -81,7 +91,54 @@ function seed(workspace: Workspace): WorkspaceData {
   return data;
 }
 
+function ago(minutes: number): string {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
+}
+
+// One of each type, two unread — the bell has something to show from the first page load
+function seedNotifications(): Notification[] {
+  return [
+    {
+      id: crypto.randomUUID(),
+      type: 'member.joined',
+      params: { name: 'Nasrin Akter' },
+      readAt: null,
+      createdAt: ago(12),
+    },
+    {
+      id: crypto.randomUUID(),
+      type: 'invitation.failed',
+      params: { email: 'rupa@rahmangarments.bounce' },
+      readAt: null,
+      createdAt: ago(95),
+    },
+    {
+      id: crypto.randomUUID(),
+      type: 'workspace.ready',
+      params: {},
+      readAt: ago(60 * 24),
+      createdAt: ago(60 * 26),
+    },
+  ];
+}
+
 const store = new Map<string, WorkspaceData>();
+
+// Mock sign-up: the first fixture workspace starts over as a brand-new one — the owner alone, the
+// Owner role only, setup 'pending' — so `pnpm dev:mock` shows the onboarding wizard after sign-up
+export function startFresh(workspace: Workspace, companyName: string): void {
+  const data = seed(workspace);
+  data.settings = { ...data.settings, companyName, bin: null };
+  data.branches = data.branches.slice(0, 1);
+  data.people = {
+    roles: data.people.roles.filter((role) => role.kind === 'owner'),
+    members: data.people.members.filter((member) => member.userId === OWNER.id),
+    invitations: [],
+  };
+  data.setup = { status: 'pending', industry: null };
+  data.notifications = [];
+  store.set(workspace.tenantId, data);
+}
 
 export function dataOf(workspace: Workspace): WorkspaceData {
   let data = store.get(workspace.tenantId);

@@ -15,6 +15,8 @@ export interface TestPostgres {
   container: StartedPostgreSqlContainer;
   superuserUrl: string;
   appUrl: string;
+  // omnivo_worker — the outbox relay's role
+  workerUrl: string;
 }
 
 // docker-compose-এর মতোই: superuser দিয়ে role, migrator দিয়ে migration + permission sync
@@ -48,6 +50,7 @@ export async function startPostgres(): Promise<TestPostgres> {
     container,
     superuserUrl: container.getConnectionUri(),
     appUrl: urlFor('omnivo_app', 'app_dev_password'),
+    workerUrl: urlFor('omnivo_worker', 'worker_dev_password'),
   };
 }
 

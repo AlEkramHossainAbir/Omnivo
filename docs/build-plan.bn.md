@@ -158,7 +158,7 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 |---|---|---|---|---|
 | **৬** | সেটিংস ও ভিত্তি | tenant settings (currency, fiscal year, timezone, ভাষা), **numbering series** (`INV-2026-0001`), branches/locations, **audit()** (বদলের সাথে একই transaction-এ, request-এর id/IP নিজে থেকে), attachments (MinIO presigned URL) | Settings পেজ, ব্রাঞ্চ CRUD, Audit log viewer (কে কখন কী বদলাল), ইউজারের ভাষা/থিম, Playwright e2e (MSW) | ~২ সপ্তাহ |
 | **৭** | ইউজার ও রোল | invite flow (ইমেইল, Mailpit), কাস্টম রোল, permission matrix API, owner = system role, escalation বন্ধ, বাদ পড়া সদস্য সাথে সাথে 401 | টিমের পেজ, ইনভাইট মডাল, join পেজ, **permission matrix গ্রিড** (চেকবক্সের ছক) | ~১.৫ সপ্তাহ |
-| **৮** | Queue, Worker, Outbox | `apps/worker/` (BullMQ), `outbox` টেবিল + relay, **idempotent tenant provisioning job**, ইমেইল (Mailpit), notifications | Onboarding wizard (ব্যবসার ধরন বাছাই → ডিফল্ট সেটআপ), in-app notification bell, job status | ~২ সপ্তাহ |
+| **৮** | Queue, Worker, Outbox | apps/api-র দ্বিতীয় entrypoint (`worker.ts`), BullMQ (`email`, `jobs`), transactional outbox + relay (SKIP LOCKED, `omnivo_worker`), idempotent provisioning job (industry template), welcome ও invitation ইমেইল worker থেকে, notifications | Onboarding wizard (ব্যবসার ধরন → কোম্পানির তথ্য → টিম), notification bell, job status (sending/provisioning) | ~২ সপ্তাহ |
 
 **ধাপ ৮-এ যা দেখবেন:** সাইনআপ করলে background-এ chart of accounts + রোল + সেটিংস seed হয়ে যাবে, Mailpit-এ welcome ইমেইল আসবে। **প্রথম async আর্কিটেকচার চোখে দেখা।**
 **শিখবেন:** BullMQ, transactional outbox, idempotency, background worker।
@@ -413,7 +413,7 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [x] **ধাপ ২** — Tenant context + leak test
 - [x] **ধাপ ৩** — Auth + RBAC + প্রথম ড্যাশবোর্ড
 - [x] **ধাপ ৪–৫** — ডিজাইন সিস্টেম + API কন্ট্র্যাক্ট
-- [ ] **ধাপ ৬–৮** — Core Platform
+- [x] **ধাপ ৬–৮** — Core Platform
 - [ ] **ধাপ ৯–১১** — Accounting
 - [ ] **ধাপ ১২–১৪** — Inventory
 - [ ] **ধাপ ১৫–১৭** — Sales + Purchase

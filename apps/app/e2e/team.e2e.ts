@@ -19,7 +19,11 @@ test('invites someone, refuses a second invitation, then cancels it', async ({ p
   await expect(dialog.getByRole('checkbox', { name: /Owner/ })).toBeEnabled();
   await dialog.getByRole('button', { name: 'Send invitation' }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByText('Invitation sent to tanvir@rahmangarments.com')).toBeVisible();
+  await expect(page.getByText('Sending the invitation to tanvir@rahmangarments.com')).toBeVisible();
+  // The (pretend) worker sends it a moment later; the list polls until the pill says so. Only the
+  // end state is checked: "Sending" lasts 1.5 s in the mock, and a slow machine can miss it
+  // (the API integration test checks the "sending" answer itself)
+  await expect(listItem(page, /tanvir@rahmangarments.com.*Sent/)).toBeVisible();
 
   await page.getByRole('button', { name: 'Invite people' }).click();
   await dialog.getByLabel('Email').fill('tanvir@rahmangarments.com');

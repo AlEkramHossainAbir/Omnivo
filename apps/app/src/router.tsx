@@ -46,6 +46,27 @@ const signUpRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/sign-up'), 'SignUpPage'),
 });
 
+// Only someone who can change the settings runs the setup. Others use the app as it is; the
+// owner finishes the setup when they sign in next.
+function mustRunSetup(): boolean {
+  const me = sessionStore.getState().me;
+  return me?.tenant.setupStatus === 'pending' && me.permissions.includes('core.settings.manage');
+}
+
+// The setup wizard: signed in, but outside the AppShell — until the business type is picked,
+// there is nothing else to go to
+const onboardingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/onboarding',
+  beforeLoad: async () => {
+    await restoreSession();
+    const { status, me } = sessionStore.getState();
+    if (status !== 'signed-in') throw redirect({ to: '/login' });
+    if (!me?.permissions.includes('core.settings.manage')) throw redirect({ to: '/' });
+  },
+  component: lazyRouteComponent(() => import('./routes/onboarding'), 'OnboardingPage'),
+});
+
 // pathless layout route: এর নিচের সব পেজ protected, আর সবগুলো AppShell-এর ভেতরে
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -55,6 +76,9 @@ const appRoute = createRoute({
     if (sessionStore.getState().status !== 'signed-in') {
       throw redirect({ to: '/login' });
     }
+    // A new workspace goes through the wizard first — right after sign-up, and on any later
+    // visit until a business type is picked
+    if (mustRunSetup()) throw redirect({ to: '/onboarding' });
   },
   // layout-ও lazy: সাইডবারের Radix মেনু (~৩০ KB gz) লগইনের আগে লাগে না
   component: lazyRouteComponent(() => import('./routes/app-shell'), 'AppShell'),
@@ -118,6 +142,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   signUpRoute,
   inviteRoute,
+  onboardingRoute,
   appRoute.addChildren([
     dashboardRoute,
     settingsRoute,

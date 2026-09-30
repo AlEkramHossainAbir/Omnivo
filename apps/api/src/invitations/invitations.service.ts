@@ -4,8 +4,8 @@ import {
   type AcceptInvitationInput,
   type CreateInvitationInput,
   type Invitation,
+  type InvitationDelivery,
   INVITATION_TTL_DAYS,
-  invitationLink,
   type InvitationPreview,
   type RoleRef,
 } from '@omnivo/contracts';
@@ -25,15 +25,13 @@ import { AuthService } from '../auth/auth.service.js';
 import { audit, created } from '../common/audit/audit.js';
 import { isUniqueViolation } from '../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
+import { emit } from '../common/outbox/outbox.js';
 import { currentPrincipal, getTenantId, runWithTenant } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
-import type { Config } from '../config.js';
-import { AUTH, CONFIG, DB, WITH_TENANT } from '../infra/tokens.js';
-import { invitationEmail } from '../mail/invitation-email.js';
-import { MailService } from '../mail/mail.service.js';
+import { AUTH, DB, WITH_TENANT } from '../infra/tokens.js';
 import { assertCanGrant, loadRoles } from '../rbac/grants.js';
 import { PermissionService } from '../rbac/permission.service.js';
-import { hashInvitationToken, newInvitationToken } from './invitation-token.js';
+import { hashInvitationToken } from './invitation-token.js';
 
 type InvitationRow = typeof invitations.$inferSelect;
 
@@ -46,6 +44,12 @@ function expiry(): Date {
 // খোলা = গৃহীত বা বাতিল না, আর মেয়াদও আছে
 function isUsable(row: InvitationRow): boolean {
   return row.acceptedAt === null && row.revokedAt === null && row.expiresAt > new Date();
+}
+
+// The email's state, from the two times the worker sets
+function deliveryOf(row: Pick<InvitationRow, 'sentAt' | 'sendFailedAt'>): InvitationDelivery {
+  if (row.sentAt !== null) return 'sent';
+  return row.sendFailedAt !== null ? 'failed' : 'sending';
 }
 
 function names(list: readonly { name: string }[]): string | null {
@@ -80,10 +84,8 @@ export class InvitationsService {
     @Inject(DB) private readonly db: Db,
     @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
     @Inject(AUTH) private readonly auth: Auth,
-    @Inject(CONFIG) private readonly config: Config,
     private readonly authService: AuthService,
     private readonly permissionService: PermissionService,
-    private readonly mail: MailService,
   ) {}
 
   list(): Promise<Invitation[]> {
@@ -94,11 +96,9 @@ export class InvitationsService {
     const tenantId = getTenantId();
     const actor = currentPrincipal();
     const access = await this.permissionService.ofCurrentUser();
-    const { token, hash } = newInvitationToken();
 
-    let invitationId: string;
     try {
-      invitationId = await this.withTenant(async (tx) => {
+      return await this.withTenant(async (tx) => {
         const granted = await loadRoles(tx, tenantId, input.roleIds);
         // invite = ভবিষ্যতে রোল দেওয়া — তাই এখনই একই নিয়ম (grants.ts)
         assertCanGrant(access, granted);
@@ -137,10 +137,10 @@ export class InvitationsService {
 
         const [row] = await tx
           .insert(invitations)
+          // No token yet: the worker makes it right before sending (tokenHash stays NULL until then)
           .values({
             tenantId,
             email: input.email,
-            tokenHash: hash,
             expiresAt: expiry(),
             createdBy: actor.userId,
           })
@@ -160,15 +160,18 @@ export class InvitationsService {
           entityId: row.id,
           changes: created({ email: input.email, roles: names(granted) }),
         });
-        return row.id;
+        // The email goes out from the worker a moment after this commits. The answer below says
+        // "sending"; the team page polls until it turns into "sent" or "failed".
+        await emit(tx, 'invitation.issued', { invitationId: row.id, actorUserId: actor.userId });
+        const [invitation] = await this.readOpen(tx, [row.id]);
+        if (!invitation) throw notFound('Invitation');
+        return invitation;
       });
     } catch (error) {
       // দুজন admin একসাথে একই ইমেইল — partial unique index একজনকে আটকায় (আগে SELECT করে দেখা না)
       if (isUniqueViolation(error, 'invitations_tenant_email_open_idx')) throw alreadyInvited();
       throw error;
     }
-
-    return this.deliver(invitationId, token, hash);
   }
 
   // নতুন token (পুরনো লিংক সাথে সাথে অচল), নতুন মেয়াদ, আবার ইমেইল। ইমেইল হারানো, মেয়াদ পেরোনো বা
@@ -177,19 +180,21 @@ export class InvitationsService {
     const tenantId = getTenantId();
     const actor = currentPrincipal();
     const access = await this.permissionService.ofCurrentUser();
-    const { token, hash } = newInvitationToken();
 
-    await this.withTenant(async (tx) => {
+    return this.withTenant(async (tx) => {
       const before = await this.lockOpen(tx, id);
       if (before.version !== version) throw versionConflict();
       // আবার পাঠানো = আবার রোল দেওয়ার প্রস্তাব; যে পাঠাচ্ছে তার সীমায় থাকতে হবে
       assertCanGrant(access, await loadRoles(tx, tenantId, await this.roleIdsOf(tx, id)));
       await tx
         .update(invitations)
+        // tokenHash NULL: the old link stops working now, not when the new email arrives.
+        // sentAt and sendFailedAt NULL: the state goes back to "sending"
         .set({
-          tokenHash: hash,
+          tokenHash: null,
           expiresAt: expiry(),
           sentAt: null,
+          sendFailedAt: null,
           version: sql`${invitations.version} + 1`,
           updatedBy: actor.userId,
         })
@@ -201,9 +206,11 @@ export class InvitationsService {
         // নতুন লিংক কাকে গেল — viewer-এ "Email: — → nasrin@…"
         changes: created({ email: before.email }),
       });
+      await emit(tx, 'invitation.issued', { invitationId: id, actorUserId: actor.userId });
+      const [invitation] = await this.readOpen(tx, [id]);
+      if (!invitation) throw notFound('Invitation');
+      return invitation;
     });
-
-    return this.deliver(id, token, hash);
   }
 
   async revoke(id: string, version: number): Promise<void> {
@@ -368,6 +375,8 @@ export class InvitationsService {
       actorUserId: userId,
       changes: created({ email: invitation.email, roles: names(granted) }),
     });
+    // The inviter hears about it in the bell (worker, MemberJoinedHandler)
+    await emit(tx, 'member.joined', { membershipId, inviterId: invitation.createdBy });
   }
 
   // token দিয়ে খোঁজা, টেন্যান্ট জানার আগে। invitations-এ FORCE RLS; migration 0010-এর invitation_by_token
@@ -380,56 +389,6 @@ export class InvitationsService {
     });
     if (!row || !isUsable(row)) throw invitationInvalid();
     return row;
-  }
-
-  // commit-এর পরে ইমেইল — transaction-এর ভেতরে পাঠালে দুটো ভুল হতে পারত: চিঠি চলে গেল কিন্তু পরে
-  // rollback (লিংক অচল), অথবা ধীর SMTP পুরো সময় DB-র lock ধরে রাখল। ধাপ ৮-এর outbox এটাকে পাকা করবে
-  private async deliver(id: string, token: string, hash: string): Promise<Invitation> {
-    const tenantId = getTenantId();
-    const [context] = await this.withTenant((tx) =>
-      tx
-        .select({
-          email: invitations.email,
-          workspaceName: tenants.name,
-          inviterName: users.fullName,
-          language: users.language,
-        })
-        .from(invitations)
-        .innerJoin(tenants, eq(tenants.id, invitations.tenantId))
-        .innerJoin(users, eq(users.id, currentPrincipal().userId))
-        .where(and(eq(invitations.tenantId, tenantId), eq(invitations.id, id))),
-    );
-    if (!context) throw notFound('Invitation');
-
-    const sent = await this.mail.send(
-      invitationEmail({
-        to: context.email,
-        workspaceName: context.workspaceName,
-        inviterName: context.inviterName,
-        link: invitationLink(this.config.appOrigin, token),
-        language: context.language ?? 'en',
-      }),
-    );
-
-    return this.withTenant(async (tx) => {
-      if (sent) {
-        // token_hash-ও শর্তে: পাঠানোর মাঝে আরেকজন "Resend" করলে সেটা নতুন token — আমাদের পাঠানো পুরনো
-        // লিংকের "পাঠানো হয়েছে" নতুনটার গায়ে বসত না
-        await tx
-          .update(invitations)
-          .set({ sentAt: new Date() })
-          .where(
-            and(
-              eq(invitations.tenantId, tenantId),
-              eq(invitations.id, id),
-              eq(invitations.tokenHash, hash),
-            ),
-          );
-      }
-      const [invitation] = await this.readOpen(tx, [id]);
-      if (!invitation) throw notFound('Invitation');
-      return invitation;
-    });
   }
 
   private async lockOpen(tx: Transaction, id: string): Promise<InvitationRow> {
@@ -515,7 +474,7 @@ export class InvitationsService {
         invitation.createdBy !== null && inviterName !== null
           ? { id: invitation.createdBy, fullName: inviterName }
           : null,
-      sentAt: invitation.sentAt?.toISOString() ?? null,
+      delivery: deliveryOf(invitation),
       expiresAt: invitation.expiresAt.toISOString(),
       createdAt: invitation.createdAt.toISOString(),
       version: invitation.version,

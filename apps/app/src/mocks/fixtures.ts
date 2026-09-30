@@ -1,4 +1,9 @@
-import { type MeResponse, PERMISSION_KEYS, type Preferences } from '@omnivo/contracts';
+import {
+  type MeResponse,
+  PERMISSION_KEYS,
+  type Preferences,
+  type SetupStatus,
+} from '@omnivo/contracts';
 
 // আসল ইন্ডাস্ট্রির উদাহরণ (CLAUDE.md → Content): এক গার্মেন্টস আর এক ফার্মা, একই মালিক দুটোতে
 export const WORKSPACES = [
@@ -23,10 +28,11 @@ export function meIn(
   workspace: Workspace,
   companyName: string,
   preferences: Preferences,
+  setupStatus: SetupStatus,
 ): MeResponse {
   return {
     user: owner,
-    tenant: { id: workspace.tenantId, name: companyName, slug: workspace.slug },
+    tenant: { id: workspace.tenantId, name: companyName, slug: workspace.slug, setupStatus },
     roles: ['Owner'],
     permissions: OWNER_PERMISSIONS,
     memberships: [...WORKSPACES],

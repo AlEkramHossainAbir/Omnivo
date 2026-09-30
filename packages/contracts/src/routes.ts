@@ -7,10 +7,12 @@ import { branchRoutes } from './branches.js';
 import { defineRoute } from './http.js';
 import { invitationRoutes } from './invitations.js';
 import { memberRoutes } from './members.js';
+import { notificationRoutes } from './notifications.js';
 import { numberSeriesRoutes } from './numbering.js';
 import { meRoutes } from './preferences.js';
 import { roleRoutes } from './roles.js';
 import { settingsRoutes } from './settings.js';
+import { setupRoutes } from './setup.js';
 
 export const healthRoutes = {
   check: defineRoute({
@@ -37,4 +39,6 @@ export const routes = {
   numberSeries: numberSeriesRoutes,
   audit: auditRoutes,
   attachments: attachmentRoutes,
+  setup: setupRoutes,
+  notifications: notificationRoutes,
 };

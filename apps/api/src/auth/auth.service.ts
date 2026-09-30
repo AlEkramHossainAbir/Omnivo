@@ -30,6 +30,7 @@ import {
 import { audit, created } from '../common/audit/audit.js';
 import { isUniqueViolation } from '../common/db/pg-errors.js';
 import { accessRevoked, AppError } from '../common/http/app-error.js';
+import { emit } from '../common/outbox/outbox.js';
 import { runWithTenant } from '../common/tenant/tenant-context.js';
 import { setTenantContext, type WithTenant } from '../common/tenant/with-tenant.js';
 import type { WithUser } from '../common/tenant/with-user.js';
@@ -250,7 +251,12 @@ export class AuthService {
       .from(users)
       .where(eq(users.id, principal.userId));
     const [tenant] = await this.db
-      .select({ id: tenants.id, name: tenants.name, slug: tenants.slug })
+      .select({
+        id: tenants.id,
+        name: tenants.name,
+        slug: tenants.slug,
+        setupStatus: tenants.setupStatus,
+      })
       .from(tenants)
       .where(eq(tenants.id, principal.tenantId));
     if (!user || !tenant) throw sessionEnded();
@@ -428,6 +434,9 @@ export class AuthService {
         actorUserId: userId,
         changes: created({ name: input.companyName, slug: input.workspaceSlug }),
       });
+      // The welcome email: queued in this transaction, sent by the worker after the commit.
+      // Sign-up no longer waits for a mail server, and cannot fail because of one.
+      await emit(tx, 'workspace.created', { userId });
 
       return { tenantId: tenant.id, membershipId: membership.id, roles: [OWNER_ROLE_NAME] };
     });

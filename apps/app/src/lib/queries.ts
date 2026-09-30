@@ -26,6 +26,43 @@ export function invitationsQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['invitations', tenantId],
     queryFn: async () => (await call(routes.invitations.list)).items,
+    // The worker sends the email a moment after the API answers. While any invitation is still
+    // "sending", ask again every 2 seconds, so "Sending" turns into "Sent" (or "Email not sent")
+    // by itself. When none is sending, stop: false turns the polling off.
+    refetchInterval: (query) =>
+      query.state.data?.some((invitation) => invitation.delivery === 'sending') ? 2_000 : false,
+  });
+}
+
+// The wizard's view of the background setup job. Polls every 1.5 seconds while the job runs, and
+// stops as soon as the status is final (ready or failed).
+export function setupQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['setup', tenantId],
+    queryFn: () => call(routes.setup.get),
+    refetchInterval: (query) => (query.state.data?.status === 'provisioning' ? 1_500 : false),
+  });
+}
+
+// The bell's badge. Polled every 30 seconds — only while the tab is visible (TanStack's default:
+// refetchIntervalInBackground is false), so a tab left open overnight sends nothing. Coming back
+// to the tab refetches at once (refetchOnWindowFocus).
+export function unreadCountQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['notifications', tenantId, 'unread-count'],
+    queryFn: async () => (await call(routes.notifications.unreadCount)).count,
+    refetchInterval: 30_000,
+    // Fresh on every poll; the global 30-second staleTime would otherwise skip the focus refetch
+    staleTime: 0,
+  });
+}
+
+// The newest 20, for the bell's panel. Same key prefix as the count: one invalidate refreshes both.
+export function notificationsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['notifications', tenantId, 'latest'],
+    queryFn: async () => (await call(routes.notifications.list, { query: { limit: 20 } })).items,
+    staleTime: 0,
   });
 }
 

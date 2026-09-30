@@ -28,6 +28,9 @@ export const en = {
       dark: 'Dark',
     },
     preferenceNotSaved: "Couldn't save this to your account. It applies on this device for now.",
+    notifications: 'Notifications',
+    notificationsUnread_one: 'Notifications, {{count}} unread',
+    notificationsUnread_other: 'Notifications, {{count}} unread',
   },
   nav: {
     overview: 'Overview',
@@ -209,6 +212,7 @@ export const en = {
       status: 'Status',
     },
     statuses: {
+      sending: 'Sending',
       sent: 'Sent',
       notSent: 'Email not sent',
       expired: 'Expired',
@@ -217,7 +221,7 @@ export const en = {
     actionsFor: 'Actions for {{email}}',
     resend: 'Resend',
     revoke: 'Cancel invitation',
-    resent: 'New link sent to {{email}}',
+    resent: 'Sending a new link to {{email}}',
     revoked: 'Invitation to {{email}} cancelled',
     inviteTitle: 'Invite people',
     inviteDescription: 'They get an email with a link to join {{workspace}}.',
@@ -228,9 +232,7 @@ export const en = {
     cantGrant: "Includes permissions you don't have",
     send: 'Send invitation',
     sending: 'Sending…',
-    invited: 'Invitation sent to {{email}}',
-    notSent:
-      "The invitation is saved, but the email didn't go out. Use Resend in the list to try again.",
+    invited: 'Sending the invitation to {{email}}',
     permissionCount_one: '{{count}} permission',
     permissionCount_other: '{{count}} permissions',
     allPermissions: 'Every permission',
@@ -342,7 +344,11 @@ export const en = {
     allowed: 'Allowed',
     notAllowed: 'Not allowed',
     actions: {
-      workspace: { created: 'Created the workspace' },
+      workspace: {
+        created: 'Created the workspace',
+        setup_started: 'Started the workspace setup',
+        provisioned: 'Added the starting roles',
+      },
       auth: { signed_in: 'Signed in', switched_in: 'Switched into this workspace' },
       settings: { updated: 'Changed the settings', logo_changed: 'Changed the logo' },
       branch: {
@@ -387,8 +393,72 @@ export const en = {
       padding: 'Digits',
       roles: 'Roles',
       description: 'Description',
+      industry: 'Business type',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
+  },
+  onboarding: {
+    title: 'Set up {{company}}',
+    stepsLabel: 'Setup steps',
+    steps: {
+      business: 'Business type',
+      company: 'Company details',
+      team: 'Invite team',
+    },
+    stepOf: 'Step {{current}} of {{total}}',
+    continue: 'Continue',
+    starting: 'Starting…',
+    skip: 'Skip for now',
+    business: {
+      title: 'What does {{company}} do?',
+      subtitle:
+        'We start you with the roles such a company usually needs. You can rename or change them any time.',
+      label: 'Business type',
+    },
+    industries: {
+      garments: { name: 'Garments & textiles', description: 'Buyer POs, LCs, cutting and sewing' },
+      pharma: { name: 'Pharmaceuticals', description: 'Batches, expiry dates and depots' },
+      distribution: { name: 'Distribution', description: 'Depots, deliveries and retailer credit' },
+      manufacturing: {
+        name: 'Manufacturing',
+        description: 'Production orders and raw material stock',
+      },
+      retail: { name: 'Retail', description: 'Shops, counters and daily cash' },
+      other: { name: 'Something else', description: 'A general start you can shape yourself' },
+    },
+    company: {
+      title: 'Company details',
+      subtitle: 'Printed on invoices and Mushak 6.3. You can change them later in Settings.',
+    },
+    team: {
+      title: 'Invite your team',
+      subtitle: 'Add your accountant and managers now, or later from the Team page.',
+      preparing: 'Preparing the roles for {{industry}}…',
+      ready: 'Roles ready: {{roles}}',
+      failed: "The setup didn't finish. Try again — nothing you entered is lost.",
+      retry: 'Try again',
+      invite: 'Invite people',
+      invited: 'Invited',
+      finish: 'Go to dashboard',
+    },
+  },
+  notifications: {
+    title: 'Notifications',
+    markAllRead: 'Mark all as read',
+    unread: 'Unread',
+    emptyTitle: 'No notifications yet',
+    emptyBody:
+      'You hear here when someone joins from your invitation, or when an email could not be sent.',
+    loadFailed: "Couldn't load your notifications. Try again in a moment.",
+    // type → text. The type's dot nests in i18next, so t(`notifications.types.${type}`) lands here;
+    // a type without text here does not type-check
+    types: {
+      workspace: { ready: 'Your workspace is set up. The starting roles are ready to use.' },
+      member: { joined: '{{name}} joined the workspace' },
+      invitation: {
+        failed: "The invitation email to {{email}} couldn't be sent. Resend it from the Team page.",
+      },
+    },
   },
   // API-র error code → লেখা। satisfies: contracts-এর ERROR_CODES-এ নতুন code এলে এখানে না লেখা
   // পর্যন্ত compile error, আর তালিকায় নেই এমন key লিখলেও error
@@ -446,6 +516,8 @@ export const en = {
     own_membership: "You can't change your own roles or remove yourself. Ask another admin.",
     role_in_use:
       'Someone has this role or an open invitation gives it. Change their roles or cancel the invitation first.',
+    setup_started: 'The setup has already started. Reload the page to see how far it is.',
+    setup_not_failed: "The setup hasn't failed. Reload the page to see how far it is.",
     invalid_cursor: 'This list has changed. Reload the page and try again.',
     version_conflict:
       'Someone else saved changes while you were editing. Reload to see them, then make your change again.',

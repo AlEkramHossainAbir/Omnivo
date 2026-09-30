@@ -290,6 +290,12 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   phones the nav is one horizontally scrolling row and group labels are hidden.
 - **Icon button:** 18px `ink-3` icon, radius 8px, 8px padding, hover `subtle` with an
   `ink` icon. It always has an accessible label.
+- **Notification bell:** an icon button (`Notification03Icon`) next to the logo on every screen size, with an
+  unread badge: 18px `brand` circle, `brand-ink` 12px/500 `tabular-nums`, top-right, "9+" above nine, hidden
+  from screen readers (the button's label says the count). The panel is a popover, 340px (never wider than the
+  screen minus the gutters), a 15px/600 title with a "Mark all as read" text link, and rows with a `brand`
+  unread dot, 13.5px text (`ink` unread, `ink-2` read) and a 12px `ink-3` time. Clicking a row marks it read and
+  opens its page.
 - **Dropdown menu / popover:** `surface`, 1px `line`, radius 10px, `shadow-lg`, 4px
   padding (12px for a popover). Items are 13.5px `ink-2`, radius 8px, highlighted
   (hover or keyboard) `subtle` with `ink` text. Group labels are 12px/500 `ink-3`. The
@@ -305,7 +311,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   real sequence. The current step has a `brand` border and ring. Done steps are filled
   `brand` with a `Tick02` icon.
 - **Selectable card (industry, module):** 1px `line-strong` border. When selected it
-  gets a `brand` border, a `brand-soft` background and a `brand` icon tile.
+  gets a `brand` border, a `brand-soft` background and a `brand` icon tile. A group of them is
+  `SelectableCardGroup`: real radio inputs, one choice.
 - **Toast:** `ink` background with `bg` text, radius 10px, `shadow-lg`, bottom-center,
   about 3s. The copy names what happened ("Workspace created").
 - **Charts:** a single series uses a 2px `brand` line, a `brand` area fill fading from

@@ -21,11 +21,13 @@ import { HealthController } from './health/health.controller.js';
 import { InfraModule } from './infra/infra.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { MembersModule } from './members/members.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
 import { NumberingModule } from './numbering/numbering.module.js';
 import { PermissionGuard } from './rbac/permission.guard.js';
 import { RbacModule } from './rbac/rbac.module.js';
 import { RolesModule } from './roles/roles.module.js';
 import { SettingsModule } from './settings/settings.module.js';
+import { SetupModule } from './setup/setup.module.js';
 
 @Module({})
 export class AppModule implements NestModule {
@@ -45,6 +47,8 @@ export class AppModule implements NestModule {
         NumberingModule,
         AuditModule,
         AttachmentsModule,
+        SetupModule,
+        NotificationsModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

@@ -152,6 +152,8 @@ pnpm dev          # API + app + package watchers via turbo
 ```
 
 `.env` needs the `S3_*` lines from `.env.example` (step 6) and the `SMTP_URL` line (step 7).
+It also needs the `WORKER_DATABASE_URL` line from `.env.example`, and an existing dev database needs the
+`omnivo_worker` role once (step 8 → 8.16).
 
 Once `pnpm dev` is running:
 

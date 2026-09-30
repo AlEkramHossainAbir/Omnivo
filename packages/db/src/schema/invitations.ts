@@ -15,10 +15,15 @@ export const invitations = pgTable(
       .references(() => tenants.id),
     // contracts-এর emailSchema-র পরে — ছোট হাতে, তাই users.email-এর সাথে সরাসরি মেলে
     email: text('email').notNull(),
-    tokenHash: text('token_hash').notNull(),
+    // NULL until the worker makes the link (step 8): the token is created right before the email
+    // goes out, so it never sits in the outbox or in a queue. Resend sets it back to NULL, which
+    // kills the old link at once. A unique index allows many NULLs.
+    tokenHash: text('token_hash'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
-    // null = ইমেইল পাঠানো যায়নি (SMTP বন্ধ) — commit-এর পরে পাঠানো সফল হলে তবেই বসে
+    // Set by the worker once the mail server has taken the email
     sentAt: timestamp('sent_at', { withTimezone: true }),
+    // Set by the worker when it gives up after its retries — the app shows "Email not sent"
+    sendFailedAt: timestamp('send_failed_at', { withTimezone: true }),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
