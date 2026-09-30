@@ -38,6 +38,7 @@ import { useForm } from 'react-hook-form';
 
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
+import { useCan } from '../lib/permissions';
 import { useSession } from '../lib/session-store';
 
 const column = dataTableColumns<Branch>();
@@ -197,7 +198,7 @@ export function BranchesPage() {
   const { t } = useLocale();
   const me = useSession((state) => state.me);
   const tenantId = me?.tenant.id ?? '';
-  const canManage = me?.permissions.includes('core.branch.manage') ?? false;
+  const canManage = useCan()('core.branch.manage');
   const [status, setStatus] = useState<BranchStatus>('active');
   const [editing, setEditing] = useState<Editing>(null);
   const { data, isError } = useQuery({ ...branchesQuery(tenantId, status), enabled: me !== null });

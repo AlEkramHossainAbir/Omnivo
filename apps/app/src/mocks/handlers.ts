@@ -2,15 +2,27 @@ import { type AuthSession, type Preferences, routes, type Settings } from '@omni
 import { delay, http, HttpResponse, type HttpResponseResolver } from 'msw';
 
 import { API_URL } from '../lib/api';
-import { MEMBERS, meIn, WORKSPACES, type Workspace } from './fixtures';
-import { mock, problem, readBody, readQuery, reply } from './mock';
+import { meIn, OWNER, WORKSPACES, type Workspace } from './fixtures';
+import { mock, MockProblem, problem, readBody, readQuery, reply } from './mock';
+import {
+  assertCanChange,
+  assertRoleNameFree,
+  demoPreview,
+  expiry,
+  findMember,
+  findRole,
+  isOpen,
+  newToken,
+  roleList,
+  toInvitation,
+  toRole,
+} from './people-data';
 import {
   assertCodeFree,
   checkVersion,
   dataOf,
   diff,
   findBranch,
-  MockProblem,
   record,
   seriesList,
 } from './workspace-data';
@@ -122,7 +134,9 @@ export const handlers = [
     const query = readQuery(routes.members.list.query, request);
     // আসল API keyset ব্যবহার করে; mock-এ cursor শুধু একটা offset — ক্লায়েন্টের কাছে দুটোই অস্বচ্ছ
     const start = query.cursor === undefined ? 0 : Number(query.cursor);
-    const sorted = MEMBERS.toSorted((a, b) => a.fullName.localeCompare(b.fullName));
+    const sorted = current().people.members.toSorted((a, b) =>
+      a.fullName.localeCompare(b.fullName),
+    );
     if (query.sort === '-name') sorted.reverse();
     const items = sorted.slice(start, start + query.limit);
     const end = start + items.length;
@@ -133,6 +147,261 @@ export const handlers = [
       nextCursor: end < sorted.length ? String(end) : null,
     });
   }),
+
+  mock(
+    routes.members.updateRoles,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.members.updateRoles.params.parse(params);
+      const { roleIds, version } = await readBody(routes.members.updateRoles.body, request);
+      const data = current();
+      const member = findMember(data.people, id);
+      checkVersion(member.version, version);
+      assertCanChange(data.people, member, roleIds);
+      const before = member.roles.map((role) => role.name).join(', ') || null;
+      member.roles = roleIds
+        .map((roleId) => findRole(data.people, roleId))
+        .map((role) => ({ id: role.id, name: role.name }))
+        .toSorted((a, b) => a.name.localeCompare(b.name));
+      member.version += 1;
+      const after = member.roles.map((role) => role.name).join(', ') || null;
+      record(data, 'member.roles_changed', 'member', id, { roles: { from: before, to: after } });
+      await delay();
+      return reply(routes.members.updateRoles, member);
+    }),
+  ),
+
+  mock(
+    routes.members.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.members.remove.params.parse(params);
+      const { version } = readQuery(routes.members.remove.query, request);
+      const data = current();
+      const member = findMember(data.people, id);
+      checkVersion(member.version, version);
+      assertCanChange(data.people, member, []);
+      data.people.members = data.people.members.filter((other) => other.membershipId !== id);
+      record(data, 'member.removed', 'member', id, { email: { from: member.email, to: null } });
+      return reply(routes.members.remove, undefined);
+    }),
+  ),
+
+  mock(routes.roles.list, () => reply(routes.roles.list, { items: roleList(current().people) })),
+
+  mock(
+    routes.roles.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.roles.create.body, request);
+      const data = current();
+      assertRoleNameFree(data.people, body.name);
+      const created = {
+        id: crypto.randomUUID(),
+        ...body,
+        kind: 'custom' as const,
+        permissions: [],
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.people.roles.push(created);
+      record(data, 'role.created', 'role', created.id, diff({}, body));
+      await delay();
+      return reply(routes.roles.create, toRole(data.people, created));
+    }),
+  ),
+
+  mock(
+    routes.roles.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.roles.update.params.parse(params);
+      const { version, ...fields } = await readBody(routes.roles.update.body, request);
+      const data = current();
+      const target = findRole(data.people, id);
+      if (target.kind === 'owner') throw new MockProblem(409, 'owner_role_locked');
+      checkVersion(target.version, version);
+      assertRoleNameFree(data.people, fields.name, id);
+      const before = { name: target.name, description: target.description };
+      Object.assign(target, fields, { version: version + 1 });
+      // সদস্যের তালিকায় রোলের নামও নতুন
+      for (const member of data.people.members) {
+        for (const held of member.roles) if (held.id === id) held.name = fields.name;
+      }
+      record(data, 'role.updated', 'role', id, diff(before, fields));
+      return reply(routes.roles.update, toRole(data.people, target));
+    }),
+  ),
+
+  mock(
+    routes.roles.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.roles.remove.params.parse(params);
+      const { version } = readQuery(routes.roles.remove.query, request);
+      const data = current();
+      const target = findRole(data.people, id);
+      if (target.kind === 'owner') throw new MockProblem(409, 'owner_role_locked');
+      checkVersion(target.version, version);
+      const inUse =
+        data.people.members.some((member) => member.roles.some((held) => held.id === id)) ||
+        data.people.invitations.some(
+          (invitation) => isOpen(invitation) && invitation.roles.some((held) => held.id === id),
+        );
+      if (inUse) throw new MockProblem(409, 'role_in_use');
+      data.people.roles = data.people.roles.filter((other) => other.id !== id);
+      record(data, 'role.deleted', 'role', id, { name: { from: target.name, to: null } });
+      return reply(routes.roles.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.roles.updateMatrix,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.roles.updateMatrix.body, request);
+      const data = current();
+      // আসল API-র মতো সব-নয়-কিছুই-না: আগে সব যাচাই, তারপর লেখা
+      const targets = body.roles.map((change) => {
+        const target = findRole(data.people, change.id);
+        if (target.kind === 'owner') throw new MockProblem(409, 'owner_role_locked');
+        checkVersion(target.version, change.version);
+        return { target, change };
+      });
+      for (const { target, change } of targets) {
+        const changes = diff(
+          Object.fromEntries(target.permissions.map((key) => [key, true])),
+          Object.fromEntries(change.permissions.map((key) => [key, true])),
+        );
+        for (const key of target.permissions) {
+          if (!change.permissions.includes(key)) changes[key] = { from: true, to: false };
+        }
+        target.permissions = change.permissions;
+        target.version += 1;
+        record(data, 'role.permissions_changed', 'role', target.id, changes);
+      }
+      await delay();
+      return reply(routes.roles.updateMatrix, { items: roleList(data.people) });
+    }),
+  ),
+
+  mock(routes.invitations.list, () =>
+    reply(routes.invitations.list, {
+      items: current().people.invitations.filter(isOpen).map(toInvitation),
+    }),
+  ),
+
+  mock(
+    routes.invitations.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.invitations.create.body, request);
+      const data = current();
+      if (data.people.members.some((member) => member.email === body.email)) {
+        throw new MockProblem(409, 'already_member', { email: ['already_member'] });
+      }
+      if (data.people.invitations.some((other) => isOpen(other) && other.email === body.email)) {
+        throw new MockProblem(409, 'already_invited', { email: ['already_invited'] });
+      }
+      const invitation = {
+        id: crypto.randomUUID(),
+        email: body.email,
+        roles: body.roleIds.map((roleId) => {
+          const held = findRole(data.people, roleId);
+          return { id: held.id, name: held.name };
+        }),
+        invitedBy: { id: OWNER.id, fullName: OWNER.fullName },
+        // "bounce" থাকা ঠিকানায় চিঠি "যায় না" — UI-র "Email not sent" পথ দেখার জন্য
+        sentAt: body.email.includes('bounce') ? null : new Date().toISOString(),
+        expiresAt: expiry(),
+        createdAt: new Date().toISOString(),
+        version: 1,
+        token: newToken(),
+        acceptedAt: null,
+        revokedAt: null,
+      };
+      data.people.invitations.unshift(invitation);
+      record(data, 'member.invited', 'invitation', invitation.id, {
+        email: { from: null, to: invitation.email },
+      });
+      // ইমেইলের বদলে console — `pnpm dev:mock`-এ লিংকটা খুলে join পেজ দেখা যায়
+      console.info(`[mock] invitation link: ${window.location.origin}/invite#${invitation.token}`);
+      await delay();
+      return reply(routes.invitations.create, toInvitation(invitation));
+    }),
+  ),
+
+  mock(
+    routes.invitations.resend,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.invitations.resend.params.parse(params);
+      const { version } = await readBody(routes.invitations.resend.body, request);
+      const invitation = current().people.invitations.find(
+        (candidate) => candidate.id === id && isOpen(candidate),
+      );
+      if (!invitation) throw new MockProblem(404, 'not_found');
+      checkVersion(invitation.version, version);
+      Object.assign(invitation, {
+        token: newToken(),
+        expiresAt: expiry(),
+        sentAt: new Date().toISOString(),
+        version: version + 1,
+      });
+      console.info(`[mock] invitation link: ${window.location.origin}/invite#${invitation.token}`);
+      return reply(routes.invitations.resend, toInvitation(invitation));
+    }),
+  ),
+
+  mock(
+    routes.invitations.revoke,
+    guarded(({ request, params }) => {
+      const { id } = routes.invitations.revoke.params.parse(params);
+      const { version } = readQuery(routes.invitations.revoke.query, request);
+      const invitation = current().people.invitations.find(
+        (candidate) => candidate.id === id && isOpen(candidate),
+      );
+      if (!invitation) throw new MockProblem(404, 'not_found');
+      checkVersion(invitation.version, version);
+      Object.assign(invitation, { revokedAt: new Date().toISOString(), version: version + 1 });
+      return reply(routes.invitations.revoke, undefined);
+    }),
+  ),
+
+  mock(
+    routes.invitations.lookup,
+    guarded(async ({ request }) => {
+      const { token } = await readBody(routes.invitations.lookup.body, request);
+      const invitation = current().people.invitations.find(
+        (candidate) => candidate.token === token && isOpen(candidate),
+      );
+      const preview = invitation
+        ? {
+            workspace: { name: workspace.name, slug: workspace.slug },
+            email: invitation.email,
+            invitedBy: invitation.invitedBy?.fullName ?? null,
+            accountExists: false,
+            expiresAt: invitation.expiresAt,
+          }
+        : demoPreview(token, workspace);
+      if (!preview) throw new MockProblem(404, 'invitation_invalid');
+      await delay();
+      return reply(routes.invitations.lookup, preview);
+    }),
+  ),
+
+  mock(
+    routes.invitations.accept,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.invitations.accept.body, request);
+      const invitation = current().people.invitations.find(
+        (candidate) => candidate.token === body.token && isOpen(candidate),
+      );
+      if (!invitation && !demoPreview(body.token, workspace)) {
+        throw new MockProblem(404, 'invitation_invalid');
+      }
+      if (body.account === 'existing' && body.password === 'wrong-password') {
+        throw new MockProblem(401, 'invalid_credentials');
+      }
+      if (invitation) invitation.acceptedAt = new Date().toISOString();
+      await delay();
+      // mock-এ "আমি" সবসময় OWNER — গ্রহণের পরে একই ড্যাশবোর্ড, শুধু পথটা দেখার জন্য
+      signedIn = true;
+      return reply(routes.invitations.accept, session());
+    }),
+  ),
 
   mock(routes.settings.get, () => reply(routes.settings.get, current().settings)),
 

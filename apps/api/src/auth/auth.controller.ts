@@ -9,7 +9,7 @@ import { currentPrincipal } from '../common/tenant/tenant-context.js';
 import type { Config } from '../config.js';
 import { CONFIG } from '../infra/tokens.js';
 import { AuthService } from './auth.service.js';
-import { clearRefreshCookie, REFRESH_COOKIE, setRefreshCookie } from './refresh-cookie.js';
+import { clearRefreshCookie, REFRESH_COOKIE, sessionResponse } from './refresh-cookie.js';
 
 // path আর status চুক্তিতে (routes.auth.*), তাই @Controller()-এ prefix নেই
 @Controller()
@@ -87,17 +87,7 @@ export class AuthController {
     return this.authService.me(currentPrincipal());
   }
 
-  // refresh token শুধু httpOnly cookie-তে; JSON-এ শুধু access token — JS কখনো refresh token দেখে না
   private startSession(reply: FastifyReply, tokens: IssuedTokens): AuthSession {
-    setRefreshCookie(
-      reply,
-      tokens.refreshToken,
-      tokens.refreshTokenExpiresAt,
-      this.config.secureCookies,
-    );
-    return {
-      accessToken: tokens.accessToken,
-      accessTokenExpiresAt: tokens.accessTokenExpiresAt.toISOString(),
-    };
+    return sessionResponse(reply, tokens, this.config.secureCookies);
   }
 }

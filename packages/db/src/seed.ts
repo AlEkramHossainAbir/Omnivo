@@ -1,15 +1,13 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { loadRootEnv, requireEnv } from './env.js';
-import { OWNER_ROLE_NAME, PERMISSIONS, syncPermissions } from './permission-catalog.js';
+import { OWNER_ROLE_NAME, syncPermissions } from './permission-catalog.js';
 import {
   tenants,
   users,
   memberships,
   roles,
-  permissions,
-  rolePermissions,
   membershipRoles,
   branches,
   tenantSettings,
@@ -33,15 +31,6 @@ async function main() {
   // সব insert idempotent — বারবার চালালেও একই অবস্থা থাকবে
   await db.transaction(async (tx) => {
     await syncPermissions(tx);
-    const permissionRows = await tx
-      .select({ id: permissions.id })
-      .from(permissions)
-      .where(
-        inArray(
-          permissions.key,
-          PERMISSIONS.map((p) => p.key),
-        ),
-      );
 
     const tenant = one(
       await tx
@@ -78,24 +67,19 @@ async function main() {
       'membership',
     );
 
+    // owner রোলের অধিকার কোডে — role_permissions-এ কিছু লেখার নেই। conflict-এর target partial index
+    // (roles_tenant_owner_idx), তাই where-ও দিতে হয়: Postgres index-এর শর্ত মিলিয়ে তবেই সেটা চেনে
     await tx
       .insert(roles)
-      .values({ tenantId: tenant.id, name: OWNER_ROLE_NAME })
-      .onConflictDoNothing({ target: [roles.tenantId, roles.name] });
+      .values({ tenantId: tenant.id, name: OWNER_ROLE_NAME, kind: 'owner' })
+      .onConflictDoNothing({ target: roles.tenantId, where: sql`kind = 'owner'` });
     const owner = one(
       await tx
         .select({ id: roles.id })
         .from(roles)
-        .where(and(eq(roles.tenantId, tenant.id), eq(roles.name, OWNER_ROLE_NAME))),
+        .where(and(eq(roles.tenantId, tenant.id), eq(roles.kind, 'owner'))),
       'Owner role',
     );
-
-    await tx
-      .insert(rolePermissions)
-      .values(
-        permissionRows.map((p) => ({ tenantId: tenant.id, roleId: owner.id, permissionId: p.id })),
-      )
-      .onConflictDoNothing();
 
     await tx
       .insert(membershipRoles)

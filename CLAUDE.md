@@ -234,7 +234,15 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   "(optional)" in `ink-3`. Errors show below the input as `crit` text with an
   `Alert02` icon, and the message says what to fix.
 - **Checkbox:** 17px, radius 5px, checked fill `brand` with a `brand-ink` `Tick02` icon.
-  The label sits to the right (13.5px `ink-2`) and clicking it toggles the box.
+  The label sits to the right (13.5px `ink-2`) and clicking it toggles the box. A
+  checkbox with a hidden label (`hideLabel`) still needs a label for screen readers.
+- **Checkbox group:** a `fieldset` with a 13px/500 `legend`, the checkboxes in a 1px `line`
+  box (radius 10px, 12px padding), and the hint or error below like a form field. Use it
+  for picking several of a few (roles, modules).
+- **Permission matrix:** a table card with the permission names as sticky row headers
+  (label plus the key in `Geist Mono` `ink-3`), one column per role, group rows in `ink-3`
+  caption text, and a sticky save bar (card, `shadow-md`) that appears only when something
+  changed. Locked cells are checked and disabled.
 - **Money input:** a `৳` prefix inside the control, the value right-aligned and
   `tabular-nums`, shown grouped (`18,42,600.50`) when not focused. The input always
   shows ASCII digits; Bangla digits typed on a Bangla keyboard are accepted and

@@ -19,10 +19,12 @@ import type { Config } from './config.js';
 import { DocsController } from './docs/docs.controller.js';
 import { HealthController } from './health/health.controller.js';
 import { InfraModule } from './infra/infra.module.js';
+import { InvitationsModule } from './invitations/invitations.module.js';
 import { MembersModule } from './members/members.module.js';
 import { NumberingModule } from './numbering/numbering.module.js';
 import { PermissionGuard } from './rbac/permission.guard.js';
 import { RbacModule } from './rbac/rbac.module.js';
+import { RolesModule } from './roles/roles.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 
 @Module({})
@@ -36,6 +38,8 @@ export class AppModule implements NestModule {
         RbacModule,
         AuthModule,
         MembersModule,
+        InvitationsModule,
+        RolesModule,
         SettingsModule,
         BranchesModule,
         NumberingModule,

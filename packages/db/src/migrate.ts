@@ -4,7 +4,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import { loadRootEnv, requireEnv } from './env.js';
-import { grantOwnerPermissions, syncPermissions } from './permission-catalog.js';
+import { syncPermissions } from './permission-catalog.js';
 
 loadRootEnv();
 
@@ -19,8 +19,6 @@ async function main() {
   await migrate(db, { migrationsFolder });
   // permissions সিস্টেম ডেটা — schema-র মতোই প্রতিটা deploy-এ কোডের তালিকার সাথে মেলানো
   await syncPermissions(db);
-  // নতুন permission পুরনো workspace-এর Owner-কেও — নাহলে এই ধাপের স্ক্রিনগুলো মালিক নিজেই খুলতে পারত না
-  await grantOwnerPermissions(db);
   await migrationClient.end();
   console.log('migrations done');
 }

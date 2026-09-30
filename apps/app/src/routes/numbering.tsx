@@ -30,6 +30,7 @@ import { useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
+import { useCan } from '../lib/permissions';
 import { settingsQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 
@@ -163,7 +164,7 @@ export function NumberingPage() {
   const { t } = useLocale();
   const me = useSession((state) => state.me);
   const tenantId = me?.tenant.id ?? '';
-  const canManage = me?.permissions.includes('core.settings.manage') ?? false;
+  const canManage = useCan()('core.settings.manage');
   const { data, isError } = useQuery({ ...numberSeriesQuery(tenantId), enabled: canManage });
   const [editing, setEditing] = useState<NumberSeries | null>(null);
 

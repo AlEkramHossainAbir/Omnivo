@@ -1,5 +1,7 @@
 import type { z } from 'zod';
 
+import type { PermissionKey } from './permissions.js';
+
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 // একটা endpoint-এর পুরো চুক্তি: কোন method আর path, কী পাঠাতে হবে, কী ফেরত আসবে।
@@ -12,6 +14,9 @@ export interface RouteDef {
   summary: string;
   // 'public' = লগইন ছাড়া; বাকি সব Bearer টোকেন চায় (API-র global AuthGuard)
   auth: 'public' | 'bearer';
+  // এই কাজে কোন permission লাগে। API-র @Endpoint এখান থেকেই guard বসায় (আলাদা decorator নেই, তাই
+  // চুক্তি আর পাহারা কখনো আলাদা হয় না), আর OpenAPI-তে x-permission হয়ে দেখায়। না থাকলে = শুধু লগইন
+  permission?: PermissionKey;
   status: 200 | 201 | 204;
   params?: z.ZodObject;
   // querystring-এর সব মান string হয়ে আসে — সংখ্যা হলে z.coerce লাগবে

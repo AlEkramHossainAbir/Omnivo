@@ -33,6 +33,15 @@ describe('OpenAPI document', () => {
     expect(logout?.responses['204']).toEqual({ description: 'No content' });
   });
 
+  it('names the permission a route needs, for tools and for people', () => {
+    const invite = document.paths['/invitations']?.post;
+    expect(invite).toMatchObject({
+      'x-permission': 'core.user.invite',
+      description: 'Requires the `core.user.invite` permission.',
+    });
+    expect(document.paths['/roles']?.get).not.toHaveProperty('x-permission');
+  });
+
   it('has no environment-specific server unless asked for one', () => {
     expect('servers' in document).toBe(false);
     expect(buildOpenApiDocument(routes, { version: '1', serverUrl: 'http://x' }).servers).toEqual([

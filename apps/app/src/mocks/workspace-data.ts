@@ -9,7 +9,6 @@ import {
   defaultNumberFormat,
   DOCUMENT_TYPES,
   type DocumentType,
-  type ErrorCode,
   formatDocumentNumber,
   type NumberFormat,
   type NumberSeries,
@@ -19,6 +18,8 @@ import {
 } from '@omnivo/contracts';
 
 import { OWNER, type Workspace } from './fixtures';
+import { MockProblem } from './mock';
+import { type People, seedPeople } from './people-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
 // নিয়মগুলো আসল API-র মতো (version, অনন্য কোড, শেষ চালু ব্রাঞ্চ) — UI-র error-পথ mock দিয়েও দেখা যায়
@@ -27,17 +28,7 @@ export interface WorkspaceData {
   branches: Branch[];
   series: Map<DocumentType, NumberFormat & { version: number }>;
   audit: AuditEntry[];
-}
-
-// handler যা ছুড়ে দেয় আর problem() যা পাঠায় — status + code (+ ঘর)
-export class MockProblem extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: ErrorCode,
-    readonly fieldErrors?: Record<string, ErrorCode[]>,
-  ) {
-    super(code);
-  }
+  people: People;
 }
 
 function now(): string {
@@ -82,6 +73,7 @@ function seed(workspace: Workspace): WorkspaceData {
       : [branch('HO', 'Head office', 'Tejgaon Industrial Area, Dhaka 1208')],
     series: new Map(),
     audit: [],
+    people: seedPeople(workspace),
   };
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },

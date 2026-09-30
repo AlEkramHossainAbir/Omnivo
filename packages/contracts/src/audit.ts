@@ -16,6 +16,16 @@ export const AUDIT_ACTIONS = [
   'branch.archived',
   'branch.restored',
   'number_series.updated',
+  'member.invited',
+  'member.invitation_resent',
+  'member.invitation_revoked',
+  'member.joined',
+  'member.roles_changed',
+  'member.removed',
+  'role.created',
+  'role.updated',
+  'role.deleted',
+  'role.permissions_changed',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -23,8 +33,17 @@ export function isAuditAction(value: string): value is AuditAction {
   return AUDIT_ACTIONS.some((action) => action === value);
 }
 
-// settings-এর entity = workspace নিজে (entityId = tenant id)
-export const AUDIT_ENTITY_TYPES = ['workspace', 'user', 'branch', 'number_series'] as const;
+// settings-এর entity = workspace নিজে (entityId = tenant id)। member = একজনের এই workspace-এর
+// সদস্যপদ (entityId = membership id), user = মানুষটা নিজে (লগইন) — একই মানুষ অন্য workspace-এও থাকে
+export const AUDIT_ENTITY_TYPES = [
+  'workspace',
+  'user',
+  'branch',
+  'number_series',
+  'member',
+  'invitation',
+  'role',
+] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 // পুরনো আর নতুন মান শুধু সরল মান — পুরো object না। তাতে viewer-এ "নাম: X → Y" সোজা দেখানো যায়,
@@ -69,6 +88,7 @@ export const auditRoutes = {
     path: '/audit-logs',
     summary: 'Who changed what in the workspace, newest first',
     auth: 'bearer',
+    permission: 'core.audit.read',
     status: 200,
     query: auditListQuerySchema,
     response: auditPageSchema,

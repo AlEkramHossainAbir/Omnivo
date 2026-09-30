@@ -9,7 +9,6 @@ import { decodeCursor, toPage } from '../common/pagination/cursor.js';
 import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
-import { RequirePermission } from '../rbac/require-permission.decorator.js';
 
 type ListRoute = typeof routes.audit.list;
 
@@ -18,7 +17,6 @@ export class AuditController {
   constructor(@Inject(WITH_TENANT) private readonly withTenant: WithTenant) {}
 
   @Endpoint(routes.audit.list)
-  @RequirePermission('core.audit.read')
   list({ query }: RouteInput<ListRoute>): Promise<RouteResponse<ListRoute>> {
     const tenantId = getTenantId();
     // cursor = [শেষ রো-র created_at, টেক্সট হিসেবে; তার id]। Date না: Postgres মাইক্রোসেকেন্ড রাখে, JS-এর

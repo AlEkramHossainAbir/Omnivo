@@ -1,34 +1,31 @@
 import { type CanActivate, type ExecutionContext, Injectable } from '@nestjs/common';
-import { Reflector } from '@nestjs/core';
-import type { PermissionKey } from '@omnivo/db';
 
-import { AppError } from '../common/http/app-error.js';
+import { accessRevoked, AppError } from '../common/http/app-error.js';
+import { routeOf } from '../common/http/endpoint.js';
 import { currentPrincipal } from '../common/tenant/tenant-context.js';
 import { PermissionService } from './permission.service.js';
-import { REQUIRED_PERMISSIONS_KEY } from './require-permission.decorator.js';
 
+// AuthGuard-এর পরে চলে (app.module.ts-এর ক্রম): সেখানে "টোকেন আছে কি না", এখানে "এই workspace-এ এখনো
+// আছে কি না, আর এই কাজের অনুমতি আছে কি না"। কোন permission লাগবে সেটা চুক্তিতে (route.permission) —
+// আলাদা decorator নেই, তাই চুক্তি, OpenAPI আর আসল পাহারা কখনো আলাদা হতে পারে না
 @Injectable()
 export class PermissionGuard implements CanActivate {
-  constructor(
-    private readonly reflector: Reflector,
-    private readonly permissions: PermissionService,
-  ) {}
+  constructor(private readonly permissions: PermissionService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const required = this.reflector.getAllAndOverride<PermissionKey[] | undefined>(
-      REQUIRED_PERMISSIONS_KEY,
-      [context.getHandler(), context.getClass()],
-    );
-    if (!required) return true;
+    const route = routeOf(context);
+    // চুক্তির বাইরের রুট (/docs) আর public রুট (লগইন) — এখানে দেখার কিছু নেই
+    if (!route || route.auth === 'public') return true;
 
-    // AuthGuard আগে চলে, তাই এখানে principal থাকবেই; না থাকলে @Public + @RequirePermission একসাথে — bug
-    const granted = await this.permissions.forPrincipal(currentPrincipal());
-    const missing = required.filter((key) => !granted.has(key));
-    if (missing.length > 0) {
-      const permissions = missing.join(', ');
+    // প্রতিটা লগইন-করা request-এ, permission চাক বা না চাক: বাদ পড়া সদস্যের টোকেন আরও ১৫ মিনিট বৈধ,
+    // কিন্তু সে সেই সময়ে ব্রাঞ্চের তালিকাও পড়তে পারবে না। দাম: প্রতি request-এ একটা Redis GET
+    const access = await this.permissions.forPrincipal(currentPrincipal());
+    if (!access) throw accessRevoked();
+
+    if (route.permission !== undefined && !access.permissions.includes(route.permission)) {
       // params: UI অনুবাদের ভেতরে কোন অনুমতি লাগবে সেটা বসায় ("You need the {{permissions}} …")
-      throw new AppError(403, 'permission_missing', `Missing permission: ${permissions}.`, {
-        params: { permissions },
+      throw new AppError(403, 'permission_missing', `Missing permission: ${route.permission}.`, {
+        params: { permissions: route.permission },
       });
     }
     return true;

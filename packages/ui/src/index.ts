@@ -5,7 +5,7 @@ export { parseIsoDate, toIsoDate } from './lib/iso-date.js';
 export { AppShell, NavGroup, NavItem, SidebarNav } from './components/app-shell.js';
 export { Button, IconButton } from './components/button.js';
 export { Card, CardHeader } from './components/card.js';
-export { Checkbox } from './components/checkbox.js';
+export { Checkbox, CheckboxGroup, type CheckboxOption } from './components/checkbox.js';
 export {
   DataTable,
   dataTableColumns,

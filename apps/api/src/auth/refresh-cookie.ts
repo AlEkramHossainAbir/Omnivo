@@ -1,3 +1,5 @@
+import type { IssuedTokens } from '@omnivo/auth';
+import type { AuthSession } from '@omnivo/contracts';
 import type { FastifyReply } from 'fastify';
 
 export const REFRESH_COOKIE = 'omnivo_rt';
@@ -27,4 +29,18 @@ export function clearRefreshCookie(reply: FastifyReply, secure: boolean): void {
     sameSite: 'strict',
     path: COOKIE_PATH,
   });
+}
+
+// session শুরুর উত্তর — সাইনআপ, লগইন, refresh, switch আর invitation গ্রহণ, সবগুলোর একই আকার।
+// refresh token শুধু httpOnly cookie-তে; JSON-এ শুধু access token — JS কখনো refresh token দেখে না
+export function sessionResponse(
+  reply: FastifyReply,
+  tokens: IssuedTokens,
+  secure: boolean,
+): AuthSession {
+  setRefreshCookie(reply, tokens.refreshToken, tokens.refreshTokenExpiresAt, secure);
+  return {
+    accessToken: tokens.accessToken,
+    accessTokenExpiresAt: tokens.accessTokenExpiresAt.toISOString(),
+  };
 }

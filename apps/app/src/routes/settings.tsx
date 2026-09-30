@@ -42,6 +42,7 @@ import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { settingsQuery } from '../lib/queries';
 import { refreshMe } from '../lib/session';
+import { useCan } from '../lib/permissions';
 import { useSession } from '../lib/session-store';
 
 // ফর্মে যা থাকে: parse-এর আগের মান (z.input) — ফাঁকা ঘর '' (null না, <input>-এ null বসানো যায় না)
@@ -378,12 +379,13 @@ function LogoCard({ settings, canManage }: { settings: Settings; canManage: bool
 
 export function SettingsPage() {
   const { t } = useLocale();
+  const can = useCan();
   const me = useSession((state) => state.me);
   const tenantId = me?.tenant.id ?? '';
   const { data, isError } = useQuery({ ...settingsQuery(tenantId), enabled: me !== null });
   if (!me) return null;
 
-  const canManage = me.permissions.includes('core.settings.manage');
+  const canManage = can('core.settings.manage');
 
   return (
     <div className="grid max-w-3xl gap-5">

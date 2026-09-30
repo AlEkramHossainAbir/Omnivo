@@ -157,7 +157,7 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 | ধাপ | কাজ | ব্যাকএন্ড | ফ্রন্টএন্ড | সময় |
 |---|---|---|---|---|
 | **৬** | সেটিংস ও ভিত্তি | tenant settings (currency, fiscal year, timezone, ভাষা), **numbering series** (`INV-2026-0001`), branches/locations, **audit()** (বদলের সাথে একই transaction-এ, request-এর id/IP নিজে থেকে), attachments (MinIO presigned URL) | Settings পেজ, ব্রাঞ্চ CRUD, Audit log viewer (কে কখন কী বদলাল), ইউজারের ভাষা/থিম, Playwright e2e (MSW) | ~২ সপ্তাহ |
-| **৭** | ইউজার ও রোল | invite flow, কাস্টম রোল তৈরি, permission matrix API | ইউজার লিস্ট, ইনভাইট মডাল, **permission matrix গ্রিড** (চেকবক্সের ছক) | ~১.৫ সপ্তাহ |
+| **৭** | ইউজার ও রোল | invite flow (ইমেইল, Mailpit), কাস্টম রোল, permission matrix API, owner = system role, escalation বন্ধ, বাদ পড়া সদস্য সাথে সাথে 401 | টিমের পেজ, ইনভাইট মডাল, join পেজ, **permission matrix গ্রিড** (চেকবক্সের ছক) | ~১.৫ সপ্তাহ |
 | **৮** | Queue, Worker, Outbox | `apps/worker/` (BullMQ), `outbox` টেবিল + relay, **idempotent tenant provisioning job**, ইমেইল (Mailpit), notifications | Onboarding wizard (ব্যবসার ধরন বাছাই → ডিফল্ট সেটআপ), in-app notification bell, job status | ~২ সপ্তাহ |
 
 **ধাপ ৮-এ যা দেখবেন:** সাইনআপ করলে background-এ chart of accounts + রোল + সেটিংস seed হয়ে যাবে, Mailpit-এ welcome ইমেইল আসবে। **প্রথম async আর্কিটেকচার চোখে দেখা।**

@@ -36,6 +36,7 @@ important commands come up.
    - API docs (Scalar, from the contract registry): http://localhost:3000/docs — dev only
    - MinIO console: http://localhost:9001 (omnivo / omnivo-dev-secret) — uploaded files are under the
      omnivo bucket, tenants/<tenant-id>/…
+   - Mailpit (every email the API sends): http://localhost:8025
 
    To run the app alone, without the API, Postgres or Docker:
 

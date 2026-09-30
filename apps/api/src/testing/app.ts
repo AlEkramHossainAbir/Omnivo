@@ -6,11 +6,13 @@ import { type Config, loadConfig } from '../config.js';
 import { configureApp, createAdapter } from '../configure-app.js';
 
 // .env না পড়ে টেস্টের নিজস্ব মান — loadConfig দিয়ে গেলে production-এর একই যাচাই চলে
-// storageUrl না দিলে অচল ঠিকানা — যে টেস্ট ফাইল ছোঁয় না তার জন্য MinIO container তুলতে হয় না
+// storageUrl/mailUrl না দিলে অচল ঠিকানা — যে টেস্ট ফাইল বা ইমেইল ছোঁয় না তার জন্য MinIO বা Mailpit
+// container তুলতে হয় না। অচল SMTP-তে পাঠানো সাথে সাথে ব্যর্থ হয় (port 1, connection refused)
 export function testConfig(urls: {
   databaseUrl: string;
   redisUrl: string;
   storageUrl?: string;
+  mailUrl?: string;
 }): Config {
   return loadConfig({
     NODE_ENV: 'test',
@@ -23,6 +25,7 @@ export function testConfig(urls: {
     S3_ENDPOINT: urls.storageUrl ?? 'http://127.0.0.1:1',
     S3_ACCESS_KEY_ID: 'omnivo',
     S3_SECRET_ACCESS_KEY: 'omnivo-dev-secret',
+    SMTP_URL: urls.mailUrl ?? 'smtp://127.0.0.1:1',
   });
 }
 

@@ -6,6 +6,7 @@ import {
   Outlet,
   redirect,
 } from '@tanstack/react-router';
+import { INVITE_PATH } from '@omnivo/contracts';
 
 import { restoreSession } from './lib/session';
 import { sessionStore } from './lib/session-store';
@@ -28,6 +29,14 @@ const loginRoute = createRoute({
   path: '/login',
   beforeLoad: redirectIfSignedIn,
   component: lazyRouteComponent(() => import('./routes/login'), 'LoginPage'),
+});
+
+// ইমেইলের লিংক। লগইন ছাড়াই খোলে, আর লগইন থাকলেও /-এ ফেরায় না (redirectIfSignedIn নেই): অন্য
+// অ্যাকাউন্টে বসে থাকা কেউও আমন্ত্রণটা দেখে গ্রহণ করতে পারবে
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: INVITE_PATH,
+  component: lazyRouteComponent(() => import('./routes/invite'), 'InvitePage'),
 });
 
 const signUpRoute = createRoute({
@@ -75,6 +84,18 @@ const branchesRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/branches'), 'BranchesPage'),
 });
 
+const teamRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/team',
+  component: lazyRouteComponent(() => import('./routes/team'), 'TeamPage'),
+});
+
+const rolesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/roles',
+  component: lazyRouteComponent(() => import('./routes/roles'), 'RolesPage'),
+});
+
 const auditLogRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/audit-log',
@@ -96,11 +117,14 @@ const devRoutes = import.meta.env.DEV
 const routeTree = rootRoute.addChildren([
   loginRoute,
   signUpRoute,
+  inviteRoute,
   appRoute.addChildren([
     dashboardRoute,
     settingsRoute,
     numberingRoute,
     branchesRoute,
+    teamRoute,
+    rolesRoute,
     auditLogRoute,
     ...devRoutes,
   ]),

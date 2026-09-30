@@ -3,8 +3,9 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { MEMBERS } from '../mocks/fixtures';
+import { WORKSPACES } from '../mocks/fixtures';
 import { mock, problem, reply } from '../mocks/mock';
+import { seedPeople } from '../mocks/people-data';
 import { API_URL, ApiRequestError, call } from './api';
 import { sessionStore } from './session-store';
 
@@ -24,7 +25,7 @@ beforeEach(() => {
   sessionStore.getState().signOut();
 });
 
-const page = { items: MEMBERS.slice(0, 2), nextCursor: 'next' };
+const page = { items: seedPeople(WORKSPACES[0]).members.slice(0, 2), nextCursor: 'next' };
 
 describe('call', () => {
   it('builds the URL from the contract and returns the parsed response', async () => {

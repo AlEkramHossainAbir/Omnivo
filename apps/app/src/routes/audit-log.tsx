@@ -19,6 +19,7 @@ import {
 import { useCallback, useMemo, useState } from 'react';
 
 import { call } from '../lib/api';
+import { useCan } from '../lib/permissions';
 import { settingsQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 
@@ -67,7 +68,7 @@ export function AuditLogPage() {
   const { t, format } = useLocale();
   const me = useSession((state) => state.me);
   const tenantId = me?.tenant.id ?? '';
-  const canRead = me?.permissions.includes('core.audit.read') ?? false;
+  const canRead = useCan()('core.audit.read');
   const [filter, setFilter] = useState<Filter>('all');
   // "কখন" টেন্যান্টের টাইমজোনে — settings না আসা পর্যন্ত বাংলাদেশের ডিফল্ট
   const timeZone = useQuery(settingsQuery(tenantId)).data?.timezone ?? DEFAULT_SETTINGS.timezone;

@@ -26,6 +26,17 @@ export function reply<R extends RouteDef>(route: R, data: RouteResponse<R>): Res
   return Response.json(data, { status: route.status });
 }
 
+// handler যা ছুড়ে দেয় আর problem() যা পাঠায় — status + code (+ ঘর)
+export class MockProblem extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: ErrorCode,
+    readonly fieldErrors?: Record<string, ErrorCode[]>,
+  ) {
+    super(code);
+  }
+}
+
 // আসল API-র মতোই RFC 9457 problem — UI-র error-পথ mock দিয়েও দেখা যায়
 export function problem(
   status: number,

@@ -16,6 +16,10 @@ const envSchema = z.object({
   S3_BUCKET: z.string().min(3).default('omnivo'),
   S3_ACCESS_KEY_ID: z.string().min(1),
   S3_SECRET_ACCESS_KEY: z.string().min(1),
+  // ইমেইল: dev-এ docker-compose-এর Mailpit (smtp://localhost:1025, সব চিঠি http://localhost:8025-এ),
+  // production-এ আসল SMTP (smtps://user:pass@host:465)। পাসওয়ার্ড URL-এর ভেতরেই — একটাই secret
+  SMTP_URL: z.url(),
+  MAIL_FROM: z.string().min(3).default('Omnivo <no-reply@omnivo.app>'),
 });
 
 const DAY = 24 * 60 * 60;
@@ -47,6 +51,10 @@ export function loadConfig(env: Record<string, string | undefined>) {
       // dev আর test-এ bucket না থাকলে API নিজে বানায়; production-এ bucket IaC-র কাজ (ধাপ ২৫),
       // সেখানে API-র bucket বানানোর অধিকারই থাকবে না
       createBucket: e.NODE_ENV !== 'production',
+    },
+    mail: {
+      url: e.SMTP_URL,
+      from: e.MAIL_FROM,
     },
     auth: {
       betterAuthSecret: e.BETTER_AUTH_SECRET,

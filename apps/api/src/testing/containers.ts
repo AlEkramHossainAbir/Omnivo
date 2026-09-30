@@ -6,7 +6,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 import { GenericContainer, type StartedTestContainer, Wait } from 'testcontainers';
-import { grantOwnerPermissions, syncPermissions } from '@omnivo/db';
+import { syncPermissions } from '@omnivo/db';
 
 // src/testing → src → api → apps → repo root
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -42,7 +42,6 @@ export async function startPostgres(): Promise<TestPostgres> {
   const migratorDb = drizzle(migratorClient);
   await migrate(migratorDb, { migrationsFolder: path.join(repoRoot, 'packages/db/migrations') });
   await syncPermissions(migratorDb);
-  await grantOwnerPermissions(migratorDb);
   await migratorClient.end();
 
   return {
@@ -86,5 +85,26 @@ export async function startStorage(): Promise<TestStorage> {
   return {
     container,
     url: `http://${container.getHost()}:${String(container.getMappedPort(9000))}`,
+  };
+}
+
+export interface TestMail {
+  container: StartedTestContainer;
+  smtpUrl: string;
+  // Mailpit-এর HTTP API — টেস্ট এখান থেকে পাঠানো চিঠি পড়ে (লিংক বের করে)
+  apiUrl: string;
+}
+
+// docker-compose-এর mail সার্ভিসের একই image
+export async function startMail(): Promise<TestMail> {
+  const container = await new GenericContainer('axllent/mailpit:v1.31.2')
+    .withExposedPorts(1025, 8025)
+    .withWaitStrategy(Wait.forHttp('/readyz', 8025))
+    .start();
+  const host = container.getHost();
+  return {
+    container,
+    smtpUrl: `smtp://${host}:${String(container.getMappedPort(1025))}`,
+    apiUrl: `http://${host}:${String(container.getMappedPort(8025))}`,
   };
 }

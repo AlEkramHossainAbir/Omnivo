@@ -1,8 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import type { Auth } from '@omnivo/auth';
-import { meResponseSchema, problemSchema, type SignUpInput } from '@omnivo/contracts';
-import { PERMISSIONS } from '@omnivo/db';
+import {
+  meResponseSchema,
+  PERMISSION_KEYS,
+  problemSchema,
+  type SignUpInput,
+} from '@omnivo/contracts';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -87,7 +91,7 @@ describe('sign-up', () => {
     expect(me.tenant.slug).toBe(rahman.workspaceSlug);
     expect(me.roles).toEqual(['Owner']);
     // Owner = catalog-এর সব permission; তালিকা হাতে লিখলে প্রতিটা নতুন permission-এ এই টেস্ট ভাঙত
-    expect(me.permissions).toEqual(PERMISSIONS.map((permission) => permission.key).sort());
+    expect(me.permissions).toEqual([...PERMISSION_KEYS].sort());
     expect(me.memberships).toHaveLength(1);
   });
 
@@ -416,29 +420,38 @@ describe('permissions', () => {
   });
 
   it('serves permissions from the Redis cache until they are invalidated', async () => {
-    const owner = sessionOf(
+    const nabil = sessionOf(
       await login({
         workspace: rahman.workspaceSlug,
-        email: rahman.email,
-        password: rahman.password,
+        email: 'nabil@example.com',
+        password: 'Depot-route-2026',
       }),
     );
     const call = () =>
-      app.inject({ method: 'GET', url: '/members', headers: bearer(owner.accessToken) });
-    expect((await call()).statusCode).toBe(200);
-
-    // Owner রোল থেকে core.user.read সরানো — DB বদলেছে, cache এখনো পুরনো
-    const [ids] = await superuser<{ tenant_id: string; user_id: string }[]>`
-      SELECT t.id AS tenant_id, u.id AS user_id FROM tenants t, users u
-      WHERE t.slug = ${rahman.workspaceSlug} AND u.email = ${rahman.email}`;
-    if (!ids) throw new Error('setup: tenant or user missing');
-    await superuser`
-      DELETE FROM role_permissions
-      WHERE tenant_id = ${ids.tenant_id}
-        AND permission_id = (SELECT id FROM permissions WHERE key = 'core.user.read')`;
-    expect((await call()).statusCode).toBe(200);
-
-    await app.get(PermissionService).invalidate(ids.tenant_id, ids.user_id);
+      app.inject({ method: 'GET', url: '/members', headers: bearer(nabil.accessToken) });
     expect((await call()).statusCode).toBe(403);
+
+    // Nabil-কে core.user.read-ওয়ালা একটা রোল — DB বদলেছে, cache এখনো পুরনো ("কিছুই না")
+    const [ids] = await superuser<{ tenant_id: string; user_id: string; membership_id: string }[]>`
+      SELECT m.tenant_id, m.user_id, m.id AS membership_id
+      FROM memberships m JOIN tenants t ON t.id = m.tenant_id JOIN users u ON u.id = m.user_id
+      WHERE t.slug = ${rahman.workspaceSlug} AND u.email = 'nabil@example.com'`;
+    if (!ids) throw new Error('setup: membership missing');
+    await superuser.begin(async (sql) => {
+      const [role] = await sql<{ id: string }[]>`
+        INSERT INTO roles (id, tenant_id, name) VALUES (gen_random_uuid(), ${ids.tenant_id}, 'Depot supervisor')
+        RETURNING id`;
+      if (!role) throw new Error('setup: role insert failed');
+      await sql`
+        INSERT INTO role_permissions (id, tenant_id, role_id, permission_id)
+        SELECT gen_random_uuid(), ${ids.tenant_id}, ${role.id}, id FROM permissions WHERE key = 'core.user.read'`;
+      await sql`
+        INSERT INTO membership_roles (id, tenant_id, membership_id, role_id)
+        VALUES (gen_random_uuid(), ${ids.tenant_id}, ${ids.membership_id}, ${role.id})`;
+    });
+    expect((await call()).statusCode).toBe(403);
+
+    await app.get(PermissionService).invalidate(ids.tenant_id, [ids.user_id]);
+    expect((await call()).statusCode).toBe(200);
   });
 });

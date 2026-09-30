@@ -44,6 +44,12 @@ function operation(tag: string, name: string, route: RouteDef) {
     summary: route.summary,
     // খালি array = লগইন লাগে না; নাহলে global Bearer
     security: route.auth === 'public' ? [] : [{ bearer: [] }],
+    // OpenAPI-র নিজের "কোন permission" ঘর নেই; x- দিয়ে শুরু হওয়া extension যেকোনো tool মেনে নেয়।
+    // description-এও লেখা, কারণ Scalar-এর মতো viewer extension দেখায় না
+    ...(route.permission !== undefined && {
+      description: `Requires the \`${route.permission}\` permission.`,
+      'x-permission': route.permission,
+    }),
     parameters: [...parameters(route.params, 'path'), ...parameters(route.query, 'query')],
     ...(route.body && {
       requestBody: {

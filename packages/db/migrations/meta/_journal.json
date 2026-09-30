@@ -64,6 +64,20 @@
       "when": 1790674511978,
       "tag": "0008_core-platform-rls",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790749690477,
+      "tag": "0009_team-and-roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790749710635,
+      "tag": "0010_team-and-roles-rls",
+      "breakpoints": true
     }
   ]
 }

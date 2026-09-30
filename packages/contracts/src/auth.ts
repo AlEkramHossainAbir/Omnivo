@@ -33,15 +33,16 @@ export const newWorkspaceSlugSchema = workspaceSlugFormat.refine(
   errorCode('slug_reserved'),
 );
 
-// trim/lowercase আগে, তারপর email যাচাই — ক্রম উল্টালে " A@b.com" ভুল হিসেবে ধরা পড়ত
-const emailSchema = z
+// trim/lowercase আগে, তারপর email যাচাই — ক্রম উল্টালে " A@b.com" ভুল হিসেবে ধরা পড়ত।
+// export: invite-এর ইমেইলও ঠিক এই নিয়মে — নাহলে "Nasrin@…" invite হয়ে "nasrin@…" অ্যাকাউন্টে মিলত না
+export const emailSchema = z
   .string()
   .trim()
   .toLowerCase()
   .pipe(z.email(errorCode('email_invalid')));
 
-// Better Auth-এর maxPasswordLength ডিফল্ট 128 — দুই জায়গায় একই সীমা
-const newPasswordSchema = z
+// Better Auth-এর maxPasswordLength ডিফল্ট 128 — দুই জায়গায় একই সীমা। invite নিয়ে নতুন অ্যাকাউন্টেও একই
+export const newPasswordSchema = z
   .string()
   .min(8, errorCode('password_too_short'))
   .max(128, errorCode('password_too_long'));
@@ -53,10 +54,12 @@ export const companyNameSchema = z
   .min(2, errorCode('company_name_required'))
   .max(120);
 
+export const fullNameSchema = z.string().trim().min(2, errorCode('full_name_required')).max(120);
+
 export const signUpInputSchema = z.object({
   companyName: companyNameSchema,
   workspaceSlug: newWorkspaceSlugSchema,
-  fullName: z.string().trim().min(2, errorCode('full_name_required')).max(120),
+  fullName: fullNameSchema,
   email: emailSchema,
   password: newPasswordSchema,
 });

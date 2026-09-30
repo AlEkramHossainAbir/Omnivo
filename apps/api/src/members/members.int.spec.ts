@@ -91,7 +91,9 @@ describe('keyset pagination', () => {
     ]);
     expect(new Set(everyone.map((m) => m.membershipId)).size).toBe(5);
     // শুধু সেই পাতার রোল — মালিকের Owner রোল ঠিক জায়গায়
-    expect(everyone.find((m) => m.fullName === 'Farhana Rahman')?.roles).toEqual(['Owner']);
+    expect(everyone.find((m) => m.fullName === 'Farhana Rahman')?.roles.map((r) => r.name)).toEqual(
+      ['Owner'],
+    );
   });
 
   it('pages the same way in reverse order', async () => {

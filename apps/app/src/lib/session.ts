@@ -1,4 +1,10 @@
-import { type AuthSession, type LoginInput, routes, type SignUpInput } from '@omnivo/contracts';
+import {
+  type AcceptInvitationInput,
+  type AuthSession,
+  type LoginInput,
+  routes,
+  type SignUpInput,
+} from '@omnivo/contracts';
 
 import { call, refreshSession } from './api';
 import { applyPreferences } from './preferences';
@@ -48,6 +54,12 @@ export async function login(input: LoginInput): Promise<void> {
 
 export async function signUp(input: SignUpInput): Promise<void> {
   await startSession(await call(routes.auth.signUp, { body: input }));
+}
+
+// invitation গ্রহণ = লগইন: উত্তরে একই session, আর সেই workspace-এ। আগে অন্য অ্যাকাউন্টে লগইন থাকলে
+// startSession সেটার ক্যাশ মুছে নতুনটা বসায়
+export async function acceptInvitation(input: AcceptInvitationInput): Promise<void> {
+  await startSession(await call(routes.invitations.accept, { body: input }));
 }
 
 export async function switchTenant(tenantId: string): Promise<void> {

@@ -40,3 +40,8 @@ export function versionConflict(): AppError {
     'The record changed after it was loaded. Reload it and try again.',
   );
 }
+
+// টোকেন বৈধ, কিন্তু মানুষটা আর এই workspace-এ নেই (বাদ দেওয়া হয়েছে)
+export function accessRevoked(): AppError {
+  return new AppError(401, 'access_revoked', 'The user is no longer a member of this workspace.');
+}

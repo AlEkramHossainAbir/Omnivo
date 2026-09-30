@@ -3,10 +3,12 @@ import {
   LayoutGridIcon,
   LeftToRightListNumberIcon,
   Logout01Icon,
+  SecurityCheckIcon,
   Settings02Icon,
   Store01Icon,
   UnfoldMoreIcon,
   UserCircleIcon,
+  UserGroupIcon,
   WorkHistoryIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -34,6 +36,7 @@ import { useEffect, useState } from 'react';
 
 import { savePreference } from '../lib/preferences';
 import { logout, switchTenant } from '../lib/session';
+import { useCan } from '../lib/permissions';
 import { useSession } from '../lib/session-store';
 import { isTheme } from '../lib/theme';
 
@@ -192,7 +195,7 @@ export function AppShell() {
   const status = useSession((state) => state.status);
   const me = useSession((state) => state.me);
   // লুকানো শুধু সুবিধা — আসল পাহারা API-র PermissionGuard। যেটা খুললেই 403, সেটা মেনুতে না দেখানো
-  const can = (permission: string) => me?.permissions.includes(permission) ?? false;
+  const can = useCan();
 
   // refresh ব্যর্থ হলে (session শেষ, অন্য ট্যাবে লগআউট) api.ts store-এ signed-out বসায়
   useEffect(() => {
@@ -225,6 +228,16 @@ export function AppShell() {
             )}
           </NavGroup>
           <NavGroup label={t('nav.workspace')}>
+            {(can('core.user.read') || can('core.user.invite')) && (
+              <NavLink to="/team" icon={UserGroupIcon}>
+                {t('nav.team')}
+              </NavLink>
+            )}
+            {(can('core.user.read') || can('core.role.manage')) && (
+              <NavLink to="/roles" icon={SecurityCheckIcon}>
+                {t('nav.roles')}
+              </NavLink>
+            )}
             <NavLink to="/branches" icon={Store01Icon}>
               {t('nav.branches')}
             </NavLink>

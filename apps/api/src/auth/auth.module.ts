@@ -9,5 +9,6 @@ import { MeController } from './me.controller.js';
   imports: [RbacModule],
   controllers: [AuthController, MeController],
   providers: [AuthService],
+  exports: [AuthService],
 })
 export class AuthModule {}

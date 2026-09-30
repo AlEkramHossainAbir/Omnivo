@@ -21,8 +21,6 @@ import {
   branches,
   membershipRoles,
   memberships,
-  permissions,
-  rolePermissions,
   roles,
   tenantSettings,
   tenants,
@@ -31,7 +29,7 @@ import {
 
 import { audit, created } from '../common/audit/audit.js';
 import { isUniqueViolation } from '../common/db/pg-errors.js';
-import { AppError } from '../common/http/app-error.js';
+import { accessRevoked, AppError } from '../common/http/app-error.js';
 import { runWithTenant } from '../common/tenant/tenant-context.js';
 import { setTenantContext, type WithTenant } from '../common/tenant/with-tenant.js';
 import type { WithUser } from '../common/tenant/with-user.js';
@@ -69,21 +67,11 @@ export class AuthService {
       throw workspaceTaken(input.workspaceSlug);
     }
 
-    let identity: Identity;
-    try {
-      identity = await this.auth.signUp({
-        email: input.email,
-        password: input.password,
-        fullName: input.fullName,
-      });
-    } catch (error) {
-      if (error instanceof AuthError && error.code === 'EMAIL_TAKEN') {
-        throw new AppError(409, 'email_taken', 'An account with this email already exists.', {
-          fieldErrors: { email: ['email_taken'] },
-        });
-      }
-      throw error;
-    }
+    const identity = await this.createAccount({
+      email: input.email,
+      password: input.password,
+      fullName: input.fullName,
+    });
 
     let workspace: { tenantId: string } & MembershipGrant;
     try {
@@ -117,19 +105,11 @@ export class AuthService {
       );
     }
 
-    let identity: Identity;
-    try {
-      identity = await this.auth.signIn({
-        email: input.email,
-        password: input.password,
-        keepSignedIn: input.keepSignedIn,
-      });
-    } catch (error) {
-      if (error instanceof AuthError && error.code === 'INVALID_CREDENTIALS') {
-        throw new AppError(401, 'invalid_credentials', 'Email or password is incorrect.');
-      }
-      throw error;
-    }
+    const identity = await this.verifyPassword({
+      email: input.email,
+      password: input.password,
+      keepSignedIn: input.keepSignedIn,
+    });
 
     const membership = await this.findMembership(tenant.id, identity.userId);
     if (!membership) {
@@ -156,17 +136,63 @@ export class AuthService {
     });
   }
 
+  // invitation গ্রহণ (invitations.service.ts) আর সাইনআপ — নতুন Better Auth ইউজার + session।
+  // Better Auth-এর নিজের error এখানেই আমাদের code-এ বদলায়; facade-এর বাইরে কেউ AuthError দেখে না
+  async createAccount(input: {
+    email: string;
+    password: string;
+    fullName: string;
+  }): Promise<Identity> {
+    try {
+      return await this.auth.signUp(input);
+    } catch (error) {
+      if (error instanceof AuthError && error.code === 'EMAIL_TAKEN') {
+        throw new AppError(409, 'email_taken', 'An account with this email already exists.', {
+          fieldErrors: { email: ['email_taken'] },
+        });
+      }
+      throw error;
+    }
+  }
+
+  // লগইন আর বিদ্যমান অ্যাকাউন্টে invitation গ্রহণ — পাসওয়ার্ড যাচাই + নতুন session
+  async verifyPassword(input: {
+    email: string;
+    password: string;
+    keepSignedIn: boolean;
+  }): Promise<Identity> {
+    try {
+      return await this.auth.signIn(input);
+    } catch (error) {
+      if (error instanceof AuthError && error.code === 'INVALID_CREDENTIALS') {
+        throw new AppError(401, 'invalid_credentials', 'Email or password is incorrect.');
+      }
+      throw error;
+    }
+  }
+
+  // সদস্যপদ তৈরি হয়ে যাওয়ার পরে: সেই workspace-এর টোকেন। লগইনের শেষ ধাপের মতোই, শুধু membership
+  // আগে থেকে জানা নেই বলে এখানে আবার পড়া (রোলের নাম টোকেনের claim-এ যায়)
+  async startSessionIn(identity: Identity, tenantId: string): Promise<IssuedTokens> {
+    const membership = await this.findMembership(tenantId, identity.userId);
+    if (!membership) {
+      await this.auth.revokeSession(identity.sessionId);
+      throw accessRevoked();
+    }
+    return this.auth.issueTokens({
+      sessionId: identity.sessionId,
+      sessionExpiresAt: identity.sessionExpiresAt,
+      claims: { userId: identity.userId, tenantId, ...membership },
+    });
+  }
+
   async refresh(refreshToken: string | undefined): Promise<IssuedTokens> {
     const grant = await this.rotate(refreshToken);
     // টোকেনের রোল ১৫ মিনিট পর্যন্ত পুরনো থাকতে পারে; প্রতিটা refresh-এ DB থেকে নতুন করে
     const membership = await this.findMembership(grant.activeTenantId, grant.userId);
     if (!membership) {
       await this.auth.revokeSession(grant.sessionId);
-      throw new AppError(
-        401,
-        'access_revoked',
-        'The user is no longer a member of this workspace.',
-      );
+      throw accessRevoked();
     }
     return this.reissue({
       sessionId: grant.sessionId,
@@ -245,13 +271,16 @@ export class AuthService {
         .orderBy(asc(tenants.name)),
     );
 
-    const granted = await this.permissionService.forPrincipal(principal);
+    // রোল আর permission টোকেন থেকে না, এখনকার অবস্থা থেকে: টোকেনের roles ১৫ মিনিট পুরনো হতে পারে
+    // (কেউ রোল বদলালে বা রোলের নাম বদলালে), UI-র মেনু তখন ভুল জিনিস দেখাত
+    const access = await this.permissionService.forPrincipal(principal);
+    if (!access) throw accessRevoked();
 
     return {
       user: { id: user.id, email: user.email, fullName: user.fullName },
       tenant,
-      roles: [...principal.roles],
-      permissions: [...granted].sort(),
+      roles: access.roles,
+      permissions: access.permissions,
       memberships: workspaces,
       preferences: { language: user.language, theme: user.theme },
     };
@@ -351,7 +380,7 @@ export class AuthService {
     );
   }
 
-  // একটা transaction: tenant → (context বসিয়ে) membership → Owner রোল → সব permission → রোল বরাদ্দ
+  // একটা transaction: tenant → (context বসিয়ে) membership → owner রোল → রোল বরাদ্দ
   private async provisionWorkspace(
     userId: string,
     input: SignUpInput,
@@ -370,24 +399,14 @@ export class AuthService {
         .insert(memberships)
         .values({ tenantId: tenant.id, userId, createdBy: userId })
         .returning({ id: memberships.id });
+      // kind: 'owner' — অধিকার কোডে (PermissionService), তাই role_permissions-এ কিছু লেখা লাগে না,
+      // আর পরে নতুন permission এলে এই workspace আপনা-আপনি পায়
       const [owner] = await tx
         .insert(roles)
-        .values({ tenantId: tenant.id, name: OWNER_ROLE_NAME, createdBy: userId })
+        .values({ tenantId: tenant.id, name: OWNER_ROLE_NAME, kind: 'owner', createdBy: userId })
         .returning({ id: roles.id });
       if (!membership || !owner) throw new Error('Membership or role insert returned no row');
 
-      const allPermissions = await tx.select({ id: permissions.id }).from(permissions);
-      if (allPermissions.length === 0) {
-        throw new Error('The permissions table is empty — run `pnpm db:migrate`');
-      }
-      await tx.insert(rolePermissions).values(
-        allPermissions.map((permission) => ({
-          tenantId: tenant.id,
-          roleId: owner.id,
-          permissionId: permission.id,
-          createdBy: userId,
-        })),
-      );
       await tx.insert(membershipRoles).values({
         tenantId: tenant.id,
         membershipId: membership.id,

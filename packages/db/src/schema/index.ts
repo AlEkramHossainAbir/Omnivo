@@ -14,3 +14,4 @@ export * from './attachments.js';
 export * from './tenant-settings.js';
 export * from './branches.js';
 export * from './number-series.js';
+export * from './invitations.js';

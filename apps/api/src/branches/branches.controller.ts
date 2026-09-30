@@ -2,7 +2,6 @@ import { Controller } from '@nestjs/common';
 import { type RouteInput, type RouteResponse, routes } from '@omnivo/contracts';
 
 import { Endpoint } from '../common/http/endpoint.js';
-import { RequirePermission } from '../rbac/require-permission.decorator.js';
 import { BranchesService } from './branches.service.js';
 
 type Routes = typeof routes.branches;
@@ -23,19 +22,16 @@ export class BranchesController {
   }
 
   @Endpoint(routes.branches.create)
-  @RequirePermission('core.branch.manage')
   create({ body }: RouteInput<Routes['create']>): Promise<RouteResponse<Routes['create']>> {
     return this.branches.create(body);
   }
 
   @Endpoint(routes.branches.update)
-  @RequirePermission('core.branch.manage')
   update({ params, body }: RouteInput<Routes['update']>): Promise<RouteResponse<Routes['update']>> {
     return this.branches.update(params.id, body);
   }
 
   @Endpoint(routes.branches.archive)
-  @RequirePermission('core.branch.manage')
   archive({
     params,
     body,
@@ -44,7 +40,6 @@ export class BranchesController {
   }
 
   @Endpoint(routes.branches.restore)
-  @RequirePermission('core.branch.manage')
   restore({
     params,
     body,
