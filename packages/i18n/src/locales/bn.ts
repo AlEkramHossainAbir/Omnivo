@@ -403,6 +403,7 @@ export const bn: Messages = {
     continue: 'এগিয়ে যান',
     starting: 'শুরু হচ্ছে…',
     skip: 'এখন না',
+    back: 'পেছনে',
     business: {
       title: '{{company}} কী করে?',
       subtitle:
@@ -423,6 +424,7 @@ export const bn: Messages = {
     company: {
       title: 'কোম্পানির তথ্য',
       subtitle: 'ইনভয়েস আর Mushak 6.3-এ ছাপা হয়। পরে Settings থেকে বদলানো যায়।',
+      locked: 'এই ধাপের পরে ব্যবসার ধরন আর বদলানো যাবে না। বদলাতে চাইলে এখনই পেছনে যান।',
     },
     team: {
       title: 'টিমকে ডাকুন',

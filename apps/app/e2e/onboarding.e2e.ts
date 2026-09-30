@@ -33,13 +33,22 @@ test('a new workspace goes through the setup wizard', async ({ page }) => {
   ).toBeVisible();
   const next = page.getByRole('button', { name: 'Continue' });
   await expect(next).toBeDisabled();
-  // Click the card, as a person would: the radio inside is visually hidden (sr-only)
-  await page.getByText('Garments & textiles').click();
-  await expect(page.getByRole('radio', { name: /Garments & textiles/ })).toBeChecked();
+  // A wrong pick first. Click the card, as a person would: the radio inside is visually hidden (sr-only)
+  await page.getByText('Pharmaceuticals').click();
+  await expect(page.getByRole('radio', { name: /Pharmaceuticals/ })).toBeChecked();
   await expectNoSideScroll(page);
   await next.click();
 
-  // 2) Company details — the form's own check, then skip
+  // Back from the company step: nothing was sent yet, so the pick is still there and can change
+  await expect(page.getByRole('heading', { level: 1, name: 'Company details' })).toBeVisible();
+  await expect(page.getByText('The business type is fixed after this step')).toBeVisible();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('radio', { name: /Pharmaceuticals/ })).toBeChecked();
+  await page.getByText('Garments & textiles').click();
+  await expect(page.getByRole('radio', { name: /Garments & textiles/ })).toBeChecked();
+  await next.click();
+
+  // 2) Company details — the form's own check, then skip (this sends the business type)
   await expect(page.getByRole('heading', { level: 1, name: 'Company details' })).toBeVisible();
   await page.getByLabel('BIN').fill('12345');
   await page.getByRole('button', { name: 'Continue' }).click();
@@ -49,9 +58,19 @@ test('a new workspace goes through the setup wizard', async ({ page }) => {
   // 3) Invite team — waits for the background job, then offers its roles. Not asserting the
   // short "Preparing the roles…" state: on a slow machine the 2-second job is done before we look
   await expect(page.getByRole('heading', { level: 1, name: 'Invite your team' })).toBeVisible();
+  // The second pick is the one that was sent: garments roles, not pharma ones
   await expect(page.getByRole('status')).toHaveText(
     /Roles ready: Accountant, Merchandiser, Store keeper/,
   );
+
+  // Back from here reaches the company details, but no further: the business type is sent
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Company details' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back', exact: true })).toBeHidden();
+  await expect(page.getByText('The business type is fixed after this step')).toBeHidden();
+  await page.getByRole('button', { name: 'Skip for now' }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Invite your team' })).toBeVisible();
+
   await page.getByRole('button', { name: 'Invite people' }).click();
   const dialog = page.getByRole('dialog', { name: 'Invite people' });
   await dialog.getByLabel('Email').fill('nasrin@karimknitwear.com');

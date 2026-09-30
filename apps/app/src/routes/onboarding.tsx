@@ -1,4 +1,5 @@
 import {
+  ArrowLeft01Icon,
   Building03Icon,
   Call02Icon,
   CheckmarkCircle02Icon,
@@ -93,12 +94,18 @@ function Panel({
   );
 }
 
-function BusinessStep({ onDone }: { onDone: () => void }) {
+// Only picks: nothing is sent yet, so the owner can come back and change it (see CompanyForm)
+function BusinessStep({
+  value,
+  onChange,
+  onNext,
+}: {
+  value: Industry | null;
+  onChange: (value: Industry) => void;
+  onNext: () => void;
+}) {
   const { t } = useLocale();
   const me = useSession((state) => state.me);
-  const tenantId = me?.tenant.id ?? '';
-  const queryClient = useQueryClient();
-  const [industry, setIndustry] = useState<Industry | null>(null);
 
   const options = useMemo(
     () =>
@@ -111,6 +118,55 @@ function BusinessStep({ onDone }: { onDone: () => void }) {
     [t],
   );
 
+  return (
+    <Panel
+      step={0}
+      title={t('onboarding.business.title', { company: me?.tenant.name ?? '' })}
+      subtitle={t('onboarding.business.subtitle')}
+      footer={
+        <Button disabled={value === null} onClick={onNext} className="w-full sm:w-auto sm:min-w-40">
+          {t('onboarding.continue')}
+        </Button>
+      }
+    >
+      <SelectableCardGroup
+        legend={t('onboarding.business.label')}
+        options={options}
+        value={value}
+        onChange={onChange}
+      />
+    </Panel>
+  );
+}
+
+// A "Back" button, pushed to the left of the footer (the forward actions stay on the right)
+function BackButton({ onClick }: { onClick: () => void }) {
+  const { t } = useLocale();
+  return (
+    <Button variant="secondary" onClick={onClick} className="sm:mr-auto">
+      <HugeiconsIcon icon={ArrowLeft01Icon} size={17} strokeWidth={1.5} />
+      {t('onboarding.back')}
+    </Button>
+  );
+}
+
+function CompanyForm({
+  settings,
+  industry,
+  onBack,
+  onDone,
+}: {
+  settings: Settings;
+  // The business type to start the setup with. null = the setup has already started (the owner
+  // came back from the last step, or reloaded after it): then this step only saves the settings.
+  industry: Industry | null;
+  onBack: () => void;
+  onDone: () => void;
+}) {
+  const { t } = useLocale();
+  const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
+  const queryClient = useQueryClient();
+
   const start = useMutation({
     mutationFn: (picked: Industry) => call(routes.setup.start, { body: { industry: picked } }),
     onSuccess: async (setup) => {
@@ -119,48 +175,17 @@ function BusinessStep({ onDone }: { onDone: () => void }) {
       queryClient.setQueryData(setupQuery(tenantId).queryKey, setup);
       // me.tenant.setupStatus is no longer 'pending' — otherwise the router would send us back here
       await refreshMe();
-      onDone();
     },
   });
 
-  return (
-    <Panel
-      step={0}
-      title={t('onboarding.business.title', { company: me?.tenant.name ?? '' })}
-      subtitle={t('onboarding.business.subtitle')}
-      footer={
-        <Button
-          disabled={industry === null || start.isPending}
-          onClick={() => {
-            if (industry !== null) start.mutate(industry);
-          }}
-          className="w-full sm:w-auto sm:min-w-40"
-        >
-          {start.isPending ? t('onboarding.starting') : t('onboarding.continue')}
-        </Button>
-      }
-    >
-      <div className="grid gap-5">
-        {start.error && (
-          <FormAlert
-            message={start.error instanceof ApiRequestError ? start.error.code : 'unknown_error'}
-          />
-        )}
-        <SelectableCardGroup
-          legend={t('onboarding.business.label')}
-          options={options}
-          value={industry}
-          onChange={setIndustry}
-        />
-      </div>
-    </Panel>
-  );
-}
-
-function CompanyForm({ settings, onDone }: { settings: Settings; onDone: () => void }) {
-  const { t } = useLocale();
-  const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
-  const queryClient = useQueryClient();
+  // The point of no return. The business type is sent here, at the end of this step and not on
+  // step 1, so a wrong pick can still be undone with Back: once sent, the server never takes
+  // another one (POST /setup answers 409 setup_started). Continue and Skip both end here.
+  const finish = () => {
+    if (industry === null) onDone();
+    else start.mutate(industry, { onSuccess: onDone });
+  };
+  const busy = start.isPending;
   // The full settings form, showing four of its fields: the rest (currency, fiscal year…) ride
   // along from settingsToForm unchanged, because PUT /settings takes the whole profile
   const {
@@ -177,10 +202,12 @@ function CompanyForm({ settings, onDone }: { settings: Settings; onDone: () => v
     try {
       const saved = await call(routes.settings.update, { body: values });
       queryClient.setQueryData(settingsQuery(tenantId).queryKey, saved);
-      onDone();
     } catch (error) {
       applyApiError(error, SETTINGS_FIELDS, setError);
+      return;
     }
+    // Only after the settings are saved: a form error must not start the setup
+    finish();
   });
 
   return (
@@ -190,16 +217,22 @@ function CompanyForm({ settings, onDone }: { settings: Settings; onDone: () => v
       subtitle={t('onboarding.company.subtitle')}
       footer={
         <>
-          <Button variant="secondary" onClick={onDone}>
+          {/* Back to the business type only while it is not sent yet */}
+          {industry !== null && <BackButton onClick={onBack} />}
+          <Button variant="secondary" disabled={isSubmitting || busy} onClick={finish}>
             {t('onboarding.skip')}
           </Button>
           <Button
             type="submit"
             form="company-form"
-            disabled={isSubmitting}
+            disabled={isSubmitting || busy}
             className="w-full sm:w-auto sm:min-w-40"
           >
-            {isSubmitting ? t('common.saving') : t('onboarding.continue')}
+            {busy
+              ? t('onboarding.starting')
+              : isSubmitting
+                ? t('common.saving')
+                : t('onboarding.continue')}
           </Button>
         </>
       }
@@ -213,6 +246,13 @@ function CompanyForm({ settings, onDone }: { settings: Settings; onDone: () => v
         {errors.root?.server?.message && (
           <div className="sm:col-span-2">
             <FormAlert message={errors.root.server.message} />
+          </div>
+        )}
+        {start.error && (
+          <div className="sm:col-span-2">
+            <FormAlert
+              message={start.error instanceof ApiRequestError ? start.error.code : 'unknown_error'}
+            />
           </div>
         )}
         <TextField
@@ -251,18 +291,38 @@ function CompanyForm({ settings, onDone }: { settings: Settings; onDone: () => v
             error={errors.address?.message}
           />
         </div>
+        {/* Says where the point of no return is, before the owner reaches it */}
+        {industry !== null && (
+          <p className="text-label text-ink-3 sm:col-span-2">{t('onboarding.company.locked')}</p>
+        )}
       </form>
     </Panel>
   );
 }
 
-function CompanyStep({ onDone }: { onDone: () => void }) {
+function CompanyStep({
+  industry,
+  onBack,
+  onDone,
+}: {
+  industry: Industry | null;
+  onBack: () => void;
+  onDone: () => void;
+}) {
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const { data: settings } = useQuery(settingsQuery(tenantId));
   // The form needs the settings' version (optimistic locking), so it waits for them. The key
   // makes a fresh form if another version ever arrives.
   if (!settings) return null;
-  return <CompanyForm key={settings.version} settings={settings} onDone={onDone} />;
+  return (
+    <CompanyForm
+      key={settings.version}
+      settings={settings}
+      industry={industry}
+      onBack={onBack}
+      onDone={onDone}
+    />
+  );
 }
 
 // Where the background job is, in words and a pill — the build plan's "job status"
@@ -330,7 +390,9 @@ function SetupProgress() {
   );
 }
 
-function TeamStep() {
+// Back from here goes to the company details only: the settings can change any time, the business
+// type no longer can (the setup has started)
+function TeamStep({ onBack }: { onBack: () => void }) {
   const { t } = useLocale();
   const navigate = useNavigate();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
@@ -344,9 +406,15 @@ function TeamStep() {
       title={t('onboarding.team.title')}
       subtitle={t('onboarding.team.subtitle')}
       footer={
-        <Button onClick={() => void navigate({ to: '/' })} className="w-full sm:w-auto sm:min-w-40">
-          {t('onboarding.team.finish')}
-        </Button>
+        <>
+          <BackButton onClick={onBack} />
+          <Button
+            onClick={() => void navigate({ to: '/' })}
+            className="w-full sm:w-auto sm:min-w-40"
+          >
+            {t('onboarding.team.finish')}
+          </Button>
+        </>
       }
     >
       <div className="grid gap-5">
@@ -410,10 +478,19 @@ function TeamStep() {
 export function OnboardingPage() {
   const { t } = useLocale();
   const me = useSession((state) => state.me);
-  // Coming back after step 1 (a reload, or a later visit): start at the company step. The type
-  // is picked once, so step 1 is never shown again.
-  const [step, setStep] = useState<Step>(() => (me?.tenant.setupStatus === 'pending' ? 0 : 1));
+  // The setup starts at the end of the company step, so coming back after it (a reload, or a later
+  // visit) starts at the last step. The type is picked once, so step 1 is never shown again then.
+  const [step, setStep] = useState<Step>(() => (me?.tenant.setupStatus === 'pending' ? 0 : 2));
+  // Here, not in BusinessStep: that one unmounts on Continue, and Back must show the card picked
+  // before. Not kept across a reload: the setup is still 'pending' then, so step 1 comes back.
+  const [industry, setIndustry] = useState<Industry | null>(null);
   if (!me) return null;
+
+  const started = me.tenant.setupStatus !== 'pending';
+  // Before the setup starts, the company step needs a pick to send — without one, its Continue
+  // would skip POST /setup and leave the workspace 'pending' for good. The flow never gets here
+  // without a pick; this makes it impossible, not just unlikely.
+  const current: Step = !started && industry === null ? 0 : step;
 
   return (
     <div className="min-h-dvh">
@@ -425,24 +502,36 @@ export function OnboardingPage() {
         <Stepper
           label={t('onboarding.stepsLabel')}
           steps={STEPS.map((name) => t(`onboarding.steps.${name}`))}
-          current={step}
+          current={current}
         />
-        {step === 0 && (
+        {current === 0 && (
           <BusinessStep
-            onDone={() => {
+            value={industry}
+            onChange={setIndustry}
+            onNext={() => {
               setStep(1);
             }}
           />
         )}
-        {step === 1 && (
+        {current === 1 && (
           <CompanyStep
+            industry={started ? null : industry}
+            onBack={() => {
+              setStep(0);
+            }}
             onDone={() => {
               setStep(2);
             }}
           />
         )}
         {/* A failed job shows up here, with its Retry button (SetupProgress) */}
-        {step === 2 && <TeamStep />}
+        {current === 2 && (
+          <TeamStep
+            onBack={() => {
+              setStep(1);
+            }}
+          />
+        )}
       </main>
     </div>
   );

@@ -409,6 +409,7 @@ export const en = {
     continue: 'Continue',
     starting: 'Starting…',
     skip: 'Skip for now',
+    back: 'Back',
     business: {
       title: 'What does {{company}} do?',
       subtitle:
@@ -429,6 +430,7 @@ export const en = {
     company: {
       title: 'Company details',
       subtitle: 'Printed on invoices and Mushak 6.3. You can change them later in Settings.',
+      locked: 'The business type is fixed after this step. To change it, go back now.',
     },
     team: {
       title: 'Invite your team',
