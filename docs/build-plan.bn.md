@@ -184,7 +184,7 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 #### ধাপ ১১: Financial Statements · ~২ সপ্তাহ
 
-Trial Balance, P&L, Balance Sheet (কাঁচা SQL-এ লিখুন, ORM-এ নয়), fiscal year close, Excel/PDF export (worker-এ)।
+Trial Balance, P&L, Balance Sheet (কাঁচা SQL-এ, API আর worker একই query), ধাপ ১০-এর `postNew()` দিয়ে বছর শেষের ক্লোজিং এন্ট্রি + lock date (ক্রমে ক্লোজ, উল্টো ক্রমে reopen), Excel/PDF এক্সপোর্ট worker-এ (S3 + বেল), আলাদা permission `accounting.report.read`। Cash flow পরে।
 **দেখবেন:** আসল ট্রায়াল ব্যালেন্স যেখানে দুই পাশ মেলে। 🎉
 **শিখবেন:** ডাবল-এন্ট্রি হিসাব, immutable document, state machine, আর্থিক রিপোর্টের SQL।
 

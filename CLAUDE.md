@@ -263,6 +263,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **KPI strip:** one card split into equal cells by 1px `line` dividers (not separate
   cards). Each cell has a caption label, a 26px/600 value and a 12.5px change line
   (`good`/`crit` with an arrow icon).
+- **Statement table (trial balance, profit and loss, balance sheet):** a real `<table>` in a card (`surface`,
+  1px `line`, radius 14px, `shadow-sm`), not the DataTable: section headings as `ink-3` caption rows, accounts
+  indented 16px per level (code in `Geist Mono` `ink-3`), groups and totals at weight 500, total rows on
+  `subtle`, the report's own total in `<tfoot>`. Amounts right-aligned, `tabular-nums`, 2 decimals. It stays a
+  table on phones: it scrolls sideways inside its card with the account column sticky. A ledger account's
+  name links to its ledger with the report's dates.
+- **Balance check pill:** `good` "Balanced" or `crit` "Out by ৳x", next to the report's dates.
 - **Table:** header row on `subtle` with 12px/500 `ink-3` text. Cells are 13.5px with
   12px 20px padding and 1px `line` rules. Row hover is `subtle`. Numbers are
   right-aligned and `tabular-nums`. The first column is a 30px avatar tile
@@ -347,7 +354,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   may abbreviate as `৳18L`. In Bangla the grouping is the same with Bangla digits
   (`bn-BD`), and `৳` still comes first (`৳১৮,৪২,৬০০`). Money is a decimal string end
   to end, never a JavaScript `number`; round with `decimal.js`. Accounting documents
-  (journal entries, ledgers, opening balances, and later the trial balance) show 2
+  (journal entries, ledgers, opening balances and the financial statements) show 2
   decimals, because their totals must visibly add up; dashboards and lists stay without
   decimals.
 - **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. In Bangla, `২৩ সেপ, ২০২৬`

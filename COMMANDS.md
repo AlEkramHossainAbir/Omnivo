@@ -110,6 +110,10 @@ Useful inside psql: `\dt` lists tables, `\d tenants` shows the columns of one ta
 # the journal: entries per status, and any posted entry that does not balance (should be none)
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, e.status, count(*) FROM journal_entries e JOIN tenants t ON t.id = e.tenant_id GROUP BY 1, 2"
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT e.number, sum(l.debit) - sum(l.credit) AS out_by FROM journal_entries e JOIN journal_lines l ON l.entry_id = e.id WHERE e.status = 'posted' GROUP BY e.number HAVING sum(l.debit) <> sum(l.credit)"
+# exports: per person and status (a 'pending' one older than a minute means the worker is not running)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT u.email, x.report, x.format, x.status, x.created_at FROM report_exports x JOIN users u ON u.id = x.requested_by ORDER BY x.id DESC LIMIT 20"
+# closing entries in force (one per closed year)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, e.number, e.date FROM journal_entries e JOIN tenants t ON t.id = e.tenant_id WHERE e.source = 'year_close' AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reversal_of_id = e.id)"
 ```
 
 ## Permission cache (Valkey)
