@@ -34,6 +34,17 @@ export function invitationsQuery(tenantId: string) {
   });
 }
 
+// The chart of accounts: the tree on its page, the count in the wizard, and from step 10 every
+// account picker. An empty chart is still being made by the worker (a new workspace, or step 9's
+// backfill for an old one), so while it is empty, ask again every 3 seconds until it arrives.
+export function accountsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['accounts', tenantId],
+    queryFn: async () => (await call(routes.accounts.list)).items,
+    refetchInterval: (query) => (query.state.data?.length === 0 ? 3_000 : false),
+  });
+}
+
 // The wizard's view of the background setup job. Polls every 1.5 seconds while the job runs, and
 // stops as soon as the status is final (ready or failed).
 export function setupQuery(tenantId: string) {

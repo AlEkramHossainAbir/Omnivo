@@ -57,6 +57,17 @@ export const ERROR_CODES = [
   // workspace setup (onboarding)
   'setup_started',
   'setup_not_failed',
+  // chart of accounts
+  'account_code_format',
+  'account_code_taken',
+  'account_name_required',
+  'account_parent_required',
+  'account_parent_invalid',
+  'account_parent_loop',
+  'account_parent_archived',
+  'account_locked',
+  'account_has_children',
+  'account_has_active_children',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

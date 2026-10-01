@@ -92,6 +92,20 @@
       "when": 1790762007960,
       "tag": "0012_worker-outbox-rls",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790830173281,
+      "tag": "0013_chart-of-accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790830181835,
+      "tag": "0014_chart-of-accounts-rls",
+      "breakpoints": true
     }
   ]
 }

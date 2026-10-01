@@ -11,6 +11,7 @@ export const OUTBOX_EVENT_TYPES = [
   'workspace.setup_requested',
   'invitation.issued',
   'member.joined',
+  'workspace.chart_requested',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

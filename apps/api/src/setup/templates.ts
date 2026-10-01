@@ -1,4 +1,4 @@
-import type { Industry, PermissionKey } from '@omnivo/contracts';
+import type { AccountPurpose, AccountType, Industry, PermissionKey } from '@omnivo/contracts';
 
 export interface RoleTemplate {
   name: string;
@@ -6,12 +6,26 @@ export interface RoleTemplate {
   permissions: PermissionKey[];
 }
 
-// Starting data for each business type. Now: roles that match how such a company is staffed.
-// Step 9 adds the chart of accounts here, step 12 the product tracking (batch for pharma).
-// These roles are ordinary custom roles: the workspace can rename, change or delete them, and a
-// later change to this file never touches workspaces that already exist.
+// One node of a template chart. With `children` it is a group (an empty list is a group the
+// company fills itself, like "Bank accounts"); without, it is an account that entries post to.
+export interface AccountTemplate {
+  code: string;
+  name: string;
+  purpose?: AccountPurpose;
+  children?: readonly AccountTemplate[];
+}
+
+// The five top-level groups, one per type. The type is written once here, not on every account:
+// each account takes it from its top-level group, exactly as the database does (the parent FK).
+export type ChartTemplate = Record<AccountType, AccountTemplate>;
+
+// Starting data for each business type: the roles such a company is staffed with, and its chart
+// of accounts. Step 12 adds the product tracking (batch for pharma). Everything here is ordinary
+// data once created: the workspace can rename, change or delete it, and a later change to this
+// file never touches workspaces that already exist.
 export interface IndustryTemplate {
   roles: RoleTemplate[];
+  chart: ChartTemplate;
 }
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
@@ -19,7 +33,7 @@ export interface IndustryTemplate {
 const ACCOUNTANT: RoleTemplate = {
   name: 'Accountant',
   description: 'Books, VAT returns and Mushak 6.3',
-  permissions: ['core.user.read', 'core.audit.read'],
+  permissions: ['core.user.read', 'core.audit.read', 'accounting.account.manage'],
 };
 
 const STORE_KEEPER: RoleTemplate = {
@@ -27,6 +41,133 @@ const STORE_KEEPER: RoleTemplate = {
   description: 'Receives goods and writes GRNs',
   permissions: [],
 };
+
+function group(
+  code: string,
+  name: string,
+  children: readonly AccountTemplate[] = [],
+): AccountTemplate {
+  return { code, name, children };
+}
+
+// exactOptionalPropertyTypes: `purpose: undefined` is not the same as no purpose, so the key is
+// only added when there is one
+function account(code: string, name: string, purpose?: AccountPurpose): AccountTemplate {
+  return { code, name, ...(purpose !== undefined && { purpose }) };
+}
+
+// What differs by industry. Everything else — cash, banks, VAT, payables, capital, the common
+// expenses — is the same for every company in Bangladesh and comes from standardChart().
+interface IndustryAccounts {
+  // At code 1150: one account for a trader, a group (raw materials → finished goods) for a maker.
+  // Exactly one account in it has the 'inventory' purpose.
+  stock: AccountTemplate;
+  // Current assets from 1180 on
+  currentAssets?: readonly AccountTemplate[];
+  // Current liabilities from 2180 on
+  currentLiabilities?: readonly AccountTemplate[];
+  // Under 4100 Revenue. Exactly one has the 'sales' purpose.
+  revenue: readonly AccountTemplate[];
+  // Other income from 4230 on
+  otherIncome?: readonly AccountTemplate[];
+  // Under 5100 Cost of sales. Exactly one has the 'cost_of_goods_sold' purpose.
+  costOfSales: readonly AccountTemplate[];
+  // Selling and distribution expenses from 5330 on
+  selling?: readonly AccountTemplate[];
+}
+
+// Four-digit codes: the first digit is the type (1 asset … 5 expense), the second the group, the
+// third the account. Gaps of 10 leave room for the company's own accounts in between.
+function standardChart(industry: IndustryAccounts): ChartTemplate {
+  return {
+    asset: group('1000', 'Assets', [
+      group('1100', 'Current assets', [
+        account('1110', 'Cash in hand', 'cash'),
+        // Empty: every company adds its own banks ("Dutch-Bangla Bank CD A/C …") and wallets
+        group('1120', 'Bank accounts'),
+        group('1130', 'Mobile wallets (bKash, Nagad)'),
+        account('1140', 'Accounts receivable', 'accounts_receivable'),
+        industry.stock,
+        group('1160', 'Advances, deposits and prepayments', [
+          account('1161', 'Advances to suppliers'),
+          account('1162', 'Security deposits'),
+          account('1163', 'Prepaid expenses'),
+          account('1164', 'Advance income tax (AIT)'),
+        ]),
+        account('1170', 'Input VAT', 'vat_input'),
+        ...(industry.currentAssets ?? []),
+      ]),
+      group('1200', 'Fixed assets', [
+        account('1210', 'Land and buildings'),
+        account('1220', 'Plant and machinery'),
+        account('1230', 'Furniture and fixtures'),
+        account('1240', 'Vehicles'),
+        account('1250', 'Office equipment and computers'),
+        account('1290', 'Accumulated depreciation'),
+      ]),
+    ]),
+    liability: group('2000', 'Liabilities', [
+      group('2100', 'Current liabilities', [
+        account('2110', 'Accounts payable', 'accounts_payable'),
+        account('2120', 'Output VAT', 'vat_output'),
+        account('2130', 'VAT and tax deducted at source (VDS, TDS)'),
+        account('2140', 'Salaries and wages payable'),
+        account('2150', 'Accrued expenses'),
+        account('2160', 'Advances from customers'),
+        account('2170', 'Short-term loans and overdraft'),
+        ...(industry.currentLiabilities ?? []),
+      ]),
+      group('2200', 'Long-term liabilities', [account('2210', 'Long-term loans')]),
+    ]),
+    equity: group('3000', 'Equity', [
+      account('3100', 'Capital'),
+      account('3200', 'Retained earnings', 'retained_earnings'),
+      // The other side of the opening balances, entered in step 10 when the company moves its
+      // books to Omnivo. It should read zero once everything is entered.
+      account('3300', 'Opening balance equity', 'opening_balance_equity'),
+    ]),
+    income: group('4000', 'Income', [
+      group('4100', 'Revenue', industry.revenue),
+      group('4200', 'Other income', [
+        account('4210', 'Interest income'),
+        account('4220', 'Miscellaneous income'),
+        ...(industry.otherIncome ?? []),
+      ]),
+    ]),
+    expense: group('5000', 'Expenses', [
+      group('5100', 'Cost of sales', industry.costOfSales),
+      group('5200', 'Administrative expenses', [
+        account('5210', 'Salaries and allowances'),
+        account('5220', 'Office rent'),
+        account('5230', 'Utilities (electricity, gas, water)'),
+        account('5240', 'Transport and conveyance'),
+        account('5250', 'Printing and stationery'),
+        account('5260', 'Telephone and internet'),
+        account('5270', 'Repairs and maintenance'),
+        account('5280', 'Depreciation'),
+      ]),
+      group('5300', 'Selling and distribution expenses', [
+        account('5310', 'Advertising and promotion'),
+        account('5320', 'Delivery and carriage outward'),
+        ...(industry.selling ?? []),
+      ]),
+      group('5400', 'Finance costs', [
+        account('5410', 'Bank charges'),
+        account('5420', 'Interest expense'),
+      ]),
+      account('5500', 'Income tax expense'),
+    ]),
+  };
+}
+
+const TRADER_STOCK = account('1150', 'Inventory', 'inventory');
+const COGS = account('5110', 'Cost of goods sold', 'cost_of_goods_sold');
+// Makers post the sale's cost from finished goods; raw materials move there through production
+const MAKER_COSTS = [
+  COGS,
+  account('5120', 'Direct labour'),
+  account('5130', 'Factory overhead'),
+] as const;
 
 // satisfies Record<Industry, …>: a new industry in contracts does not compile until it has a template
 export const INDUSTRY_TEMPLATES = {
@@ -40,6 +181,26 @@ export const INDUSTRY_TEMPLATES = {
       },
       STORE_KEEPER,
     ],
+    chart: standardChart({
+      stock: group('1150', 'Inventories', [
+        account('1151', 'Fabrics and yarn'),
+        account('1152', 'Trims and accessories'),
+        account('1153', 'Work in progress'),
+        account('1154', 'Finished garments', 'inventory'),
+      ]),
+      currentAssets: [
+        account('1180', 'Export bills receivable'),
+        account('1190', 'Cash incentive receivable'),
+      ],
+      currentLiabilities: [account('2180', 'Back-to-back LC payable')],
+      revenue: [account('4110', 'Export sales', 'sales'), account('4120', 'Local sales')],
+      otherIncome: [account('4230', 'Cash incentive on exports')],
+      costOfSales: [...MAKER_COSTS, account('5140', 'Subcontract charges')],
+      selling: [
+        account('5330', 'Export freight and C&F charges'),
+        account('5340', 'Buying house commission'),
+      ],
+    }),
   },
   pharma: {
     roles: [
@@ -51,6 +212,21 @@ export const INDUSTRY_TEMPLATES = {
       },
       { name: 'Sales representative', description: 'Orders from pharmacies', permissions: [] },
     ],
+    chart: standardChart({
+      stock: group('1150', 'Inventories', [
+        account('1151', 'Raw materials'),
+        account('1152', 'Packing materials'),
+        account('1153', 'Work in progress'),
+        account('1154', 'Finished goods', 'inventory'),
+      ]),
+      revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Sales returns')],
+      costOfSales: MAKER_COSTS,
+      selling: [
+        account('5330', 'Medical promotion and samples'),
+        account('5340', 'Field force allowances'),
+        account('5350', 'Expired and damaged goods'),
+      ],
+    }),
   },
   distribution: {
     roles: [
@@ -66,6 +242,17 @@ export const INDUSTRY_TEMPLATES = {
         permissions: [],
       },
     ],
+    chart: standardChart({
+      stock: TRADER_STOCK,
+      currentAssets: [account('1180', 'Claims receivable from principals')],
+      revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Trade discounts')],
+      otherIncome: [account('4230', 'Commission and incentives from principals')],
+      costOfSales: [COGS],
+      selling: [
+        account('5330', 'Damaged and expired goods'),
+        account('5340', 'Sales team allowances'),
+      ],
+    }),
   },
   manufacturing: {
     roles: [
@@ -77,6 +264,16 @@ export const INDUSTRY_TEMPLATES = {
       },
       STORE_KEEPER,
     ],
+    chart: standardChart({
+      stock: group('1150', 'Inventories', [
+        account('1151', 'Raw materials'),
+        account('1152', 'Work in progress'),
+        account('1153', 'Finished goods', 'inventory'),
+        account('1154', 'Stores and spares'),
+      ]),
+      revenue: [account('4110', 'Sales', 'sales')],
+      costOfSales: [...MAKER_COSTS, account('5140', 'Factory power and fuel')],
+    }),
   },
   retail: {
     roles: [
@@ -88,11 +285,26 @@ export const INDUSTRY_TEMPLATES = {
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [] },
     ],
+    chart: standardChart({
+      stock: TRADER_STOCK,
+      currentAssets: [account('1180', 'Card and wallet settlements receivable')],
+      revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Sales returns')],
+      costOfSales: [COGS],
+      selling: [
+        account('5330', 'Card and wallet charges'),
+        account('5340', 'Shrinkage and damaged goods'),
+      ],
+    }),
   },
   other: {
     roles: [
       ACCOUNTANT,
       { name: 'Manager', description: 'Runs day-to-day work', permissions: ['core.user.read'] },
     ],
+    chart: standardChart({
+      stock: TRADER_STOCK,
+      revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Service income')],
+      costOfSales: [COGS],
+    }),
   },
 } satisfies Record<Industry, IndustryTemplate>;

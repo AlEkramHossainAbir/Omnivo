@@ -1,4 +1,5 @@
 import {
+  BookOpen02Icon,
   DashboardSquare01Icon,
   LayoutGridIcon,
   LeftToRightListNumberIcon,
@@ -228,6 +229,12 @@ export function AppShell() {
                 {t('nav.kitchenSink')}
               </NavLink>
             )}
+          </NavGroup>
+          {/* Every member reads the chart (from step 10, every entry form picks accounts from it) */}
+          <NavGroup label={t('nav.accounting')}>
+            <NavLink to="/accounts" icon={BookOpen02Icon}>
+              {t('nav.chartOfAccounts')}
+            </NavLink>
           </NavGroup>
           <NavGroup label={t('nav.workspace')}>
             {(can('core.user.read') || can('core.user.invite')) && (

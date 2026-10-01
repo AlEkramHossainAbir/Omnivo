@@ -120,6 +120,10 @@ docker compose -f infra/docker/docker-compose.yml exec cache valkey-cli ttl 't:<
 ```sh
 # waiting outbox rows (should be 0 a second after any click)
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT type, created_at FROM outbox_events WHERE published_at IS NULL"
+# accounts per workspace (0 = the chart job has not run yet)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, count(a.id) FROM tenants t LEFT JOIN ledger_accounts a ON a.tenant_id = t.id GROUP BY t.slug"
+# ask the worker to make a missing chart again (it does nothing if the chart exists)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "INSERT INTO outbox_events (id, tenant_id, type, payload) SELECT gen_random_uuid(), id, 'workspace.chart_requested', '{}' FROM tenants WHERE slug = '<slug>'"
 # BullMQ's keys: bull:<queue>:completed / :failed (sorted sets), bull:<queue>:<job-id> (one job)
 docker compose -f infra/docker/docker-compose.yml exec cache valkey-cli zcard bull:email:failed
 docker compose -f infra/docker/docker-compose.yml exec cache valkey-cli hget bull:email:<job-id> failedReason

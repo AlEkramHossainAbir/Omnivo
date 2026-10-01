@@ -171,7 +171,7 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 #### ধাপ ৯: Chart of Accounts · ~১.৫ সপ্তাহ
 
-`accounts` টেবিল (tree, account_type: asset/liability/equity/income/expense), বাংলাদেশি রিটেইল ও ফার্মেসির জন্য দুইটা **template JSON** (provisioning job এখান থেকে seed করবে), opening balance।
+`ledger_accounts` টেবিল (tree, type: asset/liability/equity/income/expense, parent FK-এ type — DB নিজেই টাইপ মেলায়), ছয় ইন্ডাস্ট্রির **template** (একটা standard chart + ইন্ডাস্ট্রির অংশ), ১০টা system account (`purpose`), পুরনো workspace-এর জন্য migration থেকে outbox job। Opening balance ধাপ ১০-এ, প্রথম journal entry হিসেবে।
 **দেখবেন:** গাছের মতো অ্যাকাউন্ট ট্রি UI, নতুন অ্যাকাউন্ট যোগ করা।
 
 #### ধাপ ১০: Double-Entry Journal · ~৩ সপ্তাহ · **সবচেয়ে সতর্ক ধাপ**

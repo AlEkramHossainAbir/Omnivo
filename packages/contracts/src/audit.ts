@@ -9,6 +9,7 @@ export const AUDIT_ACTIONS = [
   'workspace.created',
   'workspace.setup_started',
   'workspace.provisioned',
+  'workspace.chart_created',
   'auth.signed_in',
   'auth.switched_in',
   'settings.updated',
@@ -28,6 +29,11 @@ export const AUDIT_ACTIONS = [
   'role.updated',
   'role.deleted',
   'role.permissions_changed',
+  'account.created',
+  'account.updated',
+  'account.archived',
+  'account.restored',
+  'account.deleted',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -45,6 +51,7 @@ export const AUDIT_ENTITY_TYPES = [
   'member',
   'invitation',
   'role',
+  'account',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

@@ -9,6 +9,7 @@ export const PERMISSION_KEYS = [
   'core.settings.manage',
   'core.branch.manage',
   'core.audit.read',
+  'accounting.account.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -21,7 +22,7 @@ export function isPermissionKey(value: string): value is PermissionKey {
 
 // matrix-এর সারি কোন দলে: key-র মাঝের অংশ (resource) দিয়ে না, হাতে বাছা — "Team" দলে user আর role
 // দুটোই থাকে, কারণ মানুষ দুটোকে একই কাজ ভাবে। Record<PermissionKey, …>: নতুন key দল ছাড়া থাকতে পারে না
-export const PERMISSION_GROUPS = ['team', 'workspace'] as const;
+export const PERMISSION_GROUPS = ['team', 'workspace', 'accounting'] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
 export const PERMISSION_GROUP_OF = {
@@ -32,4 +33,5 @@ export const PERMISSION_GROUP_OF = {
   'core.settings.manage': 'workspace',
   'core.branch.manage': 'workspace',
   'core.audit.read': 'workspace',
+  'accounting.account.manage': 'accounting',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

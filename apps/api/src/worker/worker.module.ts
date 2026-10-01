@@ -7,6 +7,7 @@ import { CONFIG, DB, RELAY_DB, WITH_TENANT } from '../infra/tokens.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
 import { MailService } from '../mail/mail.service.js';
+import { ChartHandler } from '../setup/chart.handler.js';
 import { ProvisioningHandler } from '../setup/provisioning.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 import { EventHandlers } from './handlers.js';
@@ -43,6 +44,7 @@ export class WorkerModule implements OnApplicationShutdown {
         ProvisioningHandler,
         InvitationEmailHandler,
         MemberJoinedHandler,
+        ChartHandler,
       ],
     };
   }

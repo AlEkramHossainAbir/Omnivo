@@ -42,6 +42,8 @@ export const en = {
     auditLog: 'Audit log',
     team: 'Team',
     roles: 'Roles',
+    accounting: 'Accounting',
+    chartOfAccounts: 'Chart of accounts',
   },
   auth: {
     workspace: 'Workspace',
@@ -189,6 +191,86 @@ export const en = {
       'Ask a workspace owner for the core.branch.manage permission to add or change branches.',
     loadFailed: "Couldn't load the branches. Refresh the page to try again.",
   },
+  accounts: {
+    title: 'Chart of accounts',
+    description: 'The groups and accounts your books are kept in',
+    add: 'Add account',
+    searchLabel: 'Search accounts',
+    searchPlaceholder: 'Code or name, like 1140 or VAT',
+    showArchived: 'Show archived',
+    expandAll: 'Expand all',
+    collapseAll: 'Collapse all',
+    expand: 'Show the accounts in {{name}}',
+    collapse: 'Hide the accounts in {{name}}',
+    addTo: 'Add an account to {{name}}',
+    types: {
+      asset: 'Asset',
+      liability: 'Liability',
+      equity: 'Equity',
+      income: 'Income',
+      expense: 'Expense',
+    },
+    balances: {
+      debit: 'grows with a debit',
+      credit: 'grows with a credit',
+    },
+    kinds: {
+      ledger: 'Ledger',
+      group: 'Group',
+    },
+    kindHints: {
+      ledger: 'Entries post to it, like a bank account or an expense.',
+      group: 'Holds other accounts, like "Bank accounts". Nothing posts to it.',
+    },
+    system: 'System',
+    archived: 'Archived',
+    noMatchTitle: 'No account matches "{{query}}"',
+    noMatchBody: 'Search by code, like 1140, or by a word of the name, like receivable.',
+    emptyTitle: 'Your chart of accounts is on its way',
+    emptyBody: 'It is created with the workspace setup and shows up here in a few seconds.',
+    newTitle: 'Add account',
+    editTitle: 'Edit {{code}}',
+    parent: 'Group',
+    parentPlaceholder: 'Pick a group',
+    kind: 'Kind',
+    code: 'Code',
+    codeHint: 'Digits, like 1121. Dots or hyphens may split them.',
+    name: 'Name',
+    namePlaceholder: 'Dutch-Bangla Bank CD A/C 1234',
+    about: 'Description',
+    aboutPlaceholder: 'Main collection account for export proceeds',
+    typeLine: '{{type}} · {{balance}}',
+    topLevel: 'A top-level group. It always stays at the top of the chart.',
+    systemHint:
+      'Omnivo posts {{purpose}} to this account by itself. You can rename or move it, but not archive or delete it.',
+    // What the system posts to each purpose's account. Missing a purpose here does not type-check.
+    purposes: {
+      cash: 'cash sales and payments',
+      accounts_receivable: 'what customers owe',
+      inventory: 'the value of stock',
+      vat_input: 'VAT paid on purchases',
+      accounts_payable: 'what suppliers are owed',
+      vat_output: 'VAT charged on sales',
+      opening_balance_equity: 'the other side of opening balances',
+      retained_earnings: 'the profit of closed years',
+      sales: 'sales',
+      cost_of_goods_sold: 'the cost of goods sold',
+    },
+    archive: 'Archive',
+    restore: 'Restore',
+    delete: 'Delete',
+    confirmDelete: 'Delete {{code}}',
+    deleteWarning:
+      'This cannot be undone. Only an account with nothing under it can be deleted; archive the others.',
+    created: '{{name}} added',
+    updated: 'Changes to {{name}} saved',
+    archivedToast: '{{name}} archived',
+    restoredToast: '{{name}} restored',
+    deleted: '{{name}} deleted',
+    readOnly:
+      'Ask a workspace owner for the accounting.account.manage permission to change the chart.',
+    loadFailed: "Couldn't load the chart of accounts. Refresh the page to try again.",
+  },
   team: {
     title: 'Team',
     description: 'People with access to this workspace, and the roles they have',
@@ -253,6 +335,7 @@ export const en = {
     groups: {
       team: 'Team',
       workspace: 'Workspace',
+      accounting: 'Accounting',
     },
     members_one: '{{count}} person',
     members_other: '{{count}} people',
@@ -294,6 +377,9 @@ export const en = {
       branch: { manage: 'Add, edit and archive branches' },
       audit: { read: 'See the audit log' },
     },
+    accounting: {
+      account: { manage: 'Add, change, archive and delete accounts' },
+    },
   },
   invite: {
     checking: 'Checking your invitation…',
@@ -328,6 +414,7 @@ export const en = {
       member: 'Team',
       invitation: 'Invitations',
       role: 'Roles',
+      account: 'Chart of accounts',
     },
     columns: {
       when: 'When',
@@ -347,7 +434,8 @@ export const en = {
       workspace: {
         created: 'Created the workspace',
         setup_started: 'Started the workspace setup',
-        provisioned: 'Added the starting roles',
+        provisioned: 'Added the starting roles and chart of accounts',
+        chart_created: 'Added the chart of accounts',
       },
       auth: { signed_in: 'Signed in', switched_in: 'Switched into this workspace' },
       settings: { updated: 'Changed the settings', logo_changed: 'Changed the logo' },
@@ -372,6 +460,13 @@ export const en = {
         deleted: 'Deleted a role',
         permissions_changed: "Changed a role's permissions",
       },
+      account: {
+        created: 'Added an account',
+        updated: 'Edited an account',
+        archived: 'Archived an account',
+        restored: 'Restored an account',
+        deleted: 'Deleted an account',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -394,6 +489,8 @@ export const en = {
       roles: 'Roles',
       description: 'Description',
       industry: 'Business type',
+      parent: 'Group',
+      accounts: 'Accounts',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -413,7 +510,7 @@ export const en = {
     business: {
       title: 'What does {{company}} do?',
       subtitle:
-        'We start you with the roles such a company usually needs. You can rename or change them any time.',
+        'We start you with the roles and the chart of accounts such a company usually needs. You can change them any time.',
       label: 'Business type',
     },
     industries: {
@@ -435,8 +532,9 @@ export const en = {
     team: {
       title: 'Invite your team',
       subtitle: 'Add your accountant and managers now, or later from the Team page.',
-      preparing: 'Preparing the roles for {{industry}}…',
-      ready: 'Roles ready: {{roles}}',
+      preparing: 'Preparing the roles and chart of accounts for {{industry}}…',
+      ready_one: 'Roles ready: {{roles}}. Chart of accounts: {{count}} account.',
+      ready_other: 'Roles ready: {{roles}}. Chart of accounts: {{count}} accounts.',
       failed: "The setup didn't finish. Try again — nothing you entered is lost.",
       retry: 'Try again',
       invite: 'Invite people',
@@ -455,7 +553,10 @@ export const en = {
     // type → text. The type's dot nests in i18next, so t(`notifications.types.${type}`) lands here;
     // a type without text here does not type-check
     types: {
-      workspace: { ready: 'Your workspace is set up. The starting roles are ready to use.' },
+      workspace: {
+        ready:
+          'Your workspace is set up. The starting roles and chart of accounts are ready to use.',
+      },
       member: { joined: '{{name}} joined the workspace' },
       invitation: {
         failed: "The invitation email to {{email}} couldn't be sent. Resend it from the Team page.",
@@ -520,6 +621,17 @@ export const en = {
       'Someone has this role or an open invitation gives it. Change their roles or cancel the invitation first.',
     setup_started: 'The setup has already started. Reload the page to see how far it is.',
     setup_not_failed: "The setup hasn't failed. Reload the page to see how far it is.",
+    account_code_format: 'Use digits, like 1121. Dots or hyphens may split them, like 1-1-21.',
+    account_code_taken: 'Another account already uses this code. Pick a different one.',
+    account_name_required: 'Enter the account name.',
+    account_parent_required: 'Pick the group this account goes under.',
+    account_parent_invalid: 'Pick an active group of the same type from the list.',
+    account_parent_loop: "A group can't go under one of its own accounts. Pick a group outside it.",
+    account_parent_archived: 'The group above this account is archived. Restore the group first.',
+    account_locked:
+      "Top-level groups and system accounts can't be archived or deleted. You can rename them.",
+    account_has_children: 'Move or delete the accounts under this group first.',
+    account_has_active_children: 'Archive the accounts under this group first.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',
     version_conflict:
       'Someone else saved changes while you were editing. Reload to see them, then make your change again.',

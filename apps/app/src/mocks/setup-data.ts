@@ -1,5 +1,6 @@
 import type { Industry, Setup } from '@omnivo/contracts';
 
+import { seedAccounts } from './accounting-data';
 import { MockProblem } from './mock';
 import { record, type WorkspaceData } from './workspace-data';
 
@@ -28,7 +29,7 @@ export function startSetup(data: WorkspaceData, industry: Industry): Setup {
 }
 
 // Called on every read: once the delay has passed, do what the worker would have done — roles,
-// status, audit and a notification
+// the chart of accounts, status, audit and a notification
 export function settleSetup(data: WorkspaceData): void {
   const { industry } = data.setup;
   if (
@@ -52,11 +53,13 @@ export function settleSetup(data: WorkspaceData): void {
       updatedAt: new Date().toISOString(),
     });
   }
+  if (data.accounts.length === 0) data.accounts = seedAccounts(industry);
   data.setup = { status: 'ready', industry };
   data.setupReadyAt = null;
   record(data, 'workspace.provisioned', 'workspace', crypto.randomUUID(), {
     industry: { from: null, to: industry },
     roles: { from: null, to: added.join(', ') || null },
+    accounts: { from: null, to: data.accounts.length },
   });
   data.notifications.unshift({
     id: crypto.randomUUID(),

@@ -108,6 +108,12 @@ const branchesRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/branches'), 'BranchesPage'),
 });
 
+const accountsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/accounts',
+  component: lazyRouteComponent(() => import('./routes/accounts'), 'AccountsPage'),
+});
+
 const teamRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/team',
@@ -148,6 +154,7 @@ const routeTree = rootRoute.addChildren([
     settingsRoute,
     numberingRoute,
     branchesRoute,
+    accountsRoute,
     teamRoute,
     rolesRoute,
     auditLogRoute,

@@ -1,3 +1,4 @@
+export * from './accounts.js';
 export * from './attachments.js';
 export * from './audit.js';
 export * from './auth.js';

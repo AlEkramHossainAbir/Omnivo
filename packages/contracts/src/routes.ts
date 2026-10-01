@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { accountRoutes } from './accounts.js';
 import { attachmentRoutes } from './attachments.js';
 import { auditRoutes } from './audit.js';
 import { authRoutes } from './auth.js';
@@ -41,4 +42,5 @@ export const routes = {
   attachments: attachmentRoutes,
   setup: setupRoutes,
   notifications: notificationRoutes,
+  accounts: accountRoutes,
 };

@@ -1,4 +1,10 @@
-import { type AuthSession, type Preferences, routes, type Settings } from '@omnivo/contracts';
+import {
+  type Account,
+  type AuthSession,
+  type Preferences,
+  routes,
+  type Settings,
+} from '@omnivo/contracts';
 import { delay, http, HttpResponse, type HttpResponseResolver } from 'msw';
 
 import { API_URL } from '../lib/api';
@@ -18,6 +24,13 @@ import {
   toInvitation,
   toRole,
 } from './people-data';
+import {
+  assertAccountCodeFree,
+  assertNotLocked,
+  codeOf,
+  findAccount,
+  parentFor,
+} from './accounting-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
   assertCodeFree,
@@ -521,6 +534,136 @@ export const handlers = [
       Object.assign(target, { archivedAt: null, version: version + 1 });
       record(data, 'branch.restored', 'branch', id);
       return reply(routes.branches.restore, target);
+    }),
+  ),
+
+  mock(routes.accounts.list, () =>
+    reply(routes.accounts.list, {
+      items: current().accounts.toSorted((a, b) => a.code.localeCompare(b.code)),
+    }),
+  ),
+
+  mock(
+    routes.accounts.get,
+    guarded(({ params }) => {
+      const { id } = routes.accounts.get.params.parse(params);
+      return reply(routes.accounts.get, findAccount(current().accounts, id));
+    }),
+  ),
+
+  mock(
+    routes.accounts.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.accounts.create.body, request);
+      const data = current();
+      const parent = parentFor(data.accounts, body.parentId);
+      assertAccountCodeFree(data.accounts, body.code);
+      const created = {
+        ...body,
+        id: crypto.randomUUID(),
+        type: parent.type,
+        purpose: null,
+        archivedAt: null,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.accounts.push(created);
+      record(
+        data,
+        'account.created',
+        'account',
+        created.id,
+        diff(
+          {},
+          { code: body.code, name: body.name, description: body.description, parent: parent.code },
+        ),
+      );
+      await delay();
+      return reply(routes.accounts.create, created);
+    }),
+  ),
+
+  mock(
+    routes.accounts.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.accounts.update.params.parse(params);
+      const { version, ...fields } = await readBody(routes.accounts.update.body, request);
+      const data = current();
+      const target = findAccount(data.accounts, id);
+      checkVersion(target.version, version);
+      if (fields.parentId !== target.parentId) {
+        if (fields.parentId === null) throw new MockProblem(409, 'account_parent_invalid');
+        parentFor(data.accounts, fields.parentId, target);
+      }
+      assertAccountCodeFree(data.accounts, fields.code, id);
+      const snapshot = (account: Account) => ({
+        code: account.code,
+        name: account.name,
+        description: account.description,
+        parent: codeOf(data.accounts, account.parentId),
+      });
+      const before = snapshot(target);
+      Object.assign(target, fields, { version: version + 1, updatedAt: new Date().toISOString() });
+      record(data, 'account.updated', 'account', id, diff(before, snapshot(target)));
+      await delay();
+      return reply(routes.accounts.update, target);
+    }),
+  ),
+
+  mock(
+    routes.accounts.archive,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.accounts.archive.params.parse(params);
+      const { version } = await readBody(routes.accounts.archive.body, request);
+      const data = current();
+      const target = findAccount(data.accounts, id);
+      checkVersion(target.version, version);
+      assertNotLocked(target);
+      if (data.accounts.some((child) => child.parentId === id && child.archivedAt === null)) {
+        throw new MockProblem(409, 'account_has_active_children');
+      }
+      Object.assign(target, { archivedAt: new Date().toISOString(), version: version + 1 });
+      record(data, 'account.archived', 'account', id);
+      return reply(routes.accounts.archive, target);
+    }),
+  ),
+
+  mock(
+    routes.accounts.restore,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.accounts.restore.params.parse(params);
+      const { version } = await readBody(routes.accounts.restore.body, request);
+      const data = current();
+      const target = findAccount(data.accounts, id);
+      checkVersion(target.version, version);
+      const parent = data.accounts.find((account) => account.id === target.parentId);
+      if (parent && parent.archivedAt !== null) {
+        throw new MockProblem(409, 'account_parent_archived');
+      }
+      Object.assign(target, { archivedAt: null, version: version + 1 });
+      record(data, 'account.restored', 'account', id);
+      return reply(routes.accounts.restore, target);
+    }),
+  ),
+
+  mock(
+    routes.accounts.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.accounts.remove.params.parse(params);
+      const { version } = readQuery(routes.accounts.remove.query, request);
+      const data = current();
+      const target = findAccount(data.accounts, id);
+      checkVersion(target.version, version);
+      assertNotLocked(target);
+      if (data.accounts.some((child) => child.parentId === id)) {
+        throw new MockProblem(409, 'account_has_children');
+      }
+      data.accounts = data.accounts.filter((account) => account.id !== id);
+      record(data, 'account.deleted', 'account', id, {
+        code: { from: target.code, to: null },
+        name: { from: target.name, to: null },
+      });
+      return reply(routes.accounts.remove, undefined);
     }),
   ),
 

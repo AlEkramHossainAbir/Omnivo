@@ -45,7 +45,7 @@ import { InviteForm } from '../components/invite-form';
 import { LanguageSwitch } from '../components/language-switch';
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
-import { rolesQuery, settingsQuery, setupQuery } from '../lib/queries';
+import { accountsQuery, rolesQuery, settingsQuery, setupQuery } from '../lib/queries';
 import { refreshMe } from '../lib/session';
 import { useSession } from '../lib/session-store';
 import { settingsToForm } from '../lib/settings-form';
@@ -333,6 +333,9 @@ function SetupProgress() {
   const { data: setup } = useQuery(setupQuery(tenantId));
   const ready = setup?.status === 'ready';
   const { data: roles } = useQuery({ ...rolesQuery(tenantId), enabled: ready });
+  const { data: accounts } = useQuery({ ...accountsQuery(tenantId), enabled: ready });
+  // "Ready" only once both lists are here — otherwise the line would flash "0 accounts" first
+  const done = ready && roles !== undefined && accounts !== undefined;
 
   const retry = useMutation({
     mutationFn: () => call(routes.setup.retry),
@@ -366,16 +369,17 @@ function SetupProgress() {
   // role="status": a screen reader announces the change from "Preparing…" to "Roles ready"
   return (
     <p role="status" className="flex flex-wrap items-center gap-2 text-body-sm text-ink-2">
-      {ready ? (
+      {done ? (
         <>
           <Pill tone="good" icon={CheckmarkCircle02Icon}>
             {industry}
           </Pill>
           {t('onboarding.team.ready', {
-            roles: (roles ?? [])
+            roles: roles
               .filter((role) => role.kind === 'custom')
               .map((role) => role.name)
               .join(', '),
+            count: accounts.length,
           })}
         </>
       ) : (

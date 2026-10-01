@@ -13,6 +13,8 @@ const DESCRIPTIONS = {
   'core.settings.manage': 'Edit the company profile, regional settings and numbering',
   'core.branch.manage': 'Add, edit and archive branches',
   'core.audit.read': 'View the audit log',
+  'accounting.account.manage':
+    'Add, edit, move, archive and delete accounts in the chart of accounts',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

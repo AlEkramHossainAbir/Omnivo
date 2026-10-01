@@ -1,6 +1,7 @@
 export { cn } from './lib/cn.js';
 export { DESKTOP_QUERY, useMediaQuery } from './lib/use-media-query.js';
 export { parseIsoDate, toIsoDate } from './lib/iso-date.js';
+export { buildTree, filterTree, flattenTree, type TreeNode } from './lib/tree.js';
 
 export { AppShell, NavGroup, NavItem, SidebarNav } from './components/app-shell.js';
 export { Button, IconButton } from './components/button.js';
@@ -49,3 +50,4 @@ export { SegmentedControl } from './components/segmented-control.js';
 export { SelectableCardGroup, type SelectableCardOption } from './components/selectable-card.js';
 export { Stepper } from './components/stepper.js';
 export { Toaster, toast } from './components/toast.js';
+export { TreeList } from './components/tree-list.js';

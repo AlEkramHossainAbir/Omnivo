@@ -232,7 +232,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Suffixes/prefixes (`.omnivo.app`, `+880`) sit inside the control in `ink-3`/`ink-2`.
 - **Form label:** sits above the input, 13px/500 `ink`. Optional fields say
   "(optional)" in `ink-3`. Errors show below the input as `crit` text with an
-  `Alert02` icon, and the message says what to fix.
+  `Alert02` icon, and the message says what to fix. A field never grows wider than its
+  grid column (`Field` is `grid-cols-1`).
 - **Checkbox:** 17px, radius 5px, checked fill `brand` with a `brand-ink` `Tick02` icon.
   The label sits to the right (13.5px `ink-2`) and clicking it toggles the box. A
   checkbox with a hidden label (`hideLabel`) still needs a label for screen readers.
@@ -273,6 +274,14 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `subtitle`, `trailing`, `detail`), and columns without it are hidden on phones.
   Paged lists sort on the server (`sorting` prop) and load the next page with
   `onEndReached`.
+- **Tree list:** `TreeList` from `@omnivo/ui`, for lists with a parent (chart of accounts, product categories).
+  A card (`surface`, 1px `line`, radius 14px, `shadow-sm`) of nested lists; rows 44px high with a 1px `line`
+  rule, hover `subtle`, indented 16px per level. Each group has a 28px show/hide button (`ArrowRight01` closed,
+  `ArrowDown01` open, 16px `ink-3`, no rotation) with `aria-expanded`; rows without children get an empty
+  28px box so codes line up. The page keeps the open state; while a search is on, every group on the way to a
+  match is open. Codes in `Geist Mono` `ink-3` `tabular-nums`, group names `ink`/500, others `ink-2`. A row
+  action that would repeat on every row (an "add here" button) shows on row hover or focus with a mouse
+  (`pointer-fine:`), always on touch screens.
 - **Page header:** the 26px `h1` page title, a 13px `ink-3` description below it, and
   the view's actions on the right (they wrap below the title on phones).
 - **Section header:** a 15px/600 title plus a 13px `ink-3` subtitle with no card and no

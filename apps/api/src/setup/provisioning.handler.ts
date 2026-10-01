@@ -9,6 +9,7 @@ import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { notify } from '../notifications/notify.js';
+import { seedChart } from './seed-chart.js';
 import { INDUSTRY_TEMPLATES, type RoleTemplate } from './templates.js';
 
 type Event = OutboxEvent<'workspace.setup_requested'>;
@@ -82,7 +83,11 @@ export class ProvisioningHandler implements EventHandler<'workspace.setup_reques
       }
 
       const industry = tenant.industry;
-      const seeded = await seedRoles(tx, tenantId, INDUSTRY_TEMPLATES[industry].roles);
+      const template = INDUSTRY_TEMPLATES[industry];
+      const seeded = await seedRoles(tx, tenantId, template.roles);
+      // 0 when the workspace already has a chart: step 9's migration queued one for a workspace
+      // whose setup had failed, and it ran before this retry
+      const accounts = await seedChart(tx, tenantId, template.chart);
       await tx.update(tenants).set({ setupStatus: 'ready' }).where(eq(tenants.id, tenantId));
       // No actorUserId: the audit log shows "System" — the job did it, not a person
       await audit(tx, {
@@ -92,6 +97,7 @@ export class ProvisioningHandler implements EventHandler<'workspace.setup_reques
         changes: created({
           industry,
           roles: seeded.length === 0 ? null : seeded.map((role) => role.name).join(', '),
+          accounts: accounts === 0 ? null : accounts,
         }),
       });
       await notify(tx, {

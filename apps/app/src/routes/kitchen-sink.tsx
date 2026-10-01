@@ -15,6 +15,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import type { Theme } from '@omnivo/contracts';
 import { isLanguage, LANGUAGES, setLanguage, useLocale } from '@omnivo/i18n';
 import {
+  buildTree,
   Button,
   Card,
   CardHeader,
@@ -37,6 +38,7 @@ import {
   TextField,
   toast,
   toIsoDate,
+  TreeList,
 } from '@omnivo/ui';
 import { useMemo, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
@@ -421,11 +423,65 @@ export function KitchenSinkPage() {
 
       <section className="grid gap-3">
         <SectionHeader
+          title="Tree list"
+          subtitle="Groups open and close; the page keeps the open state (chart of accounts, step 9)"
+        />
+        <CategoryTree />
+      </section>
+
+      <section className="grid gap-3">
+        <SectionHeader
           title="Data table"
           subtitle="10,000 buyer POs, virtualized. Cards below 860px. Click a header to sort."
         />
         <PurchaseOrderTable />
       </section>
     </div>
+  );
+}
+
+interface Category {
+  id: string;
+  parentId: string | null;
+  name: string;
+}
+
+// Product categories of a garments factory — the kind of list step 12 shows with this component
+const CATEGORIES: Category[] = [
+  { id: 'fabric', parentId: null, name: 'Fabrics' },
+  { id: 'knit', parentId: 'fabric', name: 'Knit (single jersey, rib)' },
+  { id: 'woven', parentId: 'fabric', name: 'Woven (denim, twill)' },
+  { id: 'trims', parentId: null, name: 'Trims and accessories' },
+  { id: 'buttons', parentId: 'trims', name: 'Buttons' },
+  { id: 'labels', parentId: 'trims', name: 'Care labels' },
+  { id: 'thread', parentId: null, name: 'Sewing thread' },
+];
+
+function CategoryTree() {
+  const [closed, setClosed] = useState<ReadonlySet<string>>(new Set());
+  const nodes = useMemo(
+    () =>
+      buildTree(CATEGORIES, {
+        id: (category) => category.id,
+        parentId: (category) => category.parentId,
+        compare: (a, b) => a.name.localeCompare(b.name),
+      }),
+    [],
+  );
+  return (
+    <TreeList
+      label="Product categories"
+      nodes={nodes}
+      isOpen={(id) => !closed.has(id)}
+      onToggle={(id) => {
+        setClosed((current) => {
+          const next = new Set(current);
+          if (!next.delete(id)) next.add(id);
+          return next;
+        });
+      }}
+      toggleLabel={(category, open) => `${open ? 'Hide' : 'Show'} ${category.name}`}
+      renderRow={(category) => <span className="truncate text-body-sm">{category.name}</span>}
+    />
   );
 }

@@ -1,6 +1,7 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
+  accountListSchema,
   auditPageSchema,
   meResponseSchema,
   notificationPageSchema,
@@ -27,7 +28,11 @@ import {
   type TestRedis,
 } from '../testing/containers.js';
 import { bearer, type SignedIn, signUp } from '../testing/http.js';
+import { accountCount } from '../testing/chart.js';
 import { lastMailTo } from '../testing/mailpit.js';
+import { INDUSTRY_TEMPLATES } from './templates.js';
+
+const GARMENTS_ACCOUNTS = accountCount(INDUSTRY_TEMPLATES.garments.chart);
 
 let pg: TestPostgres;
 let redis: TestRedis;
@@ -108,7 +113,7 @@ describe('sign-up', () => {
 });
 
 describe('starting the setup', () => {
-  it('answers with "provisioning" at once, then the worker makes the garments roles', async () => {
+  it('answers with "provisioning" at once, then the worker makes the roles and the chart', async () => {
     const res = await send('POST', '/setup', { industry: 'garments' });
     expect(res.statusCode).toBe(200);
     expect(setupSchema.parse(res.json())).toEqual({ status: 'provisioning', industry: 'garments' });
@@ -119,10 +124,15 @@ describe('starting the setup', () => {
     const { items } = roleListSchema.parse((await send('GET', '/roles')).json());
     expect(items.map((role) => [role.name, role.permissions])).toEqual([
       ['Owner', expect.any(Array)],
-      ['Accountant', ['core.audit.read', 'core.user.read']],
+      ['Accountant', ['accounting.account.manage', 'core.audit.read', 'core.user.read']],
       ['Merchandiser', ['core.user.read']],
       ['Store keeper', []],
     ]);
+    const chart = accountListSchema.parse((await send('GET', '/accounts')).json());
+    expect(chart.items.find((account) => account.code === '4110')).toMatchObject({
+      name: 'Export sales',
+      purpose: 'sales',
+    });
   });
 
   it('writes the audit log as the system, with the request that started it', async () => {
@@ -138,7 +148,10 @@ describe('starting the setup', () => {
     expect(provisioned).toMatchObject({
       action: 'workspace.provisioned',
       actor: null,
-      changes: { roles: { from: null, to: 'Accountant, Merchandiser, Store keeper' } },
+      changes: {
+        roles: { from: null, to: 'Accountant, Merchandiser, Store keeper' },
+        accounts: { from: null, to: GARMENTS_ACCOUNTS },
+      },
     });
     // The worker ran in the context of the POST /setup request: one click, traced end to end
     expect(provisioned?.requestId).toBe(started?.requestId);
@@ -174,6 +187,8 @@ describe('starting the setup', () => {
 
     const { items } = roleListSchema.parse((await send('GET', '/roles')).json());
     expect(items).toHaveLength(4);
+    const chart = accountListSchema.parse((await send('GET', '/accounts')).json());
+    expect(chart.items).toHaveLength(GARMENTS_ACCOUNTS);
     const bell = notificationPageSchema.parse((await send('GET', '/notifications')).json());
     expect(bell.items.filter((item) => item.type === 'workspace.ready')).toHaveLength(1);
   });
@@ -228,6 +243,21 @@ describe('when the setup job fails', () => {
     await superuserSql(
       (sql) => sql`UPDATE tenants SET industry = 'pharma' WHERE slug = 'karim-pharma'`,
     );
+    // Step 9's migration queues a chart for every workspace that is not 'pending' — this failed
+    // one too. Its chart arrives before the retry, so the retried setup job must leave it alone.
+    await superuserSql(
+      (sql) => sql`INSERT INTO outbox_events (id, tenant_id, type, payload)
+                   SELECT gen_random_uuid(), id, 'workspace.chart_requested', '{}'::jsonb
+                   FROM tenants WHERE slug = 'karim-pharma'`,
+    );
+    const pharmaAccounts = accountCount(INDUSTRY_TEMPLATES.pharma.chart);
+    await eventually(async () => {
+      const chart = accountListSchema.parse(
+        (await send('GET', '/accounts', undefined, pharmaOwner)).json(),
+      );
+      expect(chart.items).toHaveLength(pharmaAccounts);
+    });
+
     const retried = await send('POST', '/setup/retry', undefined, pharmaOwner);
     expect(setupSchema.parse(retried.json())).toEqual({
       status: 'provisioning',
@@ -252,11 +282,86 @@ describe('when the setup job fails', () => {
       description: 'Our own',
       permissions: [],
     });
+    // Still one chart, and the setup's audit row says it added none
+    const chart = accountListSchema.parse(
+      (await send('GET', '/accounts', undefined, pharmaOwner)).json(),
+    );
+    expect(chart.items).toHaveLength(pharmaAccounts);
+    const log = auditPageSchema.parse(
+      (await send('GET', '/audit-logs?entityType=workspace', undefined, pharmaOwner)).json(),
+    );
+    expect(log.items.find((entry) => entry.action === 'workspace.provisioned')?.changes).toEqual({
+      industry: { from: null, to: 'pharma' },
+      roles: { from: null, to: 'Accountant, Sales representative' },
+    });
   });
 
   it('refuses a retry when nothing failed', async () => {
     const res = await send('POST', '/setup/retry', undefined, pharmaOwner);
     expect(res.statusCode).toBe(409);
     expect(problemSchema.parse(res.json()).code).toBe('setup_not_failed');
+  });
+});
+
+// Migration 0014 queues one 'workspace.chart_requested' per workspace that was set up before
+// step 9. Here the same row is written by hand for a workspace that looks like one from before
+// step 8: set up, but with no business type.
+describe('a workspace set up before the chart of accounts', () => {
+  let oldOwner: SignedIn;
+
+  beforeAll(async () => {
+    oldOwner = await signUp(app, {
+      companyName: 'Hossain Traders',
+      workspaceSlug: 'hossain-traders',
+      fullName: 'Anwar Hossain',
+      email: 'anwar@hossaintraders.com',
+      password: 'Moulvibazar-2026',
+    });
+    await superuserSql(
+      (sql) => sql`UPDATE tenants SET setup_status = 'ready' WHERE slug = 'hossain-traders'`,
+    );
+  });
+
+  async function requestChart(): Promise<void> {
+    await superuserSql(
+      (sql) => sql`INSERT INTO outbox_events (id, tenant_id, type, payload)
+                   SELECT gen_random_uuid(), id, 'workspace.chart_requested', '{}'::jsonb
+                   FROM tenants WHERE slug = 'hossain-traders'`,
+    );
+  }
+
+  async function accounts() {
+    return accountListSchema.parse((await send('GET', '/accounts', undefined, oldOwner)).json())
+      .items;
+  }
+
+  it('gets the general chart from the worker, logged as the system', async () => {
+    expect(await accounts()).toEqual([]);
+    await requestChart();
+    const general = accountCount(INDUSTRY_TEMPLATES.other.chart);
+    await eventually(async () => {
+      expect(await accounts()).toHaveLength(general);
+    });
+
+    const { items } = auditPageSchema.parse(
+      (await send('GET', '/audit-logs?entityType=workspace', undefined, oldOwner)).json(),
+    );
+    expect(items[0]).toMatchObject({
+      action: 'workspace.chart_created',
+      actor: null,
+      changes: { industry: { from: null, to: 'other' }, accounts: { from: null, to: general } },
+    });
+  });
+
+  it('adds nothing when the event comes again', async () => {
+    const before = await accounts();
+    await requestChart();
+    await eventually(() => unpublished(0));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(await accounts()).toHaveLength(before.length);
+    const { items } = auditPageSchema.parse(
+      (await send('GET', '/audit-logs?entityType=workspace', undefined, oldOwner)).json(),
+    );
+    expect(items.filter((entry) => entry.action === 'workspace.chart_created')).toHaveLength(1);
   });
 });

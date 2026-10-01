@@ -17,6 +17,7 @@ const QUEUE_OF = {
   'invitation.issued': 'email',
   'workspace.setup_requested': 'jobs',
   'member.joined': 'jobs',
+  'workspace.chart_requested': 'jobs',
 } satisfies Record<OutboxEventType, QueueName>;
 
 // The hourly maintenance job. Not an outbox event: no request asks for it, a scheduler adds it.

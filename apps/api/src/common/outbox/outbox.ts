@@ -16,6 +16,8 @@ export const outboxPayloadSchemas = {
   'invitation.issued': z.object({ invitationId: z.uuid(), actorUserId: z.uuid() }),
   // inviterId is null when the invitation's creator is unknown (an old row)
   'member.joined': z.object({ membershipId: z.uuid(), inviterId: z.uuid().nullable() }),
+  // Nothing to carry: the workspace is the event's tenant, and its business type is on its row
+  'workspace.chart_requested': z.object({}),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

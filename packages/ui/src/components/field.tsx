@@ -31,8 +31,11 @@ export function Field({ id, label, optional = false, hint, error, children }: Fi
   const { t, errorText } = useLocale();
   return (
     // content-start: পাশের ফিল্ডে hint থাকলে grid-এর সারি উঁচু হয়; তখন এই ফিল্ডের ভেতরের
-    // সারিগুলো টেনে লম্বা না করে উপরে জড়ো থাকে — ইনপুটের উচ্চতা সব জায়গায় ৪২px
-    <div className="grid content-start gap-1.5">
+    // সারিগুলো টেনে লম্বা না করে উপরে জড়ো থাকে — ইনপুটের উচ্চতা সব জায়গায় ৪২px।
+    // grid-cols-1 (minmax(0, 1fr)): without it the column is as wide as the <input>'s own default
+    // width (about 20 characters), so a field in a narrow column (the 140px Code) ran under its
+    // neighbour. Found in step 9; the branch form had it too.
+    <div className="grid grid-cols-1 content-start gap-1.5">
       <label htmlFor={id} className="text-label font-medium text-ink">
         {label}
         {optional && <span className="font-normal text-ink-3"> {t('common.optional')}</span>}

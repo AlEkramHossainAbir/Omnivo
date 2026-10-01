@@ -1,4 +1,5 @@
 import {
+  type Account,
   type AuditAction,
   type AuditChanges,
   type AuditEntityType,
@@ -19,6 +20,7 @@ import {
   todayIn,
 } from '@omnivo/contracts';
 
+import { seedAccounts } from './accounting-data';
 import { OWNER, type Workspace } from './fixtures';
 import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
@@ -35,6 +37,7 @@ export interface WorkspaceData {
   // When a started setup "finishes" (ms since epoch) — the pretend worker, see setup-data.ts
   setupReadyAt: number | null;
   notifications: Notification[];
+  accounts: Account[];
 }
 
 function now(): string {
@@ -84,6 +87,7 @@ function seed(workspace: Workspace): WorkspaceData {
     setup: { status: 'ready', industry: garments ? 'garments' : 'pharma' },
     setupReadyAt: null,
     notifications: garments ? seedNotifications() : [],
+    accounts: seedAccounts(garments ? 'garments' : 'pharma'),
   };
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
@@ -137,6 +141,8 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   };
   data.setup = { status: 'pending', industry: null };
   data.notifications = [];
+  // A new workspace has no chart until its setup job runs (settleSetup)
+  data.accounts = [];
   store.set(workspace.tenantId, data);
 }
 
