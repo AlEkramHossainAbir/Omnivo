@@ -114,6 +114,42 @@ const accountsRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/accounts'), 'AccountsPage'),
 });
 
+const journalRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/journal',
+  component: lazyRouteComponent(() => import('./routes/journal'), 'JournalPage'),
+});
+
+// '/journal/new' beats '/journal/$entryId': TanStack ranks a fixed segment above a parameter.
+// Both pages live in one file and one chunk.
+const newJournalEntryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/journal/new',
+  component: lazyRouteComponent(() => import('./routes/journal-entry'), 'NewJournalEntryPage'),
+});
+
+const journalEntryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/journal/$entryId',
+  component: lazyRouteComponent(() => import('./routes/journal-entry'), 'JournalEntryPage'),
+});
+
+// ?account=<id>: an entry's line links straight to its account's ledger, and the address can be
+// bookmarked. Anything else in the query string is dropped, not trusted.
+const ledgerRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/ledger',
+  validateSearch: (search: Record<string, unknown>): { account?: string } =>
+    typeof search.account === 'string' ? { account: search.account } : {},
+  component: lazyRouteComponent(() => import('./routes/ledger'), 'LedgerPage'),
+});
+
+const openingBalancesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/opening-balances',
+  component: lazyRouteComponent(() => import('./routes/opening-balances'), 'OpeningBalancesPage'),
+});
+
 const teamRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/team',
@@ -155,6 +191,11 @@ const routeTree = rootRoute.addChildren([
     numberingRoute,
     branchesRoute,
     accountsRoute,
+    journalRoute,
+    newJournalEntryRoute,
+    journalEntryRoute,
+    ledgerRoute,
+    openingBalancesRoute,
     teamRoute,
     rolesRoute,
     auditLogRoute,

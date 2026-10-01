@@ -139,6 +139,44 @@ export interface SelectOption {
   label: string;
 }
 
+export interface SelectProps extends Omit<ComponentProps<'select'>, 'className'> {
+  options: readonly SelectOption[];
+  icon?: IconSvgElement | undefined;
+  invalid?: boolean | undefined;
+}
+
+// The select box without a label, like Input next to TextField: for a control whose label sits
+// elsewhere, such as the column header above a journal line
+export function Select({ options, icon, invalid = false, ...select }: SelectProps) {
+  return (
+    <div className={controlBoxClass(invalid)}>
+      {icon && (
+        <HugeiconsIcon icon={icon} size={17} strokeWidth={1.5} className="shrink-0 text-ink-3" />
+      )}
+      <select
+        aria-invalid={invalid || undefined}
+        // appearance-none: ব্রাউজারের নিজের তীর মুছে আমাদের আইকন; bg-transparent: dark mode-এ
+        // Windows-এর সাদা বাক্স না
+        className="min-w-0 flex-1 appearance-none bg-transparent py-2.5 text-body outline-none"
+        {...select}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      <HugeiconsIcon
+        icon={ArrowDown01Icon}
+        size={16}
+        strokeWidth={1.5}
+        // pointer-events-none: তীরে ক্লিক করলেও নিচের select খোলে
+        className="pointer-events-none shrink-0 text-ink-3"
+      />
+    </div>
+  );
+}
+
 export interface SelectFieldProps extends Omit<ComponentProps<'select'>, 'className' | 'id'> {
   label: string;
   id?: string;
@@ -166,33 +204,14 @@ export function SelectField({
   const fieldId = id ?? select.name ?? autoId;
   return (
     <Field id={fieldId} label={label} optional={optional} hint={hint} error={error}>
-      <div className={controlBoxClass(Boolean(error))}>
-        {icon && (
-          <HugeiconsIcon icon={icon} size={17} strokeWidth={1.5} className="shrink-0 text-ink-3" />
-        )}
-        <select
-          id={fieldId}
-          aria-invalid={Boolean(error) || undefined}
-          aria-describedby={describedBy(fieldId, error, hint)}
-          // appearance-none: ব্রাউজারের নিজের তীর মুছে আমাদের আইকন; bg-transparent: dark mode-এ
-          // Windows-এর সাদা বাক্স না
-          className="min-w-0 flex-1 appearance-none bg-transparent py-2.5 text-body outline-none"
-          {...select}
-        >
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <HugeiconsIcon
-          icon={ArrowDown01Icon}
-          size={16}
-          strokeWidth={1.5}
-          // pointer-events-none: তীরে ক্লিক করলেও নিচের select খোলে
-          className="pointer-events-none shrink-0 text-ink-3"
-        />
-      </div>
+      <Select
+        id={fieldId}
+        options={options}
+        icon={icon}
+        invalid={Boolean(error)}
+        aria-describedby={describedBy(fieldId, error, hint)}
+        {...select}
+      />
     </Field>
   );
 }

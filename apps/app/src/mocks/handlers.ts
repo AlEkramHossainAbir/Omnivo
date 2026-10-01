@@ -31,6 +31,21 @@ import {
   findAccount,
   parentFor,
 } from './accounting-data';
+import {
+  checkLines,
+  findEntry,
+  ledgerOf,
+  openingOf,
+  postDraft,
+  postNew,
+  replaceDraft,
+  reverseEntry,
+  saveOpening,
+  setLockDate,
+  sortedEntries,
+  summaryOf,
+  writeDraft,
+} from './journal-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
   assertCodeFree,
@@ -433,6 +448,14 @@ export const handlers = [
       const { version, ...fields } = await readBody(routes.settings.update.body, request);
       const data = current();
       checkVersion(data.settings.version, version);
+      if (
+        fields.baseCurrency !== data.settings.baseCurrency &&
+        data.journal.entries.some((entry) => entry.status === 'posted')
+      ) {
+        throw new MockProblem(409, 'base_currency_locked', {
+          baseCurrency: ['base_currency_locked'],
+        });
+      }
       const before = editable(data.settings);
       data.settings = { ...data.settings, ...fields, version: version + 1 };
       record(data, 'settings.updated', 'workspace', workspace.tenantId, diff(before, fields));
@@ -658,12 +681,180 @@ export const handlers = [
       if (data.accounts.some((child) => child.parentId === id)) {
         throw new MockProblem(409, 'account_has_children');
       }
+      if (data.journal.entries.some((entry) => entry.lines.some((line) => line.accountId === id))) {
+        throw new MockProblem(409, 'account_in_use');
+      }
       data.accounts = data.accounts.filter((account) => account.id !== id);
       record(data, 'account.deleted', 'account', id, {
         code: { from: target.code, to: null },
         name: { from: target.name, to: null },
       });
       return reply(routes.accounts.remove, undefined);
+    }),
+  ),
+
+  mock(routes.journal.list, ({ request }) => {
+    const query = readQuery(routes.journal.list.query, request);
+    // The mock's cursor is an offset, like its other lists
+    const start = query.cursor === undefined ? 0 : Number(query.cursor);
+    const all = sortedEntries(current()).filter(
+      (entry) => query.status === undefined || entry.status === query.status,
+    );
+    const items = all.slice(start, start + query.limit).map(summaryOf);
+    const end = start + items.length;
+    return reply(routes.journal.list, { items, nextCursor: end < all.length ? String(end) : null });
+  }),
+
+  mock(
+    routes.journal.get,
+    guarded(({ params }) => {
+      const { id } = routes.journal.get.params.parse(params);
+      return reply(routes.journal.get, findEntry(current(), id));
+    }),
+  ),
+
+  mock(
+    routes.journal.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.journal.create.body, request);
+      const data = current();
+      checkLines(data, body.lines);
+      const entry = body.post ? postNew(data, body) : writeDraft(data, body);
+      record(data, 'journal.created', 'journal_entry', entry.id);
+      if (body.post) {
+        record(data, 'journal.posted', 'journal_entry', entry.id, {
+          number: { from: null, to: entry.number },
+        });
+      }
+      await delay();
+      return reply(routes.journal.create, entry);
+    }),
+  ),
+
+  mock(
+    routes.journal.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.journal.update.params.parse(params);
+      const { version, post, ...fields } = await readBody(routes.journal.update.body, request);
+      const data = current();
+      const entry = findEntry(data, id);
+      if (entry.status !== 'draft') throw new MockProblem(409, 'journal_not_draft');
+      checkVersion(entry.version, version);
+      checkLines(data, fields.lines);
+      // All or nothing, like the API's transaction: post a copy, keep it only if it posts
+      const before = structuredClone(entry);
+      replaceDraft(entry, fields);
+      if (post) {
+        try {
+          postDraft(data, entry);
+        } catch (error) {
+          Object.assign(entry, before);
+          throw error;
+        }
+      }
+      record(data, 'journal.updated', 'journal_entry', id);
+      await delay();
+      return reply(routes.journal.update, entry);
+    }),
+  ),
+
+  mock(
+    routes.journal.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.journal.remove.params.parse(params);
+      const { version } = readQuery(routes.journal.remove.query, request);
+      const data = current();
+      const entry = findEntry(data, id);
+      if (entry.status !== 'draft') throw new MockProblem(409, 'journal_not_draft');
+      checkVersion(entry.version, version);
+      data.journal.entries = data.journal.entries.filter((item) => item.id !== id);
+      record(data, 'journal.deleted', 'journal_entry', id);
+      return reply(routes.journal.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.journal.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.journal.post.params.parse(params);
+      const { version } = await readBody(routes.journal.post.body, request);
+      const data = current();
+      const entry = findEntry(data, id);
+      if (entry.status !== 'draft') throw new MockProblem(409, 'journal_not_draft');
+      checkVersion(entry.version, version);
+      postDraft(data, entry);
+      record(data, 'journal.posted', 'journal_entry', id, {
+        number: { from: null, to: entry.number },
+      });
+      return reply(routes.journal.post, entry);
+    }),
+  ),
+
+  mock(
+    routes.journal.reverse,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.journal.reverse.params.parse(params);
+      const { version, date } = await readBody(routes.journal.reverse.body, request);
+      const data = current();
+      const entry = findEntry(data, id);
+      checkVersion(entry.version, version);
+      const reversal = reverseEntry(data, entry, date);
+      record(data, 'journal.reversed', 'journal_entry', id, {
+        reversal: { from: null, to: reversal.number },
+      });
+      await delay();
+      return reply(routes.journal.reverse, reversal);
+    }),
+  ),
+
+  mock(
+    routes.ledger.get,
+    guarded(({ request, params }) => {
+      const { id } = routes.ledger.get.params.parse(params);
+      const query = readQuery(routes.ledger.get.query, request);
+      return reply(routes.ledger.get, ledgerOf(current(), id, query));
+    }),
+  ),
+
+  mock(routes.openingBalances.get, () => reply(routes.openingBalances.get, openingOf(current()))),
+
+  mock(
+    routes.openingBalances.save,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.openingBalances.save.body, request);
+      const data = current();
+      saveOpening(data, body);
+      const saved = openingOf(data);
+      record(data, 'journal.opening_balances_saved', 'workspace', workspace.tenantId, {
+        entry: { from: null, to: saved.entry?.number ?? null },
+      });
+      await delay();
+      return reply(routes.openingBalances.save, saved);
+    }),
+  ),
+
+  mock(routes.periodLock.get, () => {
+    const { journal } = current();
+    return reply(routes.periodLock.get, {
+      lockDate: journal.lockDate,
+      version: journal.lockVersion,
+    });
+  }),
+
+  mock(
+    routes.periodLock.update,
+    guarded(async ({ request }) => {
+      const { lockDate, version } = await readBody(routes.periodLock.update.body, request);
+      const data = current();
+      const before = data.journal.lockDate;
+      setLockDate(data, lockDate, version);
+      record(data, 'books.lock_date_changed', 'workspace', workspace.tenantId, {
+        lockDate: { from: before, to: lockDate },
+      });
+      return reply(routes.periodLock.update, {
+        lockDate: data.journal.lockDate,
+        version: data.journal.lockVersion,
+      });
     }),
   ),
 

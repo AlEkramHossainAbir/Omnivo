@@ -10,6 +10,10 @@ export const PERMISSION_KEYS = [
   'core.branch.manage',
   'core.audit.read',
   'accounting.account.manage',
+  'accounting.journal.read',
+  'accounting.journal.create',
+  'accounting.journal.post',
+  'accounting.period.close',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -34,4 +38,8 @@ export const PERMISSION_GROUP_OF = {
   'core.branch.manage': 'workspace',
   'core.audit.read': 'workspace',
   'accounting.account.manage': 'accounting',
+  'accounting.journal.read': 'accounting',
+  'accounting.journal.create': 'accounting',
+  'accounting.journal.post': 'accounting',
+  'accounting.period.close': 'accounting',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

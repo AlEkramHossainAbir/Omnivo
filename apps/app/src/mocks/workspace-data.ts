@@ -22,6 +22,7 @@ import {
 
 import { seedAccounts } from './accounting-data';
 import { OWNER, type Workspace } from './fixtures';
+import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
 
@@ -38,6 +39,7 @@ export interface WorkspaceData {
   setupReadyAt: number | null;
   notifications: Notification[];
   accounts: Account[];
+  journal: MockJournal;
 }
 
 function now(): string {
@@ -88,7 +90,9 @@ function seed(workspace: Workspace): WorkspaceData {
     setupReadyAt: null,
     notifications: garments ? seedNotifications() : [],
     accounts: seedAccounts(garments ? 'garments' : 'pharma'),
+    journal: emptyJournal(),
   };
+  if (garments) seedJournal(data);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -143,6 +147,7 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.notifications = [];
   // A new workspace has no chart until its setup job runs (settleSetup)
   data.accounts = [];
+  data.journal = emptyJournal();
   store.set(workspace.tenantId, data);
 }
 
@@ -214,8 +219,14 @@ export function seriesList(data: WorkspaceData): NumberSeries[] {
       documentType,
       ...format,
       version: saved?.version ?? 0,
-      // mock-এ কোনো ডকুমেন্ট তৈরি হয় না, তাই পরের নম্বর সবসময় ১
-      nextNumber: formatDocumentNumber(format, period(format), 1),
+      // Only journal entries get numbers in the mock so far; every other type starts at 1
+      nextNumber: formatDocumentNumber(
+        format,
+        period(format),
+        (documentType === 'accounting.journal'
+          ? (data.journal.counters.get(period(format)) ?? 0)
+          : 0) + 1,
+      ),
     };
   });
 }

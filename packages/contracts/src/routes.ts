@@ -7,6 +7,7 @@ import { authRoutes } from './auth.js';
 import { branchRoutes } from './branches.js';
 import { defineRoute } from './http.js';
 import { invitationRoutes } from './invitations.js';
+import { journalRoutes, ledgerRoutes, openingBalanceRoutes, periodLockRoutes } from './journal.js';
 import { memberRoutes } from './members.js';
 import { notificationRoutes } from './notifications.js';
 import { numberSeriesRoutes } from './numbering.js';
@@ -43,4 +44,8 @@ export const routes = {
   setup: setupRoutes,
   notifications: notificationRoutes,
   accounts: accountRoutes,
+  journal: journalRoutes,
+  ledger: ledgerRoutes,
+  openingBalances: openingBalanceRoutes,
+  periodLock: periodLockRoutes,
 };

@@ -18,3 +18,4 @@ export * from './invitations.js';
 export * from './outbox-events.js';
 export * from './notifications.js';
 export * from './ledger-accounts.js';
+export * from './journal.js';

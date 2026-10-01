@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Settings, UpdateSettingsInput } from '@omnivo/contracts';
-import { attachments, tenantSettings, tenants } from '@omnivo/db';
+import { attachments, journalEntries, tenantSettings, tenants } from '@omnivo/db';
 import { and, eq, sql } from 'drizzle-orm';
 
 import { audit, diff } from '../common/audit/audit.js';
@@ -35,6 +35,23 @@ export class SettingsService {
         .for('update', { of: tenantSettings });
       if (!current) throw notFound('Settings');
       if (current.settings.version !== version) throw versionConflict();
+      // The books are kept in the base currency. Once one entry is posted, changing it would turn
+      // every amount in them into another currency's amount without converting anything.
+      if (fields.baseCurrency !== current.settings.baseCurrency) {
+        const [posted] = await tx
+          .select({ id: journalEntries.id })
+          .from(journalEntries)
+          .where(and(eq(journalEntries.tenantId, tenantId), eq(journalEntries.status, 'posted')))
+          .limit(1);
+        if (posted) {
+          throw new AppError(
+            409,
+            'base_currency_locked',
+            'The base currency cannot change once entries are posted.',
+            { fieldErrors: { baseCurrency: ['base_currency_locked'] } },
+          );
+        }
+      }
 
       await tx
         .update(tenantSettings)

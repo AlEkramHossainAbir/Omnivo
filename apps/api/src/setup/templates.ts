@@ -33,7 +33,15 @@ export interface IndustryTemplate {
 const ACCOUNTANT: RoleTemplate = {
   name: 'Accountant',
   description: 'Books, VAT returns and Mushak 6.3',
-  permissions: ['core.user.read', 'core.audit.read', 'accounting.account.manage'],
+  permissions: [
+    'core.user.read',
+    'core.audit.read',
+    'accounting.account.manage',
+    'accounting.journal.read',
+    'accounting.journal.create',
+    'accounting.journal.post',
+    'accounting.period.close',
+  ],
 };
 
 const STORE_KEEPER: RoleTemplate = {

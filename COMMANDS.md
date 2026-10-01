@@ -106,6 +106,12 @@ pnpm db:psql   # psql shell as postgres
 Useful inside psql: `\dt` lists tables, `\d tenants` shows the columns of one table,
 `SELECT * FROM tenants;` shows rows, and `\q` quits.
 
+```sh
+# the journal: entries per status, and any posted entry that does not balance (should be none)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, e.status, count(*) FROM journal_entries e JOIN tenants t ON t.id = e.tenant_id GROUP BY 1, 2"
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT e.number, sum(l.debit) - sum(l.credit) AS out_by FROM journal_entries e JOIN journal_lines l ON l.entry_id = e.id WHERE e.status = 'posted' GROUP BY e.number HAVING sum(l.debit) <> sum(l.credit)"
+```
+
 ## Permission cache (Valkey)
 
 ```sh

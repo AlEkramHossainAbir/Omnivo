@@ -15,6 +15,10 @@ const DESCRIPTIONS = {
   'core.audit.read': 'View the audit log',
   'accounting.account.manage':
     'Add, edit, move, archive and delete accounts in the chart of accounts',
+  'accounting.journal.read': 'View journal entries, ledgers and opening balances',
+  'accounting.journal.create': 'Write, edit and delete draft journal entries',
+  'accounting.journal.post': 'Post and reverse journal entries, and set the opening balances',
+  'accounting.period.close': 'Close the books up to a date, and open them again',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

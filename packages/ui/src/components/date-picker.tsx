@@ -1,26 +1,14 @@
-import { ArrowLeft01Icon, ArrowRight01Icon, Calendar03Icon } from '@hugeicons/core-free-icons';
+import { Calendar03Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useLocale } from '@omnivo/i18n';
-import { type Ref, useState } from 'react';
-import { type ChevronProps, DayPicker } from 'react-day-picker';
-import { bn } from 'react-day-picker/locale/bn';
-import { enUS } from 'react-day-picker/locale/en-US';
+import { lazy, type Ref, Suspense, useState } from 'react';
 
 import { cn } from '../lib/cn.js';
 import { parseIsoDate, toIsoDate } from '../lib/iso-date.js';
 import { controlBoxClass } from './field.js';
 import { Popover, PopoverContent, PopoverTrigger } from './popover.js';
 
-// react-day-picker-এর নিজের SVG তীরের বদলে HugeIcons (CLAUDE.md rule ৪: আইকন একটাই লাইব্রেরি)
-function Chevron({ orientation }: ChevronProps) {
-  return (
-    <HugeiconsIcon
-      icon={orientation === 'left' ? ArrowLeft01Icon : ArrowRight01Icon}
-      size={16}
-      strokeWidth={1.5}
-    />
-  );
-}
+const Calendar = lazy(async () => ({ default: (await import('./calendar.js')).Calendar }));
 
 interface DatePickerProps {
   id?: string;
@@ -49,7 +37,7 @@ export function DatePicker({
   placeholder,
   'aria-describedby': ariaDescribedBy,
 }: DatePickerProps) {
-  const { t, language, format } = useLocale();
+  const { t, format } = useLocale();
   const [open, setOpen] = useState(false);
   const selected = parseIsoDate(value);
 
@@ -87,45 +75,16 @@ export function DatePicker({
         </button>
       </PopoverTrigger>
       <PopoverContent>
-        <DayPicker
-          mode="single"
-          selected={selected}
-          // খুললে বাছাই করা মাস দেখায়, খালি থাকলে এই মাস। `?? new Date()`: exactOptionalPropertyTypes-এ
-          // defaultMonth-এ undefined পাঠানো যায় না
-          defaultMonth={selected ?? new Date()}
-          onSelect={(date) => {
-            onChange(date ? toIsoDate(date) : '');
-            setOpen(false);
-          }}
-          // মাস/দিনের নাম আর aria-label ভাষা অনুযায়ী; numerals='beng' দিনের সংখ্যা বাংলা অঙ্কে
-          locale={language === 'bn' ? bn : enUS}
-          numerals={language === 'bn' ? 'beng' : 'latn'}
-          showOutsideDays
-          autoFocus
-          components={{ Chevron }}
-          // react-day-picker-এর CSS import করা হয়নি — সব চেহারা token দিয়ে এখানে
-          classNames={{
-            root: 'text-body-sm',
-            months: 'relative',
-            month_caption: 'flex h-8 items-center justify-center font-medium text-ink',
-            nav: 'absolute inset-x-0 top-0 flex h-8 items-center justify-between',
-            button_previous:
-              'grid size-8 place-items-center rounded-lg text-ink-3 transition-colors duration-150 hover:bg-subtle hover:text-ink',
-            button_next:
-              'grid size-8 place-items-center rounded-lg text-ink-3 transition-colors duration-150 hover:bg-subtle hover:text-ink',
-            month_grid: 'mt-2 border-collapse',
-            weekday: 'size-9 text-caption font-medium text-ink-3',
-            day: 'p-0 text-center',
-            day_button:
-              'grid size-9 place-items-center rounded-lg tabular-nums text-ink transition-colors duration-150 hover:bg-subtle',
-            // today/selected/outside বসে td-তে, রং দরকার ভেতরের বাটনে
-            today: '[&>button]:font-semibold [&>button]:text-brand',
-            selected:
-              '[&>button]:bg-brand [&>button]:text-brand-ink [&>button]:hover:bg-brand-hover',
-            outside: '[&>button]:text-ink-3',
-            disabled: 'opacity-40',
-          }}
-        />
+        {/* The fallback has the calendar's size, so the popover does not jump when it arrives */}
+        <Suspense fallback={<div className="h-[292px] w-[252px]" />}>
+          <Calendar
+            selected={selected}
+            onSelect={(date) => {
+              onChange(date ? toIsoDate(date) : '');
+              setOpen(false);
+            }}
+          />
+        </Suspense>
       </PopoverContent>
     </Popover>
   );

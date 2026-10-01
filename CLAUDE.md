@@ -251,7 +251,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Date picker:** the trigger looks exactly like an input, with a `Calendar03` leading
   icon. The calendar opens in a popover; the selected day is filled `brand` with
   `brand-ink` text, today is `brand` text at weight 600. Form values are ISO date
-  strings (`2026-09-23`), read and written with local date parts, never UTC.
+  strings (`2026-09-23`), read and written with local date parts, never UTC. The
+  calendar's code loads the first time the picker opens (`calendar.tsx`); the button is
+  there at once.
 - **Pill / status badge:** 12px/500, radius 999px, padding 2px 8px 2px 6px, soft
   background plus a matching icon. Variants: `good` (Active, Synced), `warn` (Sync
   delayed), `crit` (Payment due), `brand` (Trial, Recommended), neutral (`subtle` +
@@ -315,6 +317,12 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   button row above a 1px `line` rule, destructive or secondary actions pushed left. No animation.
 - **Select:** a native `<select>` inside the input box (same height, border, radius, focus), with an `ArrowDown01`
   icon in `ink-3` on the right. Use it for fixed lists (currency, month, time zone); use a dropdown menu for actions.
+- **Select (bare):** `Select` from `@omnivo/ui` is the select box without its label, for controls labelled by a
+  column header (journal lines). `SelectField` is built on it.
+- **Line editor (journal lines, opening balances):** a card that is a container (`@container`); each row is a
+  `role="group"` labelled "Line 2". On a wide card (`@3xl`) the rows share one grid template with the header and
+  the totals row, and each control's label is `sr-only`; on a narrow card the labels show and debit/credit sit
+  side by side. Totals row on `subtle` with a `good` "Balanced" or `crit` "Out by" pill.
 - **Text area:** the input box, three rows tall, resizes vertically only.
 - **Stepper (wizards):** numbered 26px circles, which is valid because the steps are a
   real sequence. The current step has a `brand` border and ring. Done steps are filled
@@ -338,7 +346,10 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `৳` (e.g. `৳18,42,600`). No decimals unless the value is a unit price. Chart axes
   may abbreviate as `৳18L`. In Bangla the grouping is the same with Bangla digits
   (`bn-BD`), and `৳` still comes first (`৳১৮,৪২,৬০০`). Money is a decimal string end
-  to end, never a JavaScript `number`; round with `decimal.js`.
+  to end, never a JavaScript `number`; round with `decimal.js`. Accounting documents
+  (journal entries, ledgers, opening balances, and later the trial balance) show 2
+  decimals, because their totals must visibly add up; dashboards and lists stay without
+  decimals.
 - **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. In Bangla, `২৩ সেপ, ২০২৬`
   and `সেপ্টেম্বর ২০২৬`. The fiscal year defaults to July – June.
 - **Language:** every user-facing string goes through `t()` from `@omnivo/i18n`, and

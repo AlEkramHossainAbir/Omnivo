@@ -34,6 +34,13 @@ export const AUDIT_ACTIONS = [
   'account.archived',
   'account.restored',
   'account.deleted',
+  'journal.created',
+  'journal.updated',
+  'journal.deleted',
+  'journal.posted',
+  'journal.reversed',
+  'journal.opening_balances_saved',
+  'books.lock_date_changed',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -52,6 +59,7 @@ export const AUDIT_ENTITY_TYPES = [
   'invitation',
   'role',
   'account',
+  'journal_entry',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

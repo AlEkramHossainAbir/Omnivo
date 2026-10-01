@@ -1,9 +1,12 @@
 import {
+  BalanceScaleIcon,
+  Book02Icon,
   BookOpen02Icon,
   DashboardSquare01Icon,
   LayoutGridIcon,
   LeftToRightListNumberIcon,
   Logout01Icon,
+  Notebook02Icon,
   SecurityCheckIcon,
   Settings02Icon,
   Store01Icon,
@@ -235,6 +238,20 @@ export function AppShell() {
             <NavLink to="/accounts" icon={BookOpen02Icon}>
               {t('nav.chartOfAccounts')}
             </NavLink>
+            {/* The books themselves (salaries, margins) are for people with the read permission */}
+            {can('accounting.journal.read') && (
+              <>
+                <NavLink to="/journal" icon={Notebook02Icon}>
+                  {t('nav.journal')}
+                </NavLink>
+                <NavLink to="/ledger" icon={Book02Icon}>
+                  {t('nav.ledger')}
+                </NavLink>
+                <NavLink to="/opening-balances" icon={BalanceScaleIcon}>
+                  {t('nav.openingBalances')}
+                </NavLink>
+              </>
+            )}
           </NavGroup>
           <NavGroup label={t('nav.workspace')}>
             {(can('core.user.read') || can('core.user.invite')) && (

@@ -176,7 +176,7 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 #### ধাপ ১০: Double-Entry Journal · ~৩ সপ্তাহ · **সবচেয়ে সতর্ক ধাপ**
 
-`journal_entries` + `journal_lines`, **DB constraint/trigger দিয়ে `SUM(debit) = SUM(credit)` যাচাই**, draft → posted state machine, **posted কখনো edit/delete নয় — শুধু reversal**, period lock (বন্ধ মাসে এন্ট্রি হবে না)। সব টাকা `NUMERIC(19,4)` + `decimal.js`।
+`journal_entries` + `journal_lines`, draft → posted (`accounting.journal.create` / `.post`, আলাদা রোল = maker-checker), DB-তে deferred constraint trigger দিয়ে `SUM(debit) = SUM(credit)`, posted entry ও তার লাইন trigger দিয়ে frozen — শুধু reversal, lock date (একটা তারিখ পর্যন্ত বই বন্ধ), ওপেনিং ব্যালান্সের পাতা, লাইনে ঐচ্ছিক ব্রাঞ্চ, `PostingService.postNew()` পরের সব মডিউলের জন্য।
 
 `postJournal()` একটা internal service হবে যেটা পরে Sales/Inventory/Purchase সবাই ডাকবে — **এটাই সব মডিউলের মিলনস্থল**, তাই API ডিজাইনে সময় দিন।
 

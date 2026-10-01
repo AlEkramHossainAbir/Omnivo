@@ -32,24 +32,18 @@ import {
   TextField,
   toast,
 } from '@omnivo/ui';
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { useCan } from '../lib/permissions';
+import { branchesQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 
 const column = dataTableColumns<Branch>();
 const FIELD_NAMES = updateBranchInputSchema.keyof().options;
-
-function branchesQuery(tenantId: string, status: BranchStatus) {
-  return queryOptions({
-    queryKey: ['branches', tenantId, status],
-    queryFn: async () => (await call(routes.branches.list, { query: { status } })).items,
-  });
-}
 
 // একটা ফর্ম দুই কাজে: নতুন (branch নেই) আর বদল। নতুনের version 1 — schema-র min(1) পার হয়,
 // আর তৈরির route version পড়েই না (branchInputSchema-তে ঘরটা নেই, z.object বাড়তি key ফেলে দেয়)

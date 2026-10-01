@@ -124,7 +124,18 @@ describe('starting the setup', () => {
     const { items } = roleListSchema.parse((await send('GET', '/roles')).json());
     expect(items.map((role) => [role.name, role.permissions])).toEqual([
       ['Owner', expect.any(Array)],
-      ['Accountant', ['accounting.account.manage', 'core.audit.read', 'core.user.read']],
+      [
+        'Accountant',
+        [
+          'accounting.account.manage',
+          'accounting.journal.create',
+          'accounting.journal.post',
+          'accounting.journal.read',
+          'accounting.period.close',
+          'core.audit.read',
+          'core.user.read',
+        ],
+      ],
       ['Merchandiser', ['core.user.read']],
       ['Store keeper', []],
     ]);

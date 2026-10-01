@@ -1,4 +1,4 @@
-import { type MemberSort, routes } from '@omnivo/contracts';
+import { type BranchStatus, type JournalStatus, type MemberSort, routes } from '@omnivo/contracts';
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
 
 import { call } from './api';
@@ -93,5 +93,75 @@ export function membersQuery(tenantId: string, sort: MemberSort) {
     getNextPageParam: (page) => page.nextCursor,
     // sort বদলালে নতুন key — নতুন পাতা আসা পর্যন্ত আগেরটা দেখানো, টেবিল ফাঁকা হয়ে ঝলকায় না
     placeholderData: keepPreviousData,
+  });
+}
+
+// The branches page lists them; from step 10 every journal line can pick one. One key for both, so
+// a branch added on its page shows up in the line's select at once.
+export function branchesQuery(tenantId: string, status: BranchStatus) {
+  return queryOptions({
+    queryKey: ['branches', tenantId, status],
+    queryFn: async () => (await call(routes.branches.list, { query: { status } })).items,
+  });
+}
+
+// Everything the journal shows starts with ['journal', tenantId]: posting or reversing one entry
+// invalidates the list, the entry, the ledgers and the opening balances with one call
+export function journalListQuery(tenantId: string, status: JournalStatus | undefined) {
+  return infiniteQueryOptions({
+    queryKey: ['journal', tenantId, 'list', status ?? 'all'],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.journal.list, {
+        query: {
+          limit: 50,
+          ...(status !== undefined && { status }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function journalEntryQuery(tenantId: string, entryId: string) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'entry', entryId],
+    queryFn: () => call(routes.journal.get, { params: { id: entryId } }),
+    // A missing entry (a deleted draft) is an answer, not a network hiccup: no retries
+    retry: false,
+  });
+}
+
+export function ledgerQuery(tenantId: string, accountId: string, from: string, to: string) {
+  return infiniteQueryOptions({
+    queryKey: ['journal', tenantId, 'ledger', accountId, from, to],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.ledger.get, {
+        params: { id: accountId },
+        query: {
+          limit: 100,
+          ...(from !== '' && { from }),
+          ...(to !== '' && { to }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function openingBalancesQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'opening-balances'],
+    queryFn: () => call(routes.openingBalances.get),
+  });
+}
+
+export function periodLockQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'period-lock'],
+    queryFn: () => call(routes.periodLock.get),
   });
 }

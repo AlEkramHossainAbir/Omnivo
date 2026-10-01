@@ -21,6 +21,7 @@ import { DocsController } from './docs/docs.controller.js';
 import { HealthController } from './health/health.controller.js';
 import { InfraModule } from './infra/infra.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
+import { JournalModule } from './journal/journal.module.js';
 import { MembersModule } from './members/members.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { NumberingModule } from './numbering/numbering.module.js';
@@ -51,6 +52,7 @@ export class AppModule implements NestModule {
         SetupModule,
         NotificationsModule,
         AccountsModule,
+        JournalModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

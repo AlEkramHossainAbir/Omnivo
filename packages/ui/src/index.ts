@@ -30,11 +30,13 @@ export { EmptyState } from './components/empty-state.js';
 export {
   Field,
   Input,
+  Select,
   SelectField,
   TextAreaField,
   TextField,
   type InputProps,
   type SelectFieldProps,
+  type SelectProps,
   type SelectOption,
   type TextAreaFieldProps,
   type TextFieldProps,

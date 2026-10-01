@@ -259,6 +259,10 @@ export class AccountsService {
           'Move or delete the accounts under this group first.',
         );
       }
+      // Journal lines point at it (a draft's too): the history must keep its account
+      if (isForeignKeyViolation(error, 'journal_lines_account_fk')) {
+        throw new AppError(409, 'account_in_use', 'Archive this account instead: entries use it.');
+      }
       throw error;
     }
   }

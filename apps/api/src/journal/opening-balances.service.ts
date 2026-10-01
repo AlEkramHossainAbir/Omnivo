@@ -1,0 +1,221 @@
+import { Inject, Injectable } from '@nestjs/common';
+import {
+  isNegativeMoney,
+  isZeroMoney,
+  type OpeningBalances,
+  type OpeningBalancesInput,
+  absMoney,
+  shiftIsoDate,
+  subtractMoney,
+  sumMoney,
+} from '@omnivo/contracts';
+import { journalEntries, journalLines, ledgerAccounts } from '@omnivo/db';
+import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+
+import { audit, created } from '../common/audit/audit.js';
+import { AppError, versionConflict } from '../common/http/app-error.js';
+import { getTenantId } from '../common/tenant/tenant-context.js';
+import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
+import { WITH_TENANT } from '../infra/tokens.js';
+import { type LineInput, PostingService } from './posting.service.js';
+
+const reversal = alias(journalEntries, 'reversal');
+
+// Balance sheet accounts only. Income and expenses start at zero on the go-live day; the profit
+// of the years before is already inside Retained earnings, which is equity.
+const OPENING_TYPES = ['asset', 'liability', 'equity'] as const;
+
+function invalidLines(
+  code: 'opening_account_invalid' | 'opening_account_twice',
+  indexes: number[],
+) {
+  return new AppError(409, code, 'Some lines cannot take an opening balance.', {
+    fieldErrors: Object.fromEntries(
+      indexes.map((index) => [`lines.${String(index)}.accountId`, [code]]),
+    ),
+  });
+}
+
+@Injectable()
+export class OpeningBalancesService {
+  constructor(
+    @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
+    private readonly posting: PostingService,
+  ) {}
+
+  get(): Promise<OpeningBalances> {
+    return this.withTenant((tx) => this.read(tx));
+  }
+
+  // One posted entry holds the opening balances. Saving again reverses it (dated as it was) and
+  // posts a new one: the journal keeps the whole history, and nothing posted is ever edited.
+  save(input: OpeningBalancesInput): Promise<OpeningBalances> {
+    const tenantId = getTenantId();
+    return this.withTenant(async (tx) => {
+      // Two saves at once would both see "no entry yet" and post two opening entries. The
+      // advisory lock makes the second wait, then fail the `replaces` check below.
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`opening_balances:${tenantId}`}, 0))`,
+      );
+      const current = await this.current(tx);
+      if ((current?.id ?? null) !== input.replaces) throw versionConflict();
+
+      // Keep each line's index in the request, so an error lands under the right row of the page
+      const filled = input.lines.flatMap((line, index) =>
+        isZeroMoney(line.debit) && isZeroMoney(line.credit) ? [] : [{ ...line, index }],
+      );
+      const seen = new Set<string>();
+      const twice = filled.flatMap((line) => {
+        if (!seen.has(line.accountId)) {
+          seen.add(line.accountId);
+          return [];
+        }
+        return [line.index];
+      });
+      if (twice.length > 0) throw invalidLines('opening_account_twice', twice);
+
+      const accounts = await tx
+        .select({
+          id: ledgerAccounts.id,
+          type: ledgerAccounts.type,
+          isGroup: ledgerAccounts.isGroup,
+          purpose: ledgerAccounts.purpose,
+          archivedAt: ledgerAccounts.archivedAt,
+        })
+        .from(ledgerAccounts)
+        .where(eq(ledgerAccounts.tenantId, tenantId));
+      const equity = accounts.find((account) => account.purpose === 'opening_balance_equity');
+      // Every chart has it (step 9's templates and backfill), and it cannot be deleted
+      if (!equity) throw new Error(`No opening balance equity account in tenant ${tenantId}`);
+      const allowed = new Set(
+        accounts
+          .filter(
+            (account) =>
+              OPENING_TYPES.some((type) => type === account.type) &&
+              !account.isGroup &&
+              account.archivedAt === null &&
+              account.id !== equity.id,
+          )
+          .map((account) => account.id),
+      );
+      const invalid = filled.flatMap((line) => (allowed.has(line.accountId) ? [] : [line.index]));
+      if (invalid.length > 0) throw invalidLines('opening_account_invalid', invalid);
+
+      if (current) {
+        const lines = await this.linesOf(tx, current.id);
+        await this.posting.postNew(tx, {
+          date: current.date,
+          narration: `Reversal of opening balances ${current.number ?? ''}`,
+          source: 'reversal',
+          reversalOfId: current.id,
+          lines: lines.map((line) => ({ ...line, debit: line.credit, credit: line.debit })),
+        });
+      }
+
+      let number: string | null = null;
+      if (filled.length > 0) {
+        const lines: LineInput[] = filled.map((line) => ({
+          accountId: line.accountId,
+          branchId: null,
+          description: null,
+          debit: line.debit,
+          credit: line.credit,
+        }));
+        // What the books are out by goes to Opening balance equity, on the side that closes the
+        // gap. Once everything is entered it should read zero (step 9's template note).
+        const difference = subtractMoney(
+          sumMoney(lines.map((line) => line.debit)),
+          sumMoney(lines.map((line) => line.credit)),
+        );
+        if (!isZeroMoney(difference)) {
+          const amount = absMoney(difference);
+          lines.push({
+            accountId: equity.id,
+            branchId: null,
+            description: null,
+            debit: isNegativeMoney(difference) ? amount : '0',
+            credit: isNegativeMoney(difference) ? '0' : amount,
+          });
+        }
+        const entry = await this.posting.postNew(tx, {
+          // The day before go-live: the balances as the old books ended
+          date: shiftIsoDate(input.goLiveDate, -1),
+          narration: 'Opening balances',
+          source: 'opening_balance',
+          lines,
+        });
+        number = entry.number;
+      }
+
+      await audit(tx, {
+        action: 'journal.opening_balances_saved',
+        entityType: 'workspace',
+        entityId: tenantId,
+        changes: created({
+          goLiveDate: filled.length > 0 ? input.goLiveDate : null,
+          accounts: filled.length,
+          entry: number,
+        }),
+      });
+      return this.read(tx);
+    });
+  }
+
+  // The opening entry that is still in force: posted, and not reversed
+  private async current(tx: Transaction) {
+    const [row] = await tx
+      .select({ id: journalEntries.id, number: journalEntries.number, date: journalEntries.date })
+      .from(journalEntries)
+      .leftJoin(
+        reversal,
+        and(
+          eq(reversal.tenantId, journalEntries.tenantId),
+          eq(reversal.reversalOfId, journalEntries.id),
+        ),
+      )
+      .where(
+        and(
+          eq(journalEntries.tenantId, getTenantId()),
+          eq(journalEntries.source, 'opening_balance'),
+          eq(journalEntries.status, 'posted'),
+          isNull(reversal.id),
+        ),
+      )
+      .orderBy(desc(journalEntries.postedAt))
+      .limit(1);
+    return row;
+  }
+
+  private linesOf(tx: Transaction, entryId: string) {
+    return tx
+      .select()
+      .from(journalLines)
+      .where(and(eq(journalLines.tenantId, getTenantId()), eq(journalLines.entryId, entryId)))
+      .orderBy(asc(journalLines.lineNo));
+  }
+
+  private async read(tx: Transaction): Promise<OpeningBalances> {
+    const current = await this.current(tx);
+    if (!current?.number) return { goLiveDate: null, entry: null, lines: [] };
+    const equity = await tx
+      .select({ id: ledgerAccounts.id })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.tenantId, getTenantId()),
+          eq(ledgerAccounts.purpose, 'opening_balance_equity'),
+        ),
+      );
+    const equityIds = new Set(equity.map((account) => account.id));
+    const lines = await this.linesOf(tx, current.id);
+    return {
+      goLiveDate: shiftIsoDate(current.date, 1),
+      entry: { id: current.id, number: current.number },
+      // The equity line is the server's own; the page shows it as "the difference"
+      lines: lines
+        .filter((line) => !equityIds.has(line.accountId))
+        .map((line) => ({ accountId: line.accountId, debit: line.debit, credit: line.credit })),
+    };
+  }
+}
