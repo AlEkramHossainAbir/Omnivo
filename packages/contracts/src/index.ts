@@ -15,6 +15,7 @@ export * from './numbering.js';
 export * from './pagination.js';
 export * from './permissions.js';
 export * from './preferences.js';
+export * from './reports.js';
 export * from './roles.js';
 export * from './routes.js';
 export * from './settings.js';

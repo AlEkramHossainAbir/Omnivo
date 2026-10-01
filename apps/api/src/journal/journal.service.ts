@@ -176,6 +176,15 @@ export class JournalService {
           // Reversing a reversal would put the mistake back. Post a new, correct entry instead.
           throw new AppError(409, 'journal_is_reversal', 'A reversal cannot be reversed.');
         }
+        if (entry.source === 'year_close') {
+          // A closing entry is undone by reopening its year (FiscalYearsService.reopen), which
+          // also moves the lock date and dates the reversal on the year's last day
+          throw new AppError(
+            409,
+            'journal_is_year_close',
+            'A closing entry is undone by reopening its year.',
+          );
+        }
         if (entry.version !== input.version) throw versionConflict();
         const [already] = await tx
           .select({ id: reversal.id })

@@ -131,11 +131,13 @@ export function EntryView({
     },
   });
 
+  // A closing entry is undone by reopening its year (the Year-end close page), not from here
   const canReverse =
     canPost &&
     entry.status === 'posted' &&
     entry.reversedBy === null &&
-    entry.source !== 'reversal';
+    entry.source !== 'reversal' &&
+    entry.source !== 'year_close';
   const failure = failureOf(post.error);
   const amount = (value: string) =>
     value === '0.0000' ? '' : format.money(value, { decimals: 2 });

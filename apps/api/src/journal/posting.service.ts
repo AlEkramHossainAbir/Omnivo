@@ -171,7 +171,11 @@ export class PostingService {
         `The debits (${debits}) and credits (${credits}) must be equal.`,
       );
     }
-    await this.checkLines(tx, lines, { allowArchived: entry.source === 'reversal' });
+    // A reversal undoes old work, and a year-end close empties every income and expense account
+    // that holds a balance: both must reach an account that was archived since
+    await this.checkLines(tx, lines, {
+      allowArchived: entry.source === 'reversal' || entry.source === 'year_close',
+    });
 
     // In the same transaction: if anything after this fails, the number goes back (step 6)
     const number = await this.numbering.next(tx, 'accounting.journal', entry.date);

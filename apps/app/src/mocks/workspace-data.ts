@@ -25,6 +25,7 @@ import { OWNER, type Workspace } from './fixtures';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
+import type { MockExport } from './report-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
 // নিয়মগুলো আসল API-র মতো (version, অনন্য কোড, শেষ চালু ব্রাঞ্চ) — UI-র error-পথ mock দিয়েও দেখা যায়
@@ -40,6 +41,8 @@ export interface WorkspaceData {
   notifications: Notification[];
   accounts: Account[];
   journal: MockJournal;
+  // "My exports", newest first; the pretend worker finishes them (report-data.ts)
+  exports: MockExport[];
 }
 
 function now(): string {
@@ -91,6 +94,7 @@ function seed(workspace: Workspace): WorkspaceData {
     notifications: garments ? seedNotifications() : [],
     accounts: seedAccounts(garments ? 'garments' : 'pharma'),
     journal: emptyJournal(),
+    exports: [],
   };
   if (garments) seedJournal(data);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
@@ -148,6 +152,7 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   // A new workspace has no chart until its setup job runs (settleSetup)
   data.accounts = [];
   data.journal = emptyJournal();
+  data.exports = [];
   store.set(workspace.tenantId, data);
 }
 

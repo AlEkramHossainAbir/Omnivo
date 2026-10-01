@@ -4,6 +4,7 @@ import type { OutboxEventType } from '@omnivo/db';
 import type { EventHandler } from '../common/outbox/outbox.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
+import { ReportExportHandler } from '../reports/export.handler.js';
 import { ChartHandler } from '../setup/chart.handler.js';
 import { ProvisioningHandler } from '../setup/provisioning.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
@@ -24,6 +25,7 @@ export class EventHandlers {
     invitationEmail: InvitationEmailHandler,
     memberJoined: MemberJoinedHandler,
     chart: ChartHandler,
+    reportExport: ReportExportHandler,
   ) {
     this.byType = {
       'workspace.created': welcome,
@@ -31,6 +33,7 @@ export class EventHandlers {
       'invitation.issued': invitationEmail,
       'member.joined': memberJoined,
       'workspace.chart_requested': chart,
+      'report.export_requested': reportExport,
     };
   }
 

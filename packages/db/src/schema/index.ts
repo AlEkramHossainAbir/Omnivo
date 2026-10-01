@@ -19,3 +19,4 @@ export * from './outbox-events.js';
 export * from './notifications.js';
 export * from './ledger-accounts.js';
 export * from './journal.js';
+export * from './report-exports.js';

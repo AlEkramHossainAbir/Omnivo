@@ -42,16 +42,19 @@ function useBalanceText(): (value: string) => string {
 export function LedgerPage() {
   const { t, format } = useLocale();
   const navigate = useNavigate();
-  const { account: accountId = '' } = useSearch({ strict: false });
+  const { account: accountId = '', from: fromParam, to: toParam } = useSearch({ strict: false });
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const canRead = useCan()('accounting.journal.read');
   const showDate = useIsoDate();
   const balanceText = useBalanceText();
   const accounts = useQuery({ ...accountsQuery(tenantId), enabled: canRead }).data;
   const settings = useQuery(settingsQuery(tenantId)).data;
-  // Until the person picks dates: from the start of this fiscal year to today, in the company's
-  // time zone. null = "not picked", so the default follows the settings once they arrive.
-  const [range, setRange] = useState<{ from: string; to: string } | null>(null);
+  // Until the person picks dates: the dates in the address (a report's link), or else from the
+  // start of this fiscal year to today, in the company's time zone. null = "not picked", so the
+  // default follows the settings once they arrive.
+  const [range, setRange] = useState<{ from: string; to: string } | null>(
+    fromParam !== undefined && toParam !== undefined ? { from: fromParam, to: toParam } : null,
+  );
   const today = todayIn(settings?.timezone ?? DEFAULT_SETTINGS.timezone);
   const { from, to } = range ?? {
     from: fiscalYearStart(

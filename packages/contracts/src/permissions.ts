@@ -14,6 +14,7 @@ export const PERMISSION_KEYS = [
   'accounting.journal.create',
   'accounting.journal.post',
   'accounting.period.close',
+  'accounting.report.read',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -42,4 +43,5 @@ export const PERMISSION_GROUP_OF = {
   'accounting.journal.create': 'accounting',
   'accounting.journal.post': 'accounting',
   'accounting.period.close': 'accounting',
+  'accounting.report.read': 'accounting',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

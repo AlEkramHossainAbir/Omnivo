@@ -18,6 +18,8 @@ export const outboxPayloadSchemas = {
   'member.joined': z.object({ membershipId: z.uuid(), inviterId: z.uuid().nullable() }),
   // Nothing to carry: the workspace is the event's tenant, and its business type is on its row
   'workspace.chart_requested': z.object({}),
+  // The report_exports row says which report, which dates and for whom
+  'report.export_requested': z.object({ exportId: z.uuid() }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

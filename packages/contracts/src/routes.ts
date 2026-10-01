@@ -12,6 +12,7 @@ import { memberRoutes } from './members.js';
 import { notificationRoutes } from './notifications.js';
 import { numberSeriesRoutes } from './numbering.js';
 import { meRoutes } from './preferences.js';
+import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js';
 import { roleRoutes } from './roles.js';
 import { settingsRoutes } from './settings.js';
 import { setupRoutes } from './setup.js';
@@ -48,4 +49,7 @@ export const routes = {
   ledger: ledgerRoutes,
   openingBalances: openingBalanceRoutes,
   periodLock: periodLockRoutes,
+  reports: reportRoutes,
+  fiscalYears: fiscalYearRoutes,
+  reportExports: reportExportRoutes,
 };

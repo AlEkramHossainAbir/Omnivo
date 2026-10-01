@@ -9,13 +9,10 @@ const sharedEnvSchema = z.object({
   APP_ORIGIN: z.url(),
 });
 
-// process.env-এর সব মান string | undefined — এখানে একবার যাচাই করে টাইপ-নিরাপদ Config বানানো
-const envSchema = sharedEnvSchema.extend({
-  PORT: z.coerce.number().int().positive().default(3000),
-  API_BASE_URL: z.url(),
-  BETTER_AUTH_SECRET: z.string().min(32),
-  JWT_SECRET: z.string().min(32),
-  // S3-এর মতো storage: dev-এ MinIO (docker-compose), production-এ Cloudflare R2 (system-design §৩.৭)
+// S3-এর মতো storage: dev-এ MinIO (docker-compose), production-এ Cloudflare R2 (system-design §৩.৭).
+// Both processes use it from step 11: the API for uploads and downloads, the worker to store the
+// report files it writes.
+const storageEnvSchema = z.object({
   S3_ENDPOINT: z.url(),
   S3_REGION: z.string().default('us-east-1'),
   S3_BUCKET: z.string().min(3).default('omnivo'),
@@ -23,7 +20,15 @@ const envSchema = sharedEnvSchema.extend({
   S3_SECRET_ACCESS_KEY: z.string().min(1),
 });
 
-const workerEnvSchema = sharedEnvSchema.extend({
+// process.env-এর সব মান string | undefined — এখানে একবার যাচাই করে টাইপ-নিরাপদ Config বানানো
+const envSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
+  PORT: z.coerce.number().int().positive().default(3000),
+  API_BASE_URL: z.url(),
+  BETTER_AUTH_SECRET: z.string().min(32),
+  JWT_SECRET: z.string().min(32),
+});
+
+const workerEnvSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
   // The relay's own database role (omnivo_worker): it may read every tenant's outbox rows, and
   // nothing else. The jobs themselves use DATABASE_URL (omnivo_app) with a tenant context.
   WORKER_DATABASE_URL: z.url(),
@@ -34,6 +39,21 @@ const workerEnvSchema = sharedEnvSchema.extend({
 });
 
 const DAY = 24 * 60 * 60;
+
+function storageConfig(e: z.output<typeof storageEnvSchema> & { NODE_ENV: string }) {
+  return {
+    endpoint: e.S3_ENDPOINT,
+    region: e.S3_REGION,
+    bucket: e.S3_BUCKET,
+    accessKeyId: e.S3_ACCESS_KEY_ID,
+    secretAccessKey: e.S3_SECRET_ACCESS_KEY,
+    // dev আর test-এ bucket না থাকলে API নিজে বানায়; production-এ bucket IaC-র কাজ (ধাপ ২৫),
+    // সেখানে API-র bucket বানানোর অধিকারই থাকবে না
+    createBucket: e.NODE_ENV !== 'production',
+  };
+}
+
+export type StorageConfig = ReturnType<typeof storageConfig>;
 
 function parseEnv<S extends z.ZodType>(schema: S, env: Record<string, string | undefined>) {
   const parsed = schema.safeParse(env);
@@ -57,16 +77,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
     appOrigin: e.APP_ORIGIN,
     // localhost-এ http, তাই dev-এ Secure cookie বন্ধ; production-এ বাধ্যতামূলক
     secureCookies: e.NODE_ENV === 'production',
-    storage: {
-      endpoint: e.S3_ENDPOINT,
-      region: e.S3_REGION,
-      bucket: e.S3_BUCKET,
-      accessKeyId: e.S3_ACCESS_KEY_ID,
-      secretAccessKey: e.S3_SECRET_ACCESS_KEY,
-      // dev আর test-এ bucket না থাকলে API নিজে বানায়; production-এ bucket IaC-র কাজ (ধাপ ২৫),
-      // সেখানে API-র bucket বানানোর অধিকারই থাকবে না
-      createBucket: e.NODE_ENV !== 'production',
-    },
+    storage: storageConfig(e),
     auth: {
       betterAuthSecret: e.BETTER_AUTH_SECRET,
       baseURL: e.API_BASE_URL,
@@ -95,6 +106,8 @@ export function loadWorkerConfig(env: Record<string, string | undefined>) {
       url: e.SMTP_URL,
       from: e.MAIL_FROM,
     },
+    // The report exports (step 11) go to the same bucket as the uploads
+    storage: storageConfig(e),
     relay: {
       // How long the relay sleeps when it found nothing to publish. One second keeps an invitation
       // email about a second behind the click, for one cheap index read per second.

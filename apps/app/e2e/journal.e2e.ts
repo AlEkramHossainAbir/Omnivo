@@ -9,7 +9,8 @@ test.beforeEach(async ({ page }) => {
 const line = (page: Page, number: number) =>
   page.getByRole('group', { name: `Line ${String(number)}` });
 
-// The mock garments workspace has five posted entries (JV-…-0001 to 0005) and one draft
+// The mock garments workspace has six posted entries this year (JV-…-0001 to 0006) and one draft;
+// last year's are numbered in last year's series
 test('writes an entry and posts it only once the debits and credits are equal', async ({
   page,
 }) => {
@@ -32,9 +33,9 @@ test('writes an entry and posts it only once the debits and credits are equal', 
   await expectNoSideScroll(page);
   await post.click();
 
-  await expect(page.getByText(/^JV-\d{4}-\d{2}-0006 posted$/)).toBeVisible();
+  await expect(page.getByText(/^JV-\d{4}-\d{2}-0007 posted$/)).toBeVisible();
   await expect(
-    page.getByRole('heading', { level: 1, name: /^JV-\d{4}-\d{2}-0006$/ }),
+    page.getByRole('heading', { level: 1, name: /^JV-\d{4}-\d{2}-0007$/ }),
   ).toBeVisible();
   await expect(page.getByRole('link', { name: '1110 Cash in hand' })).toBeVisible();
   await expectNoSideScroll(page);
@@ -47,7 +48,7 @@ test('finishes a waiting draft, and deletes a new one in two clicks', async ({ p
   await listItem(page, /LC opening charges/).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Draft entry' })).toBeVisible();
   await page.getByRole('button', { name: 'Post entry' }).click();
-  await expect(page.getByText(/^JV-\d{4}-\d{2}-0006 posted$/)).toBeVisible();
+  await expect(page.getByText(/^JV-\d{4}-\d{2}-0007 posted$/)).toBeVisible();
 
   await page.getByRole('link', { name: 'Back to the journal' }).click();
   await page.getByRole('button', { name: 'New entry' }).click();
@@ -59,6 +60,10 @@ test('finishes a waiting draft, and deletes a new one in two clicks', async ({ p
   await page.getByRole('button', { name: 'Save draft' }).click();
   await expect(page.getByText('Draft saved')).toBeVisible();
   await expect(page.getByRole('heading', { level: 1, name: 'Draft entry' })).toBeVisible();
+  // On a phone the toast sits over "Delete draft", and the pointer that just clicked "Save draft"
+  // rests on it — and a toast does not close while the pointer is over it. Move away and let it go.
+  await page.mouse.move(0, 0);
+  await expect(page.getByText('Draft saved')).toBeHidden();
 
   await page.getByRole('button', { name: 'Delete draft' }).click();
   await expect(page.getByText('This cannot be undone.')).toBeVisible();

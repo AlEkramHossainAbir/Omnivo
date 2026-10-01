@@ -5,7 +5,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { audit, diff } from '../common/audit/audit.js';
 import { AppError, versionConflict } from '../common/http/app-error.js';
-import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
+import { getTenantId, tenantStorage } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 
@@ -18,11 +18,47 @@ function lockKey(): string {
   return `period_lock:${getTenantId()}`;
 }
 
-async function readLock(tx: Transaction) {
+export async function readLock(tx: Transaction) {
   const [row] = await tx
     .select({ lockDate: periodLocks.lockDate, version: periodLocks.version })
     .from(periodLocks)
     .where(eq(periodLocks.tenantId, getTenantId()));
+  return row;
+}
+
+// The exclusive side of the lock above: the lock date's own page, and the year-end close and
+// reopen (step 11), which post an entry and move the lock date in one transaction. Taking it
+// exclusive first matters there: a transaction that already holds the shared lock and then asks
+// for the exclusive one would wait for every other posting, and two of them would deadlock.
+export async function lockBooks(tx: Transaction): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey()}, 0))`);
+}
+
+// Writes the lock date and logs it. The caller holds lockBooks(), so the insert cannot race.
+export async function writeLockDate(
+  tx: Transaction,
+  before: { lockDate: string | null; version: number } | undefined,
+  lockDate: string | null,
+): Promise<PeriodLock> {
+  const tenantId = getTenantId();
+  const userId = tenantStorage.getStore()?.principal?.userId ?? null;
+  const [row] = before
+    ? await tx
+        .update(periodLocks)
+        .set({ lockDate, version: sql`${periodLocks.version} + 1`, updatedBy: userId })
+        .where(eq(periodLocks.tenantId, tenantId))
+        .returning({ lockDate: periodLocks.lockDate, version: periodLocks.version })
+    : await tx
+        .insert(periodLocks)
+        .values({ tenantId, lockDate, updatedBy: userId })
+        .returning({ lockDate: periodLocks.lockDate, version: periodLocks.version });
+  if (!row) throw new Error('Period lock write returned no row');
+  await audit(tx, {
+    action: 'books.lock_date_changed',
+    entityType: 'workspace',
+    entityId: tenantId,
+    changes: diff({ lockDate: before?.lockDate ?? null }, { lockDate: row.lockDate }),
+  });
   return row;
 }
 
@@ -52,7 +88,7 @@ export class PeriodLockService {
   update(input: PeriodLockInput): Promise<PeriodLock> {
     const tenantId = getTenantId();
     return this.withTenant(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey()}, 0))`);
+      await lockBooks(tx);
       const before = await readLock(tx);
       if ((before?.version ?? 0) !== input.version) throw versionConflict();
 
@@ -71,31 +107,7 @@ export class PeriodLockService {
         }
       }
 
-      const userId = currentPrincipal().userId;
-      // The exclusive advisory lock above serialises every change, so the insert cannot race
-      const [row] = before
-        ? await tx
-            .update(periodLocks)
-            .set({
-              lockDate: input.lockDate,
-              version: sql`${periodLocks.version} + 1`,
-              updatedBy: userId,
-            })
-            .where(eq(periodLocks.tenantId, tenantId))
-            .returning({ lockDate: periodLocks.lockDate, version: periodLocks.version })
-        : await tx
-            .insert(periodLocks)
-            .values({ tenantId, lockDate: input.lockDate, updatedBy: userId })
-            .returning({ lockDate: periodLocks.lockDate, version: periodLocks.version });
-      if (!row) throw new Error('Period lock write returned no row');
-
-      await audit(tx, {
-        action: 'books.lock_date_changed',
-        entityType: 'workspace',
-        entityId: tenantId,
-        changes: diff({ lockDate: before?.lockDate ?? null }, { lockDate: row.lockDate }),
-      });
-      return row;
+      return writeLockDate(tx, before, input.lockDate);
     });
   }
 }

@@ -135,12 +135,19 @@ const journalEntryRoute = createRoute({
 });
 
 // ?account=<id>: an entry's line links straight to its account's ledger, and the address can be
-// bookmarked. Anything else in the query string is dropped, not trusted.
+// bookmarked. ?from=&to=: a report's account opens with the report's own dates (step 11).
+// Anything else in the query string is dropped, and a date that is not a date is not trusted.
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ledgerRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/ledger',
-  validateSearch: (search: Record<string, unknown>): { account?: string } =>
-    typeof search.account === 'string' ? { account: search.account } : {},
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { account?: string; from?: string; to?: string } => ({
+    ...(typeof search.account === 'string' && { account: search.account }),
+    ...(typeof search.from === 'string' && ISO_DATE.test(search.from) && { from: search.from }),
+    ...(typeof search.to === 'string' && ISO_DATE.test(search.to) && { to: search.to }),
+  }),
   component: lazyRouteComponent(() => import('./routes/ledger'), 'LedgerPage'),
 });
 
@@ -148,6 +155,36 @@ const openingBalancesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/opening-balances',
   component: lazyRouteComponent(() => import('./routes/opening-balances'), 'OpeningBalancesPage'),
+});
+
+const yearEndRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/year-end',
+  component: lazyRouteComponent(() => import('./routes/year-end'), 'YearEndPage'),
+});
+
+const trialBalanceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/trial-balance',
+  component: lazyRouteComponent(() => import('./routes/trial-balance'), 'TrialBalancePage'),
+});
+
+const profitAndLossRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/profit-and-loss',
+  component: lazyRouteComponent(() => import('./routes/profit-and-loss'), 'ProfitAndLossPage'),
+});
+
+const balanceSheetRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/balance-sheet',
+  component: lazyRouteComponent(() => import('./routes/balance-sheet'), 'BalanceSheetPage'),
+});
+
+const reportExportsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/exports',
+  component: lazyRouteComponent(() => import('./routes/report-exports'), 'ReportExportsPage'),
 });
 
 const teamRoute = createRoute({
@@ -196,6 +233,11 @@ const routeTree = rootRoute.addChildren([
     journalEntryRoute,
     ledgerRoute,
     openingBalancesRoute,
+    yearEndRoute,
+    trialBalanceRoute,
+    profitAndLossRoute,
+    balanceSheetRoute,
+    reportExportsRoute,
     teamRoute,
     rolesRoute,
     auditLogRoute,

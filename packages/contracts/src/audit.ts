@@ -41,6 +41,8 @@ export const AUDIT_ACTIONS = [
   'journal.reversed',
   'journal.opening_balances_saved',
   'books.lock_date_changed',
+  'books.year_closed',
+  'books.year_reopened',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

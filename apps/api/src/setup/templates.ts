@@ -41,6 +41,7 @@ const ACCOUNTANT: RoleTemplate = {
     'accounting.journal.create',
     'accounting.journal.post',
     'accounting.period.close',
+    'accounting.report.read',
   ],
 };
 

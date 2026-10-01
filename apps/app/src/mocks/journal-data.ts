@@ -2,6 +2,7 @@ import {
   absMoney,
   addMoney,
   defaultNumberFormat,
+  fiscalYearOf,
   formatDocumentNumber,
   isNegativeMoney,
   isZeroMoney,
@@ -184,7 +185,7 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
   const debits = sumMoney(entry.lines.map((line) => line.debit));
   const credits = sumMoney(entry.lines.map((line) => line.credit));
   if (debits !== credits) throw new MockProblem(409, 'journal_unbalanced');
-  checkLines(data, entry.lines, entry.source === 'reversal');
+  checkLines(data, entry.lines, entry.source === 'reversal' || entry.source === 'year_close');
   Object.assign(entry, {
     status: 'posted',
     number: nextNumber(data, entry.date),
@@ -194,9 +195,18 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
   });
 }
 
-export function reverseEntry(data: WorkspaceData, entry: JournalEntry, date: string): JournalEntry {
+// allowYearClose: only the year-end reopen (report-data.ts) may reverse a closing entry
+export function reverseEntry(
+  data: WorkspaceData,
+  entry: JournalEntry,
+  date: string,
+  { allowYearClose = false }: { allowYearClose?: boolean } = {},
+): JournalEntry {
   if (entry.status !== 'posted') throw new MockProblem(409, 'journal_not_posted');
   if (entry.source === 'reversal') throw new MockProblem(409, 'journal_is_reversal');
+  if (entry.source === 'year_close' && !allowYearClose) {
+    throw new MockProblem(409, 'journal_is_year_close');
+  }
   if (entry.reversedBy !== null) throw new MockProblem(409, 'journal_already_reversed');
   if (date < entry.date) {
     throw new MockProblem(409, 'journal_reversal_date', { date: ['journal_reversal_date'] });
@@ -390,9 +400,13 @@ export function setLockDate(data: WorkspaceData, lockDate: string | null, versio
   data.journal.lockVersion += 1;
 }
 
-// The garments workspace's first weeks on Omnivo: capital, rent, petty cash, a DESCO bill at the
-// factory, salaries — and one draft still waiting. Dated in the last three weeks, but never before
+// The garments workspace's books: last fiscal year in four entries (a sale, interest, the cost
+// of the order, salaries — open, so the year-end close has a year to close), then this year's
+// first weeks: capital, rent, petty cash, a DESCO bill at the factory, salaries, an export sale —
+// and one draft still waiting. This year's are dated in the last three weeks, but never before
 // the fiscal year started, so the ledger's default range (this fiscal year) always shows them.
+// Last year's entries are numbered in last year's series (JV-2025-26-…), so this year's numbers
+// run JV-…-0001 to 0006.
 export function seedJournal(data: WorkspaceData): void {
   const today = todayIn(data.settings.timezone);
   const startMonth = String(data.settings.fiscalYearStartMonth).padStart(2, '0');
@@ -419,6 +433,29 @@ export function seedJournal(data: WorkspaceData): void {
     credit,
   });
 
+  const lastYear = fiscalYearOf(shiftIsoDate(fiscalStart, -1), data.settings.fiscalYearStartMonth);
+  const lastYearDay = (days: number) => shiftIsoDate(lastYear.start, days);
+  postNew(data, {
+    date: lastYearDay(45),
+    narration: 'Export sale to H&M, Stockholm',
+    lines: [line('1140', '3850000', '0'), line('4110', '0', '3850000')],
+  });
+  postNew(data, {
+    date: lastYearDay(120),
+    narration: 'Interest on the export retention quota account',
+    lines: [line('1121', '54000', '0'), line('4210', '0', '54000')],
+  });
+  postNew(data, {
+    date: lastYearDay(150),
+    narration: 'Fabrics and yarn used for the H&M order',
+    lines: [line('5110', '2100000', '0'), line('2110', '0', '2100000')],
+  });
+  postNew(data, {
+    date: lastYearDay(300),
+    narration: 'Factory salaries for the year',
+    lines: [line('5210', '900000', '0'), line('2140', '0', '900000')],
+  });
+
   postNew(data, {
     date: day(20),
     narration: 'Share capital paid in by the directors',
@@ -443,6 +480,11 @@ export function seedJournal(data: WorkspaceData): void {
     date: day(5),
     narration: 'Salaries for the month, payable on the 7th',
     lines: [line('5210', '1240000', '0'), line('2140', '0', '1240000')],
+  });
+  postNew(data, {
+    date: day(3),
+    narration: 'Export sale to Primark, Dublin',
+    lines: [line('1140', '2450000', '0', factory), line('4110', '0', '2450000', factory)],
   });
   writeDraft(data, {
     date: day(2),

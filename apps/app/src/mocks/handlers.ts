@@ -46,6 +46,18 @@ import {
   summaryOf,
   writeDraft,
 } from './journal-data';
+import {
+  balanceSheetOf,
+  closeYear,
+  createExport,
+  exportUrl,
+  fiscalYearsOf,
+  profitAndLossOf,
+  reopenYear,
+  settleExports,
+  toExport,
+  trialBalanceOf,
+} from './report-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
   assertCodeFree,
@@ -67,10 +79,12 @@ let preferences: Preferences = { language: null, theme: 'system' };
 const uploads = new Map<string, { contentType: string; sizeBytes: number; url?: string }>();
 const MOCK_STORAGE = `${API_URL}/mock-storage`;
 
-// settleSetup: a started setup "finishes" on the first read after its delay, like the worker would
+// settleSetup / settleExports: a started setup or an asked-for export "finishes" on the first read
+// after its delay, like the worker would
 function current() {
   const data = dataOf(workspace);
   settleSetup(data);
+  settleExports(data);
   return data;
 }
 
@@ -86,7 +100,9 @@ function guarded(resolver: HttpResponseResolver): HttpResponseResolver {
     try {
       return await resolver(info);
     } catch (error) {
-      if (error instanceof MockProblem) return problem(error.status, error.code, error.fieldErrors);
+      if (error instanceof MockProblem) {
+        return problem(error.status, error.code, error.fieldErrors, error.params);
+      }
       throw error;
     }
   };
@@ -854,6 +870,74 @@ export const handlers = [
       return reply(routes.periodLock.update, {
         lockDate: data.journal.lockDate,
         version: data.journal.lockVersion,
+      });
+    }),
+  ),
+
+  mock(routes.reports.trialBalance, ({ request }) =>
+    reply(
+      routes.reports.trialBalance,
+      trialBalanceOf(current(), readQuery(routes.reports.trialBalance.query, request)),
+    ),
+  ),
+
+  mock(routes.reports.profitAndLoss, ({ request }) =>
+    reply(
+      routes.reports.profitAndLoss,
+      profitAndLossOf(current(), readQuery(routes.reports.profitAndLoss.query, request)),
+    ),
+  ),
+
+  mock(routes.reports.balanceSheet, ({ request }) =>
+    reply(
+      routes.reports.balanceSheet,
+      balanceSheetOf(current(), readQuery(routes.reports.balanceSheet.query, request)),
+    ),
+  ),
+
+  mock(routes.fiscalYears.list, () => reply(routes.fiscalYears.list, fiscalYearsOf(current()))),
+
+  mock(
+    routes.fiscalYears.close,
+    guarded(async ({ request }) => {
+      const { end } = await readBody(routes.fiscalYears.close.body, request);
+      return reply(routes.fiscalYears.close, closeYear(current(), end));
+    }),
+  ),
+
+  mock(
+    routes.fiscalYears.reopen,
+    guarded(async ({ request }) => {
+      const { end } = await readBody(routes.fiscalYears.reopen.body, request);
+      return reply(routes.fiscalYears.reopen, reopenYear(current(), end));
+    }),
+  ),
+
+  mock(
+    routes.reportExports.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.reportExports.create.body, request);
+      return reply(routes.reportExports.create, createExport(current(), body));
+    }),
+  ),
+
+  mock(routes.reportExports.list, () =>
+    reply(routes.reportExports.list, {
+      items: current().exports.map(toExport),
+      nextCursor: null,
+    }),
+  ),
+
+  mock(
+    routes.reportExports.download,
+    guarded(({ params }) => {
+      const { id } = routes.reportExports.download.params.parse(params);
+      const item = current().exports.find((candidate) => candidate.id === id);
+      if (!item) throw new MockProblem(404, 'not_found');
+      if (item.status !== 'ready') throw new MockProblem(409, 'export_not_ready');
+      return reply(routes.reportExports.download, {
+        url: exportUrl(item),
+        expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
       });
     }),
   ),

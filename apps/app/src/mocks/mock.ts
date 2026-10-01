@@ -32,6 +32,8 @@ export class MockProblem extends Error {
     readonly status: number,
     readonly code: ErrorCode,
     readonly fieldErrors?: Record<string, ErrorCode[]>,
+    // The values inside the text, like the API's: "Drafts dated in this year: {{count}}"
+    readonly params?: Record<string, string | number>,
   ) {
     super(code);
   }
@@ -42,6 +44,7 @@ export function problem(
   status: number,
   code: ErrorCode,
   fieldErrors?: Record<string, ErrorCode[]>,
+  params?: Record<string, string | number>,
 ): Response {
   const body: Problem = {
     title: 'Mocked error',
@@ -50,6 +53,7 @@ export function problem(
     code,
     requestId: crypto.randomUUID(),
     ...(fieldErrors && { fieldErrors }),
+    ...(params && { params }),
   };
   return Response.json(body, { status, headers: { 'content-type': 'application/problem+json' } });
 }

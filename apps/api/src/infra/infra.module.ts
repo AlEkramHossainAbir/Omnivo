@@ -13,7 +13,7 @@ import { createWithTenant } from '../common/tenant/with-tenant.js';
 import { createWithUser } from '../common/tenant/with-user.js';
 import type { Config } from '../config.js';
 import { StorageService } from '../storage/storage.service.js';
-import { AUTH, CONFIG, DB, REDIS, WITH_TENANT, WITH_USER } from './tokens.js';
+import { AUTH, CONFIG, DB, REDIS, STORAGE_CONFIG, WITH_TENANT, WITH_USER } from './tokens.js';
 
 function createRedis(url: string): Redis {
   const redis = new Redis(url, {
@@ -50,6 +50,7 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: WITH_USER, inject: [DB], useFactory: (db: Db) => createWithUser(db) },
         { provide: REDIS, useFactory: () => createRedis(config.redisUrl) },
         { provide: AUTH, inject: [DB], useFactory: (db: Db) => createAuth({ db, ...config.auth }) },
+        { provide: STORAGE_CONFIG, useValue: config.storage },
         StorageService,
       ],
       exports: [CONFIG, DB, WITH_TENANT, WITH_USER, REDIS, AUTH, StorageService],

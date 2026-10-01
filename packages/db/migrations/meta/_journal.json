@@ -120,6 +120,20 @@
       "when": 1790838528321,
       "tag": "0016_journal-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790852842321,
+      "tag": "0017_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790852843551,
+      "tag": "0018_reports-rls",
+      "breakpoints": true
     }
   ]
 }

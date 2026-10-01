@@ -43,12 +43,13 @@ export async function createTestApp(config: Config): Promise<NestFastifyApplicat
 // The worker's config, checked like production's, but fast: the relay looks every 50 ms and a
 // failed job gives up after 2 quick tries, so a test waits well under a second for either. With
 // no mailUrl the SMTP address is dead (port 1): every send fails at once, which is how the tests
-// see "Email not sent".
+// see "Email not sent". No storageUrl: the same dead address, for tests that write no files.
 export function testWorkerConfig(urls: {
   databaseUrl: string;
   workerDatabaseUrl: string;
   redisUrl: string;
   mailUrl?: string;
+  storageUrl?: string;
 }): WorkerConfig {
   const config = loadWorkerConfig({
     NODE_ENV: 'test',
@@ -57,6 +58,9 @@ export function testWorkerConfig(urls: {
     REDIS_URL: urls.redisUrl,
     APP_ORIGIN: 'http://localhost:5173',
     SMTP_URL: urls.mailUrl ?? 'smtp://127.0.0.1:1',
+    S3_ENDPOINT: urls.storageUrl ?? 'http://127.0.0.1:1',
+    S3_ACCESS_KEY_ID: 'omnivo',
+    S3_SECRET_ACCESS_KEY: 'omnivo-dev-secret',
   });
   return {
     ...config,

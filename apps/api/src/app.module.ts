@@ -27,6 +27,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { NumberingModule } from './numbering/numbering.module.js';
 import { PermissionGuard } from './rbac/permission.guard.js';
 import { RbacModule } from './rbac/rbac.module.js';
+import { ReportsModule } from './reports/reports.module.js';
 import { RolesModule } from './roles/roles.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { SetupModule } from './setup/setup.module.js';
@@ -53,6 +54,7 @@ export class AppModule implements NestModule {
         NotificationsModule,
         AccountsModule,
         JournalModule,
+        ReportsModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

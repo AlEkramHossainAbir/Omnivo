@@ -14,7 +14,9 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // Where an entry comes from. Each later module that posts (sales invoice, bill, stock receipt)
 // adds its own source here. The response sends it as z.string() — like an account's purpose — so a
 // newer server's new source does not break an older offline client.
-export const JOURNAL_SOURCES = ['manual', 'opening_balance', 'reversal'] as const;
+// year_close: the closing entry of a fiscal year (step 11), which moves income and expenses into
+// retained earnings. The profit and loss leaves it out, or every closed year would show zero profit.
+export const JOURNAL_SOURCES = ['manual', 'opening_balance', 'reversal', 'year_close'] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
 export function isJournalSource(value: string): value is JournalSource {

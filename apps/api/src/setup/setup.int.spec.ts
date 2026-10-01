@@ -132,6 +132,7 @@ describe('starting the setup', () => {
           'accounting.journal.post',
           'accounting.journal.read',
           'accounting.period.close',
+          'accounting.report.read',
           'core.audit.read',
           'core.user.read',
         ],

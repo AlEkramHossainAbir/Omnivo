@@ -2,14 +2,19 @@ import {
   BalanceScaleIcon,
   Book02Icon,
   BookOpen02Icon,
+  CalendarLock01Icon,
+  ChartIncreaseIcon,
   DashboardSquare01Icon,
+  FileDownloadIcon,
   LayoutGridIcon,
   LeftToRightListNumberIcon,
   Logout01Icon,
   Notebook02Icon,
+  PieChartIcon,
   SecurityCheckIcon,
   Settings02Icon,
   Store01Icon,
+  TableIcon,
   UnfoldMoreIcon,
   UserCircleIcon,
   UserGroupIcon,
@@ -250,9 +255,29 @@ export function AppShell() {
                 <NavLink to="/opening-balances" icon={BalanceScaleIcon}>
                   {t('nav.openingBalances')}
                 </NavLink>
+                <NavLink to="/year-end" icon={CalendarLock01Icon}>
+                  {t('nav.yearEnd')}
+                </NavLink>
               </>
             )}
           </NavGroup>
+          {/* The statements: for anyone with the report permission, journal or not (a director) */}
+          {can('accounting.report.read') && (
+            <NavGroup label={t('nav.reports')}>
+              <NavLink to="/reports/trial-balance" icon={TableIcon}>
+                {t('nav.trialBalance')}
+              </NavLink>
+              <NavLink to="/reports/profit-and-loss" icon={ChartIncreaseIcon}>
+                {t('nav.profitAndLoss')}
+              </NavLink>
+              <NavLink to="/reports/balance-sheet" icon={PieChartIcon}>
+                {t('nav.balanceSheet')}
+              </NavLink>
+              <NavLink to="/reports/exports" icon={FileDownloadIcon}>
+                {t('nav.exports')}
+              </NavLink>
+            </NavGroup>
+          )}
           <NavGroup label={t('nav.workspace')}>
             {(can('core.user.read') || can('core.user.invite')) && (
               <NavLink to="/team" icon={UserGroupIcon}>

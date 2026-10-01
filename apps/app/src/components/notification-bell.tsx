@@ -2,8 +2,11 @@ import { Notification03Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   DEFAULT_SETTINGS,
+  isExportFormat,
   isNotificationType,
+  isReportKind,
   type Notification,
+  type NotificationParams,
   type NotificationType,
   routes,
 } from '@omnivo/contracts';
@@ -23,12 +26,30 @@ const TARGET = {
   'workspace.ready': '/roles',
   'member.joined': '/team',
   'invitation.failed': '/team',
+  'report.ready': '/reports/exports',
+  'report.failed': '/reports/exports',
 } as const satisfies Record<NotificationType, string>;
 
 // The badge stops at 9+: a two-digit count would not fit the 18px circle, and past nine the exact
 // number no longer changes what you do
 function badgeText(count: number): string {
   return count > 9 ? '9+' : String(count);
+}
+
+// An export's report and format arrive as keys (trial_balance, xlsx): their words go into the text.
+// A key this app does not know (a newer server) stays as it is.
+function useWords() {
+  const { t } = useLocale();
+  return (params: NotificationParams): NotificationParams => {
+    const { report, format } = params;
+    return {
+      ...params,
+      ...(typeof report === 'string' &&
+        isReportKind(report) && { report: t(`reports.kinds.${report}`) }),
+      ...(typeof format === 'string' &&
+        isExportFormat(format) && { format: t(`reports.formats.${format}`) }),
+    };
+  };
 }
 
 function Item({
@@ -41,6 +62,7 @@ function Item({
   onOpen: () => void;
 }) {
   const { t, format } = useLocale();
+  const words = useWords();
   const unread = notification.readAt === null;
   return (
     <li>
@@ -59,7 +81,7 @@ function Item({
         <span className="min-w-0">
           {unread && <span className="sr-only">{t('notifications.unread')}: </span>}
           <span className={cn('block text-body-sm', unread ? 'text-ink' : 'text-ink-2')}>
-            {t(`notifications.types.${notification.type}`, notification.params)}
+            {t(`notifications.types.${notification.type}`, words(notification.params))}
           </span>
           <span className="block text-caption text-ink-3 tabular-nums">
             {format.dateTime(new Date(notification.createdAt), timeZone)}

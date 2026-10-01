@@ -1,4 +1,5 @@
 import {
+  BucketAlreadyOwnedByYou,
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -11,8 +12,8 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { Inject, Injectable, Logger, type OnApplicationBootstrap } from '@nestjs/common';
 
-import type { Config } from '../config.js';
-import { CONFIG } from '../infra/tokens.js';
+import type { StorageConfig } from '../config.js';
+import { STORAGE_CONFIG } from '../infra/tokens.js';
 
 export interface SignedUrl {
   url: string;
@@ -29,8 +30,7 @@ export class StorageService implements OnApplicationBootstrap {
   private readonly client: S3Client;
   private readonly bucket: string;
 
-  constructor(@Inject(CONFIG) private readonly config: Config) {
-    const storage = config.storage;
+  constructor(@Inject(STORAGE_CONFIG) private readonly storage: StorageConfig) {
     this.bucket = storage.bucket;
     this.client = new S3Client({
       endpoint: storage.endpoint,
@@ -49,7 +49,7 @@ export class StorageService implements OnApplicationBootstrap {
   // শুধু dev/test: `pnpm db:up`-এর পরে বাড়তি কোনো ধাপ ছাড়াই আপলোড চলে। storage বন্ধ থাকলে API
   // তবু চালু হয় (Redis-এর মতো) — শুধু আপলোড ব্যর্থ হবে, লগে কারণ
   async onApplicationBootstrap(): Promise<void> {
-    if (!this.config.storage.createBucket) return;
+    if (!this.storage.createBucket) return;
     try {
       await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
     } catch (error) {
@@ -57,8 +57,14 @@ export class StorageService implements OnApplicationBootstrap {
         this.logger.warn(`Can't reach storage (${String(error)}). Start it with pnpm db:up.`);
         return;
       }
-      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
-      this.logger.log(`Created bucket ${this.bucket}`);
+      try {
+        await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+        this.logger.log(`Created bucket ${this.bucket}`);
+      } catch (createError) {
+        // From step 11 the worker checks the bucket too. Started together on an empty MinIO, both
+        // see "not found" and both create it; the second one is told it already owns it — done.
+        if (!(createError instanceof BucketAlreadyOwnedByYou)) throw createError;
+      }
     }
   }
 
@@ -77,12 +83,21 @@ export class StorageService implements OnApplicationBootstrap {
   // পড়ার ঠিকানা এক ঘণ্টার "জানালায়" একই থাকে: সই করার সময় ঘণ্টার শুরুতে বাঁধা, মেয়াদ দুই ঘণ্টা।
   // প্রতিবার নতুন সময়ে সই করলে প্রতিটা request-এ URL বদলাত, আর ব্রাউজার একই লোগো বারবার নামাত —
   // এখন ঘণ্টাজুড়ে একই URL, তাই ব্রাউজারের cache কাজে লাগে। মেয়াদের অন্তত এক ঘণ্টা সবসময় বাকি থাকে
-  async downloadUrl(key: string, contentType: string): Promise<SignedUrl> {
+  // fileName: download it under this name instead of showing it in the tab (a report export).
+  // filename= is the plain fallback; filename*= (RFC 6266) carries any character for browsers.
+  async downloadUrl(key: string, contentType: string, fileName?: string): Promise<SignedUrl> {
     const signingDate = new Date(Math.floor(Date.now() / HOUR_MS) * HOUR_MS);
     const url = await getSignedUrl(
       this.client,
       // ResponseContentType: storage যা-ই ভাবুক, ব্রাউজার ফাইলটাকে ঠিক এই ধরন হিসেবে পায়
-      new GetObjectCommand({ Bucket: this.bucket, Key: key, ResponseContentType: contentType }),
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        ResponseContentType: contentType,
+        ...(fileName !== undefined && {
+          ResponseContentDisposition: `attachment; filename="${fileName.replace(/[^\w.-]/g, '_')}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+        }),
+      }),
       { expiresIn: 2 * 60 * 60, signingDate },
     );
     return { url, expiresAt: new Date(signingDate.getTime() + 2 * HOUR_MS) };
@@ -97,6 +112,14 @@ export class StorageService implements OnApplicationBootstrap {
       if (error instanceof NotFound) return null;
       throw error;
     }
+  }
+
+  // A file the server made itself (a report export from the worker). The same key twice replaces
+  // the file, so a job that runs again after a crash writes the same object, not a second one.
+  async put(key: string, body: Uint8Array, contentType: string): Promise<void> {
+    await this.client.send(
+      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
+    );
   }
 
   async delete(key: string): Promise<void> {

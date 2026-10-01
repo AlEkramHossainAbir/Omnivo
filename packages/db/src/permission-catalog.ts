@@ -18,7 +18,10 @@ const DESCRIPTIONS = {
   'accounting.journal.read': 'View journal entries, ledgers and opening balances',
   'accounting.journal.create': 'Write, edit and delete draft journal entries',
   'accounting.journal.post': 'Post and reverse journal entries, and set the opening balances',
-  'accounting.period.close': 'Close the books up to a date, and open them again',
+  'accounting.period.close':
+    'Close the books up to a date, close and reopen fiscal years, and open the books again',
+  'accounting.report.read':
+    'View the trial balance, profit and loss and balance sheet, and export them to Excel or PDF',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

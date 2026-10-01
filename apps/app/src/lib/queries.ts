@@ -1,4 +1,12 @@
-import { type BranchStatus, type JournalStatus, type MemberSort, routes } from '@omnivo/contracts';
+import {
+  type BalanceSheetQuery,
+  type BranchStatus,
+  type JournalStatus,
+  type MemberSort,
+  type ProfitAndLossQuery,
+  routes,
+  type TrialBalanceQuery,
+} from '@omnivo/contracts';
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
 
 import { call } from './api';
@@ -163,5 +171,50 @@ export function periodLockQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['journal', tenantId, 'period-lock'],
     queryFn: () => call(routes.periodLock.get),
+  });
+}
+
+// The reports read the journal, so they live under ['journal', tenantId] too: posting, reversing
+// or closing a year refreshes every open report. keepPreviousData: changing a date keeps the old
+// numbers on screen until the new ones arrive, instead of an empty table in between.
+export function trialBalanceQuery(tenantId: string, query: TrialBalanceQuery) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'trial-balance', query],
+    queryFn: () => call(routes.reports.trialBalance, { query }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function profitAndLossQuery(tenantId: string, query: ProfitAndLossQuery) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'profit-and-loss', query],
+    queryFn: () => call(routes.reports.profitAndLoss, { query }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function balanceSheetQuery(tenantId: string, query: BalanceSheetQuery) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'balance-sheet', query],
+    queryFn: () => call(routes.reports.balanceSheet, { query }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function fiscalYearsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'fiscal-years'],
+    queryFn: () => call(routes.fiscalYears.list),
+  });
+}
+
+// "My exports". The worker writes a file a few seconds after the click: while any export is still
+// being prepared, ask again every 2 seconds, and stop once none is (like the invitations' email).
+export function reportExportsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['report-exports', tenantId],
+    queryFn: async () => (await call(routes.reportExports.list, { query: { limit: 50 } })).items,
+    refetchInterval: (query) =>
+      query.state.data?.some((item) => item.status === 'pending') ? 2_000 : false,
   });
 }
