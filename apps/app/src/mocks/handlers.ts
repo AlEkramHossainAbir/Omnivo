@@ -2,6 +2,7 @@ import {
   type Account,
   type AuthSession,
   type Preferences,
+  type ProductCategory,
   routes,
   type Settings,
 } from '@omnivo/contracts';
@@ -58,6 +59,16 @@ import {
   toExport,
   trialBalanceOf,
 } from './report-data';
+import {
+  findProduct,
+  IMPORT_DELAY_MS,
+  listProducts,
+  type MockImport,
+  saveProduct,
+  settleImports,
+  productSummaryOf,
+  toImport,
+} from './product-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
   assertCodeFree,
@@ -85,6 +96,15 @@ function current() {
   const data = dataOf(workspace);
   settleSetup(data);
   settleExports(data);
+  settleImports(data.catalog, (type, params) => {
+    data.notifications.unshift({
+      id: crypto.randomUUID(),
+      type,
+      params,
+      readAt: null,
+      createdAt: new Date().toISOString(),
+    });
+  });
   return data;
 }
 
@@ -128,6 +148,27 @@ function session(): AuthSession {
     accessToken: `mock-${crypto.randomUUID()}`,
     accessTokenExpiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
   };
+}
+
+// The API's sibling rule: two "Knit" in one place would be two answers to "which one?"
+function assertCategoryPlace(
+  categories: readonly ProductCategory[],
+  parentId: string | null,
+  name: string,
+  except?: string,
+): void {
+  if (parentId !== null && !categories.some((category) => category.id === parentId)) {
+    throw new MockProblem(409, 'category_parent_invalid', {
+      parentId: ['category_parent_invalid'],
+    });
+  }
+  const taken = categories.some(
+    (category) =>
+      category.id !== except &&
+      category.parentId === parentId &&
+      category.name.toLowerCase() === name.toLowerCase(),
+  );
+  if (taken) throw new MockProblem(409, 'category_name_taken', { name: ['category_name_taken'] });
 }
 
 // UI-র প্রতিটা পথ দেখার জন্য: লগইনে পাসওয়ার্ড "wrong-password" → invalid_credentials,
@@ -1081,6 +1122,415 @@ export const handlers = [
         url,
         expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
       });
+    }),
+  ),
+
+  // ---------------------------------------------------------------------------------------------
+  // Units, categories, custom fields, products and imports (step 12)
+
+  mock(routes.units.list, () => reply(routes.units.list, { items: current().catalog.units })),
+
+  mock(
+    routes.units.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.units.create.body, request);
+      const data = current();
+      if (data.catalog.units.some((unit) => unit.code.toLowerCase() === body.code.toLowerCase())) {
+        throw new MockProblem(409, 'unit_code_taken', { code: ['unit_code_taken'] });
+      }
+      const created = {
+        id: crypto.randomUUID(),
+        ...body,
+        ratio: body.ratio === null ? null : Number(body.ratio).toFixed(6),
+        archivedAt: null,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.catalog.units.push(created);
+      record(
+        data,
+        'unit.created',
+        'unit',
+        created.id,
+        diff({}, { code: body.code, name: body.name }),
+      );
+      return reply(routes.units.create, created);
+    }),
+  ),
+
+  mock(
+    routes.units.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.units.update.params.parse(params);
+      const { version, ...fields } = await readBody(routes.units.update.body, request);
+      const data = current();
+      const target = data.catalog.units.find((unit) => unit.id === id);
+      if (!target) throw new MockProblem(404, 'not_found');
+      checkVersion(target.version, version);
+      if (
+        data.catalog.units.some(
+          (unit) => unit.id !== id && unit.code.toLowerCase() === fields.code.toLowerCase(),
+        )
+      ) {
+        throw new MockProblem(409, 'unit_code_taken', { code: ['unit_code_taken'] });
+      }
+      Object.assign(target, fields, { version: version + 1, updatedAt: new Date().toISOString() });
+      record(data, 'unit.updated', 'unit', id);
+      return reply(routes.units.update, target);
+    }),
+  ),
+
+  ...(['archive', 'restore'] as const).map((action) =>
+    mock(
+      routes.units[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.units[action].params.parse(params);
+        const { version } = await readBody(routes.units[action].body, request);
+        const data = current();
+        const target = data.catalog.units.find((unit) => unit.id === id);
+        if (!target) throw new MockProblem(404, 'not_found');
+        checkVersion(target.version, version);
+        Object.assign(target, {
+          archivedAt: action === 'archive' ? new Date().toISOString() : null,
+          version: version + 1,
+        });
+        record(data, action === 'archive' ? 'unit.archived' : 'unit.restored', 'unit', id);
+        return reply(routes.units[action], target);
+      }),
+    ),
+  ),
+
+  mock(
+    routes.units.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.units.remove.params.parse(params);
+      const { version } = readQuery(routes.units.remove.query, request);
+      const data = current();
+      const target = data.catalog.units.find((unit) => unit.id === id);
+      if (!target) throw new MockProblem(404, 'not_found');
+      checkVersion(target.version, version);
+      const used = data.catalog.products.some(
+        (item) => item.baseUnitId === id || item.units.some((pack) => pack.unitId === id),
+      );
+      if (used) throw new MockProblem(409, 'unit_in_use');
+      data.catalog.units = data.catalog.units.filter((unit) => unit.id !== id);
+      record(data, 'unit.deleted', 'unit', id);
+      return reply(routes.units.remove, undefined);
+    }),
+  ),
+
+  mock(routes.productCategories.list, () => {
+    const { categories, products } = current().catalog;
+    return reply(routes.productCategories.list, {
+      items: categories.map((category) => ({
+        ...category,
+        productCount: products.filter((item) => item.categoryId === category.id).length,
+      })),
+    });
+  }),
+
+  mock(
+    routes.productCategories.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.productCategories.create.body, request);
+      const data = current();
+      assertCategoryPlace(data.catalog.categories, body.parentId, body.name);
+      const created = {
+        id: crypto.randomUUID(),
+        ...body,
+        productCount: 0,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.catalog.categories.push(created);
+      record(data, 'product_category.created', 'product_category', created.id);
+      return reply(routes.productCategories.create, created);
+    }),
+  ),
+
+  mock(
+    routes.productCategories.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.productCategories.update.params.parse(params);
+      const { version, ...fields } = await readBody(routes.productCategories.update.body, request);
+      const data = current();
+      const target = data.catalog.categories.find((category) => category.id === id);
+      if (!target) throw new MockProblem(404, 'not_found');
+      checkVersion(target.version, version);
+      // Walk up from the new parent: meeting the category itself means a loop
+      for (
+        let above = fields.parentId;
+        above !== null;
+        above = data.catalog.categories.find((category) => category.id === above)?.parentId ?? null
+      ) {
+        if (above === id) {
+          throw new MockProblem(409, 'category_parent_loop', {
+            parentId: ['category_parent_loop'],
+          });
+        }
+      }
+      assertCategoryPlace(data.catalog.categories, fields.parentId, fields.name, id);
+      Object.assign(target, fields, { version: version + 1, updatedAt: new Date().toISOString() });
+      record(data, 'product_category.updated', 'product_category', id);
+      return reply(routes.productCategories.update, {
+        ...target,
+        productCount: data.catalog.products.filter((item) => item.categoryId === id).length,
+      });
+    }),
+  ),
+
+  mock(
+    routes.productCategories.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.productCategories.remove.params.parse(params);
+      const { version } = readQuery(routes.productCategories.remove.query, request);
+      const data = current();
+      const target = data.catalog.categories.find((category) => category.id === id);
+      if (!target) throw new MockProblem(404, 'not_found');
+      checkVersion(target.version, version);
+      if (data.catalog.categories.some((category) => category.parentId === id)) {
+        throw new MockProblem(409, 'category_has_children');
+      }
+      if (data.catalog.products.some((item) => item.categoryId === id)) {
+        throw new MockProblem(409, 'category_in_use');
+      }
+      data.catalog.categories = data.catalog.categories.filter((category) => category.id !== id);
+      record(data, 'product_category.deleted', 'product_category', id);
+      return reply(routes.productCategories.remove, undefined);
+    }),
+  ),
+
+  mock(routes.customFields.list, () =>
+    reply(routes.customFields.list, { items: current().catalog.fields }),
+  ),
+
+  mock(
+    routes.customFields.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.customFields.create.body, request);
+      const data = current();
+      if (data.catalog.fields.some((field) => field.key === body.key)) {
+        throw new MockProblem(409, 'custom_field_key_taken', { key: ['custom_field_key_taken'] });
+      }
+      const created = {
+        id: crypto.randomUUID(),
+        ...body,
+        options: body.type === 'select' ? body.options : [],
+        required: body.type === 'boolean' ? false : body.required,
+        archivedAt: null,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.catalog.fields.push(created);
+      record(data, 'custom_field.created', 'custom_field', created.id);
+      return reply(routes.customFields.create, created);
+    }),
+  ),
+
+  mock(
+    routes.customFields.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.customFields.update.params.parse(params);
+      const { version, ...fields } = await readBody(routes.customFields.update.body, request);
+      const data = current();
+      const target = data.catalog.fields.find((field) => field.id === id);
+      if (!target) throw new MockProblem(404, 'not_found');
+      checkVersion(target.version, version);
+      if (target.type === 'select' && fields.options.length === 0) {
+        throw new MockProblem(400, 'invalid_input', { options: ['custom_field_options_required'] });
+      }
+      Object.assign(target, fields, { version: version + 1, updatedAt: new Date().toISOString() });
+      record(data, 'custom_field.updated', 'custom_field', id);
+      return reply(routes.customFields.update, target);
+    }),
+  ),
+
+  ...(['archive', 'restore'] as const).map((action) =>
+    mock(
+      routes.customFields[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.customFields[action].params.parse(params);
+        const { version } = await readBody(routes.customFields[action].body, request);
+        const data = current();
+        const target = data.catalog.fields.find((field) => field.id === id);
+        if (!target) throw new MockProblem(404, 'not_found');
+        checkVersion(target.version, version);
+        Object.assign(target, {
+          archivedAt: action === 'archive' ? new Date().toISOString() : null,
+          version: version + 1,
+        });
+        record(
+          data,
+          action === 'archive' ? 'custom_field.archived' : 'custom_field.restored',
+          'custom_field',
+          id,
+        );
+        return reply(routes.customFields[action], target);
+      }),
+    ),
+  ),
+
+  mock(routes.products.list, async ({ request }) => {
+    const query = readQuery(routes.products.list.query, request);
+    const start = query.cursor === undefined ? 0 : Number(query.cursor);
+    const all = listProducts(current().catalog, query);
+    const items = all.slice(start, start + query.limit).map(productSummaryOf);
+    const end = start + items.length;
+    // A short wait on later pages: "Loading more…" can be seen while scrolling
+    if (start > 0) await delay(300);
+    return reply(routes.products.list, {
+      items,
+      nextCursor: end < all.length ? String(end) : null,
+    });
+  }),
+
+  mock(
+    routes.products.get,
+    guarded(({ params }) => {
+      const { id } = routes.products.get.params.parse(params);
+      return reply(routes.products.get, findProduct(current().catalog, id));
+    }),
+  ),
+
+  mock(
+    routes.products.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.products.create.body, request);
+      const data = current();
+      const saved = saveProduct(data.catalog, body);
+      data.catalog.products.push(saved);
+      record(
+        data,
+        'product.created',
+        'product',
+        saved.id,
+        diff({}, { code: saved.code, name: saved.name }),
+      );
+      await delay();
+      return reply(routes.products.create, saved);
+    }),
+  ),
+
+  mock(
+    routes.products.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.products.update.params.parse(params);
+      const { version, ...body } = await readBody(routes.products.update.body, request);
+      const data = current();
+      const target = findProduct(data.catalog, id);
+      checkVersion(target.version, version);
+      const saved = saveProduct(data.catalog, body, target);
+      data.catalog.products = data.catalog.products.map((item) => (item.id === id ? saved : item));
+      record(
+        data,
+        'product.updated',
+        'product',
+        id,
+        diff({ name: target.name }, { name: saved.name }),
+      );
+      await delay();
+      return reply(routes.products.update, saved);
+    }),
+  ),
+
+  ...(['archive', 'restore'] as const).map((action) =>
+    mock(
+      routes.products[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.products[action].params.parse(params);
+        const { version } = await readBody(routes.products[action].body, request);
+        const data = current();
+        const target = findProduct(data.catalog, id);
+        checkVersion(target.version, version);
+        Object.assign(target, {
+          archivedAt: action === 'archive' ? new Date().toISOString() : null,
+          version: version + 1,
+          updatedAt: new Date().toISOString(),
+        });
+        record(data, action === 'archive' ? 'product.archived' : 'product.restored', 'product', id);
+        return reply(routes.products[action], target);
+      }),
+    ),
+  ),
+
+  mock(
+    routes.products.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.products.remove.params.parse(params);
+      const { version } = readQuery(routes.products.remove.query, request);
+      const data = current();
+      const target = findProduct(data.catalog, id);
+      checkVersion(target.version, version);
+      data.catalog.products = data.catalog.products.filter((item) => item.id !== id);
+      record(data, 'product.deleted', 'product', id, diff({ name: target.name }, { name: null }));
+      return reply(routes.products.remove, undefined);
+    }),
+  ),
+
+  mock(routes.productImports.create, async ({ request }) => {
+    const body = await readBody(routes.productImports.create.body, request);
+    const item: MockImport = {
+      id: crypto.randomUUID(),
+      ...body,
+      status: 'uploading',
+      rowCount: null,
+      productCount: null,
+      errorCount: 0,
+      errors: [],
+      requestedBy: { id: OWNER.id, fullName: OWNER.fullName },
+      createdAt: new Date().toISOString(),
+      finishedAt: null,
+      readyAt: 0,
+      text: null,
+    };
+    current().catalog.imports.unshift(item);
+    return reply(routes.productImports.create, {
+      import: toImport(item),
+      upload: {
+        method: 'PUT',
+        url: `${MOCK_STORAGE}/imports/${item.id}`,
+        headers: { 'content-type': 'text/csv' },
+        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+      },
+    });
+  }),
+
+  // The CSV goes to the pretend storage: kept as text for the pretend worker
+  http.put(`${MOCK_STORAGE}/imports/:id`, async ({ request, params }) => {
+    const item = current().catalog.imports.find((candidate) => candidate.id === params.id);
+    if (!item) return new HttpResponse(null, { status: 404 });
+    item.text = await request.text();
+    await delay(400);
+    return new HttpResponse(null, { status: 200 });
+  }),
+
+  mock(
+    routes.productImports.start,
+    guarded(({ params }) => {
+      const { id } = routes.productImports.start.params.parse(params);
+      const item = current().catalog.imports.find((candidate) => candidate.id === id);
+      if (!item) throw new MockProblem(404, 'not_found');
+      if (item.status !== 'uploading') throw new MockProblem(409, 'import_not_pending');
+      if (item.text === null) throw new MockProblem(409, 'import_not_uploaded');
+      Object.assign(item, { status: 'queued', readyAt: Date.now() + IMPORT_DELAY_MS });
+      return reply(routes.productImports.start, toImport(item));
+    }),
+  ),
+
+  mock(routes.productImports.list, () =>
+    reply(routes.productImports.list, {
+      items: current().catalog.imports.map(toImport),
+      nextCursor: null,
+    }),
+  ),
+
+  mock(
+    routes.productImports.get,
+    guarded(({ params }) => {
+      const { id } = routes.productImports.get.params.parse(params);
+      const item = current().catalog.imports.find((candidate) => candidate.id === id);
+      if (!item) throw new MockProblem(404, 'not_found');
+      return reply(routes.productImports.get, { ...toImport(item), errors: item.errors });
     }),
   ),
 ];

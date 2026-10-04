@@ -6,15 +6,20 @@ import {
   ChartIncreaseIcon,
   DashboardSquare01Icon,
   FileDownloadIcon,
+  FileImportIcon,
+  FolderTreeIcon,
   LayoutGridIcon,
   LeftToRightListNumberIcon,
   Logout01Icon,
   Notebook02Icon,
+  PackageIcon,
   PieChartIcon,
+  RulerIcon,
   SecurityCheckIcon,
   Settings02Icon,
   Store01Icon,
   TableIcon,
+  TextIcon,
   UnfoldMoreIcon,
   UserCircleIcon,
   UserGroupIcon,
@@ -278,6 +283,24 @@ export function AppShell() {
               </NavLink>
             </NavGroup>
           )}
+          {/* Every member reads products (every sales and stock line picks one); imports change
+              them, so only managers see that page */}
+          <NavGroup label={t('nav.inventory')}>
+            <NavLink to="/products" icon={PackageIcon} activeOptions={{ exact: true }}>
+              {t('nav.products')}
+            </NavLink>
+            <NavLink to="/products/categories" icon={FolderTreeIcon}>
+              {t('nav.categories')}
+            </NavLink>
+            <NavLink to="/products/units" icon={RulerIcon}>
+              {t('nav.units')}
+            </NavLink>
+            {can('inventory.product.manage') && (
+              <NavLink to="/products/imports" icon={FileImportIcon}>
+                {t('nav.productImports')}
+              </NavLink>
+            )}
+          </NavGroup>
           <NavGroup label={t('nav.workspace')}>
             {(can('core.user.read') || can('core.user.invite')) && (
               <NavLink to="/team" icon={UserGroupIcon}>
@@ -289,6 +312,9 @@ export function AppShell() {
                 {t('nav.roles')}
               </NavLink>
             )}
+            <NavLink to="/custom-fields" icon={TextIcon}>
+              {t('nav.customFields')}
+            </NavLink>
             <NavLink to="/branches" icon={Store01Icon}>
               {t('nav.branches')}
             </NavLink>

@@ -13,9 +13,14 @@ import { notificationRoutes } from './notifications.js';
 import { numberSeriesRoutes } from './numbering.js';
 import { meRoutes } from './preferences.js';
 import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js';
+import { customFieldRoutes } from './custom-fields.js';
+import { productCategoryRoutes } from './product-categories.js';
+import { productImportRoutes } from './product-imports.js';
+import { productRoutes } from './products.js';
 import { roleRoutes } from './roles.js';
 import { settingsRoutes } from './settings.js';
 import { setupRoutes } from './setup.js';
+import { unitRoutes } from './units.js';
 
 export const healthRoutes = {
   check: defineRoute({
@@ -52,4 +57,9 @@ export const routes = {
   reports: reportRoutes,
   fiscalYears: fiscalYearRoutes,
   reportExports: reportExportRoutes,
+  units: unitRoutes,
+  productCategories: productCategoryRoutes,
+  customFields: customFieldRoutes,
+  products: productRoutes,
+  productImports: productImportRoutes,
 };

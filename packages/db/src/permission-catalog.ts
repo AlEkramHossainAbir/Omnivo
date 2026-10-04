@@ -22,6 +22,8 @@ const DESCRIPTIONS = {
     'Close the books up to a date, close and reopen fiscal years, and open the books again',
   'accounting.report.read':
     'View the trial balance, profit and loss and balance sheet, and export them to Excel or PDF',
+  'inventory.product.manage':
+    'Add, edit, archive and import products, and manage their categories and units',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

@@ -20,6 +20,10 @@ export const outboxPayloadSchemas = {
   'workspace.chart_requested': z.object({}),
   // The report_exports row says which report, which dates and for whom
   'report.export_requested': z.object({ exportId: z.uuid() }),
+  // Like the chart's: the workspace and its business type say everything
+  'workspace.catalog_requested': z.object({}),
+  // The product_imports row says which file, and who uploaded it
+  'product.import_requested': z.object({ importId: z.uuid() }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

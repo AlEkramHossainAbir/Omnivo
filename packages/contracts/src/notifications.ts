@@ -6,12 +6,16 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // Every kind of in-app notification. The server stores the type and a few values (params), never a
 // sentence: the app turns them into text in the reader's language (notifications.types.* in en.ts).
 // report.ready / report.failed: params { report, format } — the export the person asked for
+// import.done: params { file, count } — count = products made; import.failed: { file, count } —
+// count = problems found
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
   'invitation.failed',
   'report.ready',
   'report.failed',
+  'import.done',
+  'import.failed',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

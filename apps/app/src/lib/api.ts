@@ -1,5 +1,6 @@
 import {
   type AuthSession,
+  authRoutes,
   buildPath,
   type ErrorCode,
   isErrorCode,
@@ -8,11 +9,13 @@ import {
   type RouteDef,
   type RouteRequest,
   type RouteResult,
-  routes,
 } from '@omnivo/contracts';
 import type { z } from 'zod';
 
 import { sessionStore } from './session-store';
+
+// authRoutes, not the whole `routes` map: this file is in the first page load, and `routes` holds
+// every module's schemas. Pages import `routes` themselves, in their own lazy chunks.
 
 export const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
@@ -110,9 +113,9 @@ export function refreshSession(): Promise<AuthSession | null> {
     // Web Locks: একই ব্রাউজারের একাধিক ট্যাবও একটার পর একটা refresh করবে, একসাথে না।
     // call() না, send() — call() নিজেই 401-এ refresh ডাকে, lock-এর ভেতর থেকে সেটা আটকে যেত
     .request('omnivo-refresh', async () => {
-      const response = await send(routes.auth.refresh, {}, null);
+      const response = await send(authRoutes.refresh, {}, null);
       if (!response.ok) return null;
-      return read(routes.auth.refresh, response);
+      return read(authRoutes.refresh, response);
     })
     .finally(() => {
       refreshInFlight = null;

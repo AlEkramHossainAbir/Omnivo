@@ -1,4 +1,4 @@
-import { type Preferences, routes, type UpdatePreferencesInput } from '@omnivo/contracts';
+import { meRoutes, type Preferences, type UpdatePreferencesInput } from '@omnivo/contracts';
 import { i18n, setLanguage } from '@omnivo/i18n';
 import { toast } from '@omnivo/ui';
 
@@ -19,7 +19,7 @@ export async function savePreference(input: UpdatePreferencesInput): Promise<voi
   if (input.theme !== undefined) applyTheme(input.theme);
   if (input.language !== undefined) await setLanguage(input.language);
   try {
-    const preferences = await call(routes.me.updatePreferences, { body: input });
+    const preferences = await call(meRoutes.updatePreferences, { body: input });
     const me = sessionStore.getState().me;
     if (me) sessionStore.getState().setMe({ ...me, preferences });
   } catch {

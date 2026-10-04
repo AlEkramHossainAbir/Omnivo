@@ -9,6 +9,7 @@ import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { notify } from '../notifications/notify.js';
+import { seedCatalog } from './seed-catalog.js';
 import { seedChart } from './seed-chart.js';
 import { INDUSTRY_TEMPLATES, type RoleTemplate } from './templates.js';
 
@@ -88,6 +89,9 @@ export class ProvisioningHandler implements EventHandler<'workspace.setup_reques
       // 0 when the workspace already has a chart: step 9's migration queued one for a workspace
       // whose setup had failed, and it ran before this retry
       const accounts = await seedChart(tx, tenantId, template.chart);
+      // null when step 12's migration already gave this workspace its catalog (a failed setup
+      // retried after the catalog job ran)
+      const catalog = await seedCatalog(tx, tenantId, template.catalog);
       await tx.update(tenants).set({ setupStatus: 'ready' }).where(eq(tenants.id, tenantId));
       // No actorUserId: the audit log shows "System" — the job did it, not a person
       await audit(tx, {
@@ -98,6 +102,9 @@ export class ProvisioningHandler implements EventHandler<'workspace.setup_reques
           industry,
           roles: seeded.length === 0 ? null : seeded.map((role) => role.name).join(', '),
           accounts: accounts === 0 ? null : accounts,
+          units: catalog?.units ?? null,
+          categories: catalog?.categories ?? null,
+          customFields: catalog?.customFields ?? null,
         }),
       });
       await notify(tx, {

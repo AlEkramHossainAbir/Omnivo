@@ -8,6 +8,7 @@ import {
   problemSchema,
   roleListSchema,
   setupSchema,
+  unitListSchema,
 } from '@omnivo/contracts';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -28,11 +29,12 @@ import {
   type TestRedis,
 } from '../testing/containers.js';
 import { bearer, type SignedIn, signUp } from '../testing/http.js';
-import { accountCount } from '../testing/chart.js';
+import { accountCount, catalogCount } from '../testing/chart.js';
 import { lastMailTo } from '../testing/mailpit.js';
 import { INDUSTRY_TEMPLATES } from './templates.js';
 
 const GARMENTS_ACCOUNTS = accountCount(INDUSTRY_TEMPLATES.garments.chart);
+const GARMENTS_CATALOG = catalogCount(INDUSTRY_TEMPLATES.garments.catalog);
 
 let pg: TestPostgres;
 let redis: TestRedis;
@@ -137,8 +139,8 @@ describe('starting the setup', () => {
           'core.user.read',
         ],
       ],
-      ['Merchandiser', ['core.user.read']],
-      ['Store keeper', []],
+      ['Merchandiser', ['core.user.read', 'inventory.product.manage']],
+      ['Store keeper', ['inventory.product.manage']],
     ]);
     const chart = accountListSchema.parse((await send('GET', '/accounts')).json());
     expect(chart.items.find((account) => account.code === '4110')).toMatchObject({
@@ -163,6 +165,9 @@ describe('starting the setup', () => {
       changes: {
         roles: { from: null, to: 'Accountant, Merchandiser, Store keeper' },
         accounts: { from: null, to: GARMENTS_ACCOUNTS },
+        units: { from: null, to: GARMENTS_CATALOG.units },
+        categories: { from: null, to: GARMENTS_CATALOG.categories },
+        customFields: { from: null, to: GARMENTS_CATALOG.customFields },
       },
     });
     // The worker ran in the context of the POST /setup request: one click, traced end to end
@@ -255,13 +260,21 @@ describe('when the setup job fails', () => {
     await superuserSql(
       (sql) => sql`UPDATE tenants SET industry = 'pharma' WHERE slug = 'karim-pharma'`,
     );
-    // Step 9's migration queues a chart for every workspace that is not 'pending' — this failed
-    // one too. Its chart arrives before the retry, so the retried setup job must leave it alone.
+    // Step 9's migration queues a chart, and step 12's a catalog, for every workspace that is not
+    // 'pending' — this failed one too. Both arrive before the retry, so the retried setup job must
+    // leave them alone.
     await superuserSql(
       (sql) => sql`INSERT INTO outbox_events (id, tenant_id, type, payload)
-                   SELECT gen_random_uuid(), id, 'workspace.chart_requested', '{}'::jsonb
-                   FROM tenants WHERE slug = 'karim-pharma'`,
+                   SELECT gen_random_uuid(), id, event, '{}'::jsonb
+                   FROM tenants, unnest(ARRAY['workspace.chart_requested', 'workspace.catalog_requested']) AS event
+                   WHERE slug = 'karim-pharma'`,
     );
+    await eventually(async () => {
+      const units = unitListSchema.parse(
+        (await send('GET', '/units', undefined, pharmaOwner)).json(),
+      );
+      expect(units.items).toHaveLength(INDUSTRY_TEMPLATES.pharma.catalog.units.length);
+    });
     const pharmaAccounts = accountCount(INDUSTRY_TEMPLATES.pharma.chart);
     await eventually(async () => {
       const chart = accountListSchema.parse(

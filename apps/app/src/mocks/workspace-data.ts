@@ -25,6 +25,7 @@ import { OWNER, type Workspace } from './fixtures';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
+import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import type { MockExport } from './report-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
@@ -43,6 +44,8 @@ export interface WorkspaceData {
   journal: MockJournal;
   // "My exports", newest first; the pretend worker finishes them (report-data.ts)
   exports: MockExport[];
+  // Units, categories, custom fields, products and imports (step 12)
+  catalog: MockCatalog;
 }
 
 function now(): string {
@@ -95,6 +98,7 @@ function seed(workspace: Workspace): WorkspaceData {
     accounts: seedAccounts(garments ? 'garments' : 'pharma'),
     journal: emptyJournal(),
     exports: [],
+    catalog: garments ? garmentsCatalog() : pharmaCatalog(),
   };
   if (garments) seedJournal(data);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
@@ -153,6 +157,8 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.accounts = [];
   data.journal = emptyJournal();
   data.exports = [];
+  // Like the chart: the setup job brings the units and categories (settleSetup)
+  data.catalog = emptyCatalog();
   store.set(workspace.tenantId, data);
 }
 

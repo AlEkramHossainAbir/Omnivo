@@ -5,6 +5,7 @@ import {
   GetObjectCommand,
   HeadBucketCommand,
   HeadObjectCommand,
+  NoSuchKey,
   NotFound,
   PutObjectCommand,
   S3Client,
@@ -120,6 +121,20 @@ export class StorageService implements OnApplicationBootstrap {
     await this.client.send(
       new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
     );
+  }
+
+  // A file someone uploaded, read by the server (a product import's CSV, step 12). null = no such
+  // file. Whole into memory: callers limit the size first (the import's 5 MB).
+  async get(key: string): Promise<Uint8Array | null> {
+    try {
+      const object = await this.client.send(
+        new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      );
+      return object.Body ? await object.Body.transformToByteArray() : null;
+    } catch (error) {
+      if (error instanceof NoSuchKey) return null;
+      throw error;
+    }
   }
 
   async delete(key: string): Promise<void> {

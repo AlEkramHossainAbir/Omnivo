@@ -13,6 +13,7 @@ import { AuthGuard } from './auth/auth.guard.js';
 import { AuthMiddleware } from './auth/auth.middleware.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BranchesModule } from './branches/branches.module.js';
+import { CustomFieldsModule } from './custom-fields/custom-fields.module.js';
 import { ContractInterceptor } from './common/http/contract.interceptor.js';
 import { ProblemFilter } from './common/http/problem.filter.js';
 import { RequestContextMiddleware } from './common/request/request-context.js';
@@ -26,6 +27,7 @@ import { MembersModule } from './members/members.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { NumberingModule } from './numbering/numbering.module.js';
 import { PermissionGuard } from './rbac/permission.guard.js';
+import { ProductsModule } from './products/products.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { RolesModule } from './roles/roles.module.js';
@@ -55,6 +57,8 @@ export class AppModule implements NestModule {
         AccountsModule,
         JournalModule,
         ReportsModule,
+        CustomFieldsModule,
+        ProductsModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

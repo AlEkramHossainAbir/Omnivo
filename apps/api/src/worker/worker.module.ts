@@ -7,7 +7,10 @@ import { CONFIG, DB, RELAY_DB, STORAGE_CONFIG, WITH_TENANT } from '../infra/toke
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
 import { MailService } from '../mail/mail.service.js';
+import { NumberingService } from '../numbering/numbering.service.js';
+import { ProductImportHandler } from '../products/import.handler.js';
 import { ReportExportHandler } from '../reports/export.handler.js';
+import { CatalogHandler } from '../setup/catalog.handler.js';
 import { ChartHandler } from '../setup/chart.handler.js';
 import { ProvisioningHandler } from '../setup/provisioning.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
@@ -51,6 +54,10 @@ export class WorkerModule implements OnApplicationShutdown {
         MemberJoinedHandler,
         ChartHandler,
         ReportExportHandler,
+        CatalogHandler,
+        // The import gives new products their codes, like the API does
+        NumberingService,
+        ProductImportHandler,
       ],
     };
   }

@@ -14,6 +14,16 @@ export const amountSchema = z
   .refine((value) => value === '' || MONEY.test(value), errorCode('money_format'))
   .transform((value) => (value === '' ? '0' : value));
 
+// A price that may be left out (step 12: a variant's sale price). '' (an empty box) is "no fixed
+// price" — a garments factory prices each buyer's PO — and is stored as NULL, never as 0, because a
+// price of zero is a real price (a free sample).
+export const priceSchema = z
+  .string()
+  .trim()
+  .refine((value) => value === '' || MONEY.test(value), errorCode('money_format'))
+  .transform((value) => (value === '' ? null : value))
+  .nullable();
+
 // The arithmetic below works in ten-thousandths of a taka, as BigInt: "18450.5" is 184505000n.
 // Exact like decimal.js for what the journal does — adding and subtracting amounts with at most
 // 4 decimals, so nothing is ever rounded — and it keeps this package on zod alone (the

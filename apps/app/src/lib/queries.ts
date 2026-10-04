@@ -3,6 +3,8 @@ import {
   type BranchStatus,
   type JournalStatus,
   type MemberSort,
+  type ProductSort,
+  type ProductStatus,
   type ProfitAndLossQuery,
   routes,
   type TrialBalanceQuery,
@@ -216,5 +218,90 @@ export function reportExportsQuery(tenantId: string) {
     queryFn: async () => (await call(routes.reportExports.list, { query: { limit: 50 } })).items,
     refetchInterval: (query) =>
       query.state.data?.some((item) => item.status === 'pending') ? 2_000 : false,
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Products (step 12). Everything starts with ['products', tenantId]: saving a unit, a category or a
+// product refreshes every product page with one invalidate.
+
+// Small lists, read whole. While the catalog job of an older workspace has not run yet, the units
+// are empty: ask again every 3 seconds until they arrive, like the chart of accounts.
+export function unitsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['products', tenantId, 'units'],
+    queryFn: async () => (await call(routes.units.list)).items,
+    refetchInterval: (query) => (query.state.data?.length === 0 ? 3_000 : false),
+  });
+}
+
+export function productCategoriesQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['products', tenantId, 'categories'],
+    queryFn: async () => (await call(routes.productCategories.list)).items,
+  });
+}
+
+export function productFieldsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['products', tenantId, 'custom-fields'],
+    queryFn: async () =>
+      (await call(routes.customFields.list, { query: { entity: 'product' } })).items,
+  });
+}
+
+export interface ProductFilter {
+  search: string;
+  categoryId: string;
+  status: ProductStatus;
+  sort: ProductSort;
+}
+
+// The list, 50 at a time; the server searches, filters and sorts (10,000 products never come to
+// the browser at once)
+export function productListQuery(tenantId: string, filter: ProductFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['products', tenantId, 'list', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.products.list, {
+        query: {
+          limit: 50,
+          status: filter.status,
+          sort: filter.sort,
+          ...(filter.search !== '' && { search: filter.search }),
+          ...(filter.categoryId !== '' && { categoryId: filter.categoryId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function productQuery(tenantId: string, productId: string) {
+  return queryOptions({
+    queryKey: ['products', tenantId, 'product', productId],
+    queryFn: () => call(routes.products.get, { params: { id: productId } }),
+    retry: false,
+  });
+}
+
+// The imports, polled every 2 seconds while one is still on its way (like the exports)
+export function productImportsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['products', tenantId, 'imports'],
+    queryFn: async () => (await call(routes.productImports.list, { query: { limit: 50 } })).items,
+    refetchInterval: (query) =>
+      query.state.data?.some((item) => item.status === 'uploading' || item.status === 'queued')
+        ? 2_000
+        : false,
+  });
+}
+
+export function productImportQuery(tenantId: string, importId: string) {
+  return queryOptions({
+    queryKey: ['products', tenantId, 'imports', importId],
+    queryFn: () => call(routes.productImports.get, { params: { id: importId } }),
   });
 }

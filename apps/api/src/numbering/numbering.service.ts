@@ -41,23 +41,42 @@ export class NumberingService {
   // কাউন্টার সেই transaction-এর অংশ — ইনভয়েস rollback হলে নম্বরও ফেরত যায়, ফাঁক থাকে না। দুজন একসাথে
   // চাইলে ON CONFLICT DO UPDATE রো-টা lock করে: দ্বিতীয়জন প্রথমজনের commit পর্যন্ত অপেক্ষা করে পরেরটা পায়
   async next(tx: Transaction, documentType: DocumentType, isoDate: string): Promise<string> {
+    const [number] = await this.nextMany(tx, documentType, isoDate, 1);
+    if (number === undefined) throw new Error('nextMany returned no number');
+    return number;
+  }
+
+  // `count` numbers in a row with one counter update — a CSV import of 5,000 products takes its
+  // codes in one statement instead of 5,000. Same transaction rule as next(): a rollback gives them
+  // all back.
+  async nextMany(
+    tx: Transaction,
+    documentType: DocumentType,
+    isoDate: string,
+    count: number,
+  ): Promise<string[]> {
+    if (count < 1) return [];
     const tenantId = getTenantId();
     const { format, fiscalYearStartMonth } = await this.formatOf(tx, documentType);
     const period = periodOf(isoDate, format.yearStyle, fiscalYearStartMonth);
     const [counter] = await tx
       .insert(numberSeriesCounters)
-      .values({ tenantId, documentType, period: periodKey(period), lastValue: 1 })
+      .values({ tenantId, documentType, period: periodKey(period), lastValue: count })
       .onConflictDoUpdate({
         target: [
           numberSeriesCounters.tenantId,
           numberSeriesCounters.documentType,
           numberSeriesCounters.period,
         ],
-        set: { lastValue: sql`${numberSeriesCounters.lastValue} + 1` },
+        set: { lastValue: sql`${numberSeriesCounters.lastValue} + ${count}` },
       })
       .returning({ lastValue: numberSeriesCounters.lastValue });
     if (!counter) throw new Error('Counter upsert returned no row');
-    return formatDocumentNumber(format, period, counter.lastValue);
+    // The counter now holds the last of them; the first is count - 1 before it
+    const first = counter.lastValue - count + 1;
+    return Array.from({ length: count }, (_, index) =>
+      formatDocumentNumber(format, period, first + index),
+    );
   }
 
   list(): Promise<NumberSeries[]> {

@@ -13,6 +13,8 @@ export const OUTBOX_EVENT_TYPES = [
   'member.joined',
   'workspace.chart_requested',
   'report.export_requested',
+  'workspace.catalog_requested',
+  'product.import_requested',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

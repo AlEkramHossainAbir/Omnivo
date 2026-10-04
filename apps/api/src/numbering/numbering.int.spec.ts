@@ -101,7 +101,13 @@ describe('number series endpoints', () => {
   it('lists every document type with its next number, without using it up', async () => {
     const today = periodOf(todayIn('Asia/Dhaka'), 'fiscal', 7);
     const { items } = numberSeriesListSchema.parse((await send('GET', '/number-series')).json());
-    expect(items.map((series) => series.documentType)).toHaveLength(6);
+    expect(items.map((series) => series.documentType)).toHaveLength(7);
+    // Product codes (step 12): no year in them, five digits
+    expect(items.find((series) => series.documentType === 'inventory.product')).toMatchObject({
+      prefix: 'P',
+      yearStyle: 'none',
+      nextNumber: 'P-00001',
+    });
     expect(items.find((series) => series.documentType === 'purchase.order')).toMatchObject({
       prefix: 'PO',
       version: 0,

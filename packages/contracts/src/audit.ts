@@ -43,6 +43,25 @@ export const AUDIT_ACTIONS = [
   'books.lock_date_changed',
   'books.year_closed',
   'books.year_reopened',
+  'workspace.catalog_created',
+  'unit.created',
+  'unit.updated',
+  'unit.archived',
+  'unit.restored',
+  'unit.deleted',
+  'product_category.created',
+  'product_category.updated',
+  'product_category.deleted',
+  'custom_field.created',
+  'custom_field.updated',
+  'custom_field.archived',
+  'custom_field.restored',
+  'product.created',
+  'product.updated',
+  'product.archived',
+  'product.restored',
+  'product.deleted',
+  'product.imported',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -62,6 +81,11 @@ export const AUDIT_ENTITY_TYPES = [
   'role',
   'account',
   'journal_entry',
+  'unit',
+  'product_category',
+  'custom_field',
+  'product',
+  'product_import',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

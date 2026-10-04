@@ -2,6 +2,7 @@ import type { Industry, Setup } from '@omnivo/contracts';
 
 import { seedAccounts } from './accounting-data';
 import { MockProblem } from './mock';
+import { startingCatalog } from './product-data';
 import { record, type WorkspaceData } from './workspace-data';
 
 // How long the pretend setup job takes — long enough to see "Preparing the roles…"
@@ -54,6 +55,7 @@ export function settleSetup(data: WorkspaceData): void {
     });
   }
   if (data.accounts.length === 0) data.accounts = seedAccounts(industry);
+  if (data.catalog.units.length === 0) data.catalog = startingCatalog(industry);
   data.setup = { status: 'ready', industry };
   data.setupReadyAt = null;
   record(data, 'workspace.provisioned', 'workspace', crypto.randomUUID(), {

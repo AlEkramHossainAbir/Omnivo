@@ -15,6 +15,7 @@ export const PERMISSION_KEYS = [
   'accounting.journal.post',
   'accounting.period.close',
   'accounting.report.read',
+  'inventory.product.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -27,7 +28,7 @@ export function isPermissionKey(value: string): value is PermissionKey {
 
 // matrix-এর সারি কোন দলে: key-র মাঝের অংশ (resource) দিয়ে না, হাতে বাছা — "Team" দলে user আর role
 // দুটোই থাকে, কারণ মানুষ দুটোকে একই কাজ ভাবে। Record<PermissionKey, …>: নতুন key দল ছাড়া থাকতে পারে না
-export const PERMISSION_GROUPS = ['team', 'workspace', 'accounting'] as const;
+export const PERMISSION_GROUPS = ['team', 'workspace', 'accounting', 'inventory'] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
 export const PERMISSION_GROUP_OF = {
@@ -44,4 +45,5 @@ export const PERMISSION_GROUP_OF = {
   'accounting.journal.post': 'accounting',
   'accounting.period.close': 'accounting',
   'accounting.report.read': 'accounting',
+  'inventory.product.manage': 'inventory',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

@@ -187,6 +187,53 @@ const reportExportsRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/report-exports'), 'ReportExportsPage'),
 });
 
+// Products (step 12). '/products/new', '/products/categories', '/products/units' and
+// '/products/imports' beat '/products/$productId': a fixed segment ranks above a parameter.
+const productsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/products',
+  component: lazyRouteComponent(() => import('./routes/products'), 'ProductsPage'),
+});
+
+const newProductRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/products/new',
+  component: lazyRouteComponent(() => import('./routes/product'), 'NewProductPage'),
+});
+
+const productRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/products/$productId',
+  component: lazyRouteComponent(() => import('./routes/product'), 'ProductPage'),
+});
+
+const productCategoriesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/products/categories',
+  component: lazyRouteComponent(
+    () => import('./routes/product-categories'),
+    'ProductCategoriesPage',
+  ),
+});
+
+const unitsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/products/units',
+  component: lazyRouteComponent(() => import('./routes/units'), 'UnitsPage'),
+});
+
+const productImportsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/products/imports',
+  component: lazyRouteComponent(() => import('./routes/product-imports'), 'ProductImportsPage'),
+});
+
+const customFieldsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/custom-fields',
+  component: lazyRouteComponent(() => import('./routes/custom-fields'), 'CustomFieldsPage'),
+});
+
 const teamRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/team',
@@ -238,6 +285,13 @@ const routeTree = rootRoute.addChildren([
     profitAndLossRoute,
     balanceSheetRoute,
     reportExportsRoute,
+    productsRoute,
+    newProductRoute,
+    productRoute,
+    productCategoriesRoute,
+    unitsRoute,
+    productImportsRoute,
+    customFieldsRoute,
     teamRoute,
     rolesRoute,
     auditLogRoute,

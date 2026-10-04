@@ -2,11 +2,13 @@ import {
   ACCOUNT_PURPOSES,
   ACCOUNT_TYPES,
   createAccountInputSchema,
+  createCustomFieldInputSchema,
+  createUnitInputSchema,
   INDUSTRIES,
 } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { type AccountTemplate, INDUSTRY_TEMPLATES } from './templates.js';
+import { type AccountTemplate, type CategoryTemplate, INDUSTRY_TEMPLATES } from './templates.js';
 
 function flatten(node: AccountTemplate): AccountTemplate[] {
   return [node, ...(node.children ?? []).flatMap(flatten)];
@@ -41,5 +43,52 @@ describe.each(INDUSTRIES)('the %s chart', (industry) => {
         expect(node.code.startsWith(String(index + 1)), node.code).toBe(true);
       }
     });
+  });
+});
+
+function names(nodes: readonly CategoryTemplate[]): string[][] {
+  return [
+    nodes.map((node) => node.name.toLowerCase()),
+    ...nodes.flatMap((node) => names(node.children ?? [])),
+  ];
+}
+
+// The same reason as the charts: a mistake here would surface only in the worker, at a real
+// workspace's setup. These are what the API itself would refuse.
+describe.each(INDUSTRIES)('the %s catalog', (industry) => {
+  const catalog = INDUSTRY_TEMPLATES[industry].catalog;
+
+  it('has units the API accepts, each code once, with pieces and kilograms', () => {
+    for (const unit of catalog.units) {
+      expect(
+        createUnitInputSchema.safeParse({ ...unit, ratio: unit.ratio ?? '' }).success,
+        unit.code,
+      ).toBe(true);
+    }
+    const codes = catalog.units.map((unit) => unit.code.toLowerCase());
+    expect(new Set(codes).size).toBe(codes.length);
+    expect(codes).toEqual(expect.arrayContaining(['pcs', 'kg']));
+  });
+
+  it('names sibling categories once', () => {
+    for (const siblings of names(catalog.categories)) {
+      expect(new Set(siblings).size, siblings.join(', ')).toBe(siblings.length);
+    }
+  });
+
+  it('has custom fields the API accepts, each key once', () => {
+    for (const field of catalog.customFields) {
+      expect(
+        createCustomFieldInputSchema.safeParse({
+          entity: 'product',
+          options: [],
+          required: false,
+          ...field,
+        }).success,
+        field.key,
+      ).toBe(true);
+    }
+    const keys = catalog.customFields.map((field) => field.key);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });

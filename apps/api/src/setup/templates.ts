@@ -1,4 +1,11 @@
-import type { AccountPurpose, AccountType, Industry, PermissionKey } from '@omnivo/contracts';
+import type {
+  AccountPurpose,
+  AccountType,
+  CustomFieldType,
+  Industry,
+  PermissionKey,
+  UnitDimension,
+} from '@omnivo/contracts';
 
 export interface RoleTemplate {
   name: string;
@@ -19,13 +26,46 @@ export interface AccountTemplate {
 // each account takes it from its top-level group, exactly as the database does (the parent FK).
 export type ChartTemplate = Record<AccountType, AccountTemplate>;
 
-// Starting data for each business type: the roles such a company is staffed with, and its chart
-// of accounts. Step 12 adds the product tracking (batch for pharma). Everything here is ordinary
+// A unit of measure. ratio = how many of the dimension's reference unit (pcs, kg, m, m², l) one of
+// it is; null = a pack whose size each product says.
+export interface UnitTemplate {
+  code: string;
+  name: string;
+  dimension: UnitDimension;
+  ratio: string | null;
+  decimals: number;
+}
+
+// A product category; with children, the categories under it
+export interface CategoryTemplate {
+  name: string;
+  children?: readonly CategoryTemplate[];
+}
+
+export interface CustomFieldTemplate {
+  key: string;
+  label: string;
+  type: CustomFieldType;
+  options?: readonly string[];
+  required?: boolean;
+}
+
+// What a new workspace needs before its first product (step 12)
+export interface CatalogTemplate {
+  units: readonly UnitTemplate[];
+  categories: readonly CategoryTemplate[];
+  customFields: readonly CustomFieldTemplate[];
+}
+
+// Starting data for each business type: the roles such a company is staffed with, its chart of
+// accounts, and its units, product categories and custom fields (step 12; a pharma company's
+// products start with batch tracking — contracts' trackingDefault()). Everything here is ordinary
 // data once created: the workspace can rename, change or delete it, and a later change to this
 // file never touches workspaces that already exist.
 export interface IndustryTemplate {
   roles: RoleTemplate[];
   chart: ChartTemplate;
+  catalog: CatalogTemplate;
 }
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
@@ -48,7 +88,7 @@ const ACCOUNTANT: RoleTemplate = {
 const STORE_KEEPER: RoleTemplate = {
   name: 'Store keeper',
   description: 'Receives goods and writes GRNs',
-  permissions: [],
+  permissions: ['inventory.product.manage'],
 };
 
 function group(
@@ -169,6 +209,39 @@ function standardChart(industry: IndustryAccounts): ChartTemplate {
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Units, categories and custom fields (step 12)
+
+function unit(
+  code: string,
+  name: string,
+  dimension: UnitDimension,
+  ratio: string | null,
+  decimals = 0,
+): UnitTemplate {
+  return { code, name, dimension, ratio, decimals };
+}
+
+function category(name: string, children?: readonly string[]): CategoryTemplate {
+  return children === undefined
+    ? { name }
+    : { name, children: children.map((child) => ({ name: child })) };
+}
+
+// Every company counts, weighs and measures: these units are in every workspace. Packs (box,
+// carton) have no ratio: a box of Napa holds 10 strips, a box of buttons 144 pieces.
+const COMMON_UNITS = [
+  unit('pcs', 'Pieces', 'count', '1'),
+  unit('dozen', 'Dozen', 'count', '12'),
+  unit('kg', 'Kilogram', 'weight', '1', 3),
+  unit('g', 'Gram', 'weight', '0.001'),
+  unit('m', 'Metre', 'length', '1', 2),
+  unit('l', 'Litre', 'volume', '1', 3),
+  unit('ml', 'Millilitre', 'volume', '0.001'),
+  unit('box', 'Box', 'count', null),
+  unit('carton', 'Carton', 'count', null),
+] as const;
+
 const TRADER_STOCK = account('1150', 'Inventory', 'inventory');
 const COGS = account('5110', 'Cost of goods sold', 'cost_of_goods_sold');
 // Makers post the sale's cost from finished goods; raw materials move there through production
@@ -186,7 +259,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Merchandiser',
         description: 'Buyer POs, LCs and shipment dates',
-        permissions: ['core.user.read'],
+        permissions: ['core.user.read', 'inventory.product.manage'],
       },
       STORE_KEEPER,
     ],
@@ -210,6 +283,29 @@ export const INDUSTRY_TEMPLATES = {
         account('5340', 'Buying house commission'),
       ],
     }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('yard', 'Yard', 'length', '0.9144', 2),
+        unit('gross', 'Gross', 'count', '144'),
+        unit('roll', 'Roll', 'count', null),
+        unit('cone', 'Cone', 'count', null),
+        unit('pair', 'Pair', 'count', null),
+      ],
+      categories: [
+        category('Fabrics', ['Knit', 'Woven', 'Denim']),
+        category('Yarn'),
+        category('Trims and accessories', ['Buttons', 'Zippers', 'Labels', 'Sewing thread']),
+        category('Packing materials', ['Poly bags', 'Cartons', 'Hangers']),
+        category('Finished garments', ['T-shirts', 'Polo shirts', 'Trousers', 'Jackets']),
+      ],
+      customFields: [
+        { key: 'buyer', label: 'Buyer', type: 'text' },
+        { key: 'composition', label: 'Fabric composition', type: 'text' },
+        { key: 'gsm', label: 'GSM', type: 'number' },
+        { key: 'season', label: 'Season', type: 'text' },
+      ],
+    },
   },
   pharma: {
     roles: [
@@ -217,7 +313,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Depot manager',
         description: 'Stock by batch and expiry at a depot',
-        permissions: ['core.branch.manage'],
+        permissions: ['core.branch.manage', 'inventory.product.manage'],
       },
       { name: 'Sales representative', description: 'Orders from pharmacies', permissions: [] },
     ],
@@ -236,6 +332,39 @@ export const INDUSTRY_TEMPLATES = {
         account('5350', 'Expired and damaged goods'),
       ],
     }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('strip', 'Strip', 'count', null),
+        unit('bottle', 'Bottle', 'count', null),
+        unit('vial', 'Vial', 'count', null),
+        unit('ampoule', 'Ampoule', 'count', null),
+        unit('tube', 'Tube', 'count', null),
+        unit('sachet', 'Sachet', 'count', null),
+      ],
+      categories: [
+        category('Finished products', [
+          'Tablets',
+          'Capsules',
+          'Syrups and suspensions',
+          'Injections',
+          'Creams and ointments',
+        ]),
+        category('Raw materials', ['Active ingredients (API)', 'Excipients']),
+        category('Packing materials', ['Foil and blister', 'Bottles and caps', 'Inner cartons']),
+      ],
+      customFields: [
+        { key: 'generic_name', label: 'Generic name', type: 'text', required: true },
+        { key: 'strength', label: 'Strength', type: 'text' },
+        {
+          key: 'dosage_form',
+          label: 'Dosage form',
+          type: 'select',
+          options: ['Tablet', 'Capsule', 'Syrup', 'Suspension', 'Injection', 'Cream', 'Drops'],
+        },
+        { key: 'dar_number', label: 'DAR number', type: 'text' },
+      ],
+    },
   },
   distribution: {
     roles: [
@@ -243,7 +372,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Depot manager',
         description: 'Stock and deliveries at a depot',
-        permissions: ['core.branch.manage'],
+        permissions: ['core.branch.manage', 'inventory.product.manage'],
       },
       {
         name: 'Sales officer',
@@ -262,6 +391,26 @@ export const INDUSTRY_TEMPLATES = {
         account('5340', 'Sales team allowances'),
       ],
     }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('case', 'Case', 'count', null),
+        unit('pack', 'Pack', 'count', null),
+        unit('bag', 'Bag', 'count', null),
+        unit('bottle', 'Bottle', 'count', null),
+      ],
+      categories: [
+        category('Beverages'),
+        category('Snacks and biscuits'),
+        category('Personal care'),
+        category('Home care'),
+        category('Dairy and baby food'),
+      ],
+      customFields: [
+        { key: 'principal', label: 'Principal company', type: 'text' },
+        { key: 'brand', label: 'Brand', type: 'text' },
+      ],
+    },
   },
   manufacturing: {
     roles: [
@@ -269,7 +418,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Production manager',
         description: 'Production orders and material use',
-        permissions: ['core.user.read'],
+        permissions: ['core.user.read', 'inventory.product.manage'],
       },
       STORE_KEEPER,
     ],
@@ -283,6 +432,28 @@ export const INDUSTRY_TEMPLATES = {
       revenue: [account('4110', 'Sales', 'sales')],
       costOfSales: [...MAKER_COSTS, account('5140', 'Factory power and fuel')],
     }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('ton', 'Metric ton', 'weight', '1000', 3),
+        unit('ft', 'Foot', 'length', '0.3048', 2),
+        unit('sqm', 'Square metre', 'area', '1', 2),
+        unit('sqft', 'Square foot', 'area', '0.092903', 2),
+        unit('drum', 'Drum', 'count', null),
+        unit('bag', 'Bag', 'count', null),
+      ],
+      categories: [
+        category('Raw materials'),
+        category('Components'),
+        category('Finished goods'),
+        category('Spare parts'),
+        category('Consumables'),
+      ],
+      customFields: [
+        { key: 'specification', label: 'Specification', type: 'text' },
+        { key: 'grade', label: 'Grade', type: 'text' },
+      ],
+    },
   },
   retail: {
     roles: [
@@ -290,7 +461,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Shop manager',
         description: 'Runs a shop and its staff',
-        permissions: ['core.user.read', 'core.branch.manage'],
+        permissions: ['core.user.read', 'core.branch.manage', 'inventory.product.manage'],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [] },
     ],
@@ -304,16 +475,43 @@ export const INDUSTRY_TEMPLATES = {
         account('5340', 'Shrinkage and damaged goods'),
       ],
     }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('pack', 'Pack', 'count', null),
+        unit('bottle', 'Bottle', 'count', null),
+        unit('sack', 'Sack', 'count', null),
+        unit('tray', 'Tray', 'count', null),
+      ],
+      categories: [
+        category('Groceries', ['Rice', 'Lentils', 'Oil', 'Spices', 'Flour and sugar']),
+        category('Fresh', ['Fruits', 'Vegetables', 'Fish and meat', 'Eggs']),
+        category('Beverages'),
+        category('Snacks'),
+        category('Personal care'),
+        category('Household'),
+      ],
+      customFields: [{ key: 'brand', label: 'Brand', type: 'text' }],
+    },
   },
   other: {
     roles: [
       ACCOUNTANT,
-      { name: 'Manager', description: 'Runs day-to-day work', permissions: ['core.user.read'] },
+      {
+        name: 'Manager',
+        description: 'Runs day-to-day work',
+        permissions: ['core.user.read', 'inventory.product.manage'],
+      },
     ],
     chart: standardChart({
       stock: TRADER_STOCK,
       revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Service income')],
       costOfSales: [COGS],
     }),
+    catalog: {
+      units: COMMON_UNITS,
+      categories: [category('General')],
+      customFields: [],
+    },
   },
 } satisfies Record<Industry, IndustryTemplate>;
