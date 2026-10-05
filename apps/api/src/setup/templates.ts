@@ -85,10 +85,13 @@ const ACCOUNTANT: RoleTemplate = {
   ],
 };
 
+// Step 13: the people who keep the stock adjust it and move it between warehouses
+const STOCK_WORK = ['inventory.stock.adjust', 'inventory.stock.transfer'] as const;
+
 const STORE_KEEPER: RoleTemplate = {
   name: 'Store keeper',
   description: 'Receives goods and writes GRNs',
-  permissions: ['inventory.product.manage'],
+  permissions: ['inventory.product.manage', ...STOCK_WORK],
 };
 
 function group(
@@ -313,7 +316,12 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Depot manager',
         description: 'Stock by batch and expiry at a depot',
-        permissions: ['core.branch.manage', 'inventory.product.manage'],
+        permissions: [
+          'core.branch.manage',
+          'inventory.product.manage',
+          'inventory.warehouse.manage',
+          ...STOCK_WORK,
+        ],
       },
       { name: 'Sales representative', description: 'Orders from pharmacies', permissions: [] },
     ],
@@ -372,7 +380,12 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Depot manager',
         description: 'Stock and deliveries at a depot',
-        permissions: ['core.branch.manage', 'inventory.product.manage'],
+        permissions: [
+          'core.branch.manage',
+          'inventory.product.manage',
+          'inventory.warehouse.manage',
+          ...STOCK_WORK,
+        ],
       },
       {
         name: 'Sales officer',
@@ -418,7 +431,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Production manager',
         description: 'Production orders and material use',
-        permissions: ['core.user.read', 'inventory.product.manage'],
+        permissions: ['core.user.read', 'inventory.product.manage', ...STOCK_WORK],
       },
       STORE_KEEPER,
     ],
@@ -461,7 +474,13 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Shop manager',
         description: 'Runs a shop and its staff',
-        permissions: ['core.user.read', 'core.branch.manage', 'inventory.product.manage'],
+        permissions: [
+          'core.user.read',
+          'core.branch.manage',
+          'inventory.product.manage',
+          'inventory.warehouse.manage',
+          ...STOCK_WORK,
+        ],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [] },
     ],
@@ -500,7 +519,12 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Manager',
         description: 'Runs day-to-day work',
-        permissions: ['core.user.read', 'inventory.product.manage'],
+        permissions: [
+          'core.user.read',
+          'inventory.product.manage',
+          'inventory.warehouse.manage',
+          ...STOCK_WORK,
+        ],
       },
     ],
     chart: standardChart({

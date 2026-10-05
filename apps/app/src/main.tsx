@@ -1,6 +1,6 @@
 import './styles.css';
 // প্রথম render-এর আগে i18n init — নাহলে প্রথম ঝলকে key ("nav.overview") দেখা যেত
-import '@omnivo/i18n';
+import { languageReady } from '@omnivo/i18n';
 
 import { Toaster } from '@omnivo/ui';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -30,8 +30,9 @@ if (!rootElement) {
   throw new Error('Root element #root is missing from index.html');
 }
 
-// worker চালু হওয়ার পরে render — নাহলে প্রথম request (session ফেরানো) mock-এর আগেই বেরিয়ে যেত
-void enableMocking().then(() => {
+// worker চালু হওয়ার পরে render — নাহলে প্রথম request (session ফেরানো) mock-এর আগেই বেরিয়ে যেত.
+// And after this device's language has arrived (Bangla is its own chunk since step 13).
+void Promise.all([enableMocking(), languageReady]).then(() => {
   createRoot(rootElement).render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>

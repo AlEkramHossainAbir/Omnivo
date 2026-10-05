@@ -4,6 +4,7 @@ import { createDb, type Db } from '@omnivo/db';
 import { createWithTenant } from '../common/tenant/with-tenant.js';
 import type { WorkerConfig } from '../config.js';
 import { CONFIG, DB, RELAY_DB, STORAGE_CONFIG, WITH_TENANT } from '../infra/tokens.js';
+import { LowStockHandler } from '../inventory/low-stock.handler.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
 import { MailService } from '../mail/mail.service.js';
@@ -58,6 +59,7 @@ export class WorkerModule implements OnApplicationShutdown {
         // The import gives new products their codes, like the API does
         NumberingService,
         ProductImportHandler,
+        LowStockHandler,
       ],
     };
   }

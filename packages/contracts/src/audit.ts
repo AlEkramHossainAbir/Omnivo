@@ -62,6 +62,20 @@ export const AUDIT_ACTIONS = [
   'product.restored',
   'product.deleted',
   'product.imported',
+  'warehouse.created',
+  'warehouse.updated',
+  'warehouse.archived',
+  'warehouse.restored',
+  'stock_adjustment.created',
+  'stock_adjustment.updated',
+  'stock_adjustment.deleted',
+  'stock_adjustment.posted',
+  'stock_transfer.created',
+  'stock_transfer.updated',
+  'stock_transfer.deleted',
+  'stock_transfer.sent',
+  'stock_transfer.received',
+  'reorder_level.changed',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -86,6 +100,10 @@ export const AUDIT_ENTITY_TYPES = [
   'custom_field',
   'product',
   'product_import',
+  'warehouse',
+  'stock_adjustment',
+  'stock_transfer',
+  'reorder_level',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

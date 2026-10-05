@@ -140,7 +140,10 @@ describe('starting the setup', () => {
         ],
       ],
       ['Merchandiser', ['core.user.read', 'inventory.product.manage']],
-      ['Store keeper', ['inventory.product.manage']],
+      [
+        'Store keeper',
+        ['inventory.product.manage', 'inventory.stock.adjust', 'inventory.stock.transfer'],
+      ],
     ]);
     const chart = accountListSchema.parse((await send('GET', '/accounts')).json());
     expect(chart.items.find((account) => account.code === '4110')).toMatchObject({

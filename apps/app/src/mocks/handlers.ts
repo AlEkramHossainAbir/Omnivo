@@ -71,6 +71,22 @@ import {
 } from './product-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
+  batchReport,
+  cardOf,
+  findAdjustment,
+  findTransfer,
+  listStock,
+  movementsOf,
+  postAdjustment,
+  receiveTransfer,
+  reorderReport,
+  saveAdjustment,
+  saveTransfer,
+  sendTransfer,
+  setLevel,
+  warehouse as newWarehouse,
+} from './stock-data';
+import {
   assertCodeFree,
   checkVersion,
   dataOf,
@@ -131,6 +147,7 @@ function guarded(resolver: HttpResponseResolver): HttpResponseResolver {
 // audit-এর "আগের মান" — ফর্মের ঘরগুলো
 function editable(settings: Settings) {
   return {
+    allowNegativeStock: settings.allowNegativeStock,
     companyName: settings.companyName,
     legalName: settings.legalName,
     bin: settings.bin,
@@ -1531,6 +1548,319 @@ export const handlers = [
       const item = current().catalog.imports.find((candidate) => candidate.id === id);
       if (!item) throw new MockProblem(404, 'not_found');
       return reply(routes.productImports.get, { ...toImport(item), errors: item.errors });
+    }),
+  ),
+
+  // --- Warehouses and stock (step 13) ----------------------------------------------------------
+
+  mock(routes.warehouses.list, ({ request }) => {
+    const { status } = readQuery(routes.warehouses.list.query, request);
+    const items = current()
+      .stock.warehouses.filter((place) => (status === 'active') === (place.archivedAt === null))
+      .toSorted((a, b) => a.code.localeCompare(b.code));
+    return reply(routes.warehouses.list, { items });
+  }),
+
+  mock(
+    routes.warehouses.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.warehouses.create.body, request);
+      const data = current();
+      if (data.stock.warehouses.some((place) => place.code === body.code)) {
+        throw new MockProblem(409, 'warehouse_code_taken', { code: ['warehouse_code_taken'] });
+      }
+      const created = newWarehouse(body.branchId, body.code, body.name, body.address);
+      data.stock.warehouses.push(created);
+      record(data, 'warehouse.created', 'warehouse', created.id, diff({}, { code: created.code }));
+      return reply(routes.warehouses.create, created);
+    }),
+  ),
+
+  mock(
+    routes.warehouses.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.warehouses.update.params.parse(params);
+      const { version, ...fields } = await readBody(routes.warehouses.update.body, request);
+      const data = current();
+      const target = data.stock.warehouses.find((place) => place.id === id);
+      if (!target) throw new MockProblem(404, 'not_found');
+      checkVersion(target.version, version);
+      if (data.stock.warehouses.some((place) => place.code === fields.code && place.id !== id)) {
+        throw new MockProblem(409, 'warehouse_code_taken', { code: ['warehouse_code_taken'] });
+      }
+      Object.assign(target, fields, { version: version + 1, updatedAt: new Date().toISOString() });
+      record(data, 'warehouse.updated', 'warehouse', id);
+      return reply(routes.warehouses.update, target);
+    }),
+  ),
+
+  ...(['archive', 'restore'] as const).map((action) =>
+    mock(
+      routes.warehouses[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.warehouses[action].params.parse(params);
+        const { version } = await readBody(routes.warehouses[action].body, request);
+        const data = current();
+        const target = data.stock.warehouses.find((place) => place.id === id);
+        if (!target) throw new MockProblem(404, 'not_found');
+        checkVersion(target.version, version);
+        if (action === 'archive') {
+          const holds = data.stock.movements
+            .filter((movement) => movement.warehouseId === id)
+            .reduce((sum, movement) => sum + Number(movement.quantity), 0);
+          if (holds !== 0) throw new MockProblem(409, 'warehouse_has_stock');
+        }
+        Object.assign(target, {
+          archivedAt: action === 'archive' ? new Date().toISOString() : null,
+          version: version + 1,
+        });
+        record(
+          data,
+          action === 'archive' ? 'warehouse.archived' : 'warehouse.restored',
+          'warehouse',
+          id,
+        );
+        return reply(routes.warehouses[action], target);
+      }),
+    ),
+  ),
+
+  mock(routes.stock.list, async ({ request }) => {
+    const query = readQuery(routes.stock.list.query, request);
+    const start = query.cursor === undefined ? 0 : Number(query.cursor);
+    const all = listStock(current(), query);
+    const items = all.slice(start, start + query.limit);
+    const end = start + items.length;
+    if (start > 0) await delay(300);
+    return reply(routes.stock.list, { items, nextCursor: end < all.length ? String(end) : null });
+  }),
+
+  mock(
+    routes.stock.card,
+    guarded(({ params }) => {
+      const { id } = routes.stock.card.params.parse(params);
+      return reply(routes.stock.card, cardOf(current(), id));
+    }),
+  ),
+
+  mock(
+    routes.stock.movements,
+    guarded(({ request, params }) => {
+      const { id } = routes.stock.movements.params.parse(params);
+      const query = readQuery(routes.stock.movements.query, request);
+      const { items, openingBalance, closingBalance } = movementsOf(current(), id, query);
+      return reply(routes.stock.movements, {
+        items,
+        nextCursor: null,
+        openingBalance,
+        closingBalance,
+      });
+    }),
+  ),
+
+  mock(routes.stock.batches, ({ request }) => {
+    const query = readQuery(routes.stock.batches.query, request);
+    return reply(routes.stock.batches, { items: batchReport(current(), query), nextCursor: null });
+  }),
+
+  mock(routes.stock.reorder, ({ request }) => {
+    const query = readQuery(routes.stock.reorder.query, request);
+    return reply(routes.stock.reorder, {
+      items: reorderReport(current(), query.warehouseId),
+      nextCursor: null,
+    });
+  }),
+
+  mock(
+    routes.stock.setReorderLevel,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.stock.setReorderLevel.body, request);
+      const data = current();
+      const saved = setLevel(data, body);
+      record(data, 'reorder_level.changed', 'reorder_level', body.variantId);
+      return reply(routes.stock.setReorderLevel, saved);
+    }),
+  ),
+
+  mock(routes.stockAdjustments.list, ({ request }) => {
+    const query = readQuery(routes.stockAdjustments.list.query, request);
+    const items = current()
+      .stock.adjustments.filter(
+        (adjustment) =>
+          (query.status === undefined || adjustment.status === query.status) &&
+          (query.warehouseId === undefined || adjustment.warehouseId === query.warehouseId),
+      )
+      // A whole adjustment is a summary with its lines: the client's parse drops them
+      .toSorted((a, b) => b.date.localeCompare(a.date));
+    return reply(routes.stockAdjustments.list, { items, nextCursor: null });
+  }),
+
+  mock(
+    routes.stockAdjustments.get,
+    guarded(({ params }) => {
+      const { id } = routes.stockAdjustments.get.params.parse(params);
+      return reply(routes.stockAdjustments.get, findAdjustment(current(), id));
+    }),
+  ),
+
+  mock(
+    routes.stockAdjustments.create,
+    guarded(async ({ request }) => {
+      const { post, ...input } = await readBody(routes.stockAdjustments.create.body, request);
+      const data = current();
+      const draft = saveAdjustment(data, input);
+      record(data, 'stock_adjustment.created', 'stock_adjustment', draft.id);
+      const saved = post ? postAdjustment(data, draft) : draft;
+      await delay();
+      return reply(routes.stockAdjustments.create, saved);
+    }),
+  ),
+
+  mock(
+    routes.stockAdjustments.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.stockAdjustments.update.params.parse(params);
+      const { post, version, ...input } = await readBody(
+        routes.stockAdjustments.update.body,
+        request,
+      );
+      const data = current();
+      const target = findAdjustment(data, id);
+      if (target.status !== 'draft') throw new MockProblem(409, 'stock_not_draft');
+      checkVersion(target.version, version);
+      const draft = saveAdjustment(data, input, target);
+      record(data, 'stock_adjustment.updated', 'stock_adjustment', id);
+      const saved = post ? postAdjustment(data, draft) : draft;
+      await delay();
+      return reply(routes.stockAdjustments.update, saved);
+    }),
+  ),
+
+  mock(
+    routes.stockAdjustments.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.stockAdjustments.remove.params.parse(params);
+      const { version } = readQuery(routes.stockAdjustments.remove.query, request);
+      const data = current();
+      const target = findAdjustment(data, id);
+      if (target.status !== 'draft') throw new MockProblem(409, 'stock_not_draft');
+      checkVersion(target.version, version);
+      data.stock.adjustments = data.stock.adjustments.filter((row) => row.id !== id);
+      record(data, 'stock_adjustment.deleted', 'stock_adjustment', id);
+      return reply(routes.stockAdjustments.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.stockAdjustments.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.stockAdjustments.post.params.parse(params);
+      const { version } = await readBody(routes.stockAdjustments.post.body, request);
+      const data = current();
+      const target = findAdjustment(data, id);
+      checkVersion(target.version, version);
+      const posted = postAdjustment(data, target);
+      record(data, 'stock_adjustment.posted', 'stock_adjustment', id);
+      return reply(routes.stockAdjustments.post, posted);
+    }),
+  ),
+
+  mock(routes.stockTransfers.list, ({ request }) => {
+    const query = readQuery(routes.stockTransfers.list.query, request);
+    const items = current()
+      .stock.transfers.filter(
+        (transfer) =>
+          (query.status === undefined || transfer.status === query.status) &&
+          (query.warehouseId === undefined ||
+            transfer.fromWarehouseId === query.warehouseId ||
+            transfer.toWarehouseId === query.warehouseId),
+      )
+      .toSorted((a, b) => b.sentOn.localeCompare(a.sentOn));
+    return reply(routes.stockTransfers.list, { items, nextCursor: null });
+  }),
+
+  mock(
+    routes.stockTransfers.get,
+    guarded(({ params }) => {
+      const { id } = routes.stockTransfers.get.params.parse(params);
+      return reply(routes.stockTransfers.get, findTransfer(current(), id));
+    }),
+  ),
+
+  mock(
+    routes.stockTransfers.create,
+    guarded(async ({ request }) => {
+      const { send, ...input } = await readBody(routes.stockTransfers.create.body, request);
+      const data = current();
+      const draft = saveTransfer(data, input);
+      record(data, 'stock_transfer.created', 'stock_transfer', draft.id);
+      const saved = send ? sendTransfer(data, draft) : draft;
+      await delay();
+      return reply(routes.stockTransfers.create, saved);
+    }),
+  ),
+
+  mock(
+    routes.stockTransfers.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.stockTransfers.update.params.parse(params);
+      const { send, version, ...input } = await readBody(
+        routes.stockTransfers.update.body,
+        request,
+      );
+      const data = current();
+      const target = findTransfer(data, id);
+      if (target.status !== 'draft') throw new MockProblem(409, 'stock_not_draft');
+      checkVersion(target.version, version);
+      const draft = saveTransfer(data, input, target);
+      record(data, 'stock_transfer.updated', 'stock_transfer', id);
+      const saved = send ? sendTransfer(data, draft) : draft;
+      await delay();
+      return reply(routes.stockTransfers.update, saved);
+    }),
+  ),
+
+  mock(
+    routes.stockTransfers.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.stockTransfers.remove.params.parse(params);
+      const { version } = readQuery(routes.stockTransfers.remove.query, request);
+      const data = current();
+      const target = findTransfer(data, id);
+      if (target.status !== 'draft') throw new MockProblem(409, 'stock_not_draft');
+      checkVersion(target.version, version);
+      data.stock.transfers = data.stock.transfers.filter((row) => row.id !== id);
+      record(data, 'stock_transfer.deleted', 'stock_transfer', id);
+      return reply(routes.stockTransfers.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.stockTransfers.send,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.stockTransfers.send.params.parse(params);
+      const { version } = await readBody(routes.stockTransfers.send.body, request);
+      const data = current();
+      const target = findTransfer(data, id);
+      checkVersion(target.version, version);
+      const sent = sendTransfer(data, target);
+      record(data, 'stock_transfer.sent', 'stock_transfer', id);
+      return reply(routes.stockTransfers.send, sent);
+    }),
+  ),
+
+  mock(
+    routes.stockTransfers.receive,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.stockTransfers.receive.params.parse(params);
+      const { version, ...input } = await readBody(routes.stockTransfers.receive.body, request);
+      const data = current();
+      const target = findTransfer(data, id);
+      checkVersion(target.version, version);
+      const received = receiveTransfer(data, target, input);
+      record(data, 'stock_transfer.received', 'stock_transfer', id);
+      await delay();
+      return reply(routes.stockTransfers.receive, received);
     }),
   ),
 ];

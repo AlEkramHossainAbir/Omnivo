@@ -8,6 +8,7 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // report.ready / report.failed: params { report, format } — the export the person asked for
 // import.done: params { file, count } — count = products made; import.failed: { file, count } —
 // count = problems found
+// stock.low: params { warehouse, count } — count = variants that fell to their reorder level
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
@@ -16,6 +17,7 @@ export const NOTIFICATION_TYPES = [
   'report.failed',
   'import.done',
   'import.failed',
+  'stock.low',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

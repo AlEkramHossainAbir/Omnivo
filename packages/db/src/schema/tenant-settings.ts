@@ -1,6 +1,6 @@
 import { CURRENCIES, DEFAULT_SETTINGS } from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
-import { check, foreignKey, pgTable, smallint, text, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, foreignKey, pgTable, smallint, text, uuid } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
 import { attachments } from './attachments.js';
 import { tenants } from './tenants.js';
@@ -27,6 +27,8 @@ export const tenantSettings = pgTable(
       .default(DEFAULT_SETTINGS.fiscalYearStartMonth),
     timezone: text('timezone').notNull().default(DEFAULT_SETTINGS.timezone),
     logoAttachmentId: uuid('logo_attachment_id'),
+    // Step 13: may an untracked product's stock go below zero? Read by migration 0022's trigger.
+    allowNegativeStock: boolean('allow_negative_stock').notNull().default(false),
     createdAt: baseColumns().createdAt,
     updatedAt: baseColumns().updatedAt,
     updatedBy: baseColumns().updatedBy,

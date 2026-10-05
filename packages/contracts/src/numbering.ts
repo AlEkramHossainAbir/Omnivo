@@ -13,6 +13,8 @@ export const DOCUMENT_TYPES = [
   'inventory.receipt',
   'accounting.journal',
   'inventory.product',
+  'inventory.adjustment',
+  'inventory.transfer',
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -34,6 +36,8 @@ const DEFAULT_PREFIXES = {
   'inventory.receipt': 'GRN',
   'accounting.journal': 'JV',
   'inventory.product': 'P',
+  'inventory.adjustment': 'ADJ',
+  'inventory.transfer': 'TRF',
 } satisfies Record<DocumentType, string>;
 
 // টেন্যান্ট কিছু না বদলালে এই ছাঁচ — DB-তে রো লেখা হয় শুধু প্রথম বদলের সময়।

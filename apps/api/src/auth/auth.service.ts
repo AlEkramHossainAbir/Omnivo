@@ -25,6 +25,7 @@ import {
   tenantSettings,
   tenants,
   users,
+  warehouses,
 } from '@omnivo/db';
 
 import { audit, created } from '../common/audit/audit.js';
@@ -423,9 +424,20 @@ export class AuthService {
       // settings রো (বাকি সব DB-র ডিফল্ট: BDT, জুলাই, Asia/Dhaka) আর একটা ব্রাঞ্চ — প্রতিটা
       // workspace-এ অন্তত একটা চালু ব্রাঞ্চ থাকে, archive-এর নিয়ম সেটা ধরে রাখে (branches.service.ts)
       await tx.insert(tenantSettings).values({ tenantId: tenant.id, updatedBy: userId });
-      await tx
+      const [branch] = await tx
         .insert(branches)
-        .values({ tenantId: tenant.id, code: 'HO', name: 'Head office', createdBy: userId });
+        .values({ tenantId: tenant.id, code: 'HO', name: 'Head office', createdBy: userId })
+        .returning({ id: branches.id });
+      if (!branch) throw new Error('Branch insert returned no row');
+      // And a first warehouse in it (step 13): stock always lives in a warehouse, and a new
+      // company's opening stock needs somewhere to go. Migration 0022 gave older workspaces theirs.
+      await tx.insert(warehouses).values({
+        tenantId: tenant.id,
+        branchId: branch.id,
+        code: 'MAIN',
+        name: 'Main store',
+        createdBy: userId,
+      });
 
       await audit(tx, {
         action: 'workspace.created',

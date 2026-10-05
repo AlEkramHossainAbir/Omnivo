@@ -307,6 +307,18 @@ export function garmentsCatalog(): MockCatalog {
       price: '6.0000',
       packs: [['carton', '500.000000']],
     }),
+    // Step 13: a machine tracked by its serial plate, for the serial number screens
+    {
+      ...product(catalog, {
+        code: 'P-00005',
+        name: 'Juki DDL-8000A lockstitch machine',
+        category: 'Finished garments',
+        base: 'pcs',
+        price: null,
+      }),
+      categoryId: null,
+      tracking: 'serial',
+    },
   ];
   const generated = Array.from({ length: 10_000 }, (_, index) => {
     const garment = GARMENTS[index % GARMENTS.length] ?? 'T-shirt';
@@ -323,7 +335,7 @@ export function garmentsCatalog(): MockCatalog {
       updatedMinutesAgo: 60 + index,
     });
   });
-  return { ...catalog, products: [...named, ...generated], lastCode: 4 };
+  return { ...catalog, products: [...named, ...generated], lastCode: 5 };
 }
 
 export function pharmaCatalog(): MockCatalog {

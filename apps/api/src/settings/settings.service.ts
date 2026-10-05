@@ -185,5 +185,6 @@ function pickEditable(settings: typeof tenantSettings.$inferSelect) {
     baseCurrency: settings.baseCurrency,
     fiscalYearStartMonth: settings.fiscalYearStartMonth,
     timezone: settings.timezone,
+    allowNegativeStock: settings.allowNegativeStock,
   };
 }

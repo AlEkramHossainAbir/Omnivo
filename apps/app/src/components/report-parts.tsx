@@ -19,7 +19,6 @@ import {
 import { useLocale } from '@omnivo/i18n';
 import {
   Button,
-  Card,
   cn,
   DatePicker,
   DropdownMenu,
@@ -205,27 +204,6 @@ export function BalancePill({ difference }: { difference: string }) {
     <Pill tone="crit" icon={Alert02Icon}>
       {t('reports.outBy', { amount: amount(balanceSide(difference).amount) })}
     </Pill>
-  );
-}
-
-// CLAUDE.md → KPI strip: one card split by rules, a caption, a 26px value and an optional line
-export function KpiStrip({
-  cells,
-}: {
-  cells: { label: string; value: string; sub?: string | undefined }[];
-}) {
-  return (
-    <Card className="grid grid-cols-1 divide-y divide-line sm:grid-cols-3 sm:divide-x sm:divide-y-0">
-      {cells.map((cell) => (
-        <div key={cell.label} className="grid gap-1 px-5 py-4">
-          <span className="text-caption text-ink-3">{cell.label}</span>
-          <span className="text-kpi tracking-[-0.03em] tabular-nums">{cell.value}</span>
-          {cell.sub !== undefined && (
-            <span className="text-caption text-ink-3 tabular-nums">{cell.sub}</span>
-          )}
-        </div>
-      ))}
-    </Card>
   );
 }
 

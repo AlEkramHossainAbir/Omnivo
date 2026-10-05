@@ -7,7 +7,11 @@ import {
   type ProductStatus,
   type ProfitAndLossQuery,
   routes,
+  type StockDocumentStatus,
+  type StockFilter,
+  type TransferStatus,
   type TrialBalanceQuery,
+  type WarehouseStatus,
 } from '@omnivo/contracts';
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
 
@@ -303,5 +307,185 @@ export function productImportQuery(tenantId: string, importId: string) {
   return queryOptions({
     queryKey: ['products', tenantId, 'imports', importId],
     queryFn: () => call(routes.productImports.get, { params: { id: importId } }),
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Warehouses and stock (step 13). Every stock query starts with ['stock', tenantId]: posting an
+// adjustment or a transfer changes the stock list, the cards, the reports and the documents, and
+// one invalidate refreshes them all.
+
+// The warehouses page lists them; every stock page and form picks from them
+export function warehousesQuery(tenantId: string, status: WarehouseStatus) {
+  return queryOptions({
+    queryKey: ['warehouses', tenantId, status],
+    queryFn: async () => (await call(routes.warehouses.list, { query: { status } })).items,
+  });
+}
+
+export interface StockListFilter {
+  search: string;
+  warehouseId: string;
+  categoryId: string;
+  filter: StockFilter;
+}
+
+export function stockListQuery(tenantId: string, filter: StockListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['stock', tenantId, 'list', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stock.list, {
+        query: {
+          limit: 50,
+          filter: filter.filter,
+          ...(filter.search !== '' && { search: filter.search }),
+          ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
+          ...(filter.categoryId !== '' && { categoryId: filter.categoryId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// The "Add items" search of a document form: the first 20 matches, with the stock in the form's
+// warehouse
+export function stockSearchQuery(tenantId: string, search: string, warehouseId: string) {
+  return queryOptions({
+    queryKey: ['stock', tenantId, 'search', warehouseId, search],
+    queryFn: async () =>
+      (
+        await call(routes.stock.list, {
+          query: {
+            limit: 20,
+            filter: 'all',
+            ...(search !== '' && { search }),
+            ...(warehouseId !== '' && { warehouseId }),
+          },
+        })
+      ).items,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function stockCardQuery(tenantId: string, variantId: string) {
+  return queryOptions({
+    queryKey: ['stock', tenantId, 'card', variantId],
+    queryFn: () => call(routes.stock.card, { params: { id: variantId } }),
+    retry: false,
+  });
+}
+
+export function stockMovementsQuery(
+  tenantId: string,
+  variantId: string,
+  filter: { warehouseId: string; from: string; to: string },
+) {
+  return infiniteQueryOptions({
+    queryKey: ['stock', tenantId, 'movements', variantId, filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stock.movements, {
+        params: { id: variantId },
+        query: {
+          limit: 100,
+          ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
+          ...(filter.from !== '' && { from: filter.from }),
+          ...(filter.to !== '' && { to: filter.to }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function batchStockQuery(
+  tenantId: string,
+  filter: { warehouseId: string; expiresWithin: number | null },
+) {
+  return infiniteQueryOptions({
+    queryKey: ['stock', tenantId, 'batches', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stock.batches, {
+        query: {
+          limit: 100,
+          ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
+          ...(filter.expiresWithin !== null && { expiresWithin: filter.expiresWithin }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function reorderQuery(tenantId: string, warehouseId: string) {
+  return infiniteQueryOptions({
+    queryKey: ['stock', tenantId, 'reorder', warehouseId],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stock.reorder, {
+        query: {
+          limit: 100,
+          ...(warehouseId !== '' && { warehouseId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function stockAdjustmentsQuery(tenantId: string, status: StockDocumentStatus | undefined) {
+  return infiniteQueryOptions({
+    queryKey: ['stock', tenantId, 'adjustments', status ?? 'all'],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stockAdjustments.list, {
+        query: {
+          limit: 50,
+          ...(status !== undefined && { status }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function stockAdjustmentQuery(tenantId: string, adjustmentId: string) {
+  return queryOptions({
+    queryKey: ['stock', tenantId, 'adjustment', adjustmentId],
+    queryFn: () => call(routes.stockAdjustments.get, { params: { id: adjustmentId } }),
+    retry: false,
+  });
+}
+
+export function stockTransfersQuery(tenantId: string, status: TransferStatus | undefined) {
+  return infiniteQueryOptions({
+    queryKey: ['stock', tenantId, 'transfers', status ?? 'all'],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stockTransfers.list, {
+        query: {
+          limit: 50,
+          ...(status !== undefined && { status }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function stockTransferQuery(tenantId: string, transferId: string) {
+  return queryOptions({
+    queryKey: ['stock', tenantId, 'transfer', transferId],
+    queryFn: () => call(routes.stockTransfers.get, { params: { id: transferId } }),
+    retry: false,
   });
 }

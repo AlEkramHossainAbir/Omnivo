@@ -16,6 +16,9 @@ export const PERMISSION_KEYS = [
   'accounting.period.close',
   'accounting.report.read',
   'inventory.product.manage',
+  'inventory.warehouse.manage',
+  'inventory.stock.adjust',
+  'inventory.stock.transfer',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -46,4 +49,7 @@ export const PERMISSION_GROUP_OF = {
   'accounting.period.close': 'accounting',
   'accounting.report.read': 'accounting',
   'inventory.product.manage': 'inventory',
+  'inventory.warehouse.manage': 'inventory',
+  'inventory.stock.adjust': 'inventory',
+  'inventory.stock.transfer': 'inventory',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

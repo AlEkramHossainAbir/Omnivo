@@ -30,6 +30,7 @@ const TARGET = {
   'report.failed': '/reports/exports',
   'import.done': '/products/imports',
   'import.failed': '/products/imports',
+  'stock.low': '/stock/reorder',
 } as const satisfies Record<NotificationType, string>;
 
 // The badge stops at 9+: a two-digit count would not fit the 18px circle, and past nine the exact

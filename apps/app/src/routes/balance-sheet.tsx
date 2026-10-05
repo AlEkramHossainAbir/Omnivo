@@ -1,7 +1,7 @@
 import { PieChartIcon } from '@hugeicons/core-free-icons';
 import { addMoney, type BalanceSheetQuery, fiscalYearOf, subtractMoney } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { DatePicker, EmptyState, Field, PageHeader, SelectField } from '@omnivo/ui';
+import { DatePicker, EmptyState, Field, KpiStrip, PageHeader, SelectField } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -9,7 +9,6 @@ import { useIsoDate } from '../components/journal-parts';
 import {
   BalancePill,
   ExportMenu,
-  KpiStrip,
   sectionRows,
   type StatementRow,
   StatementTable,

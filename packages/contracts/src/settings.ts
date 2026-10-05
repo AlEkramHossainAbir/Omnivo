@@ -63,6 +63,11 @@ export const settingsSchema = z.object({
   timezone: z.string(),
   // url: কিছুক্ষণের জন্য সই করা (presigned) ঠিকানা — <img src>-এ সরাসরি বসে
   logo: z.object({ attachmentId: z.uuid(), url: z.url() }).nullable(),
+  // Off (the default): stock never goes below zero — a sale or an adjustment that takes more than
+  // is there is refused. On: an untracked product may go negative (the shelf had it, the books
+  // did not yet). Batches and serial numbers never go negative: a batch or an IMEI either is in
+  // the warehouse or is not.
+  allowNegativeStock: z.boolean(),
   version: z.number().int(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
@@ -79,6 +84,7 @@ export const updateSettingsInputSchema = z.object({
   baseCurrency: z.enum(CURRENCIES),
   fiscalYearStartMonth: z.number().int().min(1).max(12),
   timezone: z.string().refine(isTimeZone, errorCode('timezone_invalid')),
+  allowNegativeStock: z.boolean(),
 });
 export type UpdateSettingsInput = z.infer<typeof updateSettingsInputSchema>;
 

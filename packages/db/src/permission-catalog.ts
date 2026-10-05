@@ -23,7 +23,10 @@ const DESCRIPTIONS = {
   'accounting.report.read':
     'View the trial balance, profit and loss and balance sheet, and export them to Excel or PDF',
   'inventory.product.manage':
-    'Add, edit, archive and import products, and manage their categories and units',
+    'Add, edit, archive and import products, manage their categories and units, and set reorder levels',
+  'inventory.warehouse.manage': 'Add, edit and archive warehouses',
+  'inventory.stock.adjust': 'Write and post stock adjustments, including opening stock',
+  'inventory.stock.transfer': 'Send stock to another warehouse and receive it there',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

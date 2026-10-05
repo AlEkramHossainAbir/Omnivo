@@ -90,6 +90,7 @@ function form(settings: Settings) {
     baseCurrency: settings.baseCurrency,
     fiscalYearStartMonth: settings.fiscalYearStartMonth,
     timezone: settings.timezone,
+    allowNegativeStock: settings.allowNegativeStock,
   };
 }
 

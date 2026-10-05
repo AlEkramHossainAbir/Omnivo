@@ -15,6 +15,7 @@ const valid = {
   baseCurrency: 'BDT',
   fiscalYearStartMonth: 7,
   timezone: 'Asia/Dhaka',
+  allowNegativeStock: false,
 } as const;
 
 describe('settings input', () => {

@@ -101,7 +101,12 @@ describe('number series endpoints', () => {
   it('lists every document type with its next number, without using it up', async () => {
     const today = periodOf(todayIn('Asia/Dhaka'), 'fiscal', 7);
     const { items } = numberSeriesListSchema.parse((await send('GET', '/number-series')).json());
-    expect(items.map((series) => series.documentType)).toHaveLength(7);
+    expect(items.map((series) => series.documentType)).toHaveLength(9);
+    // Stock documents (step 13): numbered by fiscal year, like the journal
+    expect(items.find((series) => series.documentType === 'inventory.transfer')).toMatchObject({
+      prefix: 'TRF',
+      nextNumber: `TRF-${today}-0001`,
+    });
     // Product codes (step 12): no year in them, five digits
     expect(items.find((series) => series.documentType === 'inventory.product')).toMatchObject({
       prefix: 'P',

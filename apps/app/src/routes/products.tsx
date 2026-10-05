@@ -26,12 +26,13 @@ import {
 } from '@omnivo/ui';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import { useCan } from '../lib/permissions';
 import { categoryOptions, categoryPath } from '../lib/products';
 import { productCategoriesQuery, productListQuery, unitsQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
+import { useDebounced } from '../lib/use-debounced';
 
 const column = dataTableColumns<ProductSummary>();
 
@@ -41,20 +42,6 @@ function sortOf(state: SortingState): ProductSort {
   if (first?.id === 'code') return first.desc ? '-code' : 'code';
   if (first?.id === 'name') return first.desc ? '-name' : 'name';
   return 'name';
-}
-
-// What the person typed, a moment after they stop: one request per word, not per key
-function useDebounced(value: string, ms = 300): string {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSettled(value);
-    }, ms);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [value, ms]);
-  return settled;
 }
 
 export function ProductsPage() {

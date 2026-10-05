@@ -1,14 +1,13 @@
 import { ChartIncreaseIcon } from '@hugeicons/core-free-icons';
 import type { ProfitAndLossQuery } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { EmptyState, PageHeader, SelectField } from '@omnivo/ui';
+import { EmptyState, KpiStrip, PageHeader, SelectField } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 
 import { useIsoDate } from '../components/journal-parts';
 import {
   ExportMenu,
-  KpiStrip,
   PeriodFields,
   sectionRows,
   StatementTable,

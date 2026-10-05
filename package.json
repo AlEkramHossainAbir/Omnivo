@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "lint": "turbo run build --filter=./packages/* && eslint .",
+    "lint": "turbo run build --filter=./packages/* && node --max-old-space-size=4096 node_modules/eslint/bin/eslint.js .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "boundaries": "depcruise apps packages",

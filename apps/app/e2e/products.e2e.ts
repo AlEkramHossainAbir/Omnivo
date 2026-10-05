@@ -59,8 +59,8 @@ test('adds a simple product with a pack, and fills in a standard unit’s size',
   await page.getByRole('button', { name: 'Add product' }).click();
 
   await expect(page.getByText('Poly mailer bag 12x16 added')).toBeVisible();
-  // The next code of the series
-  await expect(page.getByRole('heading', { level: 1, name: 'Edit P-00005' })).toBeVisible();
+  // The next code of the series (the mock's sewing machine of step 13 is P-00005)
+  await expect(page.getByRole('heading', { level: 1, name: 'Edit P-00006' })).toBeVisible();
   await expectNoSideScroll(page);
 });
 

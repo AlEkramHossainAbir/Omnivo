@@ -24,6 +24,12 @@ export const outboxPayloadSchemas = {
   'workspace.catalog_requested': z.object({}),
   // The product_imports row says which file, and who uploaded it
   'product.import_requested': z.object({ importId: z.uuid() }),
+  // A posting took these variants down to their reorder level in this warehouse (step 13). The
+  // worker counts them again when it runs: one that was refilled meanwhile is not reported.
+  'stock.below_reorder': z.object({
+    warehouseId: z.uuid(),
+    variantIds: z.array(z.uuid()).min(1).max(500),
+  }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

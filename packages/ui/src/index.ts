@@ -28,6 +28,7 @@ export {
 } from './components/dropdown-menu.js';
 export { EmptyState } from './components/empty-state.js';
 export {
+  controlBoxClass,
   Field,
   Input,
   Select,
@@ -43,6 +44,7 @@ export {
 } from './components/field.js';
 export { FormAlert } from './components/form-alert.js';
 export { FormField, type FormFieldControlProps } from './components/form-field.js';
+export { KpiStrip } from './components/kpi-strip.js';
 export { Logo } from './components/logo.js';
 export { MoneyInput } from './components/money-input.js';
 export { PageHeader, SectionHeader } from './components/page-header.js';

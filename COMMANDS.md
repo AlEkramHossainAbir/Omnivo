@@ -114,6 +114,10 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d om
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT u.email, x.report, x.format, x.status, x.created_at FROM report_exports x JOIN users u ON u.id = x.requested_by ORDER BY x.id DESC LIMIT 20"
 # closing entries in force (one per closed year)
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, e.number, e.date FROM journal_entries e JOIN tenants t ON t.id = e.tenant_id WHERE e.source = 'year_close' AND NOT EXISTS (SELECT 1 FROM journal_entries r WHERE r.reversal_of_id = e.id)"
+# stock balances that do not match their movements (should print nothing; the trigger keeps them equal)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT b.tenant_id, b.warehouse_id, b.variant_id, b.batch_id, b.quantity, m.total FROM stock_balances b LEFT JOIN LATERAL (SELECT coalesce(sum(quantity), 0) AS total FROM stock_movements m WHERE m.tenant_id = b.tenant_id AND m.warehouse_id = b.warehouse_id AND m.variant_id = b.variant_id AND m.batch_id IS NOT DISTINCT FROM b.batch_id) m ON true WHERE b.quantity <> m.total"
+# transfers still on the road, oldest first
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, s.number, s.sent_on FROM stock_transfers s JOIN tenants t ON t.id = s.tenant_id WHERE s.status = 'in_transit' ORDER BY s.sent_on"
 ```
 
 ## Permission cache (Valkey)

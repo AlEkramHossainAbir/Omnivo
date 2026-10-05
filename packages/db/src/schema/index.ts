@@ -26,3 +26,6 @@ export * from './custom-fields.js';
 export * from './products.js';
 export * from './batches.js';
 export * from './product-imports.js';
+export * from './warehouses.js';
+export * from './stock.js';
+export * from './stock-documents.js';

@@ -199,7 +199,10 @@ Trial Balance, P&L, Balance Sheet (কাঁচা SQL-এ, API আর worker �
 
 #### ধাপ ১৩: স্টক লেজার · ~২ সপ্তাহ
 
-`warehouses`, **`stock_movements` (append-only, কখনো UPDATE নয়)**, stock-on-hand ভিউ, transfer, adjustment, reorder level alert।
+`warehouses` (ব্রাঞ্চের অধীনে), **`stock_movements` (append-only — trigger UPDATE/DELETE আটকায়)**,
+`stock_balances` (trigger দিয়ে রাখা, কোড লেখে না), adjustment (opening stock সহ, draft → posted, `ADJ-…`),
+দুই ধাপের transfer (in transit, ঘাটতি থাকে), batch + expiry + FEFO, serial number, reorder level + বেলের alert,
+workspace সেটিং "negative stock" (ডিফল্ট বন্ধ)। `StockPostingService.post()` — স্টকে ঢোকার একমাত্র পথ।
 
 > ⚠️ সিস্টেম ডিজাইনের ৬ নম্বর ভুল: **কখনো `products.quantity` কলাম রাখবেন না।** স্টক = সব মুভমেন্টের যোগফল। এটা অফলাইন sync-এর জন্যও অপরিহার্য।
 

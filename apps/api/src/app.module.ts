@@ -21,6 +21,7 @@ import type { Config } from './config.js';
 import { DocsController } from './docs/docs.controller.js';
 import { HealthController } from './health/health.controller.js';
 import { InfraModule } from './infra/infra.module.js';
+import { InventoryModule } from './inventory/inventory.module.js';
 import { InvitationsModule } from './invitations/invitations.module.js';
 import { JournalModule } from './journal/journal.module.js';
 import { MembersModule } from './members/members.module.js';
@@ -59,6 +60,7 @@ export class AppModule implements NestModule {
         ReportsModule,
         CustomFieldsModule,
         ProductsModule,
+        InventoryModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Branch, BranchInput, BranchStatus } from '@omnivo/contracts';
-import { branches } from '@omnivo/db';
+import { branches, warehouses } from '@omnivo/db';
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -129,6 +129,27 @@ export class BranchesService {
           409,
           'branch_last_active',
           'A workspace needs at least one active branch.',
+        );
+      }
+      // Step 13: a warehouse lives in a branch. Archive (or move) its warehouses first, so no
+      // stock is left in a branch nobody can pick any more. FOR UPDATE: a warehouse being created in
+      // this branch right now holds the branch FOR SHARE, so one of the two waits for the other.
+      const [warehouse] = await tx
+        .select({ id: warehouses.id })
+        .from(warehouses)
+        .where(
+          and(
+            eq(warehouses.tenantId, tenantId),
+            eq(warehouses.branchId, id),
+            isNull(warehouses.archivedAt),
+          ),
+        )
+        .limit(1);
+      if (warehouse) {
+        throw new AppError(
+          409,
+          'branch_has_warehouses',
+          'Archive or move the warehouses of this branch first.',
         );
       }
 

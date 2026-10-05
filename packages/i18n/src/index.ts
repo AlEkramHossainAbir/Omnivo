@@ -1,6 +1,6 @@
 import './types.js';
 
-export { i18n, isLanguage, LANGUAGES, setLanguage, type Language } from './i18n.js';
+export { i18n, isLanguage, LANGUAGES, languageReady, setLanguage, type Language } from './i18n.js';
 export {
   formatDate,
   formatDateTime,

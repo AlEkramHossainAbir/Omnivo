@@ -21,5 +21,6 @@ export function settingsToForm(settings: Settings): SettingsFormValues {
     baseCurrency: settings.baseCurrency,
     fiscalYearStartMonth: settings.fiscalYearStartMonth,
     timezone: settings.timezone,
+    allowNegativeStock: settings.allowNegativeStock,
   };
 }

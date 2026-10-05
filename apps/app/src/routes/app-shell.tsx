@@ -1,4 +1,5 @@
 import {
+  ArrowDataTransferHorizontalIcon,
   BalanceScaleIcon,
   Book02Icon,
   BookOpen02Icon,
@@ -8,21 +9,26 @@ import {
   FileDownloadIcon,
   FileImportIcon,
   FolderTreeIcon,
+  HourglassIcon,
+  Layers01Icon,
   LayoutGridIcon,
   LeftToRightListNumberIcon,
   Logout01Icon,
   Notebook02Icon,
   PackageIcon,
+  PackageOutOfStockIcon,
   PieChartIcon,
   RulerIcon,
   SecurityCheckIcon,
   Settings02Icon,
   Store01Icon,
   TableIcon,
+  TaskEdit01Icon,
   TextIcon,
   UnfoldMoreIcon,
   UserCircleIcon,
   UserGroupIcon,
+  WarehouseIcon,
   WorkHistoryIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -300,6 +306,28 @@ export function AppShell() {
                 {t('nav.productImports')}
               </NavLink>
             )}
+          </NavGroup>
+          {/* Stock (step 13): everyone reads it — a sales officer checks it before promising a
+              delivery. Adjusting and moving it is checked on the pages and by the API. */}
+          <NavGroup label={t('nav.stock')}>
+            <NavLink to="/stock" icon={Layers01Icon} activeOptions={{ exact: true }}>
+              {t('nav.stockOnHand')}
+            </NavLink>
+            <NavLink to="/stock/adjustments" icon={TaskEdit01Icon}>
+              {t('nav.adjustments')}
+            </NavLink>
+            <NavLink to="/stock/transfers" icon={ArrowDataTransferHorizontalIcon}>
+              {t('nav.transfers')}
+            </NavLink>
+            <NavLink to="/stock/batches" icon={HourglassIcon}>
+              {t('nav.expiry')}
+            </NavLink>
+            <NavLink to="/stock/reorder" icon={PackageOutOfStockIcon}>
+              {t('nav.reorder')}
+            </NavLink>
+            <NavLink to="/warehouses" icon={WarehouseIcon}>
+              {t('nav.warehouses')}
+            </NavLink>
           </NavGroup>
           <NavGroup label={t('nav.workspace')}>
             {(can('core.user.read') || can('core.user.invite')) && (

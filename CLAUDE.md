@@ -330,6 +330,12 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `role="group"` labelled "Line 2". On a wide card (`@3xl`) the rows share one grid template with the header and
   the totals row, and each control's label is `sr-only`; on a narrow card the labels show and debit/credit sit
   side by side. Totals row on `subtle` with a `good` "Balanced" or `crit` "Out by" pill.
+- **Stock line rows (adjustments, transfers):** a card that is a container (`@container`); one grid template for a
+  caption header and every row on a wide card (`@3xl`): item (name, SKU, stock here), unit, quantity (with
+  "= 72 pcs" under it), batch or serial numbers, remove. On a narrow card each control shows its label. Lines are
+  added with the "Add items" dialog (search or scan; Enter adds the only match; the dialog stays open).
+- **Serial number box:** the text area's look, `Geist Mono`, one serial number per line.
+- **Expiry pill:** expired = `crit`, 30 days or less = `warn` ("12 days left"), later = the date alone.
 - **Text area:** the input box, three rows tall, resizes vertically only.
 - **Stepper (wizards):** numbered 26px circles, which is valid because the steps are a
   real sequence. The current step has a `brand` border and ring. Done steps are filled
@@ -357,6 +363,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (journal entries, ledgers, opening balances and the financial statements) show 2
   decimals, because their totals must visibly add up; dashboards and lists stay without
   decimals.
+- **Quantities:** decimal strings, never numbers, shown with the unit's decimals and code (`72 pcs`, `2.74 m`).
+  Stock is always counted in the product's base unit.
 - **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. In Bangla, `২৩ সেপ, ২০২৬`
   and `সেপ্টেম্বর ২০২৬`. The fiscal year defaults to July – June.
 - **Language:** every user-facing string goes through `t()` from `@omnivo/i18n`, and

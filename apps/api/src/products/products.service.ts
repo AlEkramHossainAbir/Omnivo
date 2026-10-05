@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  type ErrorCode,
   type Product,
   type ProductInput,
   type ProductPage,
@@ -13,6 +14,7 @@ import {
   products,
   productUnits,
   productVariants,
+  stockMovements,
   tenantSettings,
   units,
 } from '@omnivo/db';
@@ -42,6 +44,18 @@ import {
 } from './product-write.js';
 
 type ProductRow = typeof products.$inferSelect;
+
+// Rows that hold on to a variant (and so to its product). Deleting either is refused while one of
+// them exists; the API turns the foreign key's error into product_in_use / product_variant_in_use.
+// reorder_levels is not here: a variant's levels go with it (ON DELETE CASCADE).
+const VARIANT_IN_USE = [
+  'batches_variant_fk',
+  'serials_variant_fk',
+  'stock_movements_variant_fk',
+  'stock_balances_variant_fk',
+  'stock_adjustment_lines_variant_fk',
+  'stock_transfer_lines_variant_fk',
+] as const;
 
 // The list's orders. Each sorts by one key and then the id, so the order is total and a cursor
 // (the last row's key and id) says exactly where the next page starts — never OFFSET.
@@ -253,6 +267,7 @@ export class ProductsService {
         });
         const issues = [...checked.issues, ...unknown];
         if (issues.length > 0) throw issuesError(issues);
+        await this.assertMeaningKept(tx, before, input);
 
         // An empty code on an existing product keeps the one it has
         const code = input.code ?? before.code;
@@ -296,10 +311,7 @@ export class ProductsService {
         return product;
       });
     } catch (error) {
-      if (
-        isForeignKeyViolation(error, 'batches_variant_fk') ||
-        isForeignKeyViolation(error, 'serials_variant_fk')
-      ) {
+      if (VARIANT_IN_USE.some((constraint) => isForeignKeyViolation(error, constraint))) {
         throw new AppError(409, 'product_variant_in_use', 'Archive the variant instead.');
       }
       throw racedError(error);
@@ -348,16 +360,49 @@ export class ProductsService {
         });
       });
     } catch (error) {
-      // A batch or a serial number (and from step 13 a stock line) points at a variant: the
-      // product has a history and stays
-      if (
-        isForeignKeyViolation(error, 'batches_variant_fk') ||
-        isForeignKeyViolation(error, 'serials_variant_fk')
-      ) {
+      // A batch, a serial number, a stock movement or a stock document line points at a variant:
+      // the product has a history and stays
+      if (VARIANT_IN_USE.some((constraint) => isForeignKeyViolation(error, constraint))) {
         throw new AppError(409, 'product_in_use', 'Archive this product instead.');
       }
       throw error;
     }
+  }
+
+  // Once a product has stock, its base unit, tracking and type say what that stock means: 120 is
+  // 120 pieces, in these batches. Changing them would silently turn it into 120 kg, or stock
+  // without batches. FOR UPDATE on the product (lock() above) against StockPostingService's
+  // FOR SHARE: no document is posting for it while we look.
+  private async assertMeaningKept(
+    tx: Transaction,
+    before: ProductRow,
+    input: UpdateProductInput,
+  ): Promise<void> {
+    const changed = {
+      baseUnitId: input.baseUnitId !== before.baseUnitId,
+      tracking: input.tracking !== before.tracking,
+      type: input.type !== before.type,
+    };
+    if (!changed.baseUnitId && !changed.tracking && !changed.type) return;
+    const [moved] = await tx
+      .select({ id: stockMovements.id })
+      .from(stockMovements)
+      .where(
+        and(eq(stockMovements.tenantId, getTenantId()), eq(stockMovements.productId, before.id)),
+      )
+      .limit(1);
+    if (!moved) return;
+    const fieldErrors: Record<string, ErrorCode[]> = {};
+    if (changed.baseUnitId) fieldErrors.baseUnitId = ['product_base_unit_locked'];
+    if (changed.tracking) fieldErrors.tracking = ['product_tracking_locked'];
+    if (changed.type) fieldErrors.type = ['product_type_locked'];
+    const [code] = Object.values(fieldErrors).flat();
+    throw new AppError(
+      409,
+      code ?? 'product_base_unit_locked',
+      'This product has stock: its base unit, tracking and type stay as they are.',
+      { fieldErrors },
+    );
   }
 
   // The next free code: the series may hand out a code someone typed by hand before (P-00007

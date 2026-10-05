@@ -26,6 +26,7 @@ import {
   Button,
   Card,
   CardHeader,
+  Checkbox,
   FormAlert,
   PageHeader,
   SelectField,
@@ -35,7 +36,7 @@ import {
 } from '@omnivo/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ChangeEvent, useMemo, useRef } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
@@ -65,6 +66,7 @@ function SettingsForm({ settings, canManage }: { settings: Settings; canManage: 
   const queryClient = useQueryClient();
   const {
     register,
+    control,
     handleSubmit,
     reset,
     setError,
@@ -207,6 +209,34 @@ function SettingsForm({ settings, canManage }: { settings: Settings; canManage: 
               {...register('timezone')}
               error={errors.timezone?.message}
             />
+          </div>
+        </Card>
+
+        {/* Step 13. A checkbox, not a switch: it is saved with the rest of the form. */}
+        <Card>
+          <CardHeader
+            title={t('settings.inventoryTitle')}
+            subtitle={t('settings.inventorySubtitle')}
+          />
+          <div className="grid gap-2 p-5">
+            <Controller
+              control={control}
+              name="allowNegativeStock"
+              render={({ field }) => (
+                <Checkbox
+                  id="allowNegativeStock"
+                  label={t('settings.allowNegativeStock')}
+                  checked={field.value}
+                  disabled={!canManage}
+                  onCheckedChange={(checked) => {
+                    field.onChange(checked === true);
+                  }}
+                />
+              )}
+            />
+            <p className="pl-[27px] text-label text-ink-3">
+              {t('settings.allowNegativeStockHint')}
+            </p>
           </div>
         </Card>
       </fieldset>

@@ -27,6 +27,7 @@ import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import type { MockExport } from './report-data';
+import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
 // নিয়মগুলো আসল API-র মতো (version, অনন্য কোড, শেষ চালু ব্রাঞ্চ) — UI-র error-পথ mock দিয়েও দেখা যায়
@@ -46,6 +47,8 @@ export interface WorkspaceData {
   exports: MockExport[];
   // Units, categories, custom fields, products and imports (step 12)
   catalog: MockCatalog;
+  // Warehouses, the stock ledger and its documents (step 13)
+  stock: MockStock;
 }
 
 function now(): string {
@@ -78,6 +81,7 @@ function seed(workspace: Workspace): WorkspaceData {
       address: null,
       ...DEFAULT_SETTINGS,
       logo: null,
+      allowNegativeStock: false,
       version: 1,
     },
     branches: garments
@@ -99,8 +103,10 @@ function seed(workspace: Workspace): WorkspaceData {
     journal: emptyJournal(),
     exports: [],
     catalog: garments ? garmentsCatalog() : pharmaCatalog(),
+    stock: emptyStock(),
   };
   if (garments) seedJournal(data);
+  seedStock(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -159,6 +165,10 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.exports = [];
   // Like the chart: the setup job brings the units and categories (settleSetup)
   data.catalog = emptyCatalog();
+  // Sign-up gives a new workspace its Main store, in its one branch (like auth.service.ts)
+  data.stock = emptyStock();
+  const [first] = data.branches;
+  if (first) data.stock.warehouses = [warehouse(first.id, 'MAIN', 'Main store', null)];
   store.set(workspace.tenantId, data);
 }
 
@@ -220,6 +230,13 @@ export function assertCodeFree(data: WorkspaceData, code: string, except?: strin
   }
 }
 
+function usedNumbers(data: WorkspaceData, documentType: DocumentType, period: string): number {
+  if (documentType === 'accounting.journal') return data.journal.counters.get(period) ?? 0;
+  if (documentType === 'inventory.adjustment') return data.stock.counters.adjustment;
+  if (documentType === 'inventory.transfer') return data.stock.counters.transfer;
+  return 0;
+}
+
 export function seriesList(data: WorkspaceData): NumberSeries[] {
   const period = (format: NumberFormat) =>
     periodOf(todayIn(data.settings.timezone), format.yearStyle, data.settings.fiscalYearStartMonth);
@@ -230,13 +247,11 @@ export function seriesList(data: WorkspaceData): NumberSeries[] {
       documentType,
       ...format,
       version: saved?.version ?? 0,
-      // Only journal entries get numbers in the mock so far; every other type starts at 1
+      // Journal entries and stock documents get numbers in the mock; the rest start at 1
       nextNumber: formatDocumentNumber(
         format,
         period(format),
-        (documentType === 'accounting.journal'
-          ? (data.journal.counters.get(period(format)) ?? 0)
-          : 0) + 1,
+        usedNumbers(data, documentType, period(format)) + 1,
       ),
     };
   });

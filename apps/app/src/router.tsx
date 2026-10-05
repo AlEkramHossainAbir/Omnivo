@@ -228,6 +228,78 @@ const productImportsRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/product-imports'), 'ProductImportsPage'),
 });
 
+// Warehouses and stock (step 13). The fixed segments ('/stock/adjustments', '/stock/transfers',
+// '/stock/batches', '/stock/reorder', and their '/new') beat '/stock/$variantId' and the document
+// ids, like '/products/new' beats '/products/$productId'.
+const warehousesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/warehouses',
+  component: lazyRouteComponent(() => import('./routes/warehouses'), 'WarehousesPage'),
+});
+
+const stockRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock',
+  component: lazyRouteComponent(() => import('./routes/stock'), 'StockPage'),
+});
+
+const stockCardRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/$variantId',
+  component: lazyRouteComponent(() => import('./routes/stock-card'), 'StockCardPage'),
+});
+
+const stockAdjustmentsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/adjustments',
+  component: lazyRouteComponent(() => import('./routes/stock-adjustments'), 'StockAdjustmentsPage'),
+});
+
+const newStockAdjustmentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/adjustments/new',
+  component: lazyRouteComponent(
+    () => import('./routes/stock-adjustment'),
+    'NewStockAdjustmentPage',
+  ),
+});
+
+const stockAdjustmentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/adjustments/$adjustmentId',
+  component: lazyRouteComponent(() => import('./routes/stock-adjustment'), 'StockAdjustmentPage'),
+});
+
+const stockTransfersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/transfers',
+  component: lazyRouteComponent(() => import('./routes/stock-transfers'), 'StockTransfersPage'),
+});
+
+const newStockTransferRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/transfers/new',
+  component: lazyRouteComponent(() => import('./routes/stock-transfer'), 'NewStockTransferPage'),
+});
+
+const stockTransferRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/transfers/$transferId',
+  component: lazyRouteComponent(() => import('./routes/stock-transfer'), 'StockTransferPage'),
+});
+
+const stockBatchesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/batches',
+  component: lazyRouteComponent(() => import('./routes/stock-batches'), 'StockBatchesPage'),
+});
+
+const stockReorderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/reorder',
+  component: lazyRouteComponent(() => import('./routes/stock-reorder'), 'StockReorderPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -291,6 +363,17 @@ const routeTree = rootRoute.addChildren([
     productCategoriesRoute,
     unitsRoute,
     productImportsRoute,
+    warehousesRoute,
+    stockRoute,
+    stockCardRoute,
+    stockAdjustmentsRoute,
+    newStockAdjustmentRoute,
+    stockAdjustmentRoute,
+    stockTransfersRoute,
+    newStockTransferRoute,
+    stockTransferRoute,
+    stockBatchesRoute,
+    stockReorderRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

@@ -20,7 +20,11 @@ import { productRoutes } from './products.js';
 import { roleRoutes } from './roles.js';
 import { settingsRoutes } from './settings.js';
 import { setupRoutes } from './setup.js';
+import { stockAdjustmentRoutes } from './stock-adjustments.js';
+import { stockTransferRoutes } from './stock-transfers.js';
+import { stockRoutes } from './stock.js';
 import { unitRoutes } from './units.js';
+import { warehouseRoutes } from './warehouses.js';
 
 export const healthRoutes = {
   check: defineRoute({
@@ -62,4 +66,8 @@ export const routes = {
   customFields: customFieldRoutes,
   products: productRoutes,
   productImports: productImportRoutes,
+  warehouses: warehouseRoutes,
+  stock: stockRoutes,
+  stockAdjustments: stockAdjustmentRoutes,
+  stockTransfers: stockTransferRoutes,
 };

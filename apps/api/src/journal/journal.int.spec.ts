@@ -399,6 +399,7 @@ describe('a posted entry', () => {
       baseCurrency: 'USD',
       fiscalYearStartMonth: settings.fiscalYearStartMonth,
       timezone: settings.timezone,
+      allowNegativeStock: settings.allowNegativeStock,
     });
     expect(res.statusCode).toBe(409);
     expect(problemSchema.parse(res.json()).fieldErrors).toEqual({
