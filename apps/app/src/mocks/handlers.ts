@@ -1,10 +1,13 @@
 import {
   type Account,
+  accountTypeFits,
   type AuthSession,
+  type ErrorCode,
   type Preferences,
   type ProductCategory,
   routes,
   type Settings,
+  STOCK_ACCOUNT_USES,
 } from '@omnivo/contracts';
 import { delay, http, HttpResponse, type HttpResponseResolver } from 'msw';
 
@@ -74,16 +77,20 @@ import {
   batchReport,
   cardOf,
   findAdjustment,
+  findRevaluation,
   findTransfer,
   listStock,
   movementsOf,
   postAdjustment,
   receiveTransfer,
   reorderReport,
+  revalue,
   saveAdjustment,
   saveTransfer,
   sendTransfer,
   setLevel,
+  valuationList,
+  valuationSummary,
   warehouse as newWarehouse,
 } from './stock-data';
 import {
@@ -716,6 +723,10 @@ export const handlers = [
       const target = findAccount(data.accounts, id);
       checkVersion(target.version, version);
       assertNotLocked(target);
+      // Chosen in Settings → Inventory (step 14), like the API
+      if (Object.values(current().stockAccounts).includes(target.id)) {
+        throw new MockProblem(409, 'account_used_by_stock');
+      }
       if (data.accounts.some((child) => child.parentId === id && child.archivedAt === null)) {
         throw new MockProblem(409, 'account_has_active_children');
       }
@@ -752,6 +763,10 @@ export const handlers = [
       const target = findAccount(data.accounts, id);
       checkVersion(target.version, version);
       assertNotLocked(target);
+      // Chosen in Settings → Inventory (step 14), like the API
+      if (Object.values(current().stockAccounts).includes(target.id)) {
+        throw new MockProblem(409, 'account_used_by_stock');
+      }
       if (data.accounts.some((child) => child.parentId === id)) {
         throw new MockProblem(409, 'account_has_children');
       }
@@ -1861,6 +1876,100 @@ export const handlers = [
       record(data, 'stock_transfer.received', 'stock_transfer', id);
       await delay();
       return reply(routes.stockTransfers.receive, received);
+    }),
+  ),
+
+  // --- Stock values (step 14) ------------------------------------------------------------------
+
+  mock(routes.stock.valuation, ({ request }) => {
+    const query = readQuery(routes.stock.valuation.query, request);
+    return reply(routes.stock.valuation, {
+      items: valuationList(current(), query),
+      nextCursor: null,
+    });
+  }),
+
+  mock(routes.stock.valuationSummary, () =>
+    reply(routes.stock.valuationSummary, valuationSummary(current())),
+  ),
+
+  mock(routes.stockRevaluations.list, () =>
+    reply(routes.stockRevaluations.list, {
+      items: current().stock.revaluations.map((revaluation) => ({
+        id: revaluation.id,
+        number: revaluation.number,
+        date: revaluation.date,
+        note: revaluation.note,
+        lineCount: revaluation.lineCount,
+        difference: revaluation.difference,
+        postedAt: revaluation.postedAt,
+      })),
+      nextCursor: null,
+    }),
+  ),
+
+  mock(
+    routes.stockRevaluations.get,
+    guarded(({ params }) => {
+      const { id } = routes.stockRevaluations.get.params.parse(params);
+      return reply(routes.stockRevaluations.get, findRevaluation(current(), id));
+    }),
+  ),
+
+  mock(
+    routes.stockRevaluations.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.stockRevaluations.create.body, request);
+      const data = current();
+      const posted = revalue(data, body);
+      record(data, 'stock_revaluation.posted', 'stock_revaluation', posted.id, {
+        number: { from: null, to: posted.number },
+      });
+      await delay();
+      return reply(routes.stockRevaluations.create, posted);
+    }),
+  ),
+
+  mock(routes.stockAccounts.get, () => reply(routes.stockAccounts.get, current().stockAccounts)),
+
+  mock(
+    routes.stockAccounts.update,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.stockAccounts.update.body, request);
+      const data = current();
+      // The API's rules: an active ledger of a type that fits, never the inventory account
+      const fieldErrors: Record<string, ErrorCode[]> = {};
+      for (const use of STOCK_ACCOUNT_USES) {
+        const account = data.accounts.find((row) => row.id === body[use]);
+        if (account?.purpose === 'inventory') fieldErrors[use] = ['stock_account_inventory'];
+        else if (
+          !account ||
+          account.isGroup ||
+          account.archivedAt !== null ||
+          !accountTypeFits(use, account.type)
+        ) {
+          fieldErrors[use] = ['stock_account_invalid'];
+        }
+      }
+      const [first] = Object.values(fieldErrors);
+      if (first?.[0] !== undefined) throw new MockProblem(409, first[0], fieldErrors);
+      const before = data.stockAccounts;
+      data.stockAccounts = { ...body };
+      record(
+        data,
+        'stock_accounts.changed',
+        'workspace',
+        crypto.randomUUID(),
+        diff(
+          Object.fromEntries(
+            STOCK_ACCOUNT_USES.map((use) => [use, codeOf(data.accounts, before[use])]),
+          ),
+          Object.fromEntries(
+            STOCK_ACCOUNT_USES.map((use) => [use, codeOf(data.accounts, body[use])]),
+          ),
+        ),
+      );
+      return reply(routes.stockAccounts.update, data.stockAccounts);
     }),
   ),
 ];

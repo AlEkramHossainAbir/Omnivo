@@ -1,6 +1,6 @@
 import type { Industry, Setup } from '@omnivo/contracts';
 
-import { seedAccounts } from './accounting-data';
+import { seedAccounts, seedStockAccounts } from './accounting-data';
 import { MockProblem } from './mock';
 import { startingCatalog } from './product-data';
 import { record, type WorkspaceData } from './workspace-data';
@@ -54,7 +54,10 @@ export function settleSetup(data: WorkspaceData): void {
       updatedAt: new Date().toISOString(),
     });
   }
-  if (data.accounts.length === 0) data.accounts = seedAccounts(industry);
+  if (data.accounts.length === 0) {
+    data.accounts = seedAccounts(industry);
+    data.stockAccounts = seedStockAccounts(data.accounts, industry);
+  }
   if (data.catalog.units.length === 0) data.catalog = startingCatalog(industry);
   data.setup = { status: 'ready', industry };
   data.setupReadyAt = null;

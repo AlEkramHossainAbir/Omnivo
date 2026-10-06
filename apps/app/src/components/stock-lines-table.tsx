@@ -1,14 +1,26 @@
 import { Alert02Icon } from '@hugeicons/core-free-icons';
 import {
+  type AdjustmentLine,
   compareQuantity,
-  type StockLine,
+  subtractMoney,
   subtractQuantity,
+  sumMoney,
   type TransferLine,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { Card, Pill } from '@omnivo/ui';
 
-import { useIsoDate, useQuantity, VariantCell } from './stock-parts';
+import { useIsoDate, useQuantity, useUnitCode, useValue, VariantCell } from './stock-parts';
+
+// Step 14: what a line was worth (null without inventory.stock.value), and on an adjustment the
+// cost a person typed. Read from either kind of line.
+function valueOf(line: AdjustmentLine | TransferLine): string | null {
+  return line.value;
+}
+
+function typedCostOf(line: AdjustmentLine | TransferLine): string | null {
+  return 'unitCost' in line ? line.unitCost : null;
+}
 
 // The lines of a posted adjustment or a sent transfer: a real <table> in a card, scrolling inside
 // its own box on a phone. What was typed (3 case), the base quantity it was (72 pcs), the batch
@@ -17,12 +29,19 @@ export function StockLinesTable({
   lines,
   received = false,
 }: {
-  lines: readonly (StockLine | TransferLine)[];
+  lines: readonly (AdjustmentLine | TransferLine)[];
   received?: boolean;
 }) {
   const { t } = useLocale();
   const quantity = useQuantity();
   const isoDate = useIsoDate();
+  const money = useValue();
+  const unitCode = useUnitCode();
+  // The value column, when there is something to show in it: someone without the permission sees
+  // a typed cost only, and a draft has no values yet
+  const valued = lines.some((line) => valueOf(line) !== null || typedCostOf(line) !== null);
+  const total = sumMoney(lines.map((line) => valueOf(line) ?? '0'));
+  const anyValue = lines.some((line) => valueOf(line) !== null);
   return (
     <Card className="overflow-x-auto">
       <table className="w-full min-w-[640px] border-collapse text-body-sm">
@@ -41,6 +60,11 @@ export function StockLinesTable({
             {received && (
               <th scope="col" className="px-5 py-2.5 text-right">
                 {t('transfers.receivedQuantity')}
+              </th>
+            )}
+            {valued && (
+              <th scope="col" className="px-5 py-2.5 text-right">
+                {t('stockLines.value')}
               </th>
             )}
           </tr>
@@ -98,12 +122,45 @@ export function StockLinesTable({
                         </Pill>
                       </span>
                     )}
+                    {short !== null &&
+                      'receivedValue' in line &&
+                      line.value !== null &&
+                      line.receivedValue !== null && (
+                        <span className="mt-1 block text-caption text-ink-3">
+                          {t('transfers.lostValue', {
+                            amount: money(subtractMoney(line.value, line.receivedValue)),
+                          })}
+                        </span>
+                      )}
+                  </td>
+                )}
+                {valued && (
+                  <td className="px-5 py-3 text-right whitespace-nowrap tabular-nums">
+                    {money(valueOf(line))}
+                    {typedCostOf(line) !== null && (
+                      <span className="block text-caption text-ink-3">
+                        {t('stockLines.unitCostPer', { unit: unitCode(line.unitId) })}{' '}
+                        {money(typedCostOf(line))}
+                      </span>
+                    )}
                   </td>
                 )}
               </tr>
             );
           })}
         </tbody>
+        {anyValue && (
+          <tfoot>
+            <tr className="border-t border-line bg-subtle font-medium">
+              <td className="px-5 py-3" colSpan={received ? 4 : 3}>
+                {t('stockLines.total')}
+              </td>
+              <td className="px-5 py-3 text-right whitespace-nowrap tabular-nums">
+                {money(total)}
+              </td>
+            </tr>
+          </tfoot>
+        )}
       </table>
     </Card>
   );

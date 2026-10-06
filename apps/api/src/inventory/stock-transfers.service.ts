@@ -4,11 +4,13 @@ import {
   type ErrorCode,
   fitsDecimals,
   isZeroQuantity,
+  prorateMoney,
   type ReceiveTransferInput,
   type StockTransfer,
   type StockTransferInput,
   type StockTransferSummary,
   type TransferStatus,
+  sumMoney,
   type UpdateStockTransferInput,
   wholeCount,
 } from '@omnivo/contracts';
@@ -35,7 +37,9 @@ import {
   resolveLines,
   toStockLine,
 } from './stock-lines.js';
+import { StockBooksService } from './stock-books.service.js';
 import { StockPostingService } from './stock-posting.service.js';
+import { ValueAccess } from './value-access.js';
 
 type TransferRow = typeof stockTransfers.$inferSelect;
 type LineRow = typeof stockTransferLines.$inferSelect;
@@ -79,6 +83,16 @@ function toSummary(row: TransferRow, lines: number, isShort: boolean): StockTran
   };
 }
 
+// What arrived of a line is worth the same per unit as what was sent (step 14): all of it, its
+// share, or nothing. A line sent before step 14 has no value (NULL): it left at zero, and arrives
+// at zero.
+function receivedValueOf(line: LineRow, received: string): string {
+  const sent = line.value ?? '0';
+  if (compareQuantity(received, line.baseQuantity) === 0) return sent;
+  if (isZeroQuantity(received)) return '0.0000';
+  return prorateMoney(sent, received, line.baseQuantity);
+}
+
 function storedInput(line: LineRow): LineInput {
   return {
     variantId: line.variantId,
@@ -95,6 +109,8 @@ export class StockTransfersService {
     @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
     private readonly numbering: NumberingService,
     private readonly posting: StockPostingService,
+    private readonly books: StockBooksService,
+    private readonly access: ValueAccess,
   ) {}
 
   list(query: {
@@ -310,6 +326,7 @@ export class StockTransfersService {
             ),
           );
       }
+      const values = receipts.map((receipt) => receivedValueOf(receipt.line, receipt.quantity));
       await this.posting.post(tx, {
         date: input.date,
         kind: 'transfer_in',
@@ -318,7 +335,7 @@ export class StockTransfersService {
         documentNumber: transfer.number ?? '',
         receivingTransferId: id,
         // Nothing arrived on a line: no movement for it, only its shortage
-        moves: receipts.flatMap((receipt) =>
+        moves: receipts.flatMap((receipt, index) =>
           isZeroQuantity(receipt.quantity)
             ? []
             : [
@@ -329,6 +346,8 @@ export class StockTransfersService {
                   batchId: receipt.line.batchId,
                   quantity: receipt.quantity,
                   serialNumbers: receipt.serialNumbers,
+                  // At the cost it left with, not today's average
+                  value: values[index] ?? '0',
                 },
               ],
         ),
@@ -347,11 +366,23 @@ export class StockTransfersService {
       const isShort = receipts.some(
         (receipt) => compareQuantity(receipt.quantity, receipt.line.baseQuantity) < 0,
       );
+      // The books (step 14): what arrived into the destination's inventory, what did not to the
+      // shortage account — between branches through goods in transit
+      const entry = await this.books.transferReceived(
+        tx,
+        { id, number: transfer.number ?? '', date: input.date },
+        {
+          fromWarehouseId: transfer.fromWarehouseId,
+          toWarehouseId: transfer.toWarehouseId,
+          sent: sumMoney(receipts.map((receipt) => receipt.line.value ?? '0')),
+          received: sumMoney(values),
+        },
+      );
       await audit(tx, {
         action: 'stock_transfer.received',
         entityType: 'stock_transfer',
         entityId: id,
-        changes: created({ date: input.date, short: isShort }),
+        changes: created({ date: input.date, short: isShort, entry: entry?.number ?? null }),
       });
       return this.read(tx, id);
     });
@@ -367,9 +398,9 @@ export class StockTransfersService {
     });
     const stored = await this.linesOf(tx, draft.id);
     const lines = await resolveLines(tx, stored.map(storedInput), 'out', { lock: true });
-    await this.writeLines(tx, draft.id, lines);
     const number = await this.numbering.next(tx, 'inventory.transfer', draft.sentOn);
-    await this.posting.post(tx, {
+    // What each line is worth as it leaves, at the average cost (step 14)
+    const values = await this.posting.post(tx, {
       date: draft.sentOn,
       kind: 'transfer_out',
       direction: 'out',
@@ -384,6 +415,8 @@ export class StockTransfersService {
         serialNumbers: line.serialNumbers,
       })),
     });
+    // Still a draft here: the lines may change, and keep their values from now on (0024's guard)
+    await this.writeLines(tx, draft.id, lines, values);
     await tx
       .update(stockTransfers)
       .set({
@@ -395,11 +428,20 @@ export class StockTransfersService {
         updatedBy: currentPrincipal().userId,
       })
       .where(and(eq(stockTransfers.tenantId, getTenantId()), eq(stockTransfers.id, draft.id)));
+    const entry = await this.books.transferSent(
+      tx,
+      { id: draft.id, number, date: draft.sentOn },
+      {
+        fromWarehouseId: draft.fromWarehouseId,
+        toWarehouseId: draft.toWarehouseId,
+        value: sumMoney(values),
+      },
+    );
     await audit(tx, {
       action: 'stock_transfer.sent',
       entityType: 'stock_transfer',
       entityId: draft.id,
-      changes: created({ number }),
+      changes: created({ number, entry: entry?.number ?? null }),
     });
   }
 
@@ -413,10 +455,12 @@ export class StockTransfersService {
     ]);
   }
 
+  // values: set when the transfer is sent (step 14)
   private async writeLines(
     tx: Transaction,
     transferId: string,
     lines: readonly ResolvedLine[],
+    values?: readonly string[],
   ): Promise<void> {
     const tenantId = getTenantId();
     await tx
@@ -440,6 +484,7 @@ export class StockTransfersService {
         baseQuantity: line.baseQuantity,
         batchId: line.batchId,
         serialNumbers: line.serialNumbers,
+        value: values?.[index] ?? null,
       })),
     );
   }
@@ -487,6 +532,10 @@ export class StockTransfersService {
     const [summary] = await this.summaries(tx, eq(stockTransfers.id, id), 1);
     if (!summary) throw notFound('Stock transfer');
     const lines = await this.linesOf(tx, id);
+    const [canSee, entries] = await Promise.all([
+      this.access.canSee(),
+      this.books.entriesOf(tx, id),
+    ]);
     const [variants, batches] = await Promise.all([
       loadVariants(
         tx,
@@ -511,9 +560,16 @@ export class StockTransfersService {
             ),
             receivedQuantity: line.receivedQuantity,
             receivedSerialNumbers: line.receivedSerialNumbers,
+            // Worked out from the books: only with the permission (step 14)
+            value: canSee ? line.value : null,
+            receivedValue:
+              canSee && line.receivedQuantity !== null
+                ? receivedValueOf(line, line.receivedQuantity)
+                : null,
           },
         ];
       }),
+      entries,
     };
   }
 

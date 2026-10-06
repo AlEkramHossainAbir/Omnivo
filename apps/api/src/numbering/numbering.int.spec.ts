@@ -101,7 +101,12 @@ describe('number series endpoints', () => {
   it('lists every document type with its next number, without using it up', async () => {
     const today = periodOf(todayIn('Asia/Dhaka'), 'fiscal', 7);
     const { items } = numberSeriesListSchema.parse((await send('GET', '/number-series')).json());
-    expect(items.map((series) => series.documentType)).toHaveLength(9);
+    expect(items.map((series) => series.documentType)).toHaveLength(10);
+    // Stock revaluations (step 14)
+    expect(items.find((series) => series.documentType === 'inventory.revaluation')).toMatchObject({
+      prefix: 'REV',
+      nextNumber: `REV-${today}-0001`,
+    });
     // Stock documents (step 13): numbered by fiscal year, like the journal
     expect(items.find((series) => series.documentType === 'inventory.transfer')).toMatchObject({
       prefix: 'TRF',

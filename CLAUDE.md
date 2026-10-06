@@ -332,8 +332,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   side by side. Totals row on `subtle` with a `good` "Balanced" or `crit` "Out by" pill.
 - **Stock line rows (adjustments, transfers):** a card that is a container (`@container`); one grid template for a
   caption header and every row on a wide card (`@3xl`): item (name, SKU, stock here), unit, quantity (with
-  "= 72 pcs" under it), batch or serial numbers, remove. On a narrow card each control shows its label. Lines are
-  added with the "Add items" dialog (search or scan; Enter adds the only match; the dialog stays open).
+  "= 72 pcs" under it), and on a line that brings stock in, the unit cost per unit of the line (a `MoneyInput`
+  with 4 decimals, "Cost per case", placeholder "At average cost", "= ৳3,600.00" under it), batch or serial
+  numbers, remove. On a narrow card each control shows its label. Lines are added with the "Add items" dialog
+  (search or scan; Enter adds the only match; the dialog stays open).
+- **Stock values:** a value worked out from the books is shown only with `inventory.stock.value`; without it the
+  column is left out (lists) or shows a dash (documents). A stock document links its journal entries
+  ("JV-2026-27-0042") for people who read the journal, and a stock entry links back ("From ADJ-…").
 - **Serial number box:** the text area's look, `Geist Mono`, one serial number per line.
 - **Expiry pill:** expired = `crit`, 30 days or less = `warn` ("12 days left"), later = the date alone.
 - **Text area:** the input box, three rows tall, resizes vertically only.
@@ -365,6 +370,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   decimals.
 - **Quantities:** decimal strings, never numbers, shown with the unit's decimals and code (`72 pcs`, `2.74 m`).
   Stock is always counted in the product's base unit.
+- **Stock values:** to the paisa, like money; a unit cost keeps 4 decimals and is shown with 2. Lists and the
+  stock card's KPIs show whole taka; documents, the stock card's history and the journal show paisa.
 - **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. In Bangla, `২৩ সেপ, ২০২৬`
   and `সেপ্টেম্বর ২০২৬`. The fiscal year defaults to July – June.
 - **Language:** every user-facing string goes through `t()` from `@omnivo/i18n`, and

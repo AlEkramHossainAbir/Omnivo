@@ -7,12 +7,15 @@ import {
   type AdjustmentDirection,
   contractErrorMap,
   isAdjustmentDirection,
+  isQuantity,
+  multiplyMoney,
   plainQuantity,
   reasonFits,
   routes,
   type StockAdjustment,
   type StockAdjustmentFormValues,
   type StockItem,
+  sumMoney,
   updateStockAdjustmentInputSchema,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
@@ -23,6 +26,7 @@ import {
   Dialog,
   FormAlert,
   FormField,
+  Input,
   PageHeader,
   SegmentedControl,
   SelectField,
@@ -31,7 +35,7 @@ import {
 } from '@omnivo/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Controller, type Path, useFieldArray, useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
@@ -47,9 +51,13 @@ import {
   BackLink,
   useStockRefresh,
   useTenantId,
+  useValue,
   useWarehouses,
   warehouseLabel,
 } from './stock-parts';
+
+// Loaded the first time a "Stock in" line shows its cost box (cost-input.tsx says why)
+const MoneyInput = lazy(async () => ({ default: (await import('./cost-input')).MoneyInput }));
 
 // The adjustment form: its own chunk (loaded by routes/stock-adjustment.tsx), because the form
 // library, the date picker and the picker are only needed to write — a posted adjustment is read
@@ -68,7 +76,18 @@ function emptyLine(item: LineItem): LineValues {
     expiresOn: '',
     manufacturedOn: '',
     serialNumbers: [],
+    unitCost: '',
   };
+}
+
+// What a line brings in, from its typed quantity and cost: "= ৳3,600.00" under the cost box.
+// null until both are there and make sense.
+function typedValue(line: LineValues | undefined): string | null {
+  const cost = line?.unitCost ?? null;
+  const quantity = line?.quantity.trim() ?? '';
+  return cost === null || cost === '' || !isQuantity(quantity)
+    ? null
+    : multiplyMoney(quantity, cost);
 }
 
 // The server's field names for the errors it can send — one set per line, and one per serial
@@ -90,6 +109,7 @@ function fieldNames(lines: readonly LineValues[]): Path<FormValues>[] {
       rowPath('lines', index, 'expiresOn'),
       rowPath('lines', index, 'manufacturedOn'),
       rowPath('lines', index, 'serialNumbers'),
+      rowPath('lines', index, 'unitCost'),
       ...line.serialNumbers.map((_, serial) => serialPath(index, serial)),
     ]),
   ];
@@ -107,6 +127,7 @@ export function AdjustmentForm({
   const { t } = useLocale();
   const navigate = useNavigate();
   const refresh = useStockRefresh();
+  const value = useValue();
   const [picking, setPicking] = useState(false);
   const [confirming, setConfirming] = useState(false);
   // What each line's variant is (name, packs, tracking): kept beside the form, by variant, because
@@ -141,6 +162,7 @@ export function AdjustmentForm({
           expiresOn: line.expiresOn ?? '',
           manufacturedOn: line.manufacturedOn ?? '',
           serialNumbers: line.serialNumbers,
+          unitCost: line.unitCost ?? '',
         })) ?? [],
       post: false,
       version: adjustment?.version ?? 1,
@@ -152,6 +174,9 @@ export function AdjustmentForm({
   const warehouseId = useWatch({ control, name: 'warehouseId' });
   const { active } = useWarehouses();
   const units = useQuery(unitsQuery(useTenantId())).data ?? [];
+  // Step 14: a line that brings stock in takes a cost; one that takes it out goes at the average
+  const costed = direction === 'in';
+  const totalValue = sumMoney(lines.map((line) => typedValue(line) ?? '0'));
 
   const reasonOptions = useMemo(
     () =>
@@ -322,7 +347,7 @@ export function AdjustmentForm({
           {fields.length === 0 ? (
             <p className="px-5 py-6 text-body-sm text-ink-2">{t('stockLines.noLines')}</p>
           ) : (
-            <StockLinesHeader />
+            <StockLinesHeader costed={costed} />
           )}
           {fields.length > 0 &&
             fields.map((field, index) => {
@@ -394,6 +419,52 @@ export function AdjustmentForm({
                       }}
                     />
                   }
+                  cost={
+                    costed ? (
+                      <Controller
+                        control={control}
+                        name={rowPath('lines', index, 'unitCost')}
+                        render={({ field: costField, fieldState }) => {
+                          const unitCode =
+                            units.find(
+                              (unit) => unit.id === (lines[index]?.unitId ?? item.baseUnitId),
+                            )?.code ?? '';
+                          const lineValue = typedValue(lines[index]);
+                          return (
+                            <LineField
+                              id={costField.name}
+                              label={t('stockLines.unitCostPer', { unit: unitCode })}
+                              error={fieldState.error?.message}
+                            >
+                              {/* The same box, empty and disabled, for the moment the chunk loads */}
+                              <Suspense
+                                fallback={
+                                  <Input id={costField.name} disabled prefix="৳" align="end" />
+                                }
+                              >
+                                <MoneyInput
+                                  id={costField.name}
+                                  name={costField.name}
+                                  ref={costField.ref}
+                                  scale={4}
+                                  placeholder={t('stockLines.atAverage')}
+                                  value={costField.value ?? ''}
+                                  onChange={costField.onChange}
+                                  onBlur={costField.onBlur}
+                                  invalid={fieldState.error !== undefined}
+                                />
+                              </Suspense>
+                              {lineValue !== null && (
+                                <span className="text-right text-caption text-ink-3 tabular-nums">
+                                  {t('stockLines.lineValue', { amount: value(lineValue) })}
+                                </span>
+                              )}
+                            </LineField>
+                          );
+                        }}
+                      />
+                    ) : undefined
+                  }
                   errors={{
                     unitId: lineErrors?.unitId?.message,
                     quantity: lineErrors?.quantity?.message,
@@ -409,6 +480,15 @@ export function AdjustmentForm({
                 />
               );
             })}
+          {costed && fields.length > 0 && (
+            <div className="grid gap-1 border-t border-line bg-subtle px-5 py-3 text-body-sm">
+              <span className="flex items-center justify-between gap-3">
+                <span className="font-medium">{t('stockLines.total')}</span>
+                <span className="font-medium tabular-nums">{value(totalValue)}</span>
+              </span>
+              <span className="text-caption text-ink-3">{t('adjustments.costHint')}</span>
+            </div>
+          )}
           {linesError && (
             <div className="border-t border-line px-5 py-3">
               <FormAlert message={linesError} />

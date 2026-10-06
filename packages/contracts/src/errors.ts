@@ -210,6 +210,16 @@ export const ERROR_CODES = [
   'product_base_unit_locked',
   'product_tracking_locked',
   'product_type_locked',
+  // stock values and the books (step 14)
+  'stock_cost_required',
+  'stock_account_missing',
+  'stock_account_invalid',
+  'stock_account_inventory',
+  'journal_account_stock',
+  'journal_is_stock',
+  'revaluation_no_stock',
+  'revaluation_variant_twice',
+  'account_used_by_stock',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

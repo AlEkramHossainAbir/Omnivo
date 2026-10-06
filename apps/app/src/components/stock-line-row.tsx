@@ -44,26 +44,30 @@ export function toLineItem(source: StockItem | StockLine): LineItem {
 }
 
 // One template for every row, so the columns line up on a wide card: the item, the unit, the
-// quantity, what the tracking asks for, and the remove button. A container query (@3xl), not a
-// screen one, like the journal's lines: the sidebar takes room the screen width does not show.
+// quantity, (step 14, on lines that bring stock in) the unit cost, what the tracking asks for, and
+// the remove button. A container query (@3xl), not a screen one, like the journal's lines: the
+// sidebar takes room the screen width does not show.
 const COLUMNS =
   '@3xl:grid-cols-[minmax(0,2fr)_8.5rem_9rem_minmax(0,1.8fr)_2.25rem] @3xl:items-start';
+const COSTED_COLUMNS =
+  '@3xl:grid-cols-[minmax(0,2fr)_8.5rem_9rem_10rem_minmax(0,1.6fr)_2.25rem] @3xl:items-start';
 
 // The column headers of a wide card. Hidden from screen readers: each control has its own
 // (sr-only) label there, which reads better than a header far away.
-export function StockLinesHeader() {
+export function StockLinesHeader({ costed = false }: { costed?: boolean }) {
   const { t } = useLocale();
   return (
     <div
       aria-hidden="true"
       className={cn(
         'hidden gap-3 bg-subtle px-5 py-2 text-caption font-medium text-ink-3 @3xl:grid',
-        COLUMNS,
+        costed ? COSTED_COLUMNS : COLUMNS,
       )}
     >
       <span>{t('stockLines.items')}</span>
       <span>{t('stockLines.unit')}</span>
       <span className="text-right">{t('stockLines.quantity')}</span>
+      {costed && <span className="text-right">{t('stockLines.unitCost')}</span>}
       <span>{t('stock.history.detail')}</span>
     </div>
   );
@@ -89,6 +93,7 @@ export function StockLineRow({
   fields,
   dates,
   serials,
+  cost,
   errors,
   onRemove,
   onSplit,
@@ -111,6 +116,9 @@ export function StockLineRow({
   dates?: ReactNode;
   // The serial number box of a serial line, already in its LineField
   serials?: ReactNode;
+  // Step 14: the unit cost box of a line that brings stock in, already in its LineField. Given =
+  // the row has the cost column (the header must say costed too).
+  cost?: ReactNode;
   errors: LineErrors;
   onRemove: () => void;
   onSplit: (batches: readonly { batchId: string; quantity: string }[]) => void;
@@ -139,7 +147,10 @@ export function StockLineRow({
     <div
       role="group"
       aria-label={t('stockLines.line', { number })}
-      className={cn('grid grid-cols-2 gap-3 border-t border-line px-5 py-4', COLUMNS)}
+      className={cn(
+        'grid grid-cols-2 gap-3 border-t border-line px-5 py-4',
+        cost === undefined ? COLUMNS : COSTED_COLUMNS,
+      )}
     >
       <div className="col-span-2 flex items-start justify-between gap-3 @3xl:col-span-1">
         <span className="grid min-w-0 gap-0.5">
@@ -176,6 +187,7 @@ export function StockLineRow({
           </span>
         )}
       </LineField>
+      {cost !== undefined && <div className="col-span-2 @3xl:col-span-1">{cost}</div>}
       <div className="col-span-2 grid grid-cols-1 gap-3 @3xl:col-span-1">
         {item.tracking === 'batch' && mode === 'in' && fields.lotNumber && (
           <>

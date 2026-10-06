@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Account, CreateAccountInput, UpdateAccountInput } from '@omnivo/contracts';
-import { ledgerAccounts } from '@omnivo/db';
+import { ledgerAccounts, stockAccounts } from '@omnivo/db';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -56,6 +56,26 @@ function locked(): AppError {
   );
 }
 
+function usedByStock(): AppError {
+  return new AppError(
+    409,
+    'account_used_by_stock',
+    'Stock documents post to this account. Choose another one in Settings → Inventory first.',
+  );
+}
+
+// An account chosen in Settings → Inventory stays usable (step 14). The caller holds the chart
+// lock, and so does StockAccountsService when it saves the choices: nobody points a stock use at
+// this account before we commit.
+async function assertNotStockAccount(tx: Transaction, accountId: string): Promise<void> {
+  const [used] = await tx
+    .select({ use: stockAccounts.use })
+    .from(stockAccounts)
+    .where(and(eq(stockAccounts.tenantId, getTenantId()), eq(stockAccounts.accountId, accountId)))
+    .limit(1);
+  if (used) throw usedByStock();
+}
+
 // Every change to a tenant's chart takes this lock first, so the changes to one chart run one after
 // another (other tenants never wait). A chart is edited a few times a month, so the wait is
 // nothing, and it removes two races that row locks alone leave open:
@@ -69,7 +89,7 @@ function locked(): AppError {
 // An advisory lock is a lock on a number instead of a row; the _xact_ kind is released at commit or
 // rollback by itself. hashtextextended turns the text into that number; the prefix keeps it apart
 // from any other advisory lock added later.
-async function lockChart(tx: Transaction): Promise<void> {
+export async function lockChart(tx: Transaction): Promise<void> {
   const key = `ledger_accounts:${getTenantId()}`;
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))`);
 }
@@ -169,6 +189,8 @@ export class AccountsService {
       if (before.version !== version) throw versionConflict();
       if (before.archivedAt !== null) return toAccount(before);
       if (before.parentId === null || before.purpose !== null) throw locked();
+      // Chosen for a stock use (step 14): archived, it would refuse every stock posting that needs it
+      await assertNotStockAccount(tx, id);
       if (before.isGroup) {
         // The chart lock keeps a new or restored child from appearing before we commit
         const [child] = await tx
@@ -263,6 +285,8 @@ export class AccountsService {
       if (isForeignKeyViolation(error, 'journal_lines_account_fk')) {
         throw new AppError(409, 'account_in_use', 'Archive this account instead: entries use it.');
       }
+      // Chosen for a stock use in Settings → Inventory (step 14)
+      if (isForeignKeyViolation(error, 'stock_accounts_account_fk')) throw usedByStock();
       throw error;
     }
   }

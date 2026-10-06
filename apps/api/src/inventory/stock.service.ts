@@ -10,7 +10,11 @@ import {
   type StockItem,
   type StockMovementPage,
   type StockPage,
+  type StockValuePage,
+  subtractMoney,
+  sumMoney,
   todayIn,
+  type ValuationSummary,
 } from '@omnivo/contracts';
 import {
   batches,
@@ -34,6 +38,7 @@ import { decodeCursor, encodeCursor, toPage } from '../common/pagination/cursor.
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
+import { ValueAccess } from './value-access.js';
 
 // Postgres's NUMERIC as the API sends every quantity: 4 decimals, "0.0000" for nothing
 function quantityText(value: SQL): SQL<string> {
@@ -69,11 +74,14 @@ const itemRowSchema = z.object({
   on_hand: z.string(),
   in_transit: z.string(),
   low: z.boolean(),
+  unit_cost: z.string().nullable(),
+  value: z.string().nullable(),
   sort_key: z.string(),
   position: z.number().int(),
 });
 
-function toItem(row: z.output<typeof itemRowSchema>): StockItem {
+// canSee: inventory.stock.value (step 14) — without it, the costs are left out (null)
+function toItem(row: z.output<typeof itemRowSchema>, canSee: boolean): StockItem {
   return {
     variantId: row.variant_id,
     productId: row.product_id,
@@ -89,6 +97,8 @@ function toItem(row: z.output<typeof itemRowSchema>): StockItem {
     onHand: row.on_hand,
     inTransit: row.in_transit,
     low: row.low,
+    unitCost: canSee ? row.unit_cost : null,
+    value: canSee ? row.value : null,
   };
 }
 
@@ -115,6 +125,21 @@ const batchRowSchema = z.object({
   base_unit_id: z.uuid(),
 });
 
+const valueRowSchema = z.object({
+  variant_id: z.uuid(),
+  product_id: z.uuid(),
+  product_code: z.string(),
+  product_name: z.string(),
+  option_values: z.array(z.string()),
+  sku: z.string(),
+  base_unit_id: z.uuid(),
+  quantity: z.string(),
+  unit_cost: z.string().nullable(),
+  value: z.string(),
+  sort_key: z.string(),
+  position: z.number().int(),
+});
+
 const reorderRowSchema = z.object({
   variant_id: z.uuid(),
   product_id: z.uuid(),
@@ -135,7 +160,10 @@ const reorderRowSchema = z.object({
 // (how it got there) — never a quantity stored on a product.
 @Injectable()
 export class StockService {
-  constructor(@Inject(WITH_TENANT) private readonly withTenant: WithTenant) {}
+  constructor(
+    @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
+    private readonly access: ValueAccess,
+  ) {}
 
   list(query: {
     limit: number;
@@ -181,10 +209,11 @@ export class StockService {
     }
     return this.withTenant(async (tx) => {
       const rows = await this.items(tx, conditions, query.warehouseId, query.limit + 1);
+      const canSee = await this.access.canSee();
       const page = rows.slice(0, query.limit);
       const last = page.at(-1);
       return {
-        items: page.map(toItem),
+        items: page.map((row) => toItem(row, canSee)),
         nextCursor:
           rows.length > query.limit && last !== undefined
             ? encodeCursor([last.sort_key, last.product_id, last.position])
@@ -285,7 +314,7 @@ export class StockService {
         );
 
       return {
-        item: toItem(row),
+        item: toItem(row, await this.access.canSee()),
         warehouses: places.map((place) => ({
           warehouseId: place.warehouse_id,
           onHand: place.on_hand,
@@ -347,6 +376,7 @@ export class StockService {
           documentId: stockMovements.documentId,
           documentNumber: stockMovements.documentNumber,
           quantity: stockMovements.quantity,
+          value: stockMovements.value,
           lotNumber: batches.lotNumber,
           serialNumber: serials.serialNumber,
         })
@@ -399,11 +429,12 @@ export class StockService {
       if (!sums) throw new Error('Stock card sums returned no row');
 
       const page = toPage(rows, query.limit, (last) => [last.date, last.id]);
+      const canSee = await this.access.canSee();
       let balance = sums.beforePage;
       return {
         items: page.items.map((row) => {
           balance = addQuantity(balance, row.quantity);
-          return { ...row, balance };
+          return { ...row, balance, value: canSee ? row.value : null };
         }),
         nextCursor: page.nextCursor,
         openingBalance: sums.opening,
@@ -474,6 +505,137 @@ export class StockService {
           baseUnitId: row.base_unit_id,
         })),
         nextCursor: page.nextCursor,
+      };
+    });
+  }
+
+  // The valuation report (step 14): every variant that has stock or value, at its average cost.
+  // The numbers come from stock_values — the movements' own sums — never from quantity × a price.
+  valuation(query: {
+    limit: number;
+    cursor?: string | undefined;
+    search?: string | undefined;
+    categoryId?: string | undefined;
+  }): Promise<StockValuePage> {
+    const tenantId = getTenantId();
+    const after = decodeCursor(query.cursor, listCursorSchema);
+    const conditions: SQL[] = [
+      sql`sv.tenant_id = ${tenantId}::uuid`,
+      sql`(sv.quantity <> 0 OR sv.value <> 0)`,
+    ];
+    if (query.categoryId !== undefined) {
+      conditions.push(sql`p.category_id IN (
+        WITH RECURSIVE down AS (
+          SELECT id FROM product_categories WHERE tenant_id = ${tenantId}::uuid AND id = ${query.categoryId}::uuid
+          UNION ALL
+          SELECT c.id FROM product_categories c JOIN down ON c.parent_id = down.id
+           WHERE c.tenant_id = ${tenantId}::uuid
+        ) SELECT id FROM down)`);
+    }
+    if (query.search !== undefined && query.search !== '') {
+      const pattern = containsPattern(query.search);
+      conditions.push(
+        sql`(lower(p.name) LIKE ${pattern} OR lower(p.code) LIKE ${pattern} OR lower(v.sku) LIKE ${pattern})`,
+      );
+    }
+    if (after !== undefined) {
+      conditions.push(
+        sql`(lower(p.name), p.id, v.position) > (${after[0]}, ${after[1]}::uuid, ${after[2]}::int)`,
+      );
+    }
+    return this.withTenant(async (tx) => {
+      const rows = z.array(valueRowSchema).parse(
+        await tx.execute(sql`
+          SELECT v.id::text AS variant_id, p.id::text AS product_id, p.code AS product_code,
+                 p.name AS product_name, v.option_values, v.sku, p.base_unit_id::text AS base_unit_id,
+                 round(sv.quantity, 4)::text AS quantity, round(sv.unit_cost, 4)::text AS unit_cost,
+                 round(sv.value, 4)::text AS value,
+                 lower(p.name) AS sort_key, v.position::int AS position
+            FROM stock_values sv
+            JOIN product_variants v ON v.tenant_id = sv.tenant_id AND v.id = sv.variant_id
+            JOIN products p ON p.tenant_id = v.tenant_id AND p.id = v.product_id
+           WHERE ${sql.join(conditions, sql` AND `)}
+           ORDER BY lower(p.name), p.id, v.position
+           LIMIT ${query.limit + 1}`),
+      );
+      const page = rows.slice(0, query.limit);
+      const last = page.at(-1);
+      return {
+        items: page.map((row) => ({
+          variantId: row.variant_id,
+          productId: row.product_id,
+          productCode: row.product_code,
+          productName: row.product_name,
+          optionValues: row.option_values,
+          sku: row.sku,
+          baseUnitId: row.base_unit_id,
+          quantity: row.quantity,
+          unitCost: row.unit_cost,
+          value: row.value,
+        })),
+        nextCursor:
+          rows.length > query.limit && last !== undefined
+            ? encodeCursor([last.sort_key, last.product_id, last.position])
+            : null,
+      };
+    });
+  }
+
+  // The two sides that must be equal: the stock's value (in warehouses and on trucks) and the
+  // balances of the inventory and goods in transit accounts. Every stock document posts both in
+  // one transaction; a difference means something reached the books another way — an opening
+  // balance or a manual entry on the inventory account from before step 14.
+  valuationSummary(): Promise<ValuationSummary> {
+    const tenantId = getTenantId();
+    return this.withTenant(async (tx) => {
+      const totals = z
+        .array(z.object({ stock_value: z.string(), in_transit_value: z.string() }))
+        .parse(
+          await tx.execute(sql`
+            SELECT
+              round(coalesce((SELECT sum(sv.value) FROM stock_values sv
+                               WHERE sv.tenant_id = ${tenantId}::uuid), 0), 4)::text AS stock_value,
+              round(coalesce((SELECT sum(l.value) FROM stock_transfer_lines l
+                                JOIN stock_transfers t ON t.tenant_id = l.tenant_id AND t.id = l.transfer_id
+                               WHERE l.tenant_id = ${tenantId}::uuid AND t.status = 'in_transit'), 0), 4)::text
+                AS in_transit_value`),
+        );
+      const accountIds = z
+        .array(z.object({ inventory: z.string().nullable(), in_transit: z.string().nullable() }))
+        .parse(
+          await tx.execute(sql`
+            SELECT (SELECT a.id::text FROM ledger_accounts a
+                     WHERE a.tenant_id = ${tenantId}::uuid AND a.purpose = 'inventory') AS inventory,
+                   (SELECT s.account_id::text FROM stock_accounts s
+                     WHERE s.tenant_id = ${tenantId}::uuid AND s.use = 'in_transit') AS in_transit`),
+        );
+      const ids = accountIds[0] ?? { inventory: null, in_transit: null };
+      const balanceOf = async (accountId: string | null) => {
+        if (accountId === null) return null;
+        const [row] = z.array(z.object({ balance: z.string() })).parse(
+          await tx.execute(sql`
+            SELECT round(coalesce(sum(l.debit - l.credit), 0), 4)::text AS balance
+              FROM journal_lines l
+              JOIN journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id
+             WHERE l.tenant_id = ${tenantId}::uuid AND l.account_id = ${accountId}::uuid
+               AND e.status = 'posted'`),
+        );
+        return { id: accountId, balance: row?.balance ?? '0.0000' };
+      };
+      const [inventoryAccount, inTransitAccount] = await Promise.all([
+        balanceOf(ids.inventory),
+        balanceOf(ids.in_transit),
+      ]);
+      const total = totals[0] ?? { stock_value: '0.0000', in_transit_value: '0.0000' };
+      return {
+        stockValue: total.stock_value,
+        inTransitValue: total.in_transit_value,
+        inventoryAccount,
+        inTransitAccount,
+        difference: subtractMoney(
+          sumMoney([total.stock_value, total.in_transit_value]),
+          sumMoney([inventoryAccount?.balance ?? '0', inTransitAccount?.balance ?? '0']),
+        ),
       };
     });
   }
@@ -676,9 +838,17 @@ export class StockService {
                  WHERE l.tenant_id = v.tenant_id AND l.variant_id = v.id AND t.status = 'in_transit'
                    AND ${inWarehouse(sql`t.to_warehouse_id`)})`)} AS in_transit,
                ${lowCondition(warehouseId)} AS low,
+               round(sv.unit_cost, 4)::text AS unit_cost,
+               ${
+                 // In all warehouses: the ledger's own total. In one: its stock at the average.
+                 warehouseId === undefined
+                   ? sql`round(sv.value, 4)::text`
+                   : sql`round(round(coalesce(s.on_hand, 0) * coalesce(sv.unit_cost, 0), 2), 4)::text`
+               } AS value,
                lower(p.name) AS sort_key, v.position::int AS position
           FROM product_variants v
           JOIN products p ON p.tenant_id = v.tenant_id AND p.id = v.product_id
+          LEFT JOIN stock_values sv ON sv.tenant_id = v.tenant_id AND sv.variant_id = v.id
           LEFT JOIN LATERAL (
             SELECT sum(sb.quantity) AS on_hand FROM stock_balances sb
              WHERE sb.tenant_id = v.tenant_id AND sb.variant_id = v.id

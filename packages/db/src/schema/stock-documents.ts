@@ -105,6 +105,10 @@ export const stockAdjustmentLines = pgTable(
     lotNumber: text('lot_number'),
     expiresOn: date('expires_on', { mode: 'string' }),
     manufacturedOn: date('manufactured_on', { mode: 'string' }),
+    // Step 14. An "in" line's cost per unit of the line, as typed (3 cartons at ৳1,200); NULL =
+    // at the average cost. value: what the line moved, set when the adjustment is posted.
+    unitCost: numeric('unit_cost', { precision: 19, scale: 4 }),
+    value: numeric('value', { precision: 19, scale: 4 }),
   },
   (table) => [
     uniqueIndex('stock_adjustment_lines_line_idx').on(
@@ -142,6 +146,10 @@ export const stockAdjustmentLines = pgTable(
     check(
       'stock_adjustment_lines_quantity_check',
       sql`${table.quantity} > 0 AND ${table.factor} > 0 AND ${table.baseQuantity} > 0`,
+    ),
+    check(
+      'stock_adjustment_lines_value_check',
+      sql`(${table.unitCost} IS NULL OR ${table.unitCost} >= 0) AND (${table.value} IS NULL OR ${table.value} >= 0)`,
     ),
   ],
 );
@@ -209,6 +217,9 @@ export const stockTransferLines = pgTable(
     // Set on receipt, in the base unit: what arrived. sent − received = the shortage.
     receivedQuantity: numeric('received_quantity', { precision: 19, scale: 4 }),
     receivedSerialNumbers: text('received_serial_numbers').array(),
+    // What the line was worth when it left (step 14), at the average cost then; set when it is
+    // sent. What arrives is valued at the same cost per unit; the rest is the shortage.
+    value: numeric('value', { precision: 19, scale: 4 }),
   },
   (table) => [
     uniqueIndex('stock_transfer_lines_line_idx').on(table.tenantId, table.transferId, table.lineNo),

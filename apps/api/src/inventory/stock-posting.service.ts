@@ -1,11 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import {
+  addMoney,
   compareQuantity,
+  isZeroMoney,
   type MovementKind,
+  multiplyMoney,
+  negateMoney,
   negateQuantity,
+  prorateMoney,
+  splitMoney,
+  subtractMoney,
   subtractQuantity,
   sumQuantity,
   todayIn,
+  unitCostOf,
 } from '@omnivo/contracts';
 import {
   batches,
@@ -15,6 +23,7 @@ import {
   stockMovements,
   stockTransferLines,
   stockTransfers,
+  stockValues,
   tenantSettings,
 } from '@omnivo/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
@@ -42,6 +51,34 @@ export interface StockMove {
   batchId: string | null;
   quantity: string;
   serialNumbers: string[];
+  // Step 14, for a move IN: what it is worth (a typed cost × quantity, or what a transfer sent).
+  // null or left out = at the variant's average cost now. A move OUT always goes at the average:
+  // its value is worked out here, never handed in.
+  value?: string | null;
+}
+
+// A variant's stock and value as stock_values holds them, while a posting works through its moves
+interface ValueState {
+  quantity: string;
+  value: string;
+  unitCost: string | null;
+}
+
+// One line of a revaluation: the variant and its new average cost per base unit
+export interface Revaluation {
+  line: number;
+  variant: Pick<VariantInfo, 'variantId' | 'productId'>;
+  unitCost: string;
+}
+
+// What a revaluation did to one variant, and where (the difference per warehouse, for the books)
+export interface Revalued {
+  quantity: string;
+  oldUnitCost: string | null;
+  oldValue: string;
+  newValue: string;
+  difference: string;
+  byWarehouse: { warehouseId: string; value: string }[];
 }
 
 export interface StockPosting {
@@ -75,6 +112,36 @@ function triggerError(error: unknown): unknown {
 
 function actorId(): string | null {
   return tenantStorage.getStore()?.principal?.userId ?? null;
+}
+
+// What `quantity` taken out of `state` is worth, at the average cost (step 14). Taking all of it
+// takes all of its value — so stock that reaches zero is worth exactly zero, with no paisa left
+// behind by rounding. Taking part takes its share. Taking more than there is (negative stock,
+// when the workspace allows it) takes what there was, and prices the rest at the last average.
+function outflowValue(state: ValueState, quantity: string): string {
+  const positive = compareQuantity(state.quantity, '0') > 0;
+  if (positive && compareQuantity(quantity, state.quantity) === 0) return state.value;
+  if (positive && compareQuantity(quantity, state.quantity) < 0) {
+    return prorateMoney(state.value, quantity, state.quantity);
+  }
+  const beyond = positive ? subtractQuantity(quantity, state.quantity) : quantity;
+  return addMoney(positive ? state.value : '0', multiplyMoney(beyond, state.unitCost ?? '0'));
+}
+
+// The new state after a move, like migration 0024's trigger: the average follows the stock while
+// there is some, and keeps its last value at zero or below
+function apply(state: ValueState, quantity: string, value: string): ValueState {
+  const next = {
+    quantity: sumQuantity([state.quantity, quantity]),
+    value: addMoney(state.value, value),
+  };
+  return {
+    ...next,
+    unitCost:
+      compareQuantity(next.quantity, '0') > 0
+        ? unitCostOf(next.value, next.quantity)
+        : (state.unitCost ?? null),
+  };
 }
 
 // warehouse|variant|batch — the key of a balance row ('' for no batch)
@@ -172,14 +239,55 @@ export class StockPostingService {
     return ids;
   }
 
-  async post(tx: Transaction, posting: StockPosting): Promise<void> {
-    if (posting.moves.length === 0) return;
+  // Returns what each move was worth (step 14), in the order of posting.moves: positive amounts to
+  // the paisa. The caller gives them to StockBooksService for the journal entry, and keeps them on
+  // its lines.
+  async post(tx: Transaction, posting: StockPosting): Promise<string[]> {
+    if (posting.moves.length === 0) return [];
     const serialIds = await this.checkSerials(tx, posting);
+    // The variants' value rows first, then the balance rows: every posting takes its locks in this
+    // order, so a document bringing stock in and one taking it out never wait for each other in a
+    // circle (a deadlock)
+    const states = await this.lockValues(
+      tx,
+      posting.moves.map((move) => move.variant.variantId),
+    );
     const before = posting.direction === 'out' ? await this.checkAvailable(tx, posting) : null;
+
+    // The value of each move, in the document's order: two lines of the same variant (two batches
+    // of one product) price one after the other, the second at what the first left
+    const issues: LineIssue[] = [];
+    const values = posting.moves.map((move) => {
+      const state = states.get(move.variant.variantId) ?? {
+        quantity: '0',
+        value: '0',
+        unitCost: null,
+      };
+      let value: string;
+      if (posting.direction === 'out') {
+        value = outflowValue(state, move.quantity);
+        states.set(
+          move.variant.variantId,
+          apply(state, negateQuantity(move.quantity), negateMoney(value)),
+        );
+      } else {
+        const given = move.value ?? null;
+        if (given === null && state.unitCost === null) {
+          // Nothing to go by: the first stock of an item needs its cost
+          issues.push({ path: linePath(move.line, 'unitCost'), code: 'stock_cost_required' });
+        }
+        value = given ?? multiplyMoney(move.quantity, state.unitCost ?? '0');
+        states.set(move.variant.variantId, apply(state, move.quantity, value));
+      }
+      return value;
+    });
+    if (issues.length > 0) throw linesError(issues);
 
     const sign = (quantity: string) =>
       posting.direction === 'in' ? quantity : negateQuantity(quantity);
-    const rows = posting.moves.flatMap((move) => {
+    const signed = (value: string) => (posting.direction === 'in' ? value : negateMoney(value));
+    const rows = posting.moves.flatMap((move, index) => {
+      const value = values[index] ?? '0';
       const base = {
         tenantId: getTenantId(),
         date: posting.date,
@@ -195,13 +303,16 @@ export class StockPostingService {
       // A serial product moves one row per serial number: the stock card then shows where each
       // IMEI went, and the trigger moves each serial row on its own
       if (move.serialNumbers.length > 0) {
-        return move.serialNumbers.map((serial) => ({
+        // The move's value cut into one piece per serial number, adding up to it exactly
+        const pieces = splitMoney(value, move.serialNumbers.length);
+        return move.serialNumbers.map((serial, piece) => ({
           ...base,
           serialId: serialIds.get(`${move.variant.variantId}|${serial}`) ?? null,
           quantity: sign('1'),
+          value: signed(pieces[piece] ?? '0'),
         }));
       }
-      return [{ ...base, serialId: null, quantity: sign(move.quantity) }];
+      return [{ ...base, serialId: null, quantity: sign(move.quantity), value: signed(value) }];
     });
     // In the order of their balance rows: every document locks those rows in the same order, so
     // two documents touching the same products wait for each other instead of deadlocking
@@ -220,6 +331,118 @@ export class StockPostingService {
     }
 
     if (before !== null) await this.reportLow(tx, posting, before);
+    return values;
+  }
+
+  // A revaluation (step 14): each variant gets a new average cost, and its stock's value changes
+  // by the difference — no piece moves. The difference is written as movements of quantity 0
+  // (kind 'revaluation'), one per warehouse that holds the variant, split by the quantity there,
+  // so the stock card shows it and the books can tag each part with its warehouse's branch. The
+  // trigger adds them to stock_values like any movement. Only stock that is there can be revalued.
+  async revalue(
+    tx: Transaction,
+    document: { date: string; documentId: string; documentNumber: string },
+    lines: readonly Revaluation[],
+  ): Promise<Revalued[]> {
+    const tenantId = getTenantId();
+    const states = await this.lockValues(
+      tx,
+      lines.map((line) => line.variant.variantId),
+    );
+    const issues: LineIssue[] = [];
+    const results: Revalued[] = [];
+    const rows: (typeof stockMovements.$inferInsert)[] = [];
+    for (const line of lines) {
+      const state = states.get(line.variant.variantId);
+      if (!state || compareQuantity(state.quantity, '0') <= 0) {
+        issues.push({ path: linePath(line.line, 'variantId'), code: 'revaluation_no_stock' });
+        continue;
+      }
+      const newValue = multiplyMoney(state.quantity, line.unitCost);
+      const difference = subtractMoney(newValue, state.value);
+      // Where the stock is: the warehouses holding some of it. The value rows are locked, so no
+      // other posting moves this variant until we commit.
+      const places = await tx
+        .select({
+          warehouseId: stockBalances.warehouseId,
+          quantity: sql<string>`sum(${stockBalances.quantity})`,
+        })
+        .from(stockBalances)
+        .where(
+          and(
+            eq(stockBalances.tenantId, tenantId),
+            eq(stockBalances.variantId, line.variant.variantId),
+          ),
+        )
+        .groupBy(stockBalances.warehouseId)
+        .having(sql`sum(${stockBalances.quantity}) > 0`)
+        .orderBy(asc(stockBalances.warehouseId));
+      const held = sumQuantity(places.map((place) => place.quantity));
+      // Each warehouse its share; the last one what rounding left, so the parts add up exactly
+      let left = difference;
+      const byWarehouse = places.map((place, index) => {
+        const value =
+          index === places.length - 1 ? left : prorateMoney(difference, place.quantity, held);
+        left = subtractMoney(left, value);
+        return { warehouseId: place.warehouseId, value };
+      });
+      for (const part of byWarehouse) {
+        if (isZeroMoney(part.value)) continue;
+        rows.push({
+          tenantId,
+          date: document.date,
+          warehouseId: part.warehouseId,
+          productId: line.variant.productId,
+          variantId: line.variant.variantId,
+          batchId: null,
+          serialId: null,
+          quantity: '0',
+          value: part.value,
+          kind: 'revaluation',
+          documentId: document.documentId,
+          documentNumber: document.documentNumber,
+          createdBy: actorId(),
+        });
+      }
+      results.push({
+        quantity: state.quantity,
+        oldUnitCost: state.unitCost,
+        oldValue: state.value,
+        newValue,
+        difference,
+        byWarehouse: byWarehouse.filter((part) => !isZeroMoney(part.value)),
+      });
+    }
+    if (issues.length > 0) throw linesError(issues);
+    if (rows.length > 0) await tx.insert(stockMovements).values(rows);
+    return results;
+  }
+
+  // The value rows of these variants, locked (FOR UPDATE) in variant order — the first lock every
+  // posting takes (see post()). A variant that never moved has no row yet: its first movement makes
+  // it (the trigger), and until then it has nothing to price.
+  private async lockValues(
+    tx: Transaction,
+    variantIds: readonly string[],
+  ): Promise<Map<string, ValueState>> {
+    const ids = [...new Set(variantIds)];
+    const rows = await tx
+      .select({
+        variantId: stockValues.variantId,
+        quantity: stockValues.quantity,
+        value: stockValues.value,
+        unitCost: stockValues.unitCost,
+      })
+      .from(stockValues)
+      .where(and(eq(stockValues.tenantId, getTenantId()), inArray(stockValues.variantId, ids)))
+      .orderBy(asc(stockValues.variantId))
+      .for('update');
+    return new Map(
+      rows.map((row) => [
+        row.variantId,
+        { quantity: row.quantity, value: row.value, unitCost: row.unitCost },
+      ]),
+    );
   }
 
   // Serial numbers in: made the first time they are seen, and never already in stock (in a

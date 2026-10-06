@@ -5,6 +5,7 @@ import {
   BookOpen02Icon,
   CalendarLock01Icon,
   ChartIncreaseIcon,
+  Coins01Icon,
   DashboardSquare01Icon,
   FileDownloadIcon,
   FileImportIcon,
@@ -14,6 +15,7 @@ import {
   LayoutGridIcon,
   LeftToRightListNumberIcon,
   Logout01Icon,
+  MoneyExchange01Icon,
   Notebook02Icon,
   PackageIcon,
   PackageOutOfStockIcon,
@@ -325,6 +327,17 @@ export function AppShell() {
             <NavLink to="/stock/reorder" icon={PackageOutOfStockIcon}>
               {t('nav.reorder')}
             </NavLink>
+            {/* Step 14: what it costs — only for the people who may see it */}
+            {can('inventory.stock.value') && (
+              <NavLink to="/stock/valuation" icon={Coins01Icon}>
+                {t('nav.valuation')}
+              </NavLink>
+            )}
+            {can('inventory.stock.revalue') && (
+              <NavLink to="/stock/revaluations" icon={MoneyExchange01Icon}>
+                {t('nav.revaluations')}
+              </NavLink>
+            )}
             <NavLink to="/warehouses" icon={WarehouseIcon}>
               {t('nav.warehouses')}
             </NavLink>

@@ -8,6 +8,7 @@ import {
   problemSchema,
   roleListSchema,
   setupSchema,
+  stockAccountsSchema,
   unitListSchema,
 } from '@omnivo/contracts';
 import postgres from 'postgres';
@@ -137,6 +138,8 @@ describe('starting the setup', () => {
           'accounting.report.read',
           'core.audit.read',
           'core.user.read',
+          'inventory.stock.revalue',
+          'inventory.stock.value',
         ],
       ],
       ['Merchandiser', ['core.user.read', 'inventory.product.manage']],
@@ -150,6 +153,14 @@ describe('starting the setup', () => {
       name: 'Export sales',
       purpose: 'sales',
     });
+    // Step 14: every stock use has its template account, chosen in the same job
+    const choices = stockAccountsSchema.parse((await send('GET', '/stock-accounts')).json());
+    const codeOf = (id: string | null) =>
+      chart.items.find((account) => account.id === id)?.code ?? null;
+    expect(codeOf(choices.in_transit)).toBe('1175');
+    expect(codeOf(choices.damaged)).toBe('5150');
+    expect(codeOf(choices.revaluation)).toBe('5190');
+    expect(codeOf(choices.internal_use)).toBe('5290');
   });
 
   it('writes the audit log as the system, with the request that started it', async () => {

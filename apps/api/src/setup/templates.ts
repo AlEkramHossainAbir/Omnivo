@@ -4,6 +4,7 @@ import type {
   CustomFieldType,
   Industry,
   PermissionKey,
+  StockAccountUse,
   UnitDimension,
 } from '@omnivo/contracts';
 
@@ -66,6 +67,9 @@ export interface IndustryTemplate {
   roles: RoleTemplate[];
   chart: ChartTemplate;
   catalog: CatalogTemplate;
+  // Step 14: the account (by its code in `chart`) each stock use starts with. The owner may choose
+  // others in Settings → Inventory.
+  stockAccounts: Record<StockAccountUse, string>;
 }
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
@@ -82,6 +86,9 @@ const ACCOUNTANT: RoleTemplate = {
     'accounting.journal.post',
     'accounting.period.close',
     'accounting.report.read',
+    // Step 14: what the stock is worth, and putting a wrong cost right
+    'inventory.stock.value',
+    'inventory.stock.revalue',
   ],
 };
 
@@ -147,6 +154,8 @@ function standardChart(industry: IndustryAccounts): ChartTemplate {
           account('1164', 'Advance income tax (AIT)'),
         ]),
         account('1170', 'Input VAT', 'vat_input'),
+        // Step 14: stock sent from one branch to another, on its way. Still the company's goods.
+        account('1175', 'Goods in transit'),
         ...(industry.currentAssets ?? []),
       ]),
       group('1200', 'Fixed assets', [
@@ -187,7 +196,12 @@ function standardChart(industry: IndustryAccounts): ChartTemplate {
       ]),
     ]),
     expense: group('5000', 'Expenses', [
-      group('5100', 'Cost of sales', industry.costOfSales),
+      group('5100', 'Cost of sales', [
+        ...industry.costOfSales,
+        // Step 14: stock found in a count, corrections and revaluations — gains and losses on the
+        // stock itself, next to what the stock cost when it was sold
+        account('5190', 'Stock adjustments and revaluation'),
+      ]),
       group('5200', 'Administrative expenses', [
         account('5210', 'Salaries and allowances'),
         account('5220', 'Office rent'),
@@ -197,6 +211,8 @@ function standardChart(industry: IndustryAccounts): ChartTemplate {
         account('5260', 'Telephone and internet'),
         account('5270', 'Repairs and maintenance'),
         account('5280', 'Depreciation'),
+        // Step 14: stock the company uses itself (cleaning stores, a sample for the office)
+        account('5290', 'Consumables and internal use'),
       ]),
       group('5300', 'Selling and distribution expenses', [
         account('5310', 'Advertising and promotion'),
@@ -245,6 +261,27 @@ const COMMON_UNITS = [
   unit('carton', 'Carton', 'count', null),
 ] as const;
 
+// The accounts a new workspace's stock documents post to (step 14). loss: where damaged, expired,
+// lost and short-received stock goes — an industry that already has such an account uses it, the
+// others get "Stock losses" (STOCK_LOSSES). samples: physician samples in pharma, promotion
+// elsewhere. Codes from standardChart(): 1175, 5190, 5290, 5310.
+function stockAccounts(codes: { loss: string; samples?: string }): Record<StockAccountUse, string> {
+  return {
+    in_transit: '1175',
+    found: '5190',
+    damaged: codes.loss,
+    expired: codes.loss,
+    lost: codes.loss,
+    sample: codes.samples ?? '5310',
+    internal_use: '5290',
+    correction: '5190',
+    transfer_shortage: codes.loss,
+    revaluation: '5190',
+  };
+}
+
+const STOCK_LOSSES = account('5150', 'Stock losses (damaged, expired, lost)');
+
 const TRADER_STOCK = account('1150', 'Inventory', 'inventory');
 const COGS = account('5110', 'Cost of goods sold', 'cost_of_goods_sold');
 // Makers post the sale's cost from finished goods; raw materials move there through production
@@ -280,7 +317,7 @@ export const INDUSTRY_TEMPLATES = {
       currentLiabilities: [account('2180', 'Back-to-back LC payable')],
       revenue: [account('4110', 'Export sales', 'sales'), account('4120', 'Local sales')],
       otherIncome: [account('4230', 'Cash incentive on exports')],
-      costOfSales: [...MAKER_COSTS, account('5140', 'Subcontract charges')],
+      costOfSales: [...MAKER_COSTS, account('5140', 'Subcontract charges'), STOCK_LOSSES],
       selling: [
         account('5330', 'Export freight and C&F charges'),
         account('5340', 'Buying house commission'),
@@ -309,6 +346,7 @@ export const INDUSTRY_TEMPLATES = {
         { key: 'season', label: 'Season', type: 'text' },
       ],
     },
+    stockAccounts: stockAccounts({ loss: '5150' }),
   },
   pharma: {
     roles: [
@@ -373,6 +411,7 @@ export const INDUSTRY_TEMPLATES = {
         { key: 'dar_number', label: 'DAR number', type: 'text' },
       ],
     },
+    stockAccounts: stockAccounts({ loss: '5350', samples: '5330' }),
   },
   distribution: {
     roles: [
@@ -424,6 +463,7 @@ export const INDUSTRY_TEMPLATES = {
         { key: 'brand', label: 'Brand', type: 'text' },
       ],
     },
+    stockAccounts: stockAccounts({ loss: '5330' }),
   },
   manufacturing: {
     roles: [
@@ -443,7 +483,7 @@ export const INDUSTRY_TEMPLATES = {
         account('1154', 'Stores and spares'),
       ]),
       revenue: [account('4110', 'Sales', 'sales')],
-      costOfSales: [...MAKER_COSTS, account('5140', 'Factory power and fuel')],
+      costOfSales: [...MAKER_COSTS, account('5140', 'Factory power and fuel'), STOCK_LOSSES],
     }),
     catalog: {
       units: [
@@ -467,6 +507,7 @@ export const INDUSTRY_TEMPLATES = {
         { key: 'grade', label: 'Grade', type: 'text' },
       ],
     },
+    stockAccounts: stockAccounts({ loss: '5150' }),
   },
   retail: {
     roles: [
@@ -512,6 +553,7 @@ export const INDUSTRY_TEMPLATES = {
       ],
       customFields: [{ key: 'brand', label: 'Brand', type: 'text' }],
     },
+    stockAccounts: stockAccounts({ loss: '5340' }),
   },
   other: {
     roles: [
@@ -530,12 +572,13 @@ export const INDUSTRY_TEMPLATES = {
     chart: standardChart({
       stock: TRADER_STOCK,
       revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Service income')],
-      costOfSales: [COGS],
+      costOfSales: [COGS, STOCK_LOSSES],
     }),
     catalog: {
       units: COMMON_UNITS,
       categories: [category('General')],
       customFields: [],
     },
+    stockAccounts: stockAccounts({ loss: '5150' }),
   },
 } satisfies Record<Industry, IndustryTemplate>;

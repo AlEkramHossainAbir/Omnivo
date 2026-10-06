@@ -9,6 +9,7 @@ import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { seedChart } from './seed-chart.js';
+import { seedStockAccounts } from './seed-stock-accounts.js';
 import { INDUSTRY_TEMPLATES } from './templates.js';
 
 // Gives a chart of accounts to a workspace that was set up before step 9. Migration 0014 queues
@@ -36,6 +37,8 @@ export class ChartHandler implements EventHandler<'workspace.chart_requested'> {
       const accounts = await seedChart(tx, tenantId, INDUSTRY_TEMPLATES[industry].chart);
       // Already had a chart: a second run of this job, or the setup job was first
       if (accounts === 0) return;
+      // Step 14: a chart made here gets its stock accounts at once, like a new workspace's
+      await seedStockAccounts(tx, tenantId, INDUSTRY_TEMPLATES[industry]);
       // No actorUserId: the audit log shows "System"
       await audit(tx, {
         action: 'workspace.chart_created',

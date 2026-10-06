@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { errorCode } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
+import { entryRefSchema } from './journal.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 import { receivedQuantitySchema } from './quantities.js';
 import {
@@ -27,6 +28,10 @@ export const transferLineSchema = stockLineSchema.extend({
   // Set on receipt, in the base unit; null until then
   receivedQuantity: z.string().nullable(),
   receivedSerialNumbers: z.array(z.string()).nullable(),
+  // Step 14, null without inventory.stock.value: what the line was worth when it left (at the
+  // average cost then), and what arrived of it (the same cost per unit); the rest is the shortage
+  value: z.string().nullable(),
+  receivedValue: z.string().nullable(),
 });
 export type TransferLine = z.infer<typeof transferLineSchema>;
 
@@ -53,6 +58,9 @@ export type StockTransferSummary = z.infer<typeof stockTransferSummarySchema>;
 
 export const stockTransferSchema = stockTransferSummarySchema.extend({
   lines: z.array(transferLineSchema),
+  // The journal entries the transfer made (step 14): one when it was sent between two branches,
+  // one when it was received — none for a transfer inside one branch that arrived whole
+  entries: z.array(entryRefSchema),
 });
 export type StockTransfer = z.infer<typeof stockTransferSchema>;
 

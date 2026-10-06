@@ -30,6 +30,8 @@ export const outboxPayloadSchemas = {
     warehouseId: z.uuid(),
     variantIds: z.array(z.uuid()).min(1).max(500),
   }),
+  // Like the chart's: the workspace and its business type say everything (step 14)
+  'workspace.stock_accounts_requested': z.object({}),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

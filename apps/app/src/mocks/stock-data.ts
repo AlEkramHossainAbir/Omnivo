@@ -1,18 +1,26 @@
 import {
+  addMoney,
   addQuantity,
+  type AdjustmentLine,
   type BatchStock,
   compareQuantity,
   defaultNumberFormat,
   type ErrorCode,
   fitsDecimals,
   formatDocumentNumber,
+  isAdjustmentReason,
   isQuantity,
   isWholeQuantity,
+  isZeroMoney,
+  isZeroQuantity,
   type MovementKind,
+  multiplyMoney,
+  negateMoney,
   negateQuantity,
   periodOf,
   type Product,
   type ProductVariant,
+  prorateMoney,
   type ReorderItem,
   type ReorderLevelInput,
   type StockAdjustment,
@@ -22,16 +30,26 @@ import {
   type StockLine,
   type StockListQuery,
   type StockMovement,
+  type StockRevaluation,
+  type StockRevaluationInput,
   type StockTransfer,
   type StockTransferInput,
+  type StockValue,
+  splitMoney,
+  subtractMoney,
+  subtractQuantity,
+  sumMoney,
   sumQuantity,
   toBaseQuantity,
   todayIn,
   type TransferLine,
+  unitCostOf,
+  type ValuationSummary,
   type Warehouse,
   wholeCount,
 } from '@omnivo/contracts';
 
+import { postStockEntry } from './journal-data';
 import { MockProblem } from './mock';
 import type { WorkspaceData } from './workspace-data';
 
@@ -49,9 +67,18 @@ interface MockMovement {
   batchId: string | null;
   serialNumber: string | null;
   quantity: string;
+  // Step 14: signed like the quantity
+  value: string;
   kind: MovementKind;
   documentId: string;
   documentNumber: string;
+}
+
+// A variant's stock and value company-wide (the API's stock_values row)
+interface ValueState {
+  quantity: string;
+  value: string;
+  unitCost: string | null;
 }
 
 interface MockBatch {
@@ -76,7 +103,10 @@ export interface MockStock {
   }[];
   adjustments: StockAdjustment[];
   transfers: StockTransfer[];
-  counters: { adjustment: number; transfer: number };
+  // Step 14: variant → its value (kept like the API's trigger, as each movement is written)
+  values: Map<string, ValueState>;
+  revaluations: StockRevaluation[];
+  counters: { adjustment: number; transfer: number; revaluation: number };
 }
 
 export function emptyStock(): MockStock {
@@ -88,12 +118,60 @@ export function emptyStock(): MockStock {
     levels: [],
     adjustments: [],
     transfers: [],
-    counters: { adjustment: 0, transfer: 0 },
+    values: new Map(),
+    revaluations: [],
+    counters: { adjustment: 0, transfer: 0, revaluation: 0 },
   };
+}
+
+// The new state after a movement, like migration 0024's trigger: the average follows the stock
+// while there is some, and keeps its last value at zero or below
+function applyValue(state: ValueState, quantity: string, value: string): ValueState {
+  const next = {
+    quantity: addQuantity(state.quantity, quantity),
+    value: addMoney(state.value, value),
+  };
+  return {
+    ...next,
+    unitCost:
+      compareQuantity(next.quantity, '0') > 0
+        ? unitCostOf(next.value, next.quantity)
+        : state.unitCost,
+  };
+}
+
+function valueOf(stock: MockStock, variantId: string): ValueState {
+  return stock.values.get(variantId) ?? { quantity: '0', value: '0.0000', unitCost: null };
+}
+
+// Writes a movement and adds it to its variant's value, like the trigger
+function pushMovement(stock: MockStock, movement: MockMovement): void {
+  stock.movements.push(movement);
+  stock.values.set(
+    movement.variantId,
+    applyValue(valueOf(stock, movement.variantId), movement.quantity, movement.value),
+  );
+}
+
+// The API's outflowValue(): all of it takes all the value, part takes its share, more than there
+// is takes what there was and the rest at the last average
+function outflowValue(state: ValueState, quantity: string): string {
+  const positive = compareQuantity(state.quantity, '0') > 0;
+  if (positive && compareQuantity(quantity, state.quantity) === 0) return state.value;
+  if (positive && compareQuantity(quantity, state.quantity) < 0) {
+    return prorateMoney(state.value, quantity, state.quantity);
+  }
+  const beyond = positive ? subtractQuantity(quantity, state.quantity) : quantity;
+  return addMoney(positive ? state.value : '0', multiplyMoney(beyond, state.unitCost ?? '0'));
 }
 
 function now(): string {
   return new Date().toISOString();
+}
+
+// "1200" → "1200.0000", the way Postgres sends NUMERIC(19,4); null stays null
+function fixedOrNull(value: string | null): string | null {
+  return value === null ? null : addMoney(value, '0');
 }
 
 export function warehouse(
@@ -217,6 +295,25 @@ function itemOf(
     onHand: onHand(stock, balances, variant.id, warehouseId),
     inTransit: inTransit(stock, variant.id, warehouseId),
     low: isLow(stock, balances, variant.id, warehouseId),
+    ...valueFields(stock, balances, variant.id, warehouseId),
+  };
+}
+
+// The mock signs everyone in as the owner, who sees costs (inventory.stock.value)
+function valueFields(
+  stock: MockStock,
+  balances: ReturnType<typeof balancesOf>,
+  variantId: string,
+  warehouseId: string | undefined,
+): { unitCost: string | null; value: string | null } {
+  const state = stock.values.get(variantId);
+  if (!state) return { unitCost: null, value: null };
+  return {
+    unitCost: state.unitCost,
+    value:
+      warehouseId === undefined
+        ? state.value
+        : multiplyMoney(onHand(stock, balances, variantId, warehouseId), state.unitCost ?? '0'),
   };
 }
 
@@ -361,6 +458,7 @@ export function movementsOf(
       documentNumber: row.documentNumber,
       quantity: row.quantity,
       balance,
+      value: row.value,
       lotNumber: data.stock.batches.find((batch) => batch.id === row.batchId)?.lotNumber ?? null,
       serialNumber: row.serialNumber,
     };
@@ -464,6 +562,7 @@ interface LineInput {
   lotNumber?: string | null;
   expiresOn?: string | null;
   manufacturedOn?: string | null;
+  unitCost?: string | null;
 }
 
 function issuesError(issues: { path: string; code: ErrorCode }[]): MockProblem {
@@ -579,11 +678,16 @@ function assertDate(data: WorkspaceData, date: string): void {
 
 function nextNumber(
   data: WorkspaceData,
-  type: 'inventory.adjustment' | 'inventory.transfer',
+  type: 'inventory.adjustment' | 'inventory.transfer' | 'inventory.revaluation',
   date: string,
 ): string {
   const format = defaultNumberFormat(type);
-  const key = type === 'inventory.adjustment' ? 'adjustment' : 'transfer';
+  const key =
+    type === 'inventory.adjustment'
+      ? 'adjustment'
+      : type === 'inventory.transfer'
+        ? 'transfer'
+        : 'revaluation';
   data.stock.counters[key] += 1;
   return formatDocumentNumber(
     format,
@@ -599,10 +703,13 @@ interface Move {
   batchId: string | null;
   quantity: string;
   serialNumbers: string[];
+  // An "in" move's value; null = at the average cost (step 14)
+  value?: string | null;
 }
 
-// The API's StockPostingService.post(), shortened: serial numbers and stock checked, then the
-// movements written (one per serial number for a serial product)
+// The API's StockPostingService.post(), shortened: serial numbers and stock checked, the values
+// worked out (step 14), then the movements written (one per serial number for a serial product).
+// Returns each move's value.
 function postMoves(
   data: WorkspaceData,
   posting: {
@@ -614,7 +721,7 @@ function postMoves(
   },
   moves: readonly Move[],
   receivingTransferId?: string,
-): void {
+): string[] {
   const { stock } = data;
   const issues: { path: string; code: ErrorCode }[] = [];
   const balances = balancesOf(stock);
@@ -659,7 +766,30 @@ function postMoves(
   }
   if (issues.length > 0) throw issuesError(issues);
 
-  for (const move of moves) {
+  // The values, in the document's order, each from what the one before left
+  const states = new Map<string, ValueState>();
+  const values = moves.map((move) => {
+    const variantId = move.stockLine.variantId;
+    const state = states.get(variantId) ?? valueOf(stock, variantId);
+    let value: string;
+    if (posting.direction === 'out') {
+      value = outflowValue(state, move.quantity);
+      states.set(variantId, applyValue(state, negateQuantity(move.quantity), negateMoney(value)));
+    } else {
+      const given = move.value ?? null;
+      if (given === null && state.unitCost === null) {
+        issues.push({ path: `lines.${String(move.line)}.unitCost`, code: 'stock_cost_required' });
+      }
+      value = given ?? multiplyMoney(move.quantity, state.unitCost ?? '0');
+      states.set(variantId, applyValue(state, move.quantity, value));
+    }
+    return value;
+  });
+  if (issues.length > 0) throw issuesError(issues);
+  const signed = (value: string) => (posting.direction === 'in' ? value : negateMoney(value));
+
+  moves.forEach((move, index) => {
+    const value = values[index] ?? '0';
     const base = {
       date: posting.date,
       warehouseId: move.warehouseId,
@@ -671,27 +801,54 @@ function postMoves(
       documentNumber: posting.number,
     };
     if (move.serialNumbers.length > 0) {
-      for (const serial of move.serialNumbers) {
-        stock.movements.push({
+      const pieces = splitMoney(value, move.serialNumbers.length);
+      move.serialNumbers.forEach((serial, piece) => {
+        pushMovement(stock, {
           ...base,
           id: crypto.randomUUID(),
           serialNumber: serial,
           quantity: posting.direction === 'in' ? '1.0000' : '-1.0000',
+          value: signed(pieces[piece] ?? '0'),
         });
         stock.serials.set(
           `${move.stockLine.variantId}|${serial}`,
           posting.direction === 'in' ? move.warehouseId : null,
         );
-      }
+      });
     } else {
-      stock.movements.push({
+      pushMovement(stock, {
         ...base,
         id: crypto.randomUUID(),
         serialNumber: null,
         quantity: posting.direction === 'in' ? move.quantity : negateQuantity(move.quantity),
+        value: signed(value),
       });
     }
+  });
+  return values;
+}
+
+// --- The books (step 14, the API's StockBooksService) --------------------------------------------
+
+function branchOf(data: WorkspaceData, warehouseId: string): string | null {
+  return data.stock.warehouses.find((place) => place.id === warehouseId)?.branchId ?? null;
+}
+
+function bookAccounts(data: WorkspaceData) {
+  const inventory = data.accounts.find((account) => account.purpose === 'inventory')?.id;
+  const equity = data.accounts.find((account) => account.purpose === 'opening_balance_equity')?.id;
+  if (inventory === undefined || equity === undefined) {
+    throw new MockProblem(409, 'stock_account_missing');
   }
+  const use = (key: keyof WorkspaceData['stockAccounts']): string => {
+    const id = data.stockAccounts[key];
+    const account = data.accounts.find((row) => row.id === id);
+    if (!account || account.isGroup || account.archivedAt !== null) {
+      throw new MockProblem(409, 'stock_account_missing');
+    }
+    return account.id;
+  };
+  return { inventory, equity, use };
 }
 
 export function findAdjustment(data: WorkspaceData, id: string): StockAdjustment {
@@ -706,7 +863,14 @@ export function saveAdjustment(
   existing?: StockAdjustment,
 ): StockAdjustment {
   assertWarehouses(data, [{ field: 'warehouseId', id: input.warehouseId }]);
-  const lines = resolveLines(data, input.lines, input.direction);
+  const lines: AdjustmentLine[] = resolveLines(data, input.lines, input.direction).map(
+    (line, index) => ({
+      ...line,
+      // A typed cost belongs on an "in" line only, like the API
+      unitCost: input.direction === 'in' ? fixedOrNull(input.lines[index]?.unitCost ?? null) : null,
+      value: null,
+    }),
+  );
   const saved: StockAdjustment = {
     id: existing?.id ?? crypto.randomUUID(),
     number: null,
@@ -721,6 +885,7 @@ export function saveAdjustment(
     version: (existing?.version ?? 0) + 1,
     updatedAt: now(),
     lines,
+    entry: null,
   };
   data.stock.adjustments = [saved, ...data.stock.adjustments.filter((row) => row.id !== saved.id)];
   return saved;
@@ -762,9 +927,16 @@ export function postAdjustment(data: WorkspaceData, draft: StockAdjustment): Sto
     return { ...line, batchId: batch.id, expiresOn: batch.expiresOn };
   });
   if (issues.length > 0) throw issuesError(issues);
+  // The accounts first: a missing one refuses the posting before anything moves
+  const accounts = bookAccounts(data);
+  const reason = draft.reason;
+  // Opening stock is against opening balance equity; every other reason has its own account
+  const against =
+    !isAdjustmentReason(reason) || reason === 'opening' ? accounts.equity : accounts.use(reason);
   const number = nextNumber(data, 'inventory.adjustment', draft.date);
+  let values: string[];
   try {
-    postMoves(
+    values = postMoves(
       data,
       { date: draft.date, kind: 'adjustment', direction, documentId: draft.id, number },
       lines.map((line, index) => ({
@@ -774,6 +946,7 @@ export function postAdjustment(data: WorkspaceData, draft: StockAdjustment): Sto
         batchId: line.batchId,
         quantity: line.baseQuantity,
         serialNumbers: line.serialNumbers,
+        value: line.unitCost === null ? null : multiplyMoney(line.quantity, line.unitCost),
       })),
     );
   } catch (error) {
@@ -781,9 +954,23 @@ export function postAdjustment(data: WorkspaceData, draft: StockAdjustment): Sto
     data.stock.counters.adjustment -= 1;
     throw error;
   }
+  const total = sumMoney(values);
+  const branchId = branchOf(data, draft.warehouseId);
+  const sign = (value: string) => (direction === 'in' ? value : negateMoney(value));
+  const entry = postStockEntry(data, {
+    date: draft.date,
+    source: 'stock_adjustment',
+    document: { id: draft.id, number },
+    narration: `Stock adjustment ${number}`,
+    amounts: [
+      { accountId: accounts.inventory, branchId, amount: sign(total) },
+      { accountId: against, branchId, amount: negateMoney(sign(total)) },
+    ],
+  });
   const posted: StockAdjustment = {
     ...draft,
-    lines,
+    lines: lines.map((line, index) => ({ ...line, value: values[index] ?? null })),
+    entry,
     number,
     status: 'posted',
     postedAt: now(),
@@ -815,6 +1002,8 @@ export function saveTransfer(
     ...line,
     receivedQuantity: null,
     receivedSerialNumbers: null,
+    value: null,
+    receivedValue: null,
   }));
   const saved: StockTransfer = {
     id: existing?.id ?? crypto.randomUUID(),
@@ -832,6 +1021,7 @@ export function saveTransfer(
     version: (existing?.version ?? 0) + 1,
     updatedAt: now(),
     lines,
+    entries: [],
   };
   data.stock.transfers = [saved, ...data.stock.transfers.filter((row) => row.id !== saved.id)];
   return saved;
@@ -840,9 +1030,15 @@ export function saveTransfer(
 export function sendTransfer(data: WorkspaceData, draft: StockTransfer): StockTransfer {
   if (draft.status !== 'draft') throw new MockProblem(409, 'stock_not_draft');
   assertDate(data, draft.sentOn);
+  const from = branchOf(data, draft.fromWarehouseId);
+  const crossing = from !== branchOf(data, draft.toWarehouseId);
+  // Between branches the goods go through goods in transit: its account must be there first
+  const accounts = crossing ? bookAccounts(data) : null;
+  const inTransitAccount = accounts?.use('in_transit') ?? null;
   const number = nextNumber(data, 'inventory.transfer', draft.sentOn);
+  let values: string[];
   try {
-    postMoves(
+    values = postMoves(
       data,
       { date: draft.sentOn, kind: 'transfer_out', direction: 'out', documentId: draft.id, number },
       draft.lines.map((line, index) => ({
@@ -858,8 +1054,24 @@ export function sendTransfer(data: WorkspaceData, draft: StockTransfer): StockTr
     data.stock.counters.transfer -= 1;
     throw error;
   }
+  const total = sumMoney(values);
+  const entry =
+    accounts && inTransitAccount
+      ? postStockEntry(data, {
+          date: draft.sentOn,
+          source: 'stock_transfer',
+          document: { id: draft.id, number },
+          narration: `Stock transfer ${number} sent`,
+          amounts: [
+            { accountId: inTransitAccount, branchId: null, amount: total },
+            { accountId: accounts.inventory, branchId: from, amount: negateMoney(total) },
+          ],
+        })
+      : null;
   const sent: StockTransfer = {
     ...draft,
+    lines: draft.lines.map((line, index) => ({ ...line, value: values[index] ?? null })),
+    entries: entry ? [entry] : [],
     number,
     status: 'in_transit',
     sentAt: now(),
@@ -905,6 +1117,23 @@ export function receiveTransfer(
     };
   });
   if (issues.length > 0) throw issuesError(issues);
+  // What arrived is worth the same per unit as what left (the API's receivedValueOf())
+  const receivedValues = lines.map(({ line }) => {
+    const sentValue = line.value ?? '0';
+    if (compareQuantity(line.receivedQuantity, line.baseQuantity) === 0) return sentValue;
+    if (isZeroQuantity(line.receivedQuantity)) return '0.0000';
+    return prorateMoney(sentValue, line.receivedQuantity, line.baseQuantity);
+  });
+  const from = branchOf(data, transfer.fromWarehouseId);
+  const to = branchOf(data, transfer.toWarehouseId);
+  const sentTotal = sumMoney(lines.map(({ line }) => line.value ?? '0'));
+  const receivedTotal = sumMoney(receivedValues);
+  const short = subtractMoney(sentTotal, receivedTotal);
+  const needsBooks = from !== to || !isZeroMoney(short);
+  const accounts = needsBooks ? bookAccounts(data) : null;
+  const shortageAccount =
+    accounts && !isZeroMoney(short) ? accounts.use('transfer_shortage') : null;
+  const inTransitAccount = accounts && from !== to ? accounts.use('in_transit') : null;
   postMoves(
     data,
     {
@@ -925,14 +1154,48 @@ export function receiveTransfer(
               batchId: line.batchId,
               quantity: line.receivedQuantity,
               serialNumbers: line.receivedSerialNumbers,
+              value: receivedValues[index] ?? '0',
             },
           ],
     ),
     transfer.id,
   );
+  const document = { id: transfer.id, number: transfer.number ?? '' };
+  const narration = `Stock transfer ${transfer.number ?? ''} received`;
+  const shortage = shortageAccount
+    ? [{ accountId: shortageAccount, branchId: from, amount: short }]
+    : [];
+  const entry = !accounts
+    ? null
+    : inTransitAccount
+      ? postStockEntry(data, {
+          date: input.date,
+          source: 'stock_transfer',
+          document,
+          narration,
+          amounts: [
+            { accountId: accounts.inventory, branchId: to, amount: receivedTotal },
+            ...shortage,
+            { accountId: inTransitAccount, branchId: null, amount: negateMoney(sentTotal) },
+          ],
+        })
+      : postStockEntry(data, {
+          date: input.date,
+          source: 'stock_transfer',
+          document,
+          narration,
+          amounts: [
+            ...shortage,
+            { accountId: accounts.inventory, branchId: from, amount: negateMoney(short) },
+          ],
+        });
   const received: StockTransfer = {
     ...transfer,
-    lines: lines.map(({ line }) => line),
+    lines: lines.map(({ line }, index) => ({
+      ...line,
+      receivedValue: receivedValues[index] ?? null,
+    })),
+    entries: entry ? [...transfer.entries, entry] : transfer.entries,
     status: 'received',
     receivedOn: input.date,
     receivedAt: now(),
@@ -946,14 +1209,187 @@ export function receiveTransfer(
   return received;
 }
 
+// --- Values (step 14) ---------------------------------------------------------------------------
+
+export function valuationList(
+  data: WorkspaceData,
+  query: { search?: string | undefined; categoryId?: string | undefined },
+): StockValue[] {
+  const search = query.search?.trim().toLowerCase() ?? '';
+  return data.catalog.products
+    .filter((product) => query.categoryId === undefined || product.categoryId === query.categoryId)
+    .toSorted((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+    .flatMap((product) =>
+      product.variants.flatMap((variant) => {
+        const state = data.stock.values.get(variant.id);
+        if (!state || (isZeroQuantity(state.quantity) && isZeroMoney(state.value))) return [];
+        const matches =
+          search === '' ||
+          product.name.toLowerCase().includes(search) ||
+          product.code.toLowerCase().includes(search) ||
+          variant.sku.toLowerCase().includes(search);
+        return matches
+          ? [
+              {
+                ...refOf(product, variant),
+                quantity: state.quantity,
+                unitCost: state.unitCost,
+                value: state.value,
+              },
+            ]
+          : [];
+      }),
+    );
+}
+
+export function valuationSummary(data: WorkspaceData): ValuationSummary {
+  const stockValue = sumMoney([...data.stock.values.values()].map((state) => state.value));
+  const inTransitValue = sumMoney(
+    data.stock.transfers
+      .filter((transfer) => transfer.status === 'in_transit')
+      .flatMap((transfer) => transfer.lines.map((line) => line.value ?? '0')),
+  );
+  const balanceOf = (accountId: string | null | undefined) => {
+    if (accountId === null || accountId === undefined) return null;
+    const lines = data.journal.entries
+      .filter((entry) => entry.status === 'posted')
+      .flatMap((entry) => entry.lines.filter((line) => line.accountId === accountId));
+    return {
+      id: accountId,
+      balance: subtractMoney(
+        sumMoney(lines.map((line) => line.debit)),
+        sumMoney(lines.map((line) => line.credit)),
+      ),
+    };
+  };
+  const inventoryAccount = balanceOf(
+    data.accounts.find((account) => account.purpose === 'inventory')?.id,
+  );
+  const inTransitAccount = balanceOf(data.stockAccounts.in_transit);
+  return {
+    stockValue,
+    inTransitValue,
+    inventoryAccount,
+    inTransitAccount,
+    difference: subtractMoney(
+      sumMoney([stockValue, inTransitValue]),
+      sumMoney([inventoryAccount?.balance ?? '0', inTransitAccount?.balance ?? '0']),
+    ),
+  };
+}
+
+export function findRevaluation(data: WorkspaceData, id: string): StockRevaluation {
+  const found = data.stock.revaluations.find((revaluation) => revaluation.id === id);
+  if (!found) throw new MockProblem(404, 'not_found');
+  return found;
+}
+
+// The API's StockRevaluationsService.create() and StockPostingService.revalue(), shortened: the
+// difference split over the warehouses holding the stock, as movements of quantity 0
+export function revalue(data: WorkspaceData, input: StockRevaluationInput): StockRevaluation {
+  assertDate(data, input.date);
+  const { stock } = data;
+  const issues: { path: string; code: ErrorCode }[] = [];
+  const found = input.lines.map((line, index) => {
+    const variant = findVariant(data, line.variantId);
+    if (variant?.product.type !== 'goods') {
+      issues.push({ path: `lines.${String(index)}.variantId`, code: 'stock_variant_invalid' });
+      return null;
+    }
+    const state = valueOf(stock, line.variantId);
+    if (compareQuantity(state.quantity, '0') <= 0) {
+      issues.push({ path: `lines.${String(index)}.variantId`, code: 'revaluation_no_stock' });
+      return null;
+    }
+    return { ...variant, state };
+  });
+  if (issues.length > 0) throw issuesError(issues);
+  const accounts = bookAccounts(data);
+  const revaluationAccount = accounts.use('revaluation');
+  const id = crypto.randomUUID();
+  const number = nextNumber(data, 'inventory.revaluation', input.date);
+  const balances = balancesOf(stock);
+  const amounts: { accountId: string; branchId: string | null; amount: string }[] = [];
+  const lines = input.lines.flatMap((line, index) => {
+    const item = found[index];
+    if (!item) return [];
+    const newValue = multiplyMoney(item.state.quantity, line.unitCost);
+    const difference = subtractMoney(newValue, item.state.value);
+    const places = stock.warehouses.flatMap((place) => {
+      const quantity = balances.byPlace.get(`${place.id}|${line.variantId}`) ?? '0';
+      return compareQuantity(quantity, '0') > 0 ? [{ warehouseId: place.id, quantity }] : [];
+    });
+    const held = sumQuantity(places.map((place) => place.quantity));
+    let left = difference;
+    places.forEach((place, at) => {
+      const value =
+        at === places.length - 1 ? left : prorateMoney(difference, place.quantity, held);
+      left = subtractMoney(left, value);
+      if (isZeroMoney(value)) return;
+      pushMovement(stock, {
+        id: crypto.randomUUID(),
+        date: input.date,
+        warehouseId: place.warehouseId,
+        productId: item.product.id,
+        variantId: line.variantId,
+        batchId: null,
+        serialNumber: null,
+        quantity: '0.0000',
+        value,
+        kind: 'revaluation',
+        documentId: id,
+        documentNumber: number,
+      });
+      const branchId = branchOf(data, place.warehouseId);
+      amounts.push(
+        { accountId: accounts.inventory, branchId, amount: value },
+        { accountId: revaluationAccount, branchId, amount: negateMoney(value) },
+      );
+    });
+    return [
+      {
+        ...refOf(item.product, item.variant),
+        id: crypto.randomUUID(),
+        quantity: item.state.quantity,
+        oldUnitCost: item.state.unitCost,
+        oldValue: item.state.value,
+        unitCost: addMoney(line.unitCost, '0'),
+        newValue,
+        difference,
+      },
+    ];
+  });
+  const entry = postStockEntry(data, {
+    date: input.date,
+    source: 'stock_revaluation',
+    document: { id, number },
+    narration: `Stock revaluation ${number}`,
+    amounts,
+  });
+  const revaluation: StockRevaluation = {
+    id,
+    number,
+    date: input.date,
+    note: input.note,
+    lineCount: lines.length,
+    difference: sumMoney(lines.map((line) => line.difference)),
+    postedAt: now(),
+    lines,
+    entry,
+  };
+  stock.revaluations = [revaluation, ...stock.revaluations];
+  return revaluation;
+}
+
 // --- Seed ---------------------------------------------------------------------------------------
 
 function daysFromToday(today: string, days: number): string {
   return new Date(Date.parse(`${today}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 }
 
-// What a fixture workspace starts with: its warehouses, an opening stock adjustment a week ago,
-// and (garments) a truck on the road to the Chattogram depot and a low stock of mailer bags
+// What a fixture workspace starts with: its warehouses, an opening stock adjustment a week ago
+// (with what each item cost: step 14 posts it to the books, against opening balance equity), and
+// (garments) a truck on the road to the Chattogram depot and a low stock of mailer bags
 export function seedStock(data: WorkspaceData, garments: boolean): void {
   const [ho, factory, depot] = data.branches;
   if (!ho) return;
@@ -977,7 +1413,13 @@ export function seedStock(data: WorkspaceData, garments: boolean): void {
 
   const byCode = (code: string) => data.catalog.products.find((product) => product.code === code);
   type SeedLine = StockAdjustmentInput['lines'][number];
-  const blank = { batchId: null, lotNumber: null, expiresOn: null, manufacturedOn: null };
+  const blank = {
+    batchId: null,
+    lotNumber: null,
+    expiresOn: null,
+    manufacturedOn: null,
+    unitCost: null,
+  };
   const line = (code: string, quantity: string, extra: Partial<SeedLine> = {}): SeedLine[] => {
     const product = byCode(code);
     const variant = product?.variants[0];
@@ -1015,13 +1457,15 @@ export function seedStock(data: WorkspaceData, garments: boolean): void {
         unitId: polo.baseUnitId,
         quantity: '120',
         serialNumbers: [],
+        unitCost: '410',
       })) ?? []),
-      ...line('P-00001', '480'),
-      ...line('P-00002', '1250.5'),
-      ...line('P-00003', '7200'),
-      ...line('P-00004', '3000'),
+      ...line('P-00001', '480', { unitCost: '185' }),
+      ...line('P-00002', '1250.5', { unitCost: '520' }),
+      ...line('P-00003', '7200', { unitCost: '0.45' }),
+      ...line('P-00004', '3000', { unitCost: '6.5' }),
       ...line('P-00005', '3', {
         serialNumbers: ['JK8000-24-0117', 'JK8000-24-0118', 'JK8000-24-0119'],
+        unitCost: '68500',
       }),
     ]);
     const mailer = byCode('P-00004')?.variants[0];
@@ -1049,8 +1493,16 @@ export function seedStock(data: WorkspaceData, garments: boolean): void {
     }
   } else {
     opening([
-      ...line('P-00001', '3000', { lotNumber: 'NP24090', expiresOn: daysFromToday(today, 25) }),
-      ...line('P-00001', '12000', { lotNumber: 'NP24117', expiresOn: daysFromToday(today, 270) }),
+      ...line('P-00001', '3000', {
+        lotNumber: 'NP24090',
+        expiresOn: daysFromToday(today, 25),
+        unitCost: '0.85',
+      }),
+      ...line('P-00001', '12000', {
+        lotNumber: 'NP24117',
+        expiresOn: daysFromToday(today, 270),
+        unitCost: '0.85',
+      }),
     ]);
   }
 }

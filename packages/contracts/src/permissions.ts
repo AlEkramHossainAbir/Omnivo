@@ -19,6 +19,8 @@ export const PERMISSION_KEYS = [
   'inventory.warehouse.manage',
   'inventory.stock.adjust',
   'inventory.stock.transfer',
+  'inventory.stock.value',
+  'inventory.stock.revalue',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -52,4 +54,6 @@ export const PERMISSION_GROUP_OF = {
   'inventory.warehouse.manage': 'inventory',
   'inventory.stock.adjust': 'inventory',
   'inventory.stock.transfer': 'inventory',
+  'inventory.stock.value': 'inventory',
+  'inventory.stock.revalue': 'inventory',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

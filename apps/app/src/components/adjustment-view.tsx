@@ -2,6 +2,7 @@ import { isAdjustmentDirection, isAdjustmentReason, type StockAdjustment } from 
 import { useLocale } from '@omnivo/i18n';
 import { Card, PageHeader } from '@omnivo/ui';
 
+import { EntryLinks } from './entry-links';
 import { StockLinesTable } from './stock-lines-table';
 import {
   AdjustmentStatusPill,
@@ -37,6 +38,13 @@ export function AdjustmentView({ adjustment }: { adjustment: StockAdjustment }) 
           value={warehouseLabel(byId.get(adjustment.warehouseId))}
         />
         {adjustment.note !== null && <Fact label={t('adjustments.note')} value={adjustment.note} />}
+        {adjustment.status === 'posted' && (
+          <EntryLinks
+            label={t('adjustments.entry')}
+            entries={adjustment.entry ? [adjustment.entry] : []}
+            none={t('adjustments.noEntry')}
+          />
+        )}
       </Card>
       <StockLinesTable lines={adjustment.lines} />
     </div>

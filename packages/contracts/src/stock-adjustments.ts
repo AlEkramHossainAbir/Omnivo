@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { errorCode } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
+import { entryRefSchema } from './journal.js';
+import { priceSchema } from './money.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 import {
   documentSerialRules,
@@ -81,15 +83,33 @@ export const stockAdjustmentSummarySchema = z.object({
 });
 export type StockAdjustmentSummary = z.infer<typeof stockAdjustmentSummarySchema>;
 
+// A line of an adjustment (step 14): what it cost as typed, per unit of the line (3 cartons at
+// ৳1,200), and what it moved in value once posted. unitCost is null when nobody typed one (an
+// "out" line, or an "in" line at the average cost). value is null for a draft, and for anyone
+// without inventory.stock.value: it was worked out from the books.
+export const adjustmentLineSchema = stockLineSchema.extend({
+  unitCost: z.string().nullable(),
+  value: z.string().nullable(),
+});
+export type AdjustmentLine = z.infer<typeof adjustmentLineSchema>;
+
 export const stockAdjustmentSchema = stockAdjustmentSummarySchema.extend({
-  lines: z.array(stockLineSchema),
+  lines: z.array(adjustmentLineSchema),
+  // The journal entry the posting made; null for a draft, or when the adjustment moved no value
+  // (stock at zero cost)
+  entry: entryRefSchema.nullable(),
 });
 export type StockAdjustment = z.infer<typeof stockAdjustmentSchema>;
 
 // ---------------------------------------------------------------------------------------------
 // What the form sends
 
-const adjustmentLineInputSchema = stockInLineFieldsSchema.superRefine(stockLineRules);
+// unitCost: per unit of the line, for a line that brings stock in. '' or left out = at the
+// average cost the variant has now (the API refuses it with stock_cost_required if it has none
+// yet). An "out" line never takes one: what leaves goes at the average cost.
+const adjustmentLineInputSchema = stockInLineFieldsSchema
+  .extend({ unitCost: priceSchema.default(null) })
+  .superRefine(stockLineRules);
 
 const stockAdjustmentFieldsSchema = z.object({
   date: z.iso.date(errorCode('stock_date_required')),

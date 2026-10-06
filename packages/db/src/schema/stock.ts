@@ -41,6 +41,10 @@ export const stockMovements = pgTable(
     serialId: uuid('serial_id'),
     // In the product's base unit: + in, − out. NUMERIC(19,4), a string in TypeScript.
     quantity: numeric('quantity', { precision: 19, scale: 4 }).notNull(),
+    // What the movement is worth (step 14), signed like the quantity, to the paisa: an inflow at
+    // its cost, an outflow at the average cost. The rows from before step 14 have 0 (they were
+    // written without a cost; a revaluation gives that stock its value).
+    value: numeric('value', { precision: 19, scale: 4 }).notNull().default('0'),
     kind: text('kind', { enum: MOVEMENT_KINDS }).notNull(),
     // The document that made it (an adjustment or a transfer) and its number at the time: a
     // posted document's number never changes, so the stock card needs no join to show it
@@ -84,7 +88,11 @@ export const stockMovements = pgTable(
       columns: [table.tenantId, table.variantId, table.serialId],
       foreignColumns: [serials.tenantId, serials.variantId, serials.id],
     }),
-    check('stock_movements_quantity_check', sql`${table.quantity} <> 0`),
+    // Every movement moves stock, except a revaluation (step 14): it changes only the value
+    check(
+      'stock_movements_quantity_check',
+      sql`(${table.kind} = 'revaluation') = (${table.quantity} = 0)`,
+    ),
     check(
       'stock_movements_serial_check',
       sql`${table.serialId} IS NULL OR ${table.quantity} IN (1, -1)`,
@@ -133,6 +141,41 @@ export const stockBalances = pgTable(
       name: 'stock_balances_batch_fk',
       columns: [table.tenantId, table.variantId, table.batchId],
       foreignColumns: [batches.tenantId, batches.variantId, batches.id],
+    }),
+  ],
+);
+
+// What each variant's stock is worth, company-wide (step 14: one average cost per variant, in
+// every warehouse). Like stock_balances, it is kept by the database (migration 0024's trigger
+// adds every movement's quantity and value) and code never writes it. It does not count what is on
+// a truck: a sent transfer took its value out, and its receipt brings it back.
+// It is also the row two documents moving the same variant queue on: StockPostingService locks it
+// (FOR UPDATE) before it reads the average, so the second one prices its outflow after the first.
+export const stockValues = pgTable(
+  'stock_values',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    productId: uuid('product_id').notNull(),
+    variantId: uuid('variant_id').notNull(),
+    // In every warehouse, in the base unit (the sum of the movements' quantities)
+    quantity: numeric('quantity', { precision: 19, scale: 4 }).notNull().default('0'),
+    // The sum of the movements' values
+    value: numeric('value', { precision: 19, scale: 4 }).notNull().default('0'),
+    // value ÷ quantity while there is stock, to 4 decimals. When the stock reaches zero (or goes
+    // below, if the workspace allows it) it keeps the last average: an outflow below zero is
+    // priced at it. NULL = this variant never had a cost.
+    unitCost: numeric('unit_cost', { precision: 19, scale: 4 }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // One row per variant: the trigger's ON CONFLICT target
+    unique('stock_values_key').on(table.tenantId, table.variantId),
+    foreignKey({
+      name: 'stock_values_variant_fk',
+      columns: [table.tenantId, table.productId, table.variantId],
+      foreignColumns: [productVariants.tenantId, productVariants.productId, productVariants.id],
     }),
   ],
 );

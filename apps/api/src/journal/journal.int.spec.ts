@@ -414,7 +414,7 @@ describe('the ledger', () => {
       (
         await send('POST', '/accounts', {
           parentId: id('5200'),
-          code: '5290',
+          code: '5295',
           name: 'Tea and entertainment',
           isGroup: false,
           description: '',
@@ -422,19 +422,19 @@ describe('the ledger', () => {
       ).json(),
     );
     accounts.push(tea);
-    await posted('2026-08-20', [debit('5290', '1500'), credit('1110', '1500')], 'Tea, August');
+    await posted('2026-08-20', [debit('5295', '1500'), credit('1110', '1500')], 'Tea, August');
     await posted(
       '2026-09-10',
-      [debit('5290', '2200.50'), credit('1110', '2200.50')],
+      [debit('5295', '2200.50'), credit('1110', '2200.50')],
       'Tea, September',
     );
     await posted(
       '2026-09-12',
-      [debit('1110', '300'), credit('5290', '300')],
+      [debit('1110', '300'), credit('5295', '300')],
       'Refund from the canteen',
     );
     // Drafts are not in the books
-    await write('2026-09-11', [debit('5290', '999'), credit('1110', '999')], { post: false });
+    await write('2026-09-11', [debit('5295', '999'), credit('1110', '999')], { post: false });
 
     const first = ledgerPageSchema.parse(
       (await send('GET', `/accounts/${tea.id}/ledger?from=2026-09-01&limit=1`)).json(),

@@ -20,7 +20,9 @@ import { productRoutes } from './products.js';
 import { roleRoutes } from './roles.js';
 import { settingsRoutes } from './settings.js';
 import { setupRoutes } from './setup.js';
+import { stockAccountRoutes } from './stock-accounts.js';
 import { stockAdjustmentRoutes } from './stock-adjustments.js';
+import { stockRevaluationRoutes } from './stock-revaluations.js';
 import { stockTransferRoutes } from './stock-transfers.js';
 import { stockRoutes } from './stock.js';
 import { unitRoutes } from './units.js';
@@ -70,4 +72,6 @@ export const routes = {
   stock: stockRoutes,
   stockAdjustments: stockAdjustmentRoutes,
   stockTransfers: stockTransferRoutes,
+  stockRevaluations: stockRevaluationRoutes,
+  stockAccounts: stockAccountRoutes,
 };

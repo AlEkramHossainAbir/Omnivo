@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  isStockJournalSource,
   type JournalEntry,
   type JournalEntryInput,
   type JournalEntrySummary,
@@ -185,6 +186,16 @@ export class JournalService {
             'A closing entry is undone by reopening its year.',
           );
         }
+        if (isStockJournalSource(entry.source)) {
+          // A stock document's entry moves with its stock (step 14): reversing it alone would
+          // leave the stock worth one thing and the books another. Another stock document puts it
+          // right — an adjustment the other way, or a revaluation.
+          throw new AppError(
+            409,
+            'journal_is_stock',
+            'This entry belongs to a stock document. Post another stock document to correct it.',
+          );
+        }
         if (entry.version !== input.version) throw versionConflict();
         const [already] = await tx
           .select({ id: reversal.id })
@@ -325,6 +336,10 @@ export class JournalService {
       reversedBy:
         refs.reversedById !== null && refs.reversedByNumber !== null
           ? { id: refs.reversedById, number: refs.reversedByNumber }
+          : null,
+      document:
+        entry.documentId !== null && entry.documentNumber !== null
+          ? { id: entry.documentId, number: entry.documentNumber }
           : null,
       postedAt: entry.postedAt?.toISOString() ?? null,
       version: entry.version,

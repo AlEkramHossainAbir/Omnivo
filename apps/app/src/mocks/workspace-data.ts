@@ -17,10 +17,11 @@ import {
   periodOf,
   type Settings,
   type Setup,
+  type StockAccounts,
   todayIn,
 } from '@omnivo/contracts';
 
-import { seedAccounts } from './accounting-data';
+import { noStockAccounts, seedAccounts, seedStockAccounts } from './accounting-data';
 import { OWNER, type Workspace } from './fixtures';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
@@ -49,6 +50,8 @@ export interface WorkspaceData {
   catalog: MockCatalog;
   // Warehouses, the stock ledger and its documents (step 13)
   stock: MockStock;
+  // The accounts stock documents post to, besides the inventory account (step 14)
+  stockAccounts: StockAccounts;
 }
 
 function now(): string {
@@ -100,11 +103,13 @@ function seed(workspace: Workspace): WorkspaceData {
     setupReadyAt: null,
     notifications: garments ? seedNotifications() : [],
     accounts: seedAccounts(garments ? 'garments' : 'pharma'),
+    stockAccounts: noStockAccounts(),
     journal: emptyJournal(),
     exports: [],
     catalog: garments ? garmentsCatalog() : pharmaCatalog(),
     stock: emptyStock(),
   };
+  data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   if (garments) seedJournal(data);
   seedStock(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
@@ -161,6 +166,7 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.notifications = [];
   // A new workspace has no chart until its setup job runs (settleSetup)
   data.accounts = [];
+  data.stockAccounts = noStockAccounts();
   data.journal = emptyJournal();
   data.exports = [];
   // Like the chart: the setup job brings the units and categories (settleSetup)
@@ -234,6 +240,7 @@ function usedNumbers(data: WorkspaceData, documentType: DocumentType, period: st
   if (documentType === 'accounting.journal') return data.journal.counters.get(period) ?? 0;
   if (documentType === 'inventory.adjustment') return data.stock.counters.adjustment;
   if (documentType === 'inventory.transfer') return data.stock.counters.transfer;
+  if (documentType === 'inventory.revaluation') return data.stock.counters.revaluation;
   return 0;
 }
 

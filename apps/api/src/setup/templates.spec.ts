@@ -4,7 +4,9 @@ import {
   createAccountInputSchema,
   createCustomFieldInputSchema,
   createUnitInputSchema,
+  accountTypeFits,
   INDUSTRIES,
+  STOCK_ACCOUNT_USES,
 } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
@@ -33,6 +35,22 @@ describe.each(INDUSTRIES)('the %s chart', (industry) => {
     expect(purposes.toSorted()).toEqual([...ACCOUNT_PURPOSES].sort());
     for (const node of all) {
       if (node.purpose !== undefined) expect(node.children, node.code).toBeUndefined();
+    }
+  });
+
+  it('chooses a ledger of the right type for every stock use (step 14)', () => {
+    const typeOf = new Map(
+      ACCOUNT_TYPES.flatMap((type) =>
+        flatten(chart[type])
+          .filter((node) => node.children === undefined && node.purpose === undefined)
+          .map((node) => [node.code, type] as const),
+      ),
+    );
+    const codes = INDUSTRY_TEMPLATES[industry].stockAccounts;
+    for (const use of STOCK_ACCOUNT_USES) {
+      const type = typeOf.get(codes[use]);
+      expect(type, `${use} → ${codes[use]}`).toBeDefined();
+      expect(accountTypeFits(use, type ?? ''), use).toBe(true);
     }
   });
 

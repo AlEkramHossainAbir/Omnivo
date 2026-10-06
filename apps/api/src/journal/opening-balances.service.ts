@@ -18,7 +18,7 @@ import { AppError, versionConflict } from '../common/http/app-error.js';
 import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
-import { type LineInput, PostingService } from './posting.service.js';
+import { type LineInput, PostingService, stockAccountIds } from './posting.service.js';
 
 const reversal = alias(journalEntries, 'reversal');
 
@@ -27,7 +27,7 @@ const reversal = alias(journalEntries, 'reversal');
 const OPENING_TYPES = ['asset', 'liability', 'equity'] as const;
 
 function invalidLines(
-  code: 'opening_account_invalid' | 'opening_account_twice',
+  code: 'opening_account_invalid' | 'opening_account_twice' | 'journal_account_stock',
   indexes: number[],
 ) {
   return new AppError(409, code, 'Some lines cannot take an opening balance.', {
@@ -101,6 +101,11 @@ export class OpeningBalancesService {
       );
       const invalid = filled.flatMap((line) => (allowed.has(line.accountId) ? [] : [line.index]));
       if (invalid.length > 0) throw invalidLines('opening_account_invalid', invalid);
+      // Step 14: opening stock is an adjustment (reason "Opening stock"), which values each item and
+      // posts it — a number typed here would be a value with no stock behind it
+      const stock = await stockAccountIds(tx);
+      const onStock = filled.flatMap((line) => (stock.has(line.accountId) ? [line.index] : []));
+      if (onStock.length > 0) throw invalidLines('journal_account_stock', onStock);
 
       if (current) {
         const lines = await this.linesOf(tx, current.id);

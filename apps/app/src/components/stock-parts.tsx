@@ -49,6 +49,15 @@ export function useQuantity(): (value: string, unitId: string) => string {
   );
 }
 
+// "case", "pcs": a unit's code, for "Cost per case" (step 14)
+export function useUnitCode(): (unitId: string) => string {
+  const units = useQuery(unitsQuery(useTenantId())).data;
+  return useCallback(
+    (unitId: string) => units?.find((unit) => unit.id === unitId)?.code ?? '',
+    [units],
+  );
+}
+
 // Every warehouse, archived ones too (old documents point at them), by id; and the active ones,
 // for the forms' selects
 export function useWarehouses(): {
@@ -77,13 +86,26 @@ export function useToday(): string {
 }
 
 // After a posting: everything under ['stock', tenant] — the list, the cards, the reports and the
-// documents — is fetched again
+// documents — is fetched again. And from step 14 the books too (['journal', tenant]): a posting
+// writes a journal entry, which changes the ledgers, the trial balance and the balance sheet.
 export function useStockRefresh(): () => Promise<void> {
   const tenantId = useTenantId();
   const queryClient = useQueryClient();
+  return useCallback(async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['stock', tenantId] }),
+      queryClient.invalidateQueries({ queryKey: ['journal', tenantId] }),
+    ]);
+  }, [queryClient, tenantId]);
+}
+
+// "৳3,600.00": a value on a stock document, with paisa — the journal entry it made shows them too,
+// and both must visibly agree. null (no permission, or no cost yet) is a dash.
+export function useValue(): (value: string | null) => string {
+  const { format } = useLocale();
   return useCallback(
-    () => queryClient.invalidateQueries({ queryKey: ['stock', tenantId] }),
-    [queryClient, tenantId],
+    (value: string | null) => (value === null ? '—' : format.money(value, { decimals: 2 })),
+    [format],
   );
 }
 
@@ -181,7 +203,12 @@ export function BackLink({
   to,
   label,
 }: {
-  to: '/stock' | '/stock/adjustments' | '/stock/transfers';
+  to:
+    | '/stock'
+    | '/stock/adjustments'
+    | '/stock/transfers'
+    | '/stock/valuation'
+    | '/stock/revaluations';
   label: string;
 }) {
   return (

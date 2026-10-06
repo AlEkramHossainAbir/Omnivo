@@ -294,6 +294,38 @@ const stockBatchesRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/stock-batches'), 'StockBatchesPage'),
 });
 
+// What the stock is worth (step 14): the valuation report and the revaluations. Fixed segments
+// again, so '/stock/valuation' and '/stock/revaluations' beat '/stock/$variantId'.
+const stockValuationRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/valuation',
+  component: lazyRouteComponent(() => import('./routes/stock-valuation'), 'StockValuationPage'),
+});
+
+const stockRevaluationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/revaluations',
+  component: lazyRouteComponent(
+    () => import('./routes/stock-revaluations'),
+    'StockRevaluationsPage',
+  ),
+});
+
+const newStockRevaluationRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/revaluations/new',
+  component: lazyRouteComponent(
+    () => import('./routes/stock-revaluation'),
+    'NewStockRevaluationPage',
+  ),
+});
+
+const stockRevaluationRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/revaluations/$revaluationId',
+  component: lazyRouteComponent(() => import('./routes/stock-revaluation'), 'StockRevaluationPage'),
+});
+
 const stockReorderRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/stock/reorder',
@@ -374,6 +406,10 @@ const routeTree = rootRoute.addChildren([
     stockTransferRoute,
     stockBatchesRoute,
     stockReorderRoute,
+    stockValuationRoute,
+    stockRevaluationsRoute,
+    newStockRevaluationRoute,
+    stockRevaluationRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

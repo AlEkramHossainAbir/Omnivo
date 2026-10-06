@@ -122,7 +122,8 @@ async function product(name: string, extra: Partial<ProductFormValues>): Promise
   return productSchema.parse(res.json());
 }
 
-// What the adjustment form sends for one line; each test changes a few fields
+// What the adjustment form sends for one line; each test changes a few fields. Every item costs
+// ৳10 a unit here (step 14: stock that comes in needs a cost); an "out" line ignores it.
 function line(variantId: string, quantity: string, extra: object = {}) {
   return {
     variantId,
@@ -133,6 +134,7 @@ function line(variantId: string, quantity: string, extra: object = {}) {
     expiresOn: '',
     manufacturedOn: '',
     serialNumbers: [],
+    unitCost: '10',
     ...extra,
   };
 }

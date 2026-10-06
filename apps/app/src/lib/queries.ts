@@ -489,3 +489,63 @@ export function stockTransferQuery(tenantId: string, transferId: string) {
     retry: false,
   });
 }
+
+// ---------------------------------------------------------------------------------------------
+// What the stock is worth (step 14). Under ['stock', tenantId] too: every posting changes values.
+
+export function stockValuationQuery(
+  tenantId: string,
+  filter: { search: string; categoryId: string },
+) {
+  return infiniteQueryOptions({
+    queryKey: ['stock', tenantId, 'valuation', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stock.valuation, {
+        query: {
+          limit: 100,
+          ...(filter.search !== '' && { search: filter.search }),
+          ...(filter.categoryId !== '' && { categoryId: filter.categoryId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function valuationSummaryQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['stock', tenantId, 'valuation-summary'],
+    queryFn: () => call(routes.stock.valuationSummary),
+  });
+}
+
+export function stockRevaluationsQuery(tenantId: string) {
+  return infiniteQueryOptions({
+    queryKey: ['stock', tenantId, 'revaluations'],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stockRevaluations.list, {
+        query: { limit: 50, ...(pageParam !== null && { cursor: pageParam }) },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function stockRevaluationQuery(tenantId: string, revaluationId: string) {
+  return queryOptions({
+    queryKey: ['stock', tenantId, 'revaluation', revaluationId],
+    queryFn: () => call(routes.stockRevaluations.get, { params: { id: revaluationId } }),
+    retry: false,
+  });
+}
+
+// The accounts stock documents post to (Settings → Inventory)
+export function stockAccountsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['stock-accounts', tenantId],
+    queryFn: () => call(routes.stockAccounts.get),
+  });
+}

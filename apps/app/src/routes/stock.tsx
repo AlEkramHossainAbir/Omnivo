@@ -78,10 +78,12 @@ function StockStatus({ item }: { item: StockItem }) {
 }
 
 export function StockPage() {
-  const { t } = useLocale();
+  const { t, format } = useLocale();
   const navigate = useNavigate();
   const tenantId = useTenantId();
   const can = useCan();
+  // Step 14: what the stock is worth, for the people who may see costs
+  const canSeeValues = can('inventory.stock.value');
   const quantity = useQuantity();
   const { active } = useWarehouses();
   const [search, setSearch] = useState('');
@@ -131,6 +133,22 @@ export function StockPage() {
               </span>
             ),
         }),
+        ...(canSeeValues
+          ? [
+              // A list: whole taka, like every list and dashboard (CLAUDE.md → Money)
+              column.accessor('value', {
+                header: t('stock.columns.value'),
+                enableSorting: false,
+                meta: { align: 'end', card: 'detail' },
+                cell: ({ row }) =>
+                  row.original.value === null ? (
+                    <span className="text-ink-3">—</span>
+                  ) : (
+                    <span className="tabular-nums">{format.money(row.original.value)}</span>
+                  ),
+              }),
+            ]
+          : []),
         column.display({
           id: 'status',
           header: t('stock.columns.status'),
@@ -138,7 +156,7 @@ export function StockPage() {
           cell: ({ row }) => <StockStatus item={row.original} />,
         }),
       ]),
-    [t, quantity],
+    [t, format, quantity, canSeeValues],
   );
 
   const empty =

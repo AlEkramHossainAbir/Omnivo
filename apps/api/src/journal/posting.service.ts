@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { type ErrorCode, type JournalSource, sumMoney } from '@omnivo/contracts';
-import { branches, journalEntries, journalLines, ledgerAccounts } from '@omnivo/db';
+import {
+  type ErrorCode,
+  isStockJournalSource,
+  type JournalSource,
+  sumMoney,
+} from '@omnivo/contracts';
+import { branches, journalEntries, journalLines, ledgerAccounts, stockAccounts } from '@omnivo/db';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { AppError } from '../common/http/app-error.js';
@@ -27,6 +32,8 @@ export interface NewEntry {
   source: JournalSource;
   // Only for source 'reversal'
   reversalOfId?: string;
+  // Only for a stock document's entry (step 14): the document that made it
+  document?: { id: string; number: string };
   lines: readonly LineInput[];
 }
 
@@ -37,6 +44,25 @@ function lineErrors(code: ErrorCode, field: string, indexes: readonly number[]):
       indexes.map((index) => [`lines.${String(index)}.${field}`, [code]]),
     ),
   });
+}
+
+// The accounts only stock documents post to (step 14): the inventory account and the goods in
+// transit account. A manual entry or an opening balance on them would make the books say one value
+// and the stock another, with nothing to bring them back together. Stock comes in through an
+// adjustment (opening stock too), and a wrong value is put right by a revaluation.
+export async function stockAccountIds(tx: Transaction): Promise<Set<string>> {
+  const tenantId = getTenantId();
+  const [inventory, inTransit] = await Promise.all([
+    tx
+      .select({ id: ledgerAccounts.id })
+      .from(ledgerAccounts)
+      .where(and(eq(ledgerAccounts.tenantId, tenantId), eq(ledgerAccounts.purpose, 'inventory'))),
+    tx
+      .select({ id: stockAccounts.accountId })
+      .from(stockAccounts)
+      .where(and(eq(stockAccounts.tenantId, tenantId), eq(stockAccounts.use, 'in_transit'))),
+  ]);
+  return new Set([...inventory, ...inTransit].map((row) => row.id));
 }
 
 // Who did it: the person behind the request, or nobody (a background job) — like audit()
@@ -57,10 +83,15 @@ export class PostingService {
   // locks FOR UPDATE), while other postings to the same account go on in parallel.
   // allowArchived: a reversal undoes an entry exactly, even if one of its accounts was archived
   // since — archiving hides an account from new work, it must not block fixing old work.
+  // allowStock: the entry may post to the inventory and goods in transit accounts — a stock
+  // document's entry, or a reversal or closing entry of old work. Every other entry may not.
   async checkLines(
     tx: Transaction,
     lines: readonly LineInput[],
-    { allowArchived = false }: { allowArchived?: boolean } = {},
+    {
+      allowArchived = false,
+      allowStock = false,
+    }: { allowArchived?: boolean; allowStock?: boolean } = {},
   ): Promise<void> {
     const tenantId = getTenantId();
     const accountIds = [...new Set(lines.map((line) => line.accountId))];
@@ -83,6 +114,11 @@ export class PostingService {
     // the form shows one sentence, and nothing about other tenants leaks
     if (badAccounts.length > 0)
       throw lineErrors('journal_account_invalid', 'accountId', badAccounts);
+    if (!allowStock) {
+      const stock = await stockAccountIds(tx);
+      const onStock = lines.flatMap((line, index) => (stock.has(line.accountId) ? [index] : []));
+      if (onStock.length > 0) throw lineErrors('journal_account_stock', 'accountId', onStock);
+    }
 
     const branchIds = [
       ...new Set(lines.flatMap((line) => (line.branchId === null ? [] : [line.branchId]))),
@@ -139,6 +175,8 @@ export class PostingService {
         narration: entry.narration,
         source: entry.source,
         reversalOfId: entry.reversalOfId ?? null,
+        documentId: entry.document?.id ?? null,
+        documentNumber: entry.document?.number ?? null,
         createdBy: actorId(),
         updatedBy: actorId(),
       })
@@ -175,6 +213,10 @@ export class PostingService {
     // that holds a balance: both must reach an account that was archived since
     await this.checkLines(tx, lines, {
       allowArchived: entry.source === 'reversal' || entry.source === 'year_close',
+      allowStock:
+        entry.source === 'reversal' ||
+        entry.source === 'year_close' ||
+        isStockJournalSource(entry.source),
     });
 
     // In the same transaction: if anything after this fails, the number goes back (step 6)

@@ -118,6 +118,10 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d om
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT b.tenant_id, b.warehouse_id, b.variant_id, b.batch_id, b.quantity, m.total FROM stock_balances b LEFT JOIN LATERAL (SELECT coalesce(sum(quantity), 0) AS total FROM stock_movements m WHERE m.tenant_id = b.tenant_id AND m.warehouse_id = b.warehouse_id AND m.variant_id = b.variant_id AND m.batch_id IS NOT DISTINCT FROM b.batch_id) m ON true WHERE b.quantity <> m.total"
 # transfers still on the road, oldest first
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, s.number, s.sent_on FROM stock_transfers s JOIN tenants t ON t.id = s.tenant_id WHERE s.status = 'in_transit' ORDER BY s.sent_on"
+# items whose stock_values row differs from its movements (should print nothing; the trigger keeps them equal)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT v.tenant_id, v.variant_id, v.quantity, v.value, m.quantity AS moved, m.value AS moved_value FROM stock_values v LEFT JOIN LATERAL (SELECT coalesce(sum(quantity), 0) AS quantity, coalesce(sum(value), 0) AS value FROM stock_movements m WHERE m.tenant_id = v.tenant_id AND m.variant_id = v.variant_id) m ON true WHERE v.quantity <> m.quantity OR v.value <> m.value"
+# stock value per workspace, next to its inventory account's balance (the valuation page's check)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, (SELECT coalesce(sum(value), 0) FROM stock_values v WHERE v.tenant_id = t.id) AS stock, (SELECT coalesce(sum(l.debit - l.credit), 0) FROM journal_lines l JOIN journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id JOIN ledger_accounts a ON a.tenant_id = l.tenant_id AND a.id = l.account_id WHERE l.tenant_id = t.id AND a.purpose = 'inventory' AND e.status = 'posted') AS inventory_account FROM tenants t"
 ```
 
 ## Permission cache (Valkey)

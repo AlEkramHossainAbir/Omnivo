@@ -16,11 +16,34 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // newer server's new source does not break an older offline client.
 // year_close: the closing entry of a fiscal year (step 11), which moves income and expenses into
 // retained earnings. The profit and loss leaves it out, or every closed year would show zero profit.
-export const JOURNAL_SOURCES = ['manual', 'opening_balance', 'reversal', 'year_close'] as const;
+// stock_adjustment, stock_transfer, stock_revaluation (step 14): the entry a stock document makes
+// when it is posted. It points back at its document (document), and only another stock document
+// can change it — the journal's Reverse refuses it, or the books and the stock would disagree.
+export const JOURNAL_SOURCES = [
+  'manual',
+  'opening_balance',
+  'reversal',
+  'year_close',
+  'stock_adjustment',
+  'stock_transfer',
+  'stock_revaluation',
+] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
 export function isJournalSource(value: string): value is JournalSource {
   return JOURNAL_SOURCES.some((source) => source === value);
+}
+
+// The sources a stock document posts: their entries are made and undone by stock documents only
+export const STOCK_JOURNAL_SOURCES = [
+  'stock_adjustment',
+  'stock_transfer',
+  'stock_revaluation',
+] as const satisfies readonly JournalSource[];
+export type StockJournalSource = (typeof STOCK_JOURNAL_SOURCES)[number];
+
+export function isStockJournalSource(value: string): value is StockJournalSource {
+  return STOCK_JOURNAL_SOURCES.some((source) => source === value);
 }
 
 // '2026-07-01' and -1 → '2026-06-30'. The arithmetic runs in UTC, so no time zone can move the
@@ -35,7 +58,9 @@ export function shiftIsoDate(isoDate: string, days: number): string {
 // A real entry has a handful of lines; a payroll or an opening balance a few hundred at most
 export const MAX_JOURNAL_LINES = 200;
 
-const entryRefSchema = z.object({ id: z.uuid(), number: z.string() });
+// A posted entry as another page links to it: "JV-2026-27-0042"
+export const entryRefSchema = z.object({ id: z.uuid(), number: z.string() });
+export type EntryRef = z.infer<typeof entryRefSchema>;
 
 export const journalLineSchema = z.object({
   id: z.uuid(),
@@ -64,6 +89,9 @@ export const journalEntrySummarySchema = z.object({
   // This entry undoes reversalOf; reversedBy undid this entry
   reversalOf: entryRefSchema.nullable(),
   reversedBy: entryRefSchema.nullable(),
+  // The stock document that made this entry (step 14): its id and number. Which kind of document
+  // it is follows from the source. null for every other entry.
+  document: z.object({ id: z.uuid(), number: z.string() }).nullable(),
   postedAt: z.iso.datetime().nullable(),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),

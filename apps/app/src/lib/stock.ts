@@ -100,9 +100,15 @@ export function parseSerials(text: string): string[] {
 // The routes a stock card's row links to, by its kind (unknown kinds from a newer server: none)
 export function documentRoute(
   kind: string,
-): '/stock/adjustments/$adjustmentId' | '/stock/transfers/$transferId' | null {
+):
+  | '/stock/adjustments/$adjustmentId'
+  | '/stock/transfers/$transferId'
+  | '/stock/revaluations/$revaluationId'
+  | null {
   if (kind === 'adjustment') return '/stock/adjustments/$adjustmentId';
   if (kind === 'transfer_out' || kind === 'transfer_in') return '/stock/transfers/$transferId';
+  // Step 14: a change of value, without a change of quantity
+  if (kind === 'revaluation') return '/stock/revaluations/$revaluationId';
   return null;
 }
 

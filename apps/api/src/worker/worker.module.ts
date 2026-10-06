@@ -14,6 +14,7 @@ import { ReportExportHandler } from '../reports/export.handler.js';
 import { CatalogHandler } from '../setup/catalog.handler.js';
 import { ChartHandler } from '../setup/chart.handler.js';
 import { ProvisioningHandler } from '../setup/provisioning.handler.js';
+import { StockAccountsHandler } from '../setup/stock-accounts.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 import { StorageService } from '../storage/storage.service.js';
 import { EventHandlers } from './handlers.js';
@@ -60,6 +61,7 @@ export class WorkerModule implements OnApplicationShutdown {
         NumberingService,
         ProductImportHandler,
         LowStockHandler,
+        StockAccountsHandler,
       ],
     };
   }

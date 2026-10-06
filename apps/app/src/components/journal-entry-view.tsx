@@ -6,6 +6,7 @@ import {
   type Branch,
   contractErrorMap,
   isJournalSource,
+  isStockJournalSource,
   type JournalEntry,
   reverseJournalEntryInputSchema,
   routes,
@@ -101,6 +102,22 @@ function ReverseForm({
 }
 
 // A posted entry (read only, with Reverse), or a draft for someone who may post but not edit
+// The stock document a stock entry came from (step 14): its page, by the entry's source
+function documentLinkOf(entry: JournalEntry) {
+  const id = entry.document?.id;
+  if (id === undefined) return null;
+  if (entry.source === 'stock_adjustment') {
+    return { to: '/stock/adjustments/$adjustmentId', params: { adjustmentId: id } } as const;
+  }
+  if (entry.source === 'stock_transfer') {
+    return { to: '/stock/transfers/$transferId', params: { transferId: id } } as const;
+  }
+  if (entry.source === 'stock_revaluation') {
+    return { to: '/stock/revaluations/$revaluationId', params: { revaluationId: id } } as const;
+  }
+  return null;
+}
+
 export function EntryView({
   entry,
   accounts,
@@ -131,13 +148,17 @@ export function EntryView({
     },
   });
 
-  // A closing entry is undone by reopening its year (the Year-end close page), not from here
+  // A closing entry is undone by reopening its year (the Year-end close page), and a stock
+  // document's entry by another stock document (step 14) — not from here
+  const fromStock = isStockJournalSource(entry.source);
   const canReverse =
     canPost &&
     entry.status === 'posted' &&
     entry.reversedBy === null &&
     entry.source !== 'reversal' &&
-    entry.source !== 'year_close';
+    entry.source !== 'year_close' &&
+    !fromStock;
+  const documentLink = documentLinkOf(entry);
   const failure = failureOf(post.error);
   const amount = (value: string) =>
     value === '0.0000' ? '' : format.money(value, { decimals: 2 });
@@ -198,7 +219,16 @@ export function EntryView({
             {t('journal.reversedBy', { number: entry.reversedBy.number })}
           </Link>
         )}
+        {documentLink && (
+          <Link
+            {...documentLink}
+            className="font-medium text-brand underline-offset-3 hover:underline"
+          >
+            {t('journal.fromDocument', { document: entry.document?.number ?? '' })}
+          </Link>
+        )}
       </div>
+      {fromStock && <p className="text-label text-ink-3">{t('journal.stockEntryHint')}</p>}
       {entry.narration && <p className="text-body text-ink">{entry.narration}</p>}
       {/* A plain table in its own scroll box: four columns, a handful of rows, a totals row */}
       <Card className="overflow-x-auto">

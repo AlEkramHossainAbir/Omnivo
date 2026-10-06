@@ -1,6 +1,7 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
+  accountListSchema,
   problemSchema,
   type Product,
   productSchema,
@@ -8,9 +9,13 @@ import {
   type StockAdjustment,
   stockAdjustmentSchema,
   stockCardSchema,
+  stockAccountsSchema,
   stockPageSchema,
+  type StockRevaluation,
+  stockRevaluationSchema,
   type StockTransfer,
   stockTransferSchema,
+  stockValuePageSchema,
   type Unit,
   unitListSchema,
   type Warehouse,
@@ -51,6 +56,7 @@ let productOfA: Product;
 let productOfB: Product;
 let adjustmentOfB: StockAdjustment;
 let transferOfB: StockTransfer;
+let revaluationOfB: StockRevaluation;
 
 function as(
   who: SignedIn,
@@ -129,6 +135,7 @@ function stockIn(warehouseId: string, variantId: string, unitId: string) {
         expiresOn: '',
         manufacturedOn: '',
         serialNumbers: [],
+        unitCost: '95',
       },
     ],
     post: true,
@@ -198,6 +205,14 @@ beforeAll(async () => {
   });
   expect(transfer.statusCode, transfer.body).toBe(201);
   transferOfB = stockTransferSchema.parse(transfer.json());
+
+  const revaluation = await as(tenantB, 'POST', '/stock-revaluations', {
+    date: '2026-10-02',
+    note: '',
+    lines: [{ variantId: variantOf(productOfB), unitCost: '99' }],
+  });
+  expect(revaluation.statusCode, revaluation.body).toBe(201);
+  revaluationOfB = stockRevaluationSchema.parse(revaluation.json());
 }, 120_000);
 
 afterAll(async () => {
@@ -307,5 +322,45 @@ describe('stock across workspaces', () => {
       (await as(tenantB, 'GET', `/stock/variants/${variantOf(productOfB)}`)).json(),
     );
     expect(card.item.onHand).toBe('10.0000');
+  });
+});
+
+// Step 14: values, revaluations and the stock accounts are as private as the stock itself
+describe('stock values across workspaces', () => {
+  it("does not value or revalue B's stock", async () => {
+    const page = stockValuePageSchema.parse(
+      (await as(tenantA, 'GET', '/stock/valuation?search=rupchanda')).json(),
+    );
+    expect(page.items).toEqual([]);
+    expect((await as(tenantA, 'GET', `/stock-revaluations/${revaluationOfB.id}`)).statusCode).toBe(
+      404,
+    );
+    const res = await as(tenantA, 'POST', '/stock-revaluations', {
+      date: '2026-10-02',
+      note: '',
+      lines: [{ variantId: variantOf(productOfB), unitCost: '1' }],
+    });
+    expect(problemSchema.parse(res.json()).fieldErrors).toEqual({
+      'lines.0.variantId': ['stock_variant_invalid'],
+    });
+  });
+
+  it("cannot point a stock account at one of B's accounts", async () => {
+    const choices = stockAccountsSchema.parse((await as(tenantA, 'GET', '/stock-accounts')).json());
+    const accountsOfB = accountListSchema.parse((await as(tenantB, 'GET', '/accounts')).json());
+    const lossOfB = accountsOfB.items.find((account) => account.code === '5340');
+    if (!lossOfB) throw new Error('B has no 5340');
+    const res = await as(tenantA, 'PUT', '/stock-accounts', {
+      ...Object.fromEntries(Object.entries(choices).map(([use, id]) => [use, id ?? ''])),
+      damaged: lossOfB.id,
+    });
+    expect(problemSchema.parse(res.json()).fieldErrors).toEqual({
+      damaged: ['stock_account_invalid'],
+    });
+    // B's value is untouched: its revaluation still stands
+    const card = stockCardSchema.parse(
+      (await as(tenantB, 'GET', `/stock/variants/${variantOf(productOfB)}`)).json(),
+    );
+    expect(card.item).toMatchObject({ unitCost: '99.0000', value: '990.0000' });
   });
 });

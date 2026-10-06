@@ -27,6 +27,7 @@ import { applyApiError } from '../lib/field-errors';
 import { rowPath } from '../lib/products';
 import { firstMessage } from '../lib/stock';
 import { Fact } from './adjustment-view';
+import { EntryLinks } from './entry-links';
 import { LineField } from './journal-parts';
 import { SerialNumbersInput } from './serial-numbers-input';
 import { StockLinesTable } from './stock-lines-table';
@@ -70,6 +71,9 @@ export function TransferView({
           <Fact label={t('transfers.receiveDate')} value={isoDate(transfer.receivedOn)} />
         )}
         {transfer.note !== null && <Fact label={t('transfers.note')} value={transfer.note} />}
+        {transfer.status !== 'draft' && (
+          <EntryLinks label={t('transfers.entries')} entries={transfer.entries} none="—" />
+        )}
       </Card>
       {transfer.status === 'in_transit' && canReceive ? (
         <ReceiveForm transfer={transfer} today={today} warehouse={to} />

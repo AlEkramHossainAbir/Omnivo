@@ -40,6 +40,11 @@ export const journalEntries = pgTable(
     source: text('source', { enum: JOURNAL_SOURCES }).notNull().default('manual'),
     // Set on a reversal: the entry it undoes
     reversalOfId: uuid('reversal_of_id'),
+    // The stock document that made this entry (step 14): which one follows from the source (an
+    // adjustment, a transfer, a revaluation); its number never changes once posted, so the
+    // journal shows it without a join
+    documentId: uuid('document_id'),
+    documentNumber: text('document_number'),
     postedAt: timestamp('posted_at', { withTimezone: true }),
     postedBy: uuid('posted_by'),
   },
@@ -70,6 +75,15 @@ export const journalEntries = pgTable(
       'journal_entries_reversal_check',
       sql`(${table.source} = 'reversal') = (${table.reversalOfId} IS NOT NULL)`,
     ),
+    // A stock document's entry always points at its document, and no other entry does
+    check(
+      'journal_entries_document_check',
+      sql`(${table.source} IN ('stock_adjustment', 'stock_transfer', 'stock_revaluation')) = (${table.documentId} IS NOT NULL AND ${table.documentNumber} IS NOT NULL)`,
+    ),
+    // A stock document's entries (a transfer has up to two)
+    index('journal_entries_document_idx')
+      .on(table.tenantId, table.documentId)
+      .where(sql`${table.documentId} IS NOT NULL`),
   ],
 );
 

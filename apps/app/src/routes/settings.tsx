@@ -38,6 +38,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ChangeEvent, useMemo, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
+import { StockAccountsCard } from '../components/stock-accounts-card';
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { settingsQuery } from '../lib/queries';
@@ -406,6 +407,8 @@ export function SettingsPage() {
           {/* key: workspace বদলালে নতুন টেন্যান্টের মান দিয়ে ফর্ম নতুন করে তৈরি; একই টেন্যান্টের
               refetch-এ না — তাহলে লেখার মাঝে ফর্ম মুছে যেত */}
           <SettingsForm key={tenantId} settings={data} canManage={canManage} />
+          {/* Step 14: where stock documents post — its own form, saved by its own endpoint */}
+          <StockAccountsCard key={`stock-${tenantId}`} tenantId={tenantId} canManage={canManage} />
         </>
       )}
     </div>

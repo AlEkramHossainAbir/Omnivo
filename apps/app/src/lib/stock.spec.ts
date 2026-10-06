@@ -97,6 +97,7 @@ describe('stock helpers', () => {
   it('links a movement to its document', () => {
     expect(documentRoute('adjustment')).toBe('/stock/adjustments/$adjustmentId');
     expect(documentRoute('transfer_in')).toBe('/stock/transfers/$transferId');
+    expect(documentRoute('revaluation')).toBe('/stock/revaluations/$revaluationId');
     expect(documentRoute('sales_delivery')).toBeNull();
   });
 });

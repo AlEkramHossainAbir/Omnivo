@@ -78,3 +78,63 @@ export function absMoney(value: string): string {
   const units = toUnits(value);
   return fromUnits(units < 0n ? -units : units);
 }
+
+export function negateMoney(value: string): string {
+  return fromUnits(-toUnits(value));
+}
+
+// -1, 0 or 1, like a sort comparator
+export function compareMoney(a: string, b: string): number {
+  const difference = toUnits(a) - toUnits(b);
+  return difference === 0n ? 0 : difference < 0n ? -1 : 1;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Stock values (step 14). A value is rounded to the paisa (2 decimals), because the journal shows
+// 2 and its totals must visibly add up; a unit cost keeps 4, because a tablet costs ৳0.8512.
+
+const PAISA = 100n;
+
+// numerator ÷ denominator, rounded half away from zero (a negative value rounds like a positive
+// one: −0.005 → −0.01). The denominator is always positive here.
+function divideRounded(numerator: bigint, denominator: bigint): bigint {
+  const half = denominator / 2n;
+  return numerator < 0n ? -((-numerator + half) / denominator) : (numerator + half) / denominator;
+}
+
+// quantity × price, to the paisa: 3 cartons × ৳1,200.50 = ৳3,601.50. Both have at most 4 decimals,
+// so the exact product has 8; it is rounded once, at the end.
+export function multiplyMoney(quantity: string, price: string): string {
+  const exact = toUnits(quantity) * toUnits(price);
+  // exact is in 10^-8 taka; one paisa is 10^6 of those
+  return fromUnits(divideRounded(exact, 1_000_000n) * PAISA);
+}
+
+// The share of a value that goes with part of a quantity: value × part ÷ whole, to the paisa. Taking
+// 30 of the 40 pieces worth ৳1,000 takes ৳750. The whole must be positive.
+export function prorateMoney(value: string, part: string, whole: string): string {
+  const wholeUnits = toUnits(whole);
+  if (wholeUnits <= 0n) throw new Error(`Cannot share a value over "${whole}"`);
+  // value (10^-4) × part (10^-4) ÷ whole (10^-4) = 10^-4 taka; ÷ 100 more for the paisa
+  return fromUnits(divideRounded(toUnits(value) * toUnits(part), wholeUnits * PAISA) * PAISA);
+}
+
+// A value cut into `count` pieces that add up to it exactly: ৳100 over 3 serial numbers is 33.33,
+// 33.33 and 33.34. The last piece takes what rounding left over.
+export function splitMoney(value: string, count: number): string[] {
+  if (!Number.isInteger(count) || count < 1) throw new Error(`Cannot split into ${String(count)}`);
+  const total = toUnits(value);
+  const piece = divideRounded(total, BigInt(count) * PAISA) * PAISA;
+  return Array.from({ length: count }, (_, index) =>
+    fromUnits(index === count - 1 ? total - piece * BigInt(count - 1) : piece),
+  );
+}
+
+// What one unit costs: value ÷ quantity, to 4 decimals (৳1,000 for 3 pieces = ৳333.3333). The
+// quantity must be positive.
+export function unitCostOf(value: string, quantity: string): string {
+  const quantityUnits = toUnits(quantity);
+  if (quantityUnits <= 0n) throw new Error(`No unit cost for a quantity of "${quantity}"`);
+  // value (10^-4) × 10^4 ÷ quantity (10^-4) = 10^-4 taka per unit
+  return fromUnits(divideRounded(toUnits(value) * 10_000n, quantityUnits));
+}

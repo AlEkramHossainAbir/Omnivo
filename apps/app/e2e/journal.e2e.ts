@@ -9,8 +9,9 @@ test.beforeEach(async ({ page }) => {
 const line = (page: Page, number: number) =>
   page.getByRole('group', { name: `Line ${String(number)}` });
 
-// The mock garments workspace has six posted entries this year (JV-…-0001 to 0006) and one draft;
-// last year's are numbered in last year's series
+// The mock garments workspace has six posted entries this year (JV-…-0001 to 0006) and one draft,
+// then the two its stock posted (step 14: the opening stock is JV-…-0007, the truck on its way to
+// the Chattogram depot JV-…-0008); last year's are numbered in last year's series
 test('writes an entry and posts it only once the debits and credits are equal', async ({
   page,
 }) => {
@@ -33,9 +34,9 @@ test('writes an entry and posts it only once the debits and credits are equal', 
   await expectNoSideScroll(page);
   await post.click();
 
-  await expect(page.getByText(/^JV-\d{4}-\d{2}-0007 posted$/)).toBeVisible();
+  await expect(page.getByText(/^JV-\d{4}-\d{2}-0009 posted$/)).toBeVisible();
   await expect(
-    page.getByRole('heading', { level: 1, name: /^JV-\d{4}-\d{2}-0007$/ }),
+    page.getByRole('heading', { level: 1, name: /^JV-\d{4}-\d{2}-0009$/ }),
   ).toBeVisible();
   await expect(page.getByRole('link', { name: '1110 Cash in hand' })).toBeVisible();
   await expectNoSideScroll(page);
@@ -48,7 +49,7 @@ test('finishes a waiting draft, and deletes a new one in two clicks', async ({ p
   await listItem(page, /LC opening charges/).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Draft entry' })).toBeVisible();
   await page.getByRole('button', { name: 'Post entry' }).click();
-  await expect(page.getByText(/^JV-\d{4}-\d{2}-0007 posted$/)).toBeVisible();
+  await expect(page.getByText(/^JV-\d{4}-\d{2}-0009 posted$/)).toBeVisible();
 
   await page.getByRole('link', { name: 'Back to the journal' }).click();
   await page.getByRole('button', { name: 'New entry' }).click();

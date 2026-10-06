@@ -59,9 +59,9 @@ test('a new workspace goes through the setup wizard', async ({ page }) => {
   // short "Preparing the roles…" state: on a slow machine the 2-second job is done before we look
   await expect(page.getByRole('heading', { level: 1, name: 'Invite your team' })).toBeVisible();
   // The second pick is the one that was sent: garments roles, not pharma ones — and the chart
-  // came with them (the mock's garments chart has 41 accounts)
+  // came with them (the mock's garments chart has 47 accounts: 41, and step 14's six for stock)
   await expect(page.getByRole('status')).toHaveText(
-    /Roles ready: Accountant, Merchandiser, Store keeper\. Chart of accounts: 41 accounts\./,
+    /Roles ready: Accountant, Merchandiser, Store keeper\. Chart of accounts: 47 accounts\./,
   );
 
   // Back from here reaches the company details, but no further: the business type is sent

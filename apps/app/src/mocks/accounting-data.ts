@@ -4,6 +4,7 @@ import {
   ACCOUNT_TYPES,
   type AccountType,
   type Industry,
+  type StockAccounts,
 } from '@omnivo/contracts';
 
 import { MockProblem } from './mock';
@@ -60,6 +61,7 @@ function template(industry: Industry): Record<AccountType, MockNode> {
             { code: '1140', name: 'Accounts receivable', purpose: 'accounts_receivable' },
             stock,
             { code: '1170', name: 'Input VAT', purpose: 'vat_input' },
+            { code: '1175', name: 'Goods in transit' },
           ],
         },
         {
@@ -121,7 +123,11 @@ function template(industry: Industry): Record<AccountType, MockNode> {
         {
           code: '5100',
           name: 'Cost of sales',
-          children: [{ code: '5110', name: 'Cost of goods sold', purpose: 'cost_of_goods_sold' }],
+          children: [
+            { code: '5110', name: 'Cost of goods sold', purpose: 'cost_of_goods_sold' },
+            ...(garments ? [{ code: '5150', name: 'Stock losses (damaged, expired, lost)' }] : []),
+            { code: '5190', name: 'Stock adjustments and revaluation' },
+          ],
         },
         {
           code: '5200',
@@ -130,6 +136,20 @@ function template(industry: Industry): Record<AccountType, MockNode> {
             { code: '5210', name: 'Salaries and allowances' },
             { code: '5220', name: 'Office rent' },
             { code: '5230', name: 'Utilities (electricity, gas, water)' },
+            { code: '5290', name: 'Consumables and internal use' },
+          ],
+        },
+        {
+          code: '5300',
+          name: 'Selling and distribution expenses',
+          children: [
+            { code: '5310', name: 'Advertising and promotion' },
+            ...(garments
+              ? []
+              : [
+                  { code: '5330', name: 'Medical promotion and samples' },
+                  { code: '5350', name: 'Expired and damaged goods' },
+                ]),
           ],
         },
         { code: '5400', name: 'Finance costs', children: [{ code: '5410', name: 'Bank charges' }] },
@@ -217,4 +237,38 @@ export function assertNotLocked(account: Account): void {
 
 export function codeOf(accounts: readonly Account[], id: string | null): string | null {
   return accounts.find((account) => account.id === id)?.code ?? null;
+}
+
+// The stock accounts a new workspace starts with (step 14), like the API's template: garments has
+// "Stock losses", pharma its own "Expired and damaged goods" and "Medical promotion and samples"
+export function seedStockAccounts(accounts: readonly Account[], industry: Industry): StockAccounts {
+  const id = (code: string) => accounts.find((account) => account.code === code)?.id ?? null;
+  const loss = industry === 'pharma' ? id('5350') : id('5150');
+  return {
+    in_transit: id('1175'),
+    found: id('5190'),
+    damaged: loss,
+    expired: loss,
+    lost: loss,
+    sample: industry === 'pharma' ? id('5330') : id('5310'),
+    internal_use: id('5290'),
+    correction: id('5190'),
+    transfer_shortage: loss,
+    revaluation: id('5190'),
+  };
+}
+
+export function noStockAccounts(): StockAccounts {
+  return {
+    in_transit: null,
+    found: null,
+    damaged: null,
+    expired: null,
+    lost: null,
+    sample: null,
+    internal_use: null,
+    correction: null,
+    transfer_shortage: null,
+    revaluation: null,
+  };
 }

@@ -27,6 +27,8 @@ const DESCRIPTIONS = {
   'inventory.warehouse.manage': 'Add, edit and archive warehouses',
   'inventory.stock.adjust': 'Write and post stock adjustments, including opening stock',
   'inventory.stock.transfer': 'Send stock to another warehouse and receive it there',
+  'inventory.stock.value': 'See what stock costs and what it is worth',
+  'inventory.stock.revalue': 'Revalue stock: give items a new average cost',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

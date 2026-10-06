@@ -42,6 +42,18 @@ export class StockController {
     return this.stock.reorder(query);
   }
 
+  @Endpoint(routes.stock.valuation)
+  valuation({
+    query,
+  }: RouteInput<Routes['valuation']>): Promise<RouteResponse<Routes['valuation']>> {
+    return this.stock.valuation(query);
+  }
+
+  @Endpoint(routes.stock.valuationSummary)
+  valuationSummary(): Promise<RouteResponse<Routes['valuationSummary']>> {
+    return this.stock.valuationSummary();
+  }
+
   @Endpoint(routes.stock.setReorderLevel)
   setReorderLevel({
     body,

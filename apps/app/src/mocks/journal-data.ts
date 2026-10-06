@@ -1,20 +1,25 @@
 import {
   absMoney,
   addMoney,
+  compareMoney,
   defaultNumberFormat,
+  type EntryRef,
   fiscalYearOf,
   formatDocumentNumber,
   isNegativeMoney,
+  isStockJournalSource,
   isZeroMoney,
   type JournalEntry,
   type JournalEntrySummary,
   type JournalLineInput,
   type JournalSource,
   type LedgerPage,
+  negateMoney,
   type OpeningBalances,
   type OpeningBalancesInput,
   periodOf,
   shiftIsoDate,
+  type StockJournalSource,
   subtractMoney,
   sumMoney,
   todayIn,
@@ -47,7 +52,7 @@ function fixed(value: string): string {
 }
 
 function linesProblem(
-  code: 'journal_account_invalid' | 'journal_branch_invalid',
+  code: 'journal_account_invalid' | 'journal_branch_invalid' | 'journal_account_stock',
   field: string,
   indexes: number[],
 ) {
@@ -58,10 +63,20 @@ function linesProblem(
   );
 }
 
+// The inventory account and the goods in transit account: only stock documents post to them
+// (step 14, the API's stockAccountIds())
+export function stockAccountIds(data: WorkspaceData): Set<string> {
+  const inventory = data.accounts.find((account) => account.purpose === 'inventory')?.id;
+  return new Set(
+    [inventory, data.stockAccounts.in_transit].filter((id): id is string => typeof id === 'string'),
+  );
+}
+
 export function checkLines(
   data: WorkspaceData,
   lines: readonly LineIn[],
   allowArchived = false,
+  allowStock = false,
 ): void {
   const badAccounts = lines.flatMap((line, index) => {
     const account = data.accounts.find((item) => item.id === line.accountId);
@@ -71,6 +86,11 @@ export function checkLines(
   });
   if (badAccounts.length > 0)
     throw linesProblem('journal_account_invalid', 'accountId', badAccounts);
+  if (!allowStock) {
+    const stock = stockAccountIds(data);
+    const onStock = lines.flatMap((line, index) => (stock.has(line.accountId) ? [index] : []));
+    if (onStock.length > 0) throw linesProblem('journal_account_stock', 'accountId', onStock);
+  }
   const badBranches = lines.flatMap((line, index) => {
     if (line.branchId === null) return [];
     const branch = data.branches.find((item) => item.id === line.branchId);
@@ -111,6 +131,7 @@ export function summaryOf(entry: JournalEntry): JournalEntrySummary {
     total: entry.total,
     reversalOf: entry.reversalOf,
     reversedBy: entry.reversedBy,
+    document: entry.document,
     postedAt: entry.postedAt,
     version: entry.version,
     updatedAt: entry.updatedAt,
@@ -130,6 +151,7 @@ export function writeDraft(
   input: { date: string; narration: string | null; lines: readonly LineIn[] },
   source: JournalSource = 'manual',
   reversalOf: JournalEntry['reversalOf'] = null,
+  document: EntryRef | null = null,
 ): JournalEntry {
   const now = new Date().toISOString();
   const entry: JournalEntry = {
@@ -142,6 +164,7 @@ export function writeDraft(
     total: sumMoney(input.lines.map((line) => line.debit)),
     reversalOf,
     reversedBy: null,
+    document,
     postedAt: null,
     version: 1,
     updatedAt: now,
@@ -185,7 +208,8 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
   const debits = sumMoney(entry.lines.map((line) => line.debit));
   const credits = sumMoney(entry.lines.map((line) => line.credit));
   if (debits !== credits) throw new MockProblem(409, 'journal_unbalanced');
-  checkLines(data, entry.lines, entry.source === 'reversal' || entry.source === 'year_close');
+  const oldWork = entry.source === 'reversal' || entry.source === 'year_close';
+  checkLines(data, entry.lines, oldWork, oldWork || isStockJournalSource(entry.source));
   Object.assign(entry, {
     status: 'posted',
     number: nextNumber(data, entry.date),
@@ -207,6 +231,7 @@ export function reverseEntry(
   if (entry.source === 'year_close' && !allowYearClose) {
     throw new MockProblem(409, 'journal_is_year_close');
   }
+  if (isStockJournalSource(entry.source)) throw new MockProblem(409, 'journal_is_stock');
   if (entry.reversedBy !== null) throw new MockProblem(409, 'journal_already_reversed');
   if (date < entry.date) {
     throw new MockProblem(409, 'journal_reversal_date', { date: ['journal_reversal_date'] });
@@ -236,8 +261,9 @@ export function postNew(
   data: WorkspaceData,
   input: { date: string; narration: string | null; lines: readonly LineIn[] },
   source: JournalSource = 'manual',
+  document: EntryRef | null = null,
 ): JournalEntry {
-  const entry = writeDraft(data, input, source);
+  const entry = writeDraft(data, input, source, null, document);
   try {
     postDraft(data, entry);
   } catch (error) {
@@ -351,6 +377,17 @@ export function saveOpening(data: WorkspaceData, input: OpeningBalancesInput): v
       ['asset', 'liability', 'equity'].includes(account.type);
     return ok ? [] : [line.index];
   });
+  const stock = stockAccountIds(data);
+  const onStock = filled.flatMap((line) => (stock.has(line.accountId) ? [line.index] : []));
+  if (onStock.length > 0) {
+    throw new MockProblem(
+      409,
+      'journal_account_stock',
+      Object.fromEntries(
+        onStock.map((index) => [`lines.${String(index)}.accountId`, ['journal_account_stock']]),
+      ),
+    );
+  }
   if (invalid.length > 0) {
     throw new MockProblem(
       409,
@@ -389,6 +426,54 @@ export function saveOpening(data: WorkspaceData, input: OpeningBalancesInput): v
     { date: shiftIsoDate(input.goLiveDate, -1), narration: 'Opening balances', lines },
     'opening_balance',
   );
+}
+
+// A stock document's entry (step 14, the API's StockBooksService.write()): the amounts summed per
+// account and branch (+ debit, − credit), zero sums dropped, nothing written when nothing is left
+export function postStockEntry(
+  data: WorkspaceData,
+  input: {
+    date: string;
+    source: StockJournalSource;
+    document: EntryRef;
+    narration: string;
+    amounts: readonly { accountId: string; branchId: string | null; amount: string }[];
+  },
+): EntryRef | null {
+  const sums = new Map<string, { accountId: string; branchId: string | null; total: string }>();
+  for (const amount of input.amounts) {
+    const key = `${amount.accountId}|${amount.branchId ?? ''}`;
+    const sum = sums.get(key) ?? { ...amount, total: '0' };
+    sum.total = addMoney(sum.total, amount.amount);
+    sums.set(key, sum);
+  }
+  const lines = [...sums.values()]
+    .filter((sum) => !isZeroMoney(sum.total))
+    .map((sum) => {
+      const debit = compareMoney(sum.total, '0') > 0;
+      return {
+        accountId: sum.accountId,
+        branchId: sum.branchId,
+        description: null,
+        debit: debit ? sum.total : '0',
+        credit: debit ? '0' : negateMoney(sum.total),
+      };
+    });
+  if (lines.length < 2) return null;
+  const entry = postNew(
+    data,
+    { date: input.date, narration: input.narration, lines },
+    input.source,
+    input.document,
+  );
+  return { id: entry.id, number: entry.number ?? '' };
+}
+
+// A stock document's entries, oldest first
+export function entriesOfDocument(data: WorkspaceData, documentId: string): EntryRef[] {
+  return data.journal.entries
+    .filter((entry) => entry.document?.id === documentId && entry.number !== null)
+    .map((entry) => ({ id: entry.id, number: entry.number ?? '' }));
 }
 
 export function setLockDate(data: WorkspaceData, lockDate: string | null, version: number): void {

@@ -48,11 +48,14 @@ const ReorderLevelForm = lazy(async () => ({
 }));
 
 export function StockCardPage() {
-  const { t } = useLocale();
+  const { t, format } = useLocale();
   const navigate = useNavigate();
   const { variantId = '' } = useParams({ strict: false });
   const tenantId = useTenantId();
-  const canSetLevels = useCan()('inventory.product.manage');
+  const can = useCan();
+  const canSetLevels = can('inventory.product.manage');
+  // Step 14: what it costs, for the people who may see it
+  const canSeeValues = can('inventory.stock.value');
   const quantity = useQuantity();
   const isoDate = useIsoDate();
   const today = useToday();
@@ -138,8 +141,22 @@ export function StockCardPage() {
           <span className="font-medium">{quantity(getValue(), baseUnitId)}</span>
         ),
       }),
+      ...(canSeeValues
+        ? [
+            // Signed like the quantity: what each movement added to or took from the stock's value
+            column.accessor('value', {
+              header: t('stock.history.value'),
+              enableSorting: false,
+              meta: { align: 'end', card: 'detail' },
+              cell: ({ getValue }) => {
+                const value = getValue();
+                return value === null ? '—' : format.money(value, { decimals: 2 });
+              },
+            }),
+          ]
+        : []),
     ]);
-  }, [t, quantity, isoDate, byId, baseUnitId]);
+  }, [t, format, quantity, isoDate, byId, baseUnitId, canSeeValues]);
 
   if (isError) {
     return (
@@ -171,7 +188,19 @@ export function StockCardPage() {
         cells={[
           { label: t('stock.kpis.onHand'), value: quantity(item.onHand, item.baseUnitId) },
           { label: t('stock.kpis.inTransit'), value: quantity(item.inTransit, item.baseUnitId) },
-          { label: t('stock.kpis.places'), value: String(places) },
+          // With the permission, what it costs takes the place of "warehouses with stock"
+          ...(item.value === null
+            ? [{ label: t('stock.kpis.places'), value: String(places) }]
+            : [
+                {
+                  label: t('stock.kpis.unitCost'),
+                  value:
+                    item.unitCost === null
+                      ? t('stock.noCost')
+                      : format.money(item.unitCost, { decimals: 2 }),
+                },
+                { label: t('stock.kpis.value'), value: format.money(item.value) },
+              ]),
         ]}
       />
 
@@ -372,6 +401,8 @@ export function StockCardPage() {
                 void navigate({ to: route, params: { adjustmentId: movement.documentId } });
               } else if (route === '/stock/transfers/$transferId') {
                 void navigate({ to: route, params: { transferId: movement.documentId } });
+              } else if (route === '/stock/revaluations/$revaluationId') {
+                void navigate({ to: route, params: { revaluationId: movement.documentId } });
               }
             }}
             onEndReached={loadMore}

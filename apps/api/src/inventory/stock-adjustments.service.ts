@@ -1,10 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type {
-  StockAdjustment,
-  StockAdjustmentInput,
-  StockAdjustmentSummary,
-  StockDocumentStatus,
-  UpdateStockAdjustmentInput,
+import {
+  multiplyMoney,
+  type StockAdjustment,
+  type StockAdjustmentInput,
+  type StockAdjustmentSummary,
+  type StockDocumentStatus,
+  sumMoney,
+  type UpdateStockAdjustmentInput,
 } from '@omnivo/contracts';
 import { stockAdjustmentLines, stockAdjustments, warehouses } from '@omnivo/db';
 import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
@@ -26,7 +28,9 @@ import {
   resolveLines,
   toStockLine,
 } from './stock-lines.js';
+import { StockBooksService } from './stock-books.service.js';
 import { StockPostingService } from './stock-posting.service.js';
+import { ValueAccess } from './value-access.js';
 
 type AdjustmentRow = typeof stockAdjustments.$inferSelect;
 type LineRow = typeof stockAdjustmentLines.$inferSelect;
@@ -65,6 +69,23 @@ function toSummary(row: AdjustmentRow, lines: number): StockAdjustmentSummary {
   };
 }
 
+// What posting adds to the lines besides what resolveLines() checked: the batches the lots became,
+// the typed costs (step 14) and the values the posting worked out
+interface LineExtras {
+  batchIds?: readonly (string | null)[];
+  unitCosts: readonly (string | null)[];
+  values?: readonly string[];
+}
+
+// A typed cost belongs on a line that brings stock in; on an "out" line it means nothing (what
+// leaves goes at the average cost), so it is not kept
+function costsOf(
+  direction: 'in' | 'out',
+  lines: readonly { unitCost?: string | null }[],
+): (string | null)[] {
+  return lines.map((line) => (direction === 'in' ? (line.unitCost ?? null) : null));
+}
+
 // A stored line as resolveLines() takes it, to check it again when the draft is posted
 function storedInput(line: LineRow): LineInput {
   return {
@@ -85,6 +106,8 @@ export class StockAdjustmentsService {
     @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
     private readonly numbering: NumberingService,
     private readonly posting: StockPostingService,
+    private readonly books: StockBooksService,
+    private readonly access: ValueAccess,
   ) {}
 
   list(query: {
@@ -134,7 +157,9 @@ export class StockAdjustmentsService {
         })
         .returning();
       if (!row) throw new Error('Stock adjustment insert returned no row');
-      await this.writeLines(tx, row.id, lines);
+      await this.writeLines(tx, row.id, lines, {
+        unitCosts: costsOf(input.direction, input.lines),
+      });
       await audit(tx, {
         action: 'stock_adjustment.created',
         entityType: 'stock_adjustment',
@@ -166,7 +191,7 @@ export class StockAdjustmentsService {
         .where(and(eq(stockAdjustments.tenantId, getTenantId()), eq(stockAdjustments.id, id)))
         .returning();
       if (!updated) throw notFound('Stock adjustment');
-      await this.writeLines(tx, id, lines);
+      await this.writeLines(tx, id, lines, { unitCosts: costsOf(input.direction, input.lines) });
       await audit(tx, {
         action: 'stock_adjustment.updated',
         entityType: 'stock_adjustment',
@@ -225,10 +250,16 @@ export class StockAdjustmentsService {
       draft.direction === 'in'
         ? await this.posting.resolveBatches(tx, lines)
         : lines.map((line) => line.batchId);
-    await this.writeLines(tx, draft.id, lines, batchIds);
+    // Step 14: an "in" line with a typed cost is worth quantity × cost (3 cartons × ৳1,200, in the
+    // line's own unit); without one (null), the posting prices it at the average cost
+    const unitCosts = costsOf(draft.direction, stored);
+    const typedValues = lines.map((line, index) => {
+      const cost = unitCosts[index] ?? null;
+      return cost === null ? null : multiplyMoney(line.quantity, cost);
+    });
 
     const number = await this.numbering.next(tx, 'inventory.adjustment', draft.date);
-    await this.posting.post(tx, {
+    const values = await this.posting.post(tx, {
       date: draft.date,
       kind: 'adjustment',
       direction: draft.direction,
@@ -241,8 +272,11 @@ export class StockAdjustmentsService {
         batchId: batchIds[index] ?? null,
         quantity: line.baseQuantity,
         serialNumbers: line.serialNumbers,
+        value: typedValues[index] ?? null,
       })),
     });
+    // Still a draft here: the lines may change, and take their batches and values
+    await this.writeLines(tx, draft.id, lines, { batchIds, unitCosts, values });
     await tx
       .update(stockAdjustments)
       .set({
@@ -254,20 +288,31 @@ export class StockAdjustmentsService {
         updatedBy: currentPrincipal().userId,
       })
       .where(and(eq(stockAdjustments.tenantId, getTenantId()), eq(stockAdjustments.id, draft.id)));
+    // The books (step 14): one entry, the inventory account against the reason's account
+    const entry = await this.books.adjustment(
+      tx,
+      { id: draft.id, number, date: draft.date },
+      {
+        direction: draft.direction,
+        reason: draft.reason,
+        moved: [{ warehouseId: draft.warehouseId, value: sumMoney(values) }],
+      },
+    );
     await audit(tx, {
       action: 'stock_adjustment.posted',
       entityType: 'stock_adjustment',
       entityId: draft.id,
-      changes: created({ number }),
+      changes: created({ number, entry: entry?.number ?? null }),
     });
   }
 
-  // The lines in the order they were written. batchIds: set when posting brings lots in.
+  // The lines in the order they were written. batchIds: set when posting brings lots in; values:
+  // set when posting has priced them.
   private async writeLines(
     tx: Transaction,
     adjustmentId: string,
     lines: readonly ResolvedLine[],
-    batchIds: readonly (string | null)[] = lines.map((line) => line.batchId),
+    { batchIds = lines.map((line) => line.batchId), unitCosts, values }: LineExtras,
   ): Promise<void> {
     const tenantId = getTenantId();
     await tx
@@ -294,6 +339,8 @@ export class StockAdjustmentsService {
         expiresOn: line.expiresOn,
         manufacturedOn: line.manufacturedOn,
         serialNumbers: line.serialNumbers,
+        unitCost: unitCosts[index] ?? null,
+        value: values?.[index] ?? null,
       })),
     );
   }
@@ -342,6 +389,10 @@ export class StockAdjustmentsService {
     const [summary] = await this.summaries(tx, eq(stockAdjustments.id, id), 1);
     if (!summary) throw notFound('Stock adjustment');
     const lines = await this.linesOf(tx, id);
+    const [canSee, entries] = await Promise.all([
+      this.access.canSee(),
+      this.books.entriesOf(tx, id),
+    ]);
     const [variants, batches] = await Promise.all([
       loadVariants(
         tx,
@@ -359,9 +410,20 @@ export class StockAdjustmentsService {
         // The FK keeps the variant while a line points at it
         if (!variant) return [];
         return [
-          toStockLine(line, variant, line.batchId === null ? undefined : batches.get(line.batchId)),
+          {
+            ...toStockLine(
+              line,
+              variant,
+              line.batchId === null ? undefined : batches.get(line.batchId),
+            ),
+            // Typed by a person: part of the document. Worked out from the books: needs the
+            // permission (step 14).
+            unitCost: line.unitCost,
+            value: canSee ? line.value : null,
+          },
         ];
       }),
+      entry: entries[0] ?? null,
     };
   }
 

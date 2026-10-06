@@ -9,7 +9,8 @@ import { levelSchema, quantitySchema } from './quantities.js';
 // What a movement is, by the document that made it. The response sends it as z.string(), like a
 // journal source: a newer server's new kind (a sales delivery, step 15) must not break an older
 // offline client.
-export const MOVEMENT_KINDS = ['adjustment', 'transfer_out', 'transfer_in'] as const;
+// revaluation (step 14): a change of value without a change of quantity — its quantity is zero.
+export const MOVEMENT_KINDS = ['adjustment', 'transfer_out', 'transfer_in', 'revaluation'] as const;
 export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 
 export function isMovementKind(value: string): value is MovementKind {
@@ -143,6 +144,12 @@ export const stockItemSchema = variantRefSchema.extend({
   inTransit: z.string(),
   // At or below its reorder level in the chosen warehouse (or in any warehouse)
   low: z.boolean(),
+  // Step 14, only for someone with inventory.stock.value (null for everyone else, and for a
+  // variant that never had a cost). unitCost: the company-wide average per base unit, 4 decimals.
+  // value: what onHand is worth — in all warehouses the ledger's own total, in one warehouse its
+  // quantity at the average cost.
+  unitCost: z.string().nullable(),
+  value: z.string().nullable(),
 });
 export type StockItem = z.infer<typeof stockItemSchema>;
 
@@ -219,6 +226,8 @@ export const stockMovementSchema = z.object({
   documentNumber: z.string(),
   quantity: z.string(),
   balance: z.string(),
+  // Signed like quantity; null without inventory.stock.value (step 14)
+  value: z.string().nullable(),
   lotNumber: z.string().nullable(),
   serialNumber: z.string().nullable(),
 });
@@ -309,8 +318,43 @@ export const reorderLevelSchema = z.object({
 
 const variantParamsSchema = z.object({ id: z.uuid() });
 
+// ---------------------------------------------------------------------------------------------
+// The valuation report (step 14): what the stock is worth, per variant, and whether the books agree
+
+export const stockValueSchema = variantRefSchema.extend({
+  // In every warehouse, without what is on a truck
+  quantity: z.string(),
+  unitCost: z.string().nullable(),
+  value: z.string(),
+});
+export type StockValue = z.infer<typeof stockValueSchema>;
+
+export const stockValueQuerySchema = pageQuerySchema.extend({
+  search: z.string().trim().max(100).optional(),
+  categoryId: z.uuid().optional(),
+});
+
+export const stockValuePageSchema = pageOf(stockValueSchema);
+export type StockValuePage = z.infer<typeof stockValuePageSchema>;
+
+// Stock value + in transit = inventory account + goods in transit account. Every stock document
+// posts both halves in one transaction, so the two sides are equal; the page shows it.
+export const valuationSummarySchema = z.object({
+  // In the warehouses (the sum of every variant's value)
+  stockValue: z.string(),
+  // Sent and not received yet
+  inTransitValue: z.string(),
+  // The balances of the two accounts in the books, today (null = no such account chosen yet)
+  inventoryAccount: z.object({ id: z.uuid(), balance: z.string() }).nullable(),
+  inTransitAccount: z.object({ id: z.uuid(), balance: z.string() }).nullable(),
+  // stock + in transit − both accounts: "0.0000" when the books agree
+  difference: z.string(),
+});
+export type ValuationSummary = z.infer<typeof valuationSummarySchema>;
+
 // Reading stock needs no permission: a sales officer checks it before promising a delivery, a
-// cashier before a sale. Cost and value (step 14) will need one.
+// cashier before a sale. What it costs needs inventory.stock.value (step 14): without it, every
+// cost and value in these answers is null, and the valuation report is refused.
 export const stockRoutes = {
   list: defineRoute({
     method: 'GET',
@@ -357,6 +401,25 @@ export const stockRoutes = {
     status: 200,
     query: reorderListQuerySchema,
     response: reorderPageSchema,
+  }),
+  valuation: defineRoute({
+    method: 'GET',
+    path: '/stock/valuation',
+    summary: 'What the stock is worth, per variant, at the average cost',
+    auth: 'bearer',
+    permission: 'inventory.stock.value',
+    status: 200,
+    query: stockValueQuerySchema,
+    response: stockValuePageSchema,
+  }),
+  valuationSummary: defineRoute({
+    method: 'GET',
+    path: '/stock/valuation/summary',
+    summary: 'The total stock value, and whether the books agree with it',
+    auth: 'bearer',
+    permission: 'inventory.stock.value',
+    status: 200,
+    response: valuationSummarySchema,
   }),
   setReorderLevel: defineRoute({
     method: 'PUT',

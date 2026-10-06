@@ -11,6 +11,7 @@ import { WITH_TENANT } from '../infra/tokens.js';
 import { notify } from '../notifications/notify.js';
 import { seedCatalog } from './seed-catalog.js';
 import { seedChart } from './seed-chart.js';
+import { seedStockAccounts } from './seed-stock-accounts.js';
 import { INDUSTRY_TEMPLATES, type RoleTemplate } from './templates.js';
 
 type Event = OutboxEvent<'workspace.setup_requested'>;
@@ -89,6 +90,9 @@ export class ProvisioningHandler implements EventHandler<'workspace.setup_reques
       // 0 when the workspace already has a chart: step 9's migration queued one for a workspace
       // whose setup had failed, and it ran before this retry
       const accounts = await seedChart(tx, tenantId, template.chart);
+      // Step 14: which accounts stock documents post to. Nothing to do when the workspace already
+      // had them (the stock accounts job ran first for a failed setup that is retried now).
+      await seedStockAccounts(tx, tenantId, template);
       // null when step 12's migration already gave this workspace its catalog (a failed setup
       // retried after the catalog job ran)
       const catalog = await seedCatalog(tx, tenantId, template.catalog);

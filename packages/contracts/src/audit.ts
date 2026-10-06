@@ -76,6 +76,9 @@ export const AUDIT_ACTIONS = [
   'stock_transfer.sent',
   'stock_transfer.received',
   'reorder_level.changed',
+  'stock_accounts.changed',
+  'stock_accounts.created',
+  'stock_revaluation.posted',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -104,6 +107,7 @@ export const AUDIT_ENTITY_TYPES = [
   'stock_adjustment',
   'stock_transfer',
   'reorder_level',
+  'stock_revaluation',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

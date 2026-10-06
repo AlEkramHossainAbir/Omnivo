@@ -210,7 +210,11 @@ workspace সেটিং "negative stock" (ডিফল্ট বন্ধ)। 
 
 #### ধাপ ১৪: Valuation + প্রথম মডিউল-ইন্টিগ্রেশন · ~২ সপ্তাহ
 
-Weighted Average valuation (FIFO পরে), আর স্টক মুভমেন্ট হলে **অটো journal post** (Dr Inventory / Cr GRNI ইত্যাদি) ধাপ ১০-এর `postJournal()` দিয়ে।
+Weighted Average (পুরো কোম্পানিতে প্রতি আইটেমের একটা গড় খরচ; FIFO পরে), প্রতিটা স্টক মুভমেন্টের মূল্য
+(`stock_movements.value`, `stock_values` trigger দিয়ে রাখা), আর প্রতিটা স্টক ডকুমেন্টের **নিজের journal entry**
+(`StockBooksService` → ধাপ ১০-এর `PostingService.postNew()`, একই transaction-এ)। Settings → Inventory-তে
+স্টকের অ্যাকাউন্ট, দুই ব্রাঞ্চের মধ্যে transfer "Goods in transit" দিয়ে, "Revalue stock" ডকুমেন্ট (`REV-…`),
+`inventory.stock.value` / `inventory.stock.revalue` permission।
 **দেখবেন:** স্টক রিসিভ করলেন → Balance Sheet-এ Inventory-র অঙ্ক নিজে থেকে বাড়ল। **প্রথমবার দুই মডিউল একসাথে কথা বলল।** 🎉
 **শিখবেন:** append-only ledger, inventory valuation, মডিউল-বাউন্ডারি পেরিয়ে service call।
 
