@@ -228,6 +228,14 @@ Weighted Average (পুরো কোম্পানিতে প্রতি �
 | **১৬** | ডকুমেন্ট আউটপুট | Invoice PDF (worker-এ, বাংলা ফন্ট সহ), R2/MinIO-তে সেভ, ইমেইল, WhatsApp শেয়ার লিংক, "কথায় টাকা" (বাংলা + ইংরেজি) | ~১.৫ সপ্তাহ |
 | **১৭** | Purchase | suppliers, **Requisition → PO → Goods Receipt → Bill → Payment**, purchase return/debit note, কনফিগারযোগ্য approval workflow | ~৩ সপ্তাহ |
 
+#### ধাপ ১৫: Sales — চারটা গাইডে
+
+**১৫a (customers, price lists, VAT):** একটা `parties` টেবিল (`is_customer` / `is_supplier`), কাস্টমার গ্রুপ, একাধিক
+ঠিকানা, payment terms, credit limit (চেক ১৫c-তে); AR একটাই control account, প্রতিটা AR লাইনে `party_id` — কাস্টমারের
+balance ও statement সেখান থেকে; opening balances পেজে AR কাস্টমার ধরে ভাগ; VAT rates টেবিল (standard, reduced,
+zero-rated, exempt; একটা default), workspace সেটিং "prices include VAT"; নামসহ price list (variant + unit ধরে দাম)।
+**১৫b** quotation → order → delivery · **১৫c** invoice, payment, credit limit · **১৫d** return ও credit note।
+
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 
 ---

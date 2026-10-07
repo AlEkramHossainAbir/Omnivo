@@ -216,6 +216,8 @@ function product(
     type: 'goods',
     categoryId,
     description: null,
+    // The workspace's default VAT rate (step 15a)
+    taxRateId: null,
     baseUnitId: unitId(parts.base),
     salesUnitId: null,
     purchaseUnitId: parts.packs?.[0] ? unitId(parts.packs[0][0]) : null,
@@ -527,6 +529,7 @@ export function saveProduct(
     type: input.type,
     categoryId: input.categoryId,
     description: input.description,
+    taxRateId: input.taxRateId,
     baseUnitId: input.baseUnitId,
     salesUnitId: input.salesUnitId === input.baseUnitId ? null : input.salesUnitId,
     purchaseUnitId: input.purchaseUnitId === input.baseUnitId ? null : input.purchaseUnitId,

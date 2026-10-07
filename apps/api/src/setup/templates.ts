@@ -5,6 +5,7 @@ import type {
   Industry,
   PermissionKey,
   StockAccountUse,
+  TaxRateKind,
   UnitDimension,
 } from '@omnivo/contracts';
 
@@ -58,6 +59,27 @@ export interface CatalogTemplate {
   customFields: readonly CustomFieldTemplate[];
 }
 
+// A VAT rate a new workspace starts with (step 15a). rate: a percentage as the form writes it.
+export interface TaxRateTemplate {
+  name: string;
+  kind: TaxRateKind;
+  rate: string;
+  isDefault: boolean;
+}
+
+// The same for every business type: VAT in Bangladesh is one law (the VAT and SD Act 2012), not an
+// industry's choice. 15% is the standard rate and the default; the reduced rates are the ones the
+// NBR sets for some goods and services; zero-rated for exports, exempt for what the law leaves out.
+// A workspace archives the ones it never uses, and changes a rate when the NBR does.
+export const TAX_RATES: readonly TaxRateTemplate[] = [
+  { name: 'VAT 15%', kind: 'standard', rate: '15', isDefault: true },
+  { name: 'VAT 10%', kind: 'reduced', rate: '10', isDefault: false },
+  { name: 'VAT 7.5%', kind: 'reduced', rate: '7.5', isDefault: false },
+  { name: 'VAT 5%', kind: 'reduced', rate: '5', isDefault: false },
+  { name: 'Zero-rated', kind: 'zero_rated', rate: '0', isDefault: false },
+  { name: 'Exempt', kind: 'exempt', rate: '0', isDefault: false },
+];
+
 // Starting data for each business type: the roles such a company is staffed with, its chart of
 // accounts, and its units, product categories and custom fields (step 12; a pharma company's
 // products start with batch tracking — contracts' trackingDefault()). Everything here is ordinary
@@ -71,6 +93,12 @@ export interface IndustryTemplate {
   // others in Settings → Inventory.
   stockAccounts: Record<StockAccountUse, string>;
 }
+
+// Step 15a. The people who sell add and change customers; those who also collect the money see what
+// each customer owes. Price lists are the owner's and the accountant's (and a shop manager's): a
+// salesperson who could change the dealer price could give any discount.
+const SELLING = ['sales.customer.manage', 'sales.customer.balance'] as const;
+const SALES_ADMIN = [...SELLING, 'sales.price_list.manage'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -89,6 +117,8 @@ const ACCOUNTANT: RoleTemplate = {
     // Step 14: what the stock is worth, and putting a wrong cost right
     'inventory.stock.value',
     'inventory.stock.revalue',
+    // Step 15a: the customers' accounts, their balances and statements, and the price lists
+    ...SALES_ADMIN,
   ],
 };
 
@@ -299,7 +329,8 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Merchandiser',
         description: 'Buyer POs, LCs and shipment dates',
-        permissions: ['core.user.read', 'inventory.product.manage'],
+        // The buyers are the merchandiser's customers
+        permissions: ['core.user.read', 'inventory.product.manage', 'sales.customer.manage'],
       },
       STORE_KEEPER,
     ],
@@ -361,7 +392,11 @@ export const INDUSTRY_TEMPLATES = {
           ...STOCK_WORK,
         ],
       },
-      { name: 'Sales representative', description: 'Orders from pharmacies', permissions: [] },
+      {
+        name: 'Sales representative',
+        description: 'Orders from pharmacies',
+        permissions: ['sales.customer.manage'],
+      },
     ],
     chart: standardChart({
       stock: group('1150', 'Inventories', [
@@ -429,7 +464,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Sales officer',
         description: 'Orders and collections from retailers',
-        permissions: [],
+        permissions: [...SELLING],
       },
     ],
     chart: standardChart({
@@ -521,6 +556,7 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.product.manage',
           'inventory.warehouse.manage',
           ...STOCK_WORK,
+          ...SALES_ADMIN,
         ],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [] },
@@ -566,6 +602,7 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.product.manage',
           'inventory.warehouse.manage',
           ...STOCK_WORK,
+          ...SALES_ADMIN,
         ],
       },
     ],

@@ -32,8 +32,10 @@ import { ProductsModule } from './products/products.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { RolesModule } from './roles/roles.module.js';
+import { SalesModule } from './sales/sales.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { SetupModule } from './setup/setup.module.js';
+import { TaxModule } from './tax/tax.module.js';
 
 @Module({})
 export class AppModule implements NestModule {
@@ -61,6 +63,8 @@ export class AppModule implements NestModule {
         CustomFieldsModule,
         ProductsModule,
         InventoryModule,
+        TaxModule,
+        SalesModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

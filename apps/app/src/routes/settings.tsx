@@ -39,6 +39,7 @@ import { type ChangeEvent, useMemo, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import { StockAccountsCard } from '../components/stock-accounts-card';
+import { TaxRatesCard } from '../components/tax-rates-card';
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { settingsQuery } from '../lib/queries';
@@ -240,6 +241,29 @@ function SettingsForm({ settings, canManage }: { settings: Settings; canManage: 
             </p>
           </div>
         </Card>
+
+        {/* Step 15a. Saved with the company settings, like the stock rule above. */}
+        <Card>
+          <CardHeader title={t('settings.salesTitle')} subtitle={t('settings.salesSubtitle')} />
+          <div className="grid gap-2 p-5">
+            <Controller
+              control={control}
+              name="pricesIncludeVat"
+              render={({ field }) => (
+                <Checkbox
+                  id="pricesIncludeVat"
+                  label={t('settings.pricesIncludeVat')}
+                  checked={field.value}
+                  disabled={!canManage}
+                  onCheckedChange={(checked) => {
+                    field.onChange(checked === true);
+                  }}
+                />
+              )}
+            />
+            <p className="pl-[27px] text-label text-ink-3">{t('settings.pricesIncludeVatHint')}</p>
+          </div>
+        </Card>
       </fieldset>
 
       {canManage ? (
@@ -409,6 +433,8 @@ export function SettingsPage() {
           <SettingsForm key={tenantId} settings={data} canManage={canManage} />
           {/* Step 14: where stock documents post — its own form, saved by its own endpoint */}
           <StockAccountsCard key={`stock-${tenantId}`} tenantId={tenantId} canManage={canManage} />
+          {/* Step 15a: the VAT rates — a list of their own, each saved by itself */}
+          <TaxRatesCard key={`tax-${tenantId}`} tenantId={tenantId} canManage={canManage} />
         </>
       )}
     </div>

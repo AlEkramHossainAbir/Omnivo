@@ -28,6 +28,7 @@ import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import type { MockExport } from './report-data';
+import { emptySales, type MockSales, seedSales } from './sales-data';
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
@@ -52,6 +53,8 @@ export interface WorkspaceData {
   stock: MockStock;
   // The accounts stock documents post to, besides the inventory account (step 14)
   stockAccounts: StockAccounts;
+  // VAT rates, customers and their groups, price lists (step 15a)
+  sales: MockSales;
 }
 
 function now(): string {
@@ -85,6 +88,8 @@ function seed(workspace: Workspace): WorkspaceData {
       ...DEFAULT_SETTINGS,
       logo: null,
       allowNegativeStock: false,
+      // The pharmacy sells at the printed MRP, VAT included; the garments maker quotes before VAT
+      pricesIncludeVat: !garments,
       version: 1,
     },
     branches: garments
@@ -108,8 +113,11 @@ function seed(workspace: Workspace): WorkspaceData {
     exports: [],
     catalog: garments ? garmentsCatalog() : pharmaCatalog(),
     stock: emptyStock(),
+    sales: emptySales(),
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
+  // Before the journal: its receivable lines name the customers
+  seedSales(data, garments);
   if (garments) seedJournal(data);
   seedStock(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
@@ -171,6 +179,8 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.exports = [];
   // Like the chart: the setup job brings the units and categories (settleSetup)
   data.catalog = emptyCatalog();
+  // The VAT rates come with the setup job too (settleSetup); customers are the company's own
+  data.sales = emptySales();
   // Sign-up gives a new workspace its Main store, in its one branch (like auth.service.ts)
   data.stock = emptyStock();
   const [first] = data.branches;
@@ -241,6 +251,7 @@ function usedNumbers(data: WorkspaceData, documentType: DocumentType, period: st
   if (documentType === 'inventory.adjustment') return data.stock.counters.adjustment;
   if (documentType === 'inventory.transfer') return data.stock.counters.transfer;
   if (documentType === 'inventory.revaluation') return data.stock.counters.revaluation;
+  if (documentType === 'sales.customer') return data.sales.lastCode;
   return 0;
 }
 
@@ -254,7 +265,8 @@ export function seriesList(data: WorkspaceData): NumberSeries[] {
       documentType,
       ...format,
       version: saved?.version ?? 0,
-      // Journal entries and stock documents get numbers in the mock; the rest start at 1
+      // Journal entries, stock documents and customer codes get numbers in the mock; the rest
+      // start at 1
       nextNumber: formatDocumentNumber(
         format,
         period(format),

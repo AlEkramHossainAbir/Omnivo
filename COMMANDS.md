@@ -122,6 +122,10 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d om
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT v.tenant_id, v.variant_id, v.quantity, v.value, m.quantity AS moved, m.value AS moved_value FROM stock_values v LEFT JOIN LATERAL (SELECT coalesce(sum(quantity), 0) AS quantity, coalesce(sum(value), 0) AS value FROM stock_movements m WHERE m.tenant_id = v.tenant_id AND m.variant_id = v.variant_id) m ON true WHERE v.quantity <> m.quantity OR v.value <> m.value"
 # stock value per workspace, next to its inventory account's balance (the valuation page's check)
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, (SELECT coalesce(sum(value), 0) FROM stock_values v WHERE v.tenant_id = t.id) AS stock, (SELECT coalesce(sum(l.debit - l.credit), 0) FROM journal_lines l JOIN journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id JOIN ledger_accounts a ON a.tenant_id = l.tenant_id AND a.id = l.account_id WHERE l.tenant_id = t.id AND a.purpose = 'inventory' AND e.status = 'posted') AS inventory_account FROM tenants t"
+# receivable lines posted without a customer, per workspace (from before step 15a; decision 15 of the guide)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, count(*) AS lines, sum(l.debit - l.credit) AS amount FROM journal_lines l JOIN journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id JOIN ledger_accounts a ON a.tenant_id = l.tenant_id AND a.id = l.account_id JOIN tenants t ON t.id = l.tenant_id WHERE a.purpose = 'accounts_receivable' AND e.status = 'posted' AND l.party_id IS NULL GROUP BY t.slug"
+# the 20 customers who owe the most (posted lines only)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, p.code, p.name, sum(l.debit - l.credit) AS balance FROM journal_lines l JOIN journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id JOIN parties p ON p.tenant_id = l.tenant_id AND p.id = l.party_id JOIN tenants t ON t.id = l.tenant_id WHERE e.status = 'posted' GROUP BY t.slug, p.code, p.name ORDER BY balance DESC LIMIT 20"
 ```
 
 ## Permission cache (Valkey)
@@ -142,6 +146,10 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d om
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, count(a.id) FROM tenants t LEFT JOIN ledger_accounts a ON a.tenant_id = t.id GROUP BY t.slug"
 # ask the worker to make a missing chart again (it does nothing if the chart exists)
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "INSERT INTO outbox_events (id, tenant_id, type, payload) SELECT gen_random_uuid(), id, 'workspace.chart_requested', '{}' FROM tenants WHERE slug = '<slug>'"
+# VAT rates per workspace (0 rates = the VAT rates job has not run yet; defaults is always 1 after it)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, count(r.id) AS rates, count(*) FILTER (WHERE r.is_default) AS defaults FROM tenants t LEFT JOIN tax_rates r ON r.tenant_id = t.id AND r.archived_at IS NULL GROUP BY t.slug"
+# ask the worker to make the starting VAT rates again (it does nothing if the workspace has any rate)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "INSERT INTO outbox_events (id, tenant_id, type, payload) SELECT gen_random_uuid(), id, 'workspace.tax_rates_requested', '{}' FROM tenants WHERE slug = '<slug>'"
 # BullMQ's keys: bull:<queue>:completed / :failed (sorted sets), bull:<queue>:<job-id> (one job)
 docker compose -f infra/docker/docker-compose.yml exec cache valkey-cli zcard bull:email:failed
 docker compose -f infra/docker/docker-compose.yml exec cache valkey-cli hget bull:email:<job-id> failedReason

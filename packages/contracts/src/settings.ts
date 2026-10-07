@@ -34,7 +34,7 @@ export function isTimeZone(value: string): boolean {
 
 // BIN (NBR-এর VAT নিবন্ধন নম্বর) ১৩ অঙ্কের, প্রায়ই "000123456-0101" লেখা হয়। হাইফেন আর স্পেস
 // ফেলে শুধু অঙ্ক রাখা — তাহলে একই BIN দুই রকম লেখায় দুবার ঢোকে না, আর Mushak 6.3-এ একই ছাঁদে ছাপা হয়
-const binSchema = z
+export const binSchema = z
   .string()
   .trim()
   .transform((value) => value.replace(/[\s-]/g, ''))
@@ -43,7 +43,7 @@ const binSchema = z
   .nullable();
 
 // ফাঁকা চলে; লিখলে ঠিক ইমেইল হতে হবে
-const optionalEmailSchema = z
+export const optionalEmailSchema = z
   .string()
   .trim()
   .toLowerCase()
@@ -68,6 +68,10 @@ export const settingsSchema = z.object({
   // did not yet). Batches and serial numbers never go negative: a batch or an IMEI either is in
   // the warehouse or is not.
   allowNegativeStock: z.boolean(),
+  // Whether the prices the workspace types (a product's sale price, a price list) already hold the
+  // VAT. On for a shop that sells at the printed MRP; off (the default) for a distributor that
+  // quotes before VAT. Sales lines (step 15b) work the VAT out from here.
+  pricesIncludeVat: z.boolean(),
   version: z.number().int(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
@@ -85,6 +89,7 @@ export const updateSettingsInputSchema = z.object({
   fiscalYearStartMonth: z.number().int().min(1).max(12),
   timezone: z.string().refine(isTimeZone, errorCode('timezone_invalid')),
   allowNegativeStock: z.boolean(),
+  pricesIncludeVat: z.boolean(),
 });
 export type UpdateSettingsInput = z.infer<typeof updateSettingsInputSchema>;
 

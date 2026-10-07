@@ -7,10 +7,16 @@ import {
   accountTypeFits,
   INDUSTRIES,
   STOCK_ACCOUNT_USES,
+  taxRateInputSchema,
 } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { type AccountTemplate, type CategoryTemplate, INDUSTRY_TEMPLATES } from './templates.js';
+import {
+  type AccountTemplate,
+  type CategoryTemplate,
+  INDUSTRY_TEMPLATES,
+  TAX_RATES,
+} from './templates.js';
 
 function flatten(node: AccountTemplate): AccountTemplate[] {
   return [node, ...(node.children ?? []).flatMap(flatten)];
@@ -108,5 +114,22 @@ describe.each(INDUSTRIES)('the %s catalog', (industry) => {
     }
     const keys = catalog.customFields.map((field) => field.key);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+// Step 15a. The database would take a "standard 0%" or a second default only until a person saves
+// it in the form; the setup job writes the rows directly, so the form's rules are checked here.
+describe('the VAT rates', () => {
+  it('are what the form accepts, each name once', () => {
+    for (const rate of TAX_RATES) {
+      expect(taxRateInputSchema.safeParse(rate).success, rate.name).toBe(true);
+    }
+    const names = TAX_RATES.map((rate) => rate.name.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('have exactly one default, and it is the standard rate', () => {
+    const defaults = TAX_RATES.filter((rate) => rate.isDefault);
+    expect(defaults.map((rate) => [rate.kind, rate.rate])).toEqual([['standard', '15']]);
   });
 });

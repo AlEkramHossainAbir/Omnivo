@@ -12,6 +12,8 @@ import {
   productSchema,
   problemSchema,
   setupSchema,
+  taxRateListSchema,
+  taxRateSchema,
   type Unit,
   unitListSchema,
   unitSchema,
@@ -91,6 +93,7 @@ function simple(name: string, extra: Partial<ProductFormValues> = {}): ProductFo
     purchaseUnitId: '',
     tracking: 'none',
     hasExpiry: false,
+    taxRateId: '',
     options: [],
     variants: [variant()],
     units: [],
@@ -112,6 +115,7 @@ function formOf(product: Product): ProductFormValues & { version: number } {
     purchaseUnitId: product.purchaseUnitId ?? '',
     tracking: 'none',
     hasExpiry: product.hasExpiry,
+    taxRateId: product.taxRateId ?? '',
     options: product.options,
     variants: product.variants.map((saved) => ({
       id: saved.id,
@@ -631,5 +635,62 @@ describe('permissions', () => {
       viewer,
     );
     expect(field.statusCode).toBe(403);
+  });
+});
+
+describe('a VAT rate per product (step 15a)', () => {
+  async function rate(name: string) {
+    const { items } = taxRateListSchema.parse((await send('GET', '/tax-rates')).json());
+    const found = items.find((candidate) => candidate.name === name);
+    if (!found) throw new Error(`no rate ${name}`);
+    return found;
+  }
+
+  async function setArchived(name: string, action: 'archive' | 'restore') {
+    const found = await rate(name);
+    const res = await send('POST', `/tax-rates/${found.id}/${action}`, { version: found.version });
+    return taxRateSchema.parse(res.json());
+  }
+
+  it('follows the workspace default, or keeps a rate of its own', async () => {
+    expect((await created(simple('Gift box'))).taxRateId).toBeNull();
+    const zero = await rate('Zero-rated');
+    const polo = await created(simple('Knit polo shirt, export', { taxRateId: zero.id }));
+    expect(polo.taxRateId).toBe(zero.id);
+    // The audit log names the rate, not its id
+    const { items } = auditPageSchema.parse(
+      (await send('GET', `/audit-logs?entityType=product&entityId=${polo.id}`)).json(),
+    );
+    expect(items[0]?.changes).toMatchObject({ taxRate: { from: null, to: 'Zero-rated' } });
+  });
+
+  it('keeps a rate archived since, and refuses another archived or unknown rate', async () => {
+    const { items } = productPageSchema.parse((await send('GET', '/products?search=polo')).json());
+    const polo = productSchema.parse((await send('GET', `/products/${items[0]?.id ?? ''}`)).json());
+    const zero = await setArchived('Zero-rated', 'archive');
+    const exempt = await setArchived('Exempt', 'archive');
+
+    const kept = await send('PUT', `/products/${polo.id}`, formOf(polo));
+    expect(kept.statusCode, kept.body).toBe(200);
+    expect(productSchema.parse(kept.json()).taxRateId).toBe(zero.id);
+
+    const fresh = await send('POST', '/products', simple('Woven shirt', { taxRateId: zero.id }));
+    expect(fresh.statusCode).toBe(400);
+    expect(problemOf(fresh).fieldErrors).toEqual({ taxRateId: ['tax_rate_invalid'] });
+    const saved = productSchema.parse(kept.json());
+    const other = await send('PUT', `/products/${polo.id}`, {
+      ...formOf(saved),
+      taxRateId: exempt.id,
+    });
+    expect(problemOf(other).fieldErrors).toEqual({ taxRateId: ['tax_rate_invalid'] });
+    const unknown = await send(
+      'POST',
+      '/products',
+      simple('Woven shirt', { taxRateId: '01939d1c-0000-7000-8000-000000000000' }),
+    );
+    expect(problemOf(unknown).fieldErrors).toEqual({ taxRateId: ['tax_rate_invalid'] });
+
+    await setArchived('Zero-rated', 'restore');
+    await setArchived('Exempt', 'restore');
   });
 });

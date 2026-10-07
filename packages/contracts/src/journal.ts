@@ -55,17 +55,28 @@ export function shiftIsoDate(isoDate: string, days: number): string {
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
 
-// A real entry has a handful of lines; a payroll or an opening balance a few hundred at most
+// A real entry has a handful of lines; a payroll a few hundred at most
 export const MAX_JOURNAL_LINES = 200;
+
+// The opening balances are one entry, but with a line per customer who owed money (step 15a)
+export const MAX_OPENING_BALANCE_LINES = 5000;
 
 // A posted entry as another page links to it: "JV-2026-27-0042"
 export const entryRefSchema = z.object({ id: z.uuid(), number: z.string() });
 export type EntryRef = z.infer<typeof entryRefSchema>;
 
+// The customer (later also the supplier) a line belongs to, as a page shows it. Sent with its code
+// and name because a workspace has too many customers for the app to load them all, the way it
+// loads the chart of accounts.
+export const partyRefSchema = z.object({ id: z.uuid(), code: z.string(), name: z.string() });
+export type PartyRef = z.infer<typeof partyRefSchema>;
+
 export const journalLineSchema = z.object({
   id: z.uuid(),
   accountId: z.uuid(),
   branchId: z.uuid().nullable(),
+  // Set on every line of the receivable account (step 15a), and on no other line
+  party: partyRefSchema.nullable(),
   description: z.string().nullable(),
   // Decimal strings with 4 places, as Postgres sends NUMERIC(19,4): "18500.0000". One side is
   // always "0.0000".
@@ -103,8 +114,8 @@ export const journalEntrySchema = journalEntrySummarySchema.extend({
 });
 export type JournalEntry = z.infer<typeof journalEntrySchema>;
 
-// The form's "No branch" option sends ''
-const branchIdSchema = z
+// The form's "No branch" and empty "Customer" options send ''
+const optionalIdSchema = z
   .union([z.uuid(), z.literal('')])
   .transform((value) => (value === '' ? null : value))
   .nullable();
@@ -115,7 +126,11 @@ export const journalLineInputSchema = z
   .object({
     // The form's empty "Account" select sends '' — "not chosen", not a broken id
     accountId: z.uuid(errorCode('journal_account_required')),
-    branchId: branchIdSchema,
+    branchId: optionalIdSchema,
+    // Required on the receivable account, refused on every other account. Only the server knows
+    // which account is which, so that rule is checked there (journal_party_required / _not_allowed).
+    // May be left out (= null): an app from before step 15a still sends its lines without it.
+    partyId: optionalIdSchema.default(null),
     description: optionalText(200),
     debit: amountSchema,
     credit: amountSchema,
@@ -260,6 +275,8 @@ export const ledgerLineSchema = z.object({
   date: z.iso.date(),
   narration: z.string().nullable(),
   description: z.string().nullable(),
+  // The receivable account's ledger shows whose line it is (step 15a); null on other accounts
+  party: partyRefSchema.nullable(),
   debit: z.string(),
   credit: z.string(),
   balance: z.string(),
@@ -292,8 +309,11 @@ export const ledgerRoutes = {
 // books to Omnivo. Saved as one posted journal entry; the difference goes to the account whose
 // purpose is 'opening_balance_equity'.
 
+// The receivable account's opening balance is split by customer (step 15a): one line per customer
+// who owed money on the go-live date. Every other account has one line, without a party.
 export const openingBalanceLineSchema = z.object({
   accountId: z.uuid(),
+  party: partyRefSchema.nullable(),
   debit: z.string(),
   credit: z.string(),
 });
@@ -313,17 +333,42 @@ export const openingBalancesInputSchema = z.object({
   // The entry the page was opened with. If someone saved other opening balances since, the
   // server answers version_conflict instead of reversing an entry this person never saw.
   replaces: z.uuid().nullable(),
-  // Zero on both sides = no opening balance for that account; such lines are dropped
+  // Zero on both sides = no opening balance for that account; such lines are dropped. A
+  // distributor moving to Omnivo may bring a few thousand customers with dues, hence the limit.
   lines: z
     .array(
       z
-        .object({ accountId: z.uuid(), debit: amountSchema, credit: amountSchema })
+        .object({
+          accountId: z.uuid(),
+          partyId: optionalIdSchema.default(null),
+          debit: amountSchema,
+          credit: amountSchema,
+        })
         .refine((line) => isZeroMoney(line.debit) || isZeroMoney(line.credit), {
           error: errorCode('journal_line_amount'),
           path: ['debit'],
         }),
     )
-    .max(1000),
+    .max(MAX_OPENING_BALANCE_LINES)
+    // One line per account, and per customer on the receivable: two lines for the same customer
+    // would be added up silently, and the person would not see the number they typed. Empty lines
+    // do not count: the server drops them, and the page may hold a few customer rows not filled in
+    // yet (step 15a.6).
+    .superRefine((lines, ctx) => {
+      const seen = new Set<string>();
+      lines.forEach((line, index) => {
+        if (isZeroMoney(line.debit) && isZeroMoney(line.credit)) return;
+        const key = `${line.accountId}:${line.partyId ?? ''}`;
+        if (seen.has(key)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: [index, 'debit'],
+            message: errorCode('opening_balance_twice'),
+          });
+        }
+        seen.add(key);
+      });
+    }),
 });
 export type OpeningBalancesInput = z.infer<typeof openingBalancesInputSchema>;
 

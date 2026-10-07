@@ -12,6 +12,7 @@ import { PostingService } from './posting.service.js';
 
 // The double-entry journal. PostingService is exported: every later module that posts (sales,
 // purchase, inventory) imports this module and calls postNew() in its own transaction.
+// LedgerService too (step 15a): a customer's statement is a ledger of the customer's lines.
 @Module({
   imports: [NumberingModule, RbacModule],
   controllers: [JournalController, BooksController],
@@ -22,6 +23,6 @@ import { PostingService } from './posting.service.js';
     PeriodLockService,
     PostingService,
   ],
-  exports: [PostingService],
+  exports: [PostingService, LedgerService],
 })
 export class JournalModule {}

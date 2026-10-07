@@ -11,7 +11,9 @@ import {
   type Account,
   type Branch,
   contractErrorMap,
+  isPartyAccountPurpose,
   type JournalEntry,
+  type PartyRef,
   routes,
   updateJournalEntryInputSchema,
 } from '@omnivo/contracts';
@@ -42,6 +44,7 @@ import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { balanceSide, formAmount, ledgerOptions, linePath, totalsOf } from '../lib/journal';
 import { useCan } from '../lib/permissions';
+import { CustomerPicker } from './customer-picker';
 import { BackLink, failureOf, LineField, useJournalRefresh } from './journal-parts';
 
 // The entry form: a chunk of its own (loaded by routes/journal-entry.tsx), because the form
@@ -60,7 +63,7 @@ const LINE_COLUMNS = {
 } as const;
 
 function emptyLine(): LineValues {
-  return { accountId: '', branchId: '', description: '', debit: '', credit: '' };
+  return { accountId: '', branchId: '', partyId: '', description: '', debit: '', credit: '' };
 }
 
 // The server's field names for the errors it can send — one set per line
@@ -72,6 +75,7 @@ function fieldNames(lineCount: number): Path<FormValues>[] {
     ...Array.from({ length: lineCount }, (_, index) => [
       linePath(index, 'accountId'),
       linePath(index, 'branchId'),
+      linePath(index, 'partyId'),
       linePath(index, 'debit'),
       linePath(index, 'credit'),
     ]).flat(),
@@ -101,6 +105,8 @@ export function EntryForm({
     control,
     handleSubmit,
     setError,
+    setValue,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(updateJournalEntryInputSchema, { error: contractErrorMap }),
@@ -111,6 +117,7 @@ export function EntryForm({
         ? entry.lines.map((line) => ({
             accountId: line.accountId,
             branchId: line.branchId ?? '',
+            partyId: line.party?.id ?? '',
             description: line.description ?? '',
             debit: formAmount(line.debit),
             credit: formAmount(line.credit),
@@ -138,6 +145,24 @@ export function EntryForm({
     [branches, t],
   );
   const showBranch = branches.length > 0;
+  // The receivable (step 15a): a line on it names its customer. The server checks it too.
+  const partyAccounts = useMemo(
+    () =>
+      new Set(
+        accounts
+          .filter((account) => isPartyAccountPurpose(account.purpose))
+          .map((account) => account.id),
+      ),
+    [accounts],
+  );
+  // The customers the draft was saved with, so each box names its customer before any search
+  const savedParties = useMemo(
+    () =>
+      new Map<string, PartyRef>(
+        entry?.lines.flatMap((line) => (line.party ? [[line.party.id, line.party]] : [])) ?? [],
+      ),
+    [entry],
+  );
   const columns = showBranch ? LINE_COLUMNS.withBranch : LINE_COLUMNS.withoutBranch;
 
   const save = (post: boolean) =>
@@ -250,7 +275,7 @@ export function EntryForm({
                   </span>
                   {removeButton}
                 </div>
-                <div className="col-span-2 @3xl:col-span-1">
+                <div className="col-span-2 grid grid-cols-1 gap-2 @3xl:col-span-1">
                   <LineField
                     id={linePath(index, 'accountId')}
                     label={t('journal.account')}
@@ -263,9 +288,45 @@ export function EntryForm({
                       aria-describedby={
                         lineErrors?.accountId ? `${linePath(index, 'accountId')}-error` : undefined
                       }
-                      {...register(linePath(index, 'accountId'))}
+                      {...register(linePath(index, 'accountId'), {
+                        // Another account takes no customer: the server would refuse the line
+                        // (journal_party_not_allowed), and the box is gone, so it could not be
+                        // seen to clear it
+                        onChange: () => {
+                          if (!partyAccounts.has(getValues(linePath(index, 'accountId')))) {
+                            setValue(linePath(index, 'partyId'), '');
+                          }
+                        },
+                      })}
                     />
                   </LineField>
+                  {/* Under the account, not in a column of its own: only receivable lines have
+                      it, and a column empty on most lines would squeeze the others */}
+                  {partyAccounts.has(lines[index]?.accountId ?? '') && (
+                    <Controller
+                      control={control}
+                      name={linePath(index, 'partyId')}
+                      render={({ field, fieldState }) => (
+                        <LineField
+                          id={field.name}
+                          label={t('journal.customer')}
+                          error={fieldState.error?.message}
+                        >
+                          <CustomerPicker
+                            id={field.name}
+                            name={field.name}
+                            ref={field.ref}
+                            value={field.value ?? ''}
+                            saved={savedParties.get(field.value ?? '') ?? null}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            invalid={fieldState.error !== undefined}
+                            aria-describedby={fieldState.error ? `${field.name}-error` : undefined}
+                          />
+                        </LineField>
+                      )}
+                    />
+                  )}
                 </div>
                 <div className="col-span-2 @3xl:col-span-1">
                   <LineField

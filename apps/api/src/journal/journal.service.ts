@@ -8,7 +8,7 @@ import {
   sumMoney,
   type UpdateJournalEntryInput,
 } from '@omnivo/contracts';
-import { journalEntries, journalLines } from '@omnivo/db';
+import { journalEntries, journalLines, parties } from '@omnivo/db';
 import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
@@ -90,7 +90,9 @@ export class JournalService {
   async create(input: JournalEntryInput): Promise<JournalEntry> {
     if (input.post) await this.assertCanPost();
     return this.withTenant(async (tx) => {
-      await this.posting.checkLines(tx, input.lines);
+      // A draft may wait for its customer; posting it may not (PostingService.post). Saved and
+      // posted in one click, a missing customer is reported here, with every other wrong line.
+      await this.posting.checkLines(tx, input.lines, { allowMissingParty: !input.post });
       let row = await this.posting.insertDraft(
         tx,
         { date: input.date, narration: input.narration, source: 'manual' },
@@ -112,7 +114,7 @@ export class JournalService {
     return this.withTenant(async (tx) => {
       const before = await this.lockDraft(tx, id, input.version);
       const linesBefore = await this.linesOf(tx, id);
-      await this.posting.checkLines(tx, input.lines);
+      await this.posting.checkLines(tx, input.lines, { allowMissingParty: !input.post });
       const [updated] = await tx
         .update(journalEntries)
         .set({
@@ -211,7 +213,8 @@ export class JournalService {
           );
         }
 
-        // The same lines with debit and credit swapped: together the two entries add up to zero
+        // The same lines with debit and credit swapped: together the two entries add up to zero.
+        // Each line keeps its customer (step 15a), so the reversal comes off the same customer.
         const lines = await this.linesOf(tx, id);
         const reversed = await this.posting.postNew(tx, {
           date: input.date,
@@ -348,15 +351,31 @@ export class JournalService {
   }
 
   private async read(tx: Transaction, id: string): Promise<JournalEntry> {
+    const tenantId = getTenantId();
     const [summary] = await this.summaries(tx, eq(journalEntries.id, id), 1);
     if (!summary) throw notFound('Journal entry');
-    const lines = await this.linesOf(tx, id);
+    // The customer's code and name come with each line: the app cannot load every customer the
+    // way it loads the chart of accounts
+    const lines = await tx
+      .select({ line: journalLines, partyCode: parties.code, partyName: parties.name })
+      .from(journalLines)
+      .leftJoin(
+        parties,
+        and(eq(parties.tenantId, journalLines.tenantId), eq(parties.id, journalLines.partyId)),
+      )
+      .where(and(eq(journalLines.tenantId, tenantId), eq(journalLines.entryId, id)))
+      .orderBy(asc(journalLines.lineNo));
     return {
       ...summary,
-      lines: lines.map((line) => ({
+      lines: lines.map(({ line, partyCode, partyName }) => ({
         id: line.id,
         accountId: line.accountId,
         branchId: line.branchId,
+        // The FK makes the join find the party whenever the line has one
+        party:
+          line.partyId !== null && partyCode !== null && partyName !== null
+            ? { id: line.partyId, code: partyCode, name: partyName }
+            : null,
         description: line.description,
         debit: line.debit,
         credit: line.credit,

@@ -33,6 +33,7 @@ import { and, asc, eq, gt, isNotNull, isNull, type SQL, sql } from 'drizzle-orm'
 import { z } from 'zod';
 
 import { audit, diff } from '../common/audit/audit.js';
+import { containsPattern } from '../common/db/search.js';
 import { AppError, notFound } from '../common/http/app-error.js';
 import { decodeCursor, encodeCursor, toPage } from '../common/pagination/cursor.js';
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
@@ -43,11 +44,6 @@ import { ValueAccess } from './value-access.js';
 // Postgres's NUMERIC as the API sends every quantity: 4 decimals, "0.0000" for nothing
 function quantityText(value: SQL): SQL<string> {
   return sql<string>`round(coalesce(${value}, 0), 4)::text`;
-}
-
-// LIKE's own wildcards in what the person typed are meant literally (as in the product list)
-function containsPattern(search: string): string {
-  return `%${search.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
 }
 
 const unitsSchema = z.array(z.object({ unitId: z.uuid(), factor: z.string() }));

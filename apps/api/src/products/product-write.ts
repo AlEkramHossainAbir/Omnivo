@@ -15,6 +15,7 @@ import {
   products,
   productUnits,
   productVariants,
+  taxRates,
   units,
 } from '@omnivo/db';
 import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
@@ -35,22 +36,28 @@ export interface ProductIssue {
   code: ErrorCode;
 }
 
-// The workspace's units, categories and active product fields: read once per request or per
-// import, not once per product
+// The workspace's units, categories, VAT rates and active product fields: read once per request
+// or per import, not once per product
 export interface ProductContext {
   units: Map<string, UnitRow>;
   categoryIds: Set<string>;
+  // Step 15a: each rate's id → whether it is archived
+  taxRates: Map<string, boolean>;
   fields: (typeof customFieldDefinitions.$inferSelect)[];
 }
 
 export async function loadProductContext(tx: Transaction): Promise<ProductContext> {
   const tenantId = getTenantId();
-  const [unitRows, categoryRows, fieldRows] = await Promise.all([
+  const [unitRows, categoryRows, rateRows, fieldRows] = await Promise.all([
     tx.select().from(units).where(eq(units.tenantId, tenantId)),
     tx
       .select({ id: productCategories.id })
       .from(productCategories)
       .where(eq(productCategories.tenantId, tenantId)),
+    tx
+      .select({ id: taxRates.id, archivedAt: taxRates.archivedAt })
+      .from(taxRates)
+      .where(eq(taxRates.tenantId, tenantId)),
     tx
       .select()
       .from(customFieldDefinitions)
@@ -66,6 +73,7 @@ export async function loadProductContext(tx: Transaction): Promise<ProductContex
   return {
     units: new Map(unitRows.map((row) => [row.id, row])),
     categoryIds: new Set(categoryRows.map((row) => row.id)),
+    taxRates: new Map(rateRows.map((row) => [row.id, row.archivedAt !== null])),
     fields: fieldRows,
   };
 }
@@ -74,12 +82,14 @@ export async function loadProductContext(tx: Transaction): Promise<ProductContex
 // are active, a standard conversion is exactly right, the category exists, the custom fields fit
 // the workspace's fields. `keepUnits`: units the product already uses stay allowed after being
 // archived ("products that use it keep it"). `saved`: the product's stored custom fields — the
-// values of archived fields are kept, the form never sends them.
+// values of archived fields are kept, the form never sends them. `keepTaxRate`: the product's own
+// VAT rate stays allowed after being archived, like its units (step 15a).
 export function checkProduct(
   input: ProductInput,
   context: ProductContext,
   keepUnits: ReadonlySet<string> = new Set(),
   saved: CustomFieldValues = {},
+  keepTaxRate: string | null = null,
 ): { issues: ProductIssue[]; customFields: CustomFieldValues } {
   const issues: ProductIssue[] = [];
   const usable = (id: string): UnitRow | undefined => {
@@ -89,6 +99,12 @@ export function checkProduct(
 
   if (input.categoryId !== null && !context.categoryIds.has(input.categoryId)) {
     issues.push({ path: 'categoryId', code: 'product_category_invalid' });
+  }
+  if (input.taxRateId !== null) {
+    const archived = context.taxRates.get(input.taxRateId);
+    if (archived === undefined || (archived && input.taxRateId !== keepTaxRate)) {
+      issues.push({ path: 'taxRateId', code: 'tax_rate_invalid' });
+    }
   }
   const base = usable(input.baseUnitId);
   if (!base) issues.push({ path: 'baseUnitId', code: 'product_unit_invalid' });
@@ -298,6 +314,7 @@ export async function insertProducts(
           baseUnitId: input.baseUnitId,
           tracking: input.tracking,
           hasExpiry: input.hasExpiry,
+          taxRateId: input.taxRateId,
           options: input.options,
           customFields,
           createdBy: userId,

@@ -14,6 +14,7 @@ import { Link } from '@tanstack/react-router';
 import { type ReactNode, useCallback } from 'react';
 
 import { ApiRequestError } from '../lib/api';
+import { balanceSide } from '../lib/journal';
 import { journalEntryQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 
@@ -29,6 +30,23 @@ export function useIsoDate(): (iso: string) => string {
       return date ? format.date(date) : iso;
     },
     [format],
+  );
+}
+
+// "৳12,500.00 Dr" — a balance with its side; zero has none. Moved here from routes/ledger.tsx in
+// step 15a: a customer's statement shows its balances the same way.
+export function useBalanceText(): (value: string) => string {
+  const { t, format } = useLocale();
+  return useCallback(
+    (value: string) => {
+      const { amount, side } = balanceSide(value);
+      const money = format.money(amount, { decimals: 2 });
+      if (side === null) return money;
+      return t(side === 'debit' ? 'ledger.debitBalance' : 'ledger.creditBalance', {
+        amount: money,
+      });
+    },
+    [t, format],
   );
 }
 
@@ -122,5 +140,8 @@ export function useJournalRefresh() {
   return async (saved?: JournalEntry) => {
     if (saved) queryClient.setQueryData(journalEntryQuery(tenantId, saved.id).queryKey, saved);
     await queryClient.invalidateQueries({ queryKey: ['journal', tenantId] });
+    // A line on the receivable changes what a customer owes (step 15a): the customer list and
+    // pages show the balance
+    await queryClient.invalidateQueries({ queryKey: ['customers', tenantId] });
   };
 }

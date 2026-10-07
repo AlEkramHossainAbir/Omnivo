@@ -16,6 +16,7 @@ import {
 import { baseColumns } from '../base-columns.js';
 import { branches } from './branches.js';
 import { ledgerAccounts } from './ledger-accounts.js';
+import { parties } from './parties.js';
 import { tenants } from './tenants.js';
 
 // One journal entry: the header. Its debits and credits are the rows of journal_lines. Three
@@ -102,6 +103,10 @@ export const journalLines = pgTable(
     accountId: uuid('account_id').notNull(),
     // Optional: which branch the amount belongs to (branch-wise P&L later)
     branchId: uuid('branch_id'),
+    // Step 15a: whose line this is. Set on every line of the receivable account and on no other
+    // line (migration 0026 checks it when the entry is posted), so the customers' balances add up
+    // to the account's balance. Lines posted before step 15a have none.
+    partyId: uuid('party_id'),
     description: text('description'),
     // NUMERIC(19,4), read and written as strings: never a JavaScript number
     debit: numeric('debit', { precision: 19, scale: 4 }).notNull().default('0'),
@@ -129,6 +134,17 @@ export const journalLines = pgTable(
       name: 'journal_lines_branch_fk',
       columns: [table.tenantId, table.branchId],
       foreignColumns: [branches.tenantId, branches.id],
+    }),
+    // A customer's balance and statement. Partial: most lines (cash, sales, expenses) have no
+    // party and are left out. Also the FK's check when a customer is deleted.
+    index('journal_lines_tenant_party_idx')
+      .on(table.tenantId, table.partyId)
+      .where(sql`${table.partyId} IS NOT NULL`),
+    // A customer with lines cannot be deleted: the API turns this FK's error into customer_in_use
+    foreignKey({
+      name: 'journal_lines_party_fk',
+      columns: [table.tenantId, table.partyId],
+      foreignColumns: [parties.tenantId, parties.id],
     }),
     // Exactly one side has an amount, and neither is negative
     check(

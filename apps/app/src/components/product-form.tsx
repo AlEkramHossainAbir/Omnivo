@@ -1,6 +1,7 @@
 import {
   Alert02Icon,
   Archive02Icon,
+  Calendar03Icon,
   Delete02Icon,
   GridViewIcon,
   PlusSignIcon,
@@ -20,6 +21,7 @@ import {
   PRODUCT_TYPES,
   routes,
   standardFactor,
+  type TaxRate,
   TRACKING_MODES,
   type TrackingMode,
   type Unit,
@@ -32,7 +34,6 @@ import {
   CardHeader,
   Checkbox,
   cn,
-  DatePicker,
   FormAlert,
   FormField,
   IconButton,
@@ -49,7 +50,7 @@ import {
 } from '@omnivo/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import {
   type Control,
   Controller,
@@ -72,7 +73,11 @@ import {
 } from '../lib/products';
 import { productQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
+import { taxRateOptions, useRateText } from '../lib/tax-rates';
 import { LineError } from './journal-parts';
+
+// Loaded the first time a date custom field shows (date-input.tsx says why)
+const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
 // The product form: a chunk of its own (loaded by routes/product.tsx). The schema is the
 // contract's own fields and rules, with the workspace's custom fields put in — so the form refuses
@@ -113,6 +118,8 @@ function valuesOf(
       purchaseUnitId: '',
       tracking: defaults.tracking,
       hasExpiry: defaults.hasExpiry,
+      // '' = the workspace's default rate, which follows the default when it changes
+      taxRateId: '',
       options: [],
       variants: [emptyVariant()],
       units: [],
@@ -131,6 +138,7 @@ function valuesOf(
     purchaseUnitId: product.purchaseUnitId ?? '',
     tracking: TRACKING_MODES.find((mode) => mode === product.tracking) ?? 'none',
     hasExpiry: product.hasExpiry,
+    taxRateId: product.taxRateId ?? '',
     options: product.options,
     variants: product.variants.map((variant) => ({
       id: variant.id,
@@ -167,6 +175,7 @@ function fieldNames(
     'purchaseUnitId',
     'tracking',
     'hasExpiry',
+    'taxRateId',
     'variants',
   ];
   values.variants.forEach((_, index) => {
@@ -272,11 +281,14 @@ function CustomFieldInput({
     return (
       <FormField control={control} name={name} label={field.label} optional={optional}>
         {(box) => (
-          <DatePicker
-            {...box}
-            value={typeof box.value === 'string' ? box.value : ''}
-            onChange={box.onChange}
-          />
+          // The same box, empty and disabled, for the moment the chunk loads
+          <Suspense fallback={<Input id={box.id} icon={Calendar03Icon} disabled />}>
+            <DatePicker
+              {...box}
+              value={typeof box.value === 'string' ? box.value : ''}
+              onChange={box.onChange}
+            />
+          </Suspense>
         )}
       </FormField>
     );
@@ -332,11 +344,17 @@ export function ProductForm({
   categories,
   fields,
   defaults,
+  taxRates,
+  pricesIncludeVat,
   canManage,
 }: {
   product: Product | null;
   units: Unit[];
   categories: ProductCategory[];
+  // Archived ones too: a product keeps its own rate if it was archived since
+  taxRates: TaxRate[];
+  // Settings → Sales: the price boxes say whether they hold the VAT
+  pricesIncludeVat: boolean;
   // The workspace's active custom fields for products
   fields: CustomFieldDefinition[];
   defaults: { tracking: TrackingMode; hasExpiry: boolean };
@@ -486,6 +504,11 @@ export function ProductForm({
   const variantsError = errors.variants?.root?.message ?? errors.variants?.message;
   const unitWord = base?.code ?? '';
   const { errorText } = useLocale();
+  const rateText = useRateText();
+  const defaultRate = taxRates.find((rate) => rate.isDefault);
+  const priceHint = pricesIncludeVat
+    ? t('products.fields.priceWithVat')
+    : t('products.fields.priceWithoutVat');
 
   return (
     <div className="grid max-w-5xl grid-cols-1 gap-5">
@@ -546,15 +569,36 @@ export function ProductForm({
                 error={errors.type?.message}
               />
             </div>
-            <SelectField
-              label={t('products.fields.category')}
-              options={[
-                { value: '', label: t('products.fields.noCategory') },
-                ...categoryOptions(categories),
-              ]}
-              {...register('categoryId')}
-              error={errors.categoryId?.message}
-            />
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-x-4">
+              <SelectField
+                label={t('products.fields.category')}
+                options={[
+                  { value: '', label: t('products.fields.noCategory') },
+                  ...categoryOptions(categories),
+                ]}
+                {...register('categoryId')}
+                error={errors.categoryId?.message}
+              />
+              {/* Step 15a. The first option follows the workspace default: changing the default
+                  later moves every product that kept it, without editing them one by one. */}
+              <SelectField
+                label={t('products.fields.taxRate')}
+                hint={t('products.fields.taxRateHint')}
+                options={[
+                  {
+                    value: '',
+                    label: t('products.fields.defaultTaxRate', {
+                      name: defaultRate
+                        ? `${defaultRate.name} · ${rateText(defaultRate.rate)}`
+                        : '—',
+                    }),
+                  },
+                  ...taxRateOptions(taxRates, rateText, product?.taxRateId ?? null),
+                ]}
+                {...register('taxRateId')}
+                error={errors.taxRateId?.message}
+              />
+            </div>
             <TextAreaField
               label={t('products.fields.description')}
               optional
@@ -749,6 +793,7 @@ export function ProductForm({
                   control={control}
                   name="variants.0.salePrice"
                   label={t('products.fields.price', { unit: unitWord })}
+                  hint={priceHint}
                   optional
                 >
                   {(field) => <MoneyInput {...field} value={field.value ?? ''} />}
@@ -859,6 +904,7 @@ export function ProductForm({
                     variantArray.remove(index);
                   }}
                 />
+                <p className="text-label text-ink-3">{priceHint}</p>
               </>
             )}
             {variantsError && (

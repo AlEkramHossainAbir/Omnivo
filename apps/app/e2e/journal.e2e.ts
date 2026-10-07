@@ -141,3 +141,57 @@ test('closes the books up to today, and then refuses to post into it', async ({ 
     page.getByText('The books are closed for this date. Pick a date after the lock date.'),
   ).toBeVisible();
 });
+
+// Step 15a: the receivable is kept per customer. The API answers a line without one per row.
+test('asks for the customer on a receivable line, and the customer then owes it', async ({
+  page,
+}) => {
+  await openFromNav(page, 'Journal');
+  await page.getByRole('button', { name: 'New entry' }).click();
+  await page.getByLabel('Narration').fill('Sample yardage sold to Aarong');
+  await line(page, 1).getByLabel('Account').selectOption({ label: '1140 · Accounts receivable' });
+  await line(page, 1).getByLabel('Debit').fill('42000');
+  await line(page, 2).getByLabel('Account').selectOption({ label: '4110 · Export sales' });
+  await line(page, 2).getByLabel('Credit').fill('42000');
+  await page.getByRole('button', { name: 'Post entry' }).click();
+  await expect(line(page, 1).getByText('Pick the customer this amount belongs to.')).toBeVisible();
+
+  await line(page, 1).getByLabel('Customer').click();
+  await page.getByRole('combobox', { name: 'Search customers' }).fill('aarong');
+  await page.getByRole('option', { name: /Aarong/ }).click();
+  await page.getByRole('button', { name: 'Post entry' }).click();
+  await expect(page.getByText(/^JV-\d{4}-\d{2}-0009 posted$/)).toBeVisible();
+  await expect(page.getByText('Aarong').first()).toBeVisible();
+
+  await openFromNav(page, 'Customers');
+  await expect(listItem(page, /Aarong/)).toContainText('৳42,000');
+  await expectNoSideScroll(page);
+});
+
+test('splits the opening receivable by customer', async ({ page }) => {
+  await openFromNav(page, 'Opening balances');
+  await page.getByRole('button', { name: 'First day on Omnivo' }).click();
+  await page.locator('td[data-today] button').click();
+  await page.getByLabel('Debit, 1140: line 1').fill('150000');
+  await page.getByRole('button', { name: 'Post opening balances' }).click();
+  // Without a customer the amount belongs to nobody: the row says so
+  await expect(
+    page
+      .getByRole('group', { name: '1140: line 1' })
+      .getByText('Pick the customer this amount belongs to.'),
+  ).toBeVisible();
+
+  await page.getByLabel('Customer, 1140: line 1').click();
+  await page.getByRole('combobox', { name: 'Search customers' }).fill('C-00003');
+  await page.getByRole('option', { name: /Aarong/ }).click();
+  await page.getByRole('button', { name: 'Add a customer' }).click();
+  await page.getByLabel('Customer, 1140: line 2').click();
+  await page.getByRole('combobox', { name: 'Search customers' }).fill('bengal');
+  await page.getByRole('option', { name: /Bengal Buying House/ }).click();
+  await page.getByLabel('Debit, 1140: line 2').fill('60000');
+  // The account's total is the customers' lines together
+  await expect(page.getByText('৳2,10,000.00').first()).toBeVisible();
+  await page.getByRole('button', { name: 'Post opening balances' }).click();
+  await expect(page.getByText(/^Opening balances posted as JV-/)).toBeVisible();
+  await expectNoSideScroll(page);
+});

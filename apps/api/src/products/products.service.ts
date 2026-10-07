@@ -9,12 +9,14 @@ import {
   type UpdateProductInput,
 } from '@omnivo/contracts';
 import {
+  priceListItems,
   productBarcodes,
   productCategories,
   products,
   productUnits,
   productVariants,
   stockMovements,
+  taxRates,
   tenantSettings,
   units,
 } from '@omnivo/db';
@@ -23,6 +25,7 @@ import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/db/pg-errors.js';
+import { containsPattern } from '../common/db/search.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, encodeCursor } from '../common/pagination/cursor.js';
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
@@ -95,11 +98,6 @@ function isoText(column: SQL): SQL {
   return sql`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 }
 
-// LIKE's own wildcards in what the person typed are meant literally: "10%" finds "10% off"
-function containsPattern(search: string): string {
-  return `%${search.toLowerCase().replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
-}
-
 // What the audit log shows of a product: what a person would recognise, not ids
 interface Snapshot {
   [field: string]: string | number | null;
@@ -109,6 +107,7 @@ interface Snapshot {
   category: string | null;
   baseUnit: string | null;
   tracking: string;
+  taxRate: string | null;
   variants: number;
   packs: string | null;
 }
@@ -253,7 +252,7 @@ export class ProductsService {
         const old = await this.read(tx, id);
         const context = await loadProductContext(tx);
         const keep = new Set([old.baseUnitId, ...old.units.map((pack) => pack.unitId)]);
-        const checked = checkProduct(input, context, keep, before.customFields);
+        const checked = checkProduct(input, context, keep, before.customFields, before.taxRateId);
         // An id sent back must be one of this product's own variants, and only once
         const known = new Set(old.variants.map((variant) => variant.id));
         const seen = new Set<string>();
@@ -287,6 +286,7 @@ export class ProductsService {
             baseUnitId: input.baseUnitId,
             tracking: input.tracking,
             hasExpiry: input.hasExpiry,
+            taxRateId: input.taxRateId,
             options: input.options,
             customFields: checked.customFields,
             version: sql`${products.version} + 1`,
@@ -294,6 +294,20 @@ export class ProductsService {
           })
           .where(and(eq(products.tenantId, tenantId), eq(products.id, id)));
         await replaceUnits(tx, id, input);
+        // Step 15a: a price list's price per carton means nothing once the product is no longer
+        // sold by the carton. The prices of deleted variants went with them (ON DELETE CASCADE).
+        await tx
+          .delete(priceListItems)
+          .where(
+            and(
+              eq(priceListItems.tenantId, tenantId),
+              eq(priceListItems.productId, id),
+              notInArray(priceListItems.unitId, [
+                input.baseUnitId,
+                ...input.units.map((pack) => pack.unitId),
+              ]),
+            ),
+          );
         const variantIds = await this.replaceVariants(tx, id, input, skus, old);
         await tx
           .delete(productBarcodes)
@@ -551,6 +565,7 @@ export class ProductsService {
       purchaseUnitId: packs.find((pack) => pack.isPurchaseDefault)?.unitId ?? null,
       tracking: row.tracking,
       hasExpiry: row.hasExpiry,
+      taxRateId: row.taxRateId,
       options: row.options,
       variants: variants.map((variant) => ({
         id: variant.id,
@@ -575,7 +590,7 @@ export class ProductsService {
   private async snapshot(tx: Transaction, product: Product): Promise<Snapshot> {
     const tenantId = getTenantId();
     const unitIds = [product.baseUnitId, ...product.units.map((pack) => pack.unitId)];
-    const [unitRows, [category]] = await Promise.all([
+    const [unitRows, [category], [rate]] = await Promise.all([
       tx
         .select({ id: units.id, code: units.code })
         .from(units)
@@ -591,6 +606,12 @@ export class ProductsService {
                 eq(productCategories.id, product.categoryId),
               ),
             ),
+      product.taxRateId === null
+        ? [undefined]
+        : tx
+            .select({ name: taxRates.name })
+            .from(taxRates)
+            .where(and(eq(taxRates.tenantId, tenantId), eq(taxRates.id, product.taxRateId))),
     ]);
     const codeOf = new Map(unitRows.map((unit) => [unit.id, unit.code]));
     const packs = product.units
@@ -603,6 +624,8 @@ export class ProductsService {
       category: category?.name ?? null,
       baseUnit: codeOf.get(product.baseUnitId) ?? null,
       tracking: product.tracking,
+      // null = the workspace's default rate
+      taxRate: rate?.name ?? null,
       variants: product.variants.filter((variant) => variant.archivedAt === null).length,
       packs: packs === '' ? null : packs,
     };

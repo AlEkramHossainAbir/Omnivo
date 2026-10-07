@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 import { customFieldValuesSchema } from './custom-fields.js';
-import { errorCode } from './errors.js';
+import { type ErrorCode, errorCode } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { priceSchema } from './money.js';
@@ -49,7 +49,8 @@ export const MAX_PRODUCT_UNITS = 10;
 // ST-2026/118, NAPA-500. No spaces: a code is typed into a scanner field and searched for whole.
 const CODE = /^[\p{L}\p{N}][\p{L}\p{N}._/-]*$/u;
 
-function optionalCode(code: 'product_code_format' | 'product_sku_format') {
+// Customer codes (step 15a) follow the same rule, with their own error code
+export function optionalCode(code: ErrorCode) {
   return z
     .string()
     .trim()
@@ -151,6 +152,8 @@ export const productSchema = z.object({
   tracking: z.string(),
   // Batches carry an expiry date (medicine, food)
   hasExpiry: z.boolean(),
+  // The VAT rate its sales lines start with (step 15a); null = the workspace's default rate
+  taxRateId: z.uuid().nullable(),
   // Empty = a simple product
   options: z.array(productOptionSchema),
   variants: z.array(productVariantSchema),
@@ -236,6 +239,8 @@ export const productFieldsSchema = z.object({
   purchaseUnitId: optionalIdSchema,
   tracking: z.enum(TRACKING_MODES),
   hasExpiry: z.boolean(),
+  // null or '' = the workspace's default rate, which follows the default when it changes
+  taxRateId: optionalIdSchema,
   options: z.array(productOptionInputSchema).max(MAX_PRODUCT_OPTIONS),
   variants: z.array(productVariantInputSchema).min(1).max(MAX_VARIANTS),
   units: z.array(productUnitInputSchema).max(MAX_PRODUCT_UNITS),

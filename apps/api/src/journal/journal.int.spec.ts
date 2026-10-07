@@ -400,6 +400,7 @@ describe('a posted entry', () => {
       fiscalYearStartMonth: settings.fiscalYearStartMonth,
       timezone: settings.timezone,
       allowNegativeStock: settings.allowNegativeStock,
+      pricesIncludeVat: settings.pricesIncludeVat,
     });
     expect(res.statusCode).toBe(409);
     expect(problemSchema.parse(res.json()).fieldErrors).toEqual({
@@ -549,8 +550,10 @@ describe('opening balances', () => {
         { accountId: id('1110'), debit: '', credit: '100' },
       ],
     });
+    // Step 15a: the contract refuses it, before the server reads a single account
+    expect(twice.statusCode).toBe(400);
     expect(problemSchema.parse(twice.json()).fieldErrors).toEqual({
-      'lines.1.accountId': ['opening_account_twice'],
+      'lines.1.debit': ['opening_balance_twice'],
     });
   });
 });

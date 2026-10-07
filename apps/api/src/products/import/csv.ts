@@ -346,6 +346,8 @@ function buildProduct(
     purchaseUnitId: unitId('purchase_unit'),
     tracking,
     hasExpiry,
+    // No column for it yet (step 15a): an imported product follows the workspace's default rate
+    taxRateId: '',
     options: options.map(({ name, values }) => ({ name, values })),
     variants: group.map((row) => ({
       id: null,

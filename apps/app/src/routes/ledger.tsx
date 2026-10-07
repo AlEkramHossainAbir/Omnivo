@@ -1,5 +1,10 @@
 import { Book02Icon, Notebook02Icon } from '@hugeicons/core-free-icons';
-import { DEFAULT_SETTINGS, type LedgerLine, todayIn } from '@omnivo/contracts';
+import {
+  DEFAULT_SETTINGS,
+  isPartyAccountPurpose,
+  type LedgerLine,
+  todayIn,
+} from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
   Card,
@@ -15,29 +20,13 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
-import { useIsoDate } from '../components/journal-parts';
-import { balanceSide, fiscalYearStart, ledgerOptions } from '../lib/journal';
+import { useBalanceText, useIsoDate } from '../components/journal-parts';
+import { fiscalYearStart, ledgerOptions } from '../lib/journal';
 import { useCan } from '../lib/permissions';
 import { accountsQuery, ledgerQuery, settingsQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 
 const column = dataTableColumns<LedgerLine>();
-
-// "৳12,500.00 Dr" — a balance with its side; zero has none
-function useBalanceText(): (value: string) => string {
-  const { t, format } = useLocale();
-  return useCallback(
-    (value: string) => {
-      const { amount, side } = balanceSide(value);
-      const money = format.money(amount, { decimals: 2 });
-      if (side === null) return money;
-      return t(side === 'debit' ? 'ledger.debitBalance' : 'ledger.creditBalance', {
-        amount: money,
-      });
-    },
-    [t, format],
-  );
-}
 
 export function LedgerPage() {
   const { t, format } = useLocale();
@@ -64,12 +53,16 @@ export function LedgerPage() {
     to: today,
   };
   const account = accounts?.find((item) => item.id === accountId);
+  // The receivable's ledger (step 15a) shows whose each line is
+  const byParty = account !== undefined && isPartyAccountPurpose(account.purpose);
 
   const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
     ...ledgerQuery(tenantId, accountId, from, to),
     enabled: canRead && account !== undefined,
   });
   const lines = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
+  // A line posted before customers were kept has none: say once, above the table, how to fix it
+  const unassigned = byParty && lines?.some((line) => line.party === null) === true;
   const first = data?.pages[0];
 
   const loadMore = useCallback(() => {
@@ -104,7 +97,19 @@ export function LedgerPage() {
         header: t('journal.columns.narration'),
         enableSorting: false,
         meta: { card: 'subtitle' },
-        cell: ({ getValue }) => <span className="block truncate">{getValue() || '—'}</span>,
+        cell: ({ row, getValue }) => {
+          const { party } = row.original;
+          return (
+            <span className="grid min-w-0">
+              <span className="truncate">{getValue() || '—'}</span>
+              {byParty && (
+                <span className="truncate text-caption text-ink-3">
+                  {party ? `${party.code} · ${party.name}` : t('ledger.noCustomer')}
+                </span>
+              )}
+            </span>
+          );
+        },
       }),
       column.accessor('debit', {
         header: t('ledger.columns.debit'),
@@ -125,7 +130,7 @@ export function LedgerPage() {
         cell: ({ getValue }) => <span className="font-medium">{balanceText(getValue())}</span>,
       }),
     ]);
-  }, [t, format, showDate, balanceText]);
+  }, [t, format, showDate, balanceText, byParty]);
 
   if (!canRead) {
     return (
@@ -194,6 +199,7 @@ export function LedgerPage() {
             ))}
           </Card>
           {isError && <p className="text-body-sm text-crit">{t('ledger.loadFailed')}</p>}
+          {unassigned && <p className="text-body-sm text-ink-2">{t('ledger.noCustomerHint')}</p>}
           {lines && (
             <DataTable
               label={t('ledger.title')}

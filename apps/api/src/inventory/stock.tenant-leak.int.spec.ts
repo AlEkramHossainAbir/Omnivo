@@ -101,6 +101,7 @@ async function productIn(who: SignedIn, units: Unit[], name: string): Promise<Pr
     purchaseUnitId: '',
     tracking: 'batch',
     hasExpiry: false,
+    taxRateId: '',
     options: [],
     variants: [
       { id: null, sku: '', optionValues: [], barcode: '', salePrice: '', archived: false },

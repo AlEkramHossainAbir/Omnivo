@@ -7,6 +7,7 @@ export { AppShell, NavGroup, NavItem, SidebarNav } from './components/app-shell.
 export { Button, IconButton } from './components/button.js';
 export { Card, CardHeader } from './components/card.js';
 export { Checkbox, CheckboxGroup, type CheckboxOption } from './components/checkbox.js';
+export { Combobox, type ComboboxOption } from './components/combobox.js';
 export {
   DataTable,
   dataTableColumns,

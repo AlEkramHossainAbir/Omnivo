@@ -83,6 +83,7 @@ function product(name: string, units: Unit[], extra: Partial<ProductFormValues> 
     purchaseUnitId: '',
     tracking: 'none',
     hasExpiry: false,
+    taxRateId: '',
     options: [],
     variants: [
       { id: null, sku: '', optionValues: [], barcode: '', salePrice: '', archived: false },

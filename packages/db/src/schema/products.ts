@@ -21,6 +21,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
 import { productCategories } from './product-categories.js';
+import { taxRates } from './tax-rates.js';
 import { tenants } from './tenants.js';
 import { units } from './units.js';
 
@@ -44,6 +45,9 @@ export const products = pgTable(
     baseUnitId: uuid('base_unit_id').notNull(),
     tracking: text('tracking', { enum: TRACKING_MODES }).notNull().default('none'),
     hasExpiry: boolean('has_expiry').notNull().default(false),
+    // The VAT rate its sales lines start with (step 15a). NULL = the workspace's default rate, so
+    // changing the default moves every product that never chose its own.
+    taxRateId: uuid('tax_rate_id'),
     // [{ name: 'Size', values: ['S', 'M'] }], checked with Zod on the way in. JSONB, not a table:
     // it is only ever read and written whole, with its product.
     options: jsonb('options')
@@ -68,6 +72,9 @@ export const products = pgTable(
     // A category's products — and Postgres's own check of the FK when a category is deleted
     index('products_tenant_category_idx').on(table.tenantId, table.categoryId),
     index('products_tenant_base_unit_idx').on(table.tenantId, table.baseUnitId),
+    // "Which products use this rate?" Rates are archived, never deleted, so the FK below never
+    // has to check a delete; the index is for the settings page's count and the reports.
+    index('products_tenant_tax_rate_idx').on(table.tenantId, table.taxRateId),
     foreignKey({
       name: 'products_category_fk',
       columns: [table.tenantId, table.categoryId],
@@ -77,6 +84,12 @@ export const products = pgTable(
       name: 'products_base_unit_fk',
       columns: [table.tenantId, table.baseUnitId],
       foreignColumns: [units.tenantId, units.id],
+    }),
+    // NULL tax_rate_id skips the check (MATCH SIMPLE)
+    foreignKey({
+      name: 'products_tax_rate_fk',
+      columns: [table.tenantId, table.taxRateId],
+      foreignColumns: [taxRates.tenantId, taxRates.id],
     }),
     // The same two rules as the contract's productRules, here too: a row written by any other path
     // (a script, a later import) still cannot be a tracked service or an expiry without batches

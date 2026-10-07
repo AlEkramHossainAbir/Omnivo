@@ -14,6 +14,8 @@ import { numberSeriesRoutes } from './numbering.js';
 import { meRoutes } from './preferences.js';
 import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js';
 import { customFieldRoutes } from './custom-fields.js';
+import { customerGroupRoutes, customerRoutes } from './customers.js';
+import { priceListRoutes } from './price-lists.js';
 import { productCategoryRoutes } from './product-categories.js';
 import { productImportRoutes } from './product-imports.js';
 import { productRoutes } from './products.js';
@@ -25,6 +27,7 @@ import { stockAdjustmentRoutes } from './stock-adjustments.js';
 import { stockRevaluationRoutes } from './stock-revaluations.js';
 import { stockTransferRoutes } from './stock-transfers.js';
 import { stockRoutes } from './stock.js';
+import { taxRateRoutes } from './tax-rates.js';
 import { unitRoutes } from './units.js';
 import { warehouseRoutes } from './warehouses.js';
 
@@ -74,4 +77,8 @@ export const routes = {
   stockTransfers: stockTransferRoutes,
   stockRevaluations: stockRevaluationRoutes,
   stockAccounts: stockAccountRoutes,
+  taxRates: taxRateRoutes,
+  customers: customerRoutes,
+  customerGroups: customerGroupRoutes,
+  priceLists: priceListRoutes,
 };

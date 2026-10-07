@@ -83,6 +83,8 @@ function closingLines(
   const lines: LineInput[] = balances.map((item) => ({
     accountId: item.accountId,
     branchId: null,
+    // Only income and expense accounts are closed: none of them is kept per party
+    partyId: null,
     description: null,
     debit: isNegativeMoney(item.balance) ? absMoney(item.balance) : '0',
     credit: isNegativeMoney(item.balance) ? '0' : item.balance,
@@ -93,6 +95,7 @@ function closingLines(
     lines.push({
       accountId: retainedEarningsId,
       branchId: null,
+      partyId: null,
       description: null,
       debit: isNegativeMoney(profit) ? absMoney(profit) : '0',
       credit: isNegativeMoney(profit) ? '0' : profit,
@@ -227,6 +230,8 @@ export class FiscalYearsService {
           .map((line) => ({
             accountId: line.account_id,
             branchId: line.branch_id,
+            // A closing entry has no customer: it closes income and expense accounts only
+            partyId: null,
             description: line.description,
             debit: line.credit,
             credit: line.debit,

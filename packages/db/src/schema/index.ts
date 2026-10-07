@@ -30,3 +30,6 @@ export * from './warehouses.js';
 export * from './stock.js';
 export * from './stock-documents.js';
 export * from './stock-valuation.js';
+export * from './tax-rates.js';
+export * from './price-lists.js';
+export * from './parties.js';

@@ -20,6 +20,7 @@ import {
   Card,
   CardHeader,
   Checkbox,
+  Combobox,
   DataTable,
   dataTableColumns,
   DatePicker,
@@ -190,6 +191,7 @@ const lcSchema = z.object({
   // MoneyInput সবসময় "" অথবা ঠিক ২ ঘর দশমিক দেয়
   amount: z.string().regex(/^\d+\.\d{2}$/, 'Enter the LC amount.'),
   shipBy: z.string().min(1, 'Pick the latest shipment date.'),
+  buyer: z.string().min(1, 'Pick the buyer who opens the LC.'),
   bank: z.string().trim(),
   partialShipment: z.boolean(),
 });
@@ -202,8 +204,20 @@ function LetterOfCreditForm() {
     formState: { errors },
   } = useForm({
     resolver: zodResolver(lcSchema),
-    defaultValues: { lcNumber: '', amount: '', shipBy: '', bank: '', partialShipment: false },
+    defaultValues: {
+      lcNumber: '',
+      amount: '',
+      shipBy: '',
+      buyer: '',
+      bank: '',
+      partialShipment: false,
+    },
   });
+  // The Combobox demo searches a fixed list here; the app searches the server (customer picker)
+  const [buyerSearch, setBuyerSearch] = useState('');
+  const buyerOptions = BUYERS.filter((buyer) =>
+    buyer.toLowerCase().includes(buyerSearch.trim().toLowerCase()),
+  ).map((buyer) => ({ value: buyer, label: buyer, detail: 'Buyer · EUR' }));
 
   const onSubmit = handleSubmit((values) => {
     toast(`${values.lcNumber} saved as draft`);
@@ -231,6 +245,19 @@ function LetterOfCreditForm() {
         </FormField>
         <FormField control={control} name="shipBy" label="Latest shipment date">
           {(field) => <DatePicker {...field} />}
+        </FormField>
+        <FormField control={control} name="buyer" label="Applicant (buyer)">
+          {(field) => (
+            <Combobox
+              {...field}
+              selectedLabel={field.value === '' ? null : field.value}
+              options={buyerOptions}
+              search={buyerSearch}
+              onSearchChange={setBuyerSearch}
+              placeholder="Pick a buyer"
+              searchPlaceholder="Search buyers"
+            />
+          )}
         </FormField>
       </div>
       <Controller

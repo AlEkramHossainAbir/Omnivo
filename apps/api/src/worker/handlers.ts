@@ -11,6 +11,7 @@ import { CatalogHandler } from '../setup/catalog.handler.js';
 import { ChartHandler } from '../setup/chart.handler.js';
 import { ProvisioningHandler } from '../setup/provisioning.handler.js';
 import { StockAccountsHandler } from '../setup/stock-accounts.handler.js';
+import { TaxRatesHandler } from '../setup/tax-rates.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 
 // Which handler runs for which event — the one place to look. The mapped type ties each key to a
@@ -34,6 +35,7 @@ export class EventHandlers {
     productImport: ProductImportHandler,
     lowStock: LowStockHandler,
     stockAccounts: StockAccountsHandler,
+    taxRates: TaxRatesHandler,
   ) {
     this.byType = {
       'workspace.created': welcome,
@@ -46,6 +48,7 @@ export class EventHandlers {
       'product.import_requested': productImport,
       'stock.below_reorder': lowStock,
       'workspace.stock_accounts_requested': stockAccounts,
+      'workspace.tax_rates_requested': taxRates,
     };
   }
 

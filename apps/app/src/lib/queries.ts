@@ -1,6 +1,8 @@
 import {
   type BalanceSheetQuery,
   type BranchStatus,
+  type CustomerSort,
+  type CustomerStatus,
   type JournalStatus,
   type MemberSort,
   type ProductSort,
@@ -547,5 +549,152 @@ export function stockAccountsQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['stock-accounts', tenantId],
     queryFn: () => call(routes.stockAccounts.get),
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// VAT rates and sales (step 15a)
+
+// A handful of rates, archived ones too: the settings card shows them all, a picker leaves the
+// archived ones out
+export function taxRatesQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['tax-rates', tenantId],
+    queryFn: async () => (await call(routes.taxRates.list)).items,
+  });
+}
+
+// Everything about customers starts with ['customers', tenantId]: saving a customer or a group
+// refreshes the list, the customer's page and the group counts with one invalidate. Posting in the
+// journal changes the balances, so useJournalRefresh invalidates this prefix too.
+export function customerGroupsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['customers', tenantId, 'groups'],
+    queryFn: async () => (await call(routes.customerGroups.list)).items,
+  });
+}
+
+export interface CustomerFilter {
+  search: string;
+  groupId: string;
+  status: CustomerStatus;
+  sort: CustomerSort;
+}
+
+export function customerListQuery(tenantId: string, filter: CustomerFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['customers', tenantId, 'list', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.customers.list, {
+        query: {
+          limit: 50,
+          status: filter.status,
+          sort: filter.sort,
+          ...(filter.search !== '' && { search: filter.search }),
+          ...(filter.groupId !== '' && { groupId: filter.groupId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// The customer picker: the first 20 active customers that match. keepPreviousData: the old
+// matches stay in the list while the next word is searched, so the list does not flash empty.
+export function customerSearchQuery(tenantId: string, search: string) {
+  return queryOptions({
+    queryKey: ['customers', tenantId, 'search', search],
+    queryFn: async () =>
+      (
+        await call(routes.customers.list, {
+          query: { limit: 20, status: 'active', ...(search !== '' && { search }) },
+        })
+      ).items,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function customerQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['customers', tenantId, 'customer', customerId],
+    queryFn: () => call(routes.customers.get, { params: { id: customerId } }),
+    retry: false,
+  });
+}
+
+// The statement reads posted journal lines, so it lives under ['journal', tenantId] like the
+// ledger: posting or reversing an entry refreshes it
+export function customerStatementQuery(
+  tenantId: string,
+  customerId: string,
+  from: string,
+  to: string,
+) {
+  return infiniteQueryOptions({
+    queryKey: ['journal', tenantId, 'statement', customerId, from, to],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.customers.statement, {
+        params: { id: customerId },
+        query: {
+          limit: 100,
+          ...(from !== '' && { from }),
+          ...(to !== '' && { to }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// Price lists: everything under ['price-lists', tenantId]. Saving prices changes the list's item
+// count and the items, and one invalidate refreshes both.
+export function priceListsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['price-lists', tenantId, 'all'],
+    queryFn: async () => (await call(routes.priceLists.list)).items,
+  });
+}
+
+export function priceListQuery(tenantId: string, priceListId: string) {
+  return queryOptions({
+    queryKey: ['price-lists', tenantId, 'one', priceListId],
+    queryFn: () => call(routes.priceLists.get, { params: { id: priceListId } }),
+    retry: false,
+  });
+}
+
+export function priceListItemsQuery(tenantId: string, priceListId: string, search: string) {
+  return infiniteQueryOptions({
+    queryKey: ['price-lists', tenantId, 'items', priceListId, search],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.priceLists.items, {
+        params: { id: priceListId },
+        query: {
+          limit: 100,
+          ...(search !== '' && { search }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// The price list's "Add items" search: the first 20 active products that match
+export function productSearchQuery(tenantId: string, search: string) {
+  return queryOptions({
+    queryKey: ['products', tenantId, 'search', search],
+    queryFn: async () =>
+      (
+        await call(routes.products.list, {
+          query: { limit: 20, status: 'active', sort: 'name', ...(search !== '' && { search }) },
+        })
+      ).items,
+    placeholderData: keepPreviousData,
   });
 }

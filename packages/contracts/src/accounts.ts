@@ -38,6 +38,17 @@ export const ACCOUNT_PURPOSES = [
 ] as const;
 export type AccountPurpose = (typeof ACCOUNT_PURPOSES)[number];
 
+// The accounts kept per party (step 15a): the receivable is one account in the chart, and every line
+// on it names the customer, so the customers' balances add up to the account's balance. Step 17
+// adds 'accounts_payable' for suppliers.
+export const PARTY_ACCOUNT_PURPOSES = [
+  'accounts_receivable',
+] as const satisfies readonly AccountPurpose[];
+
+export function isPartyAccountPurpose(value: string | null): boolean {
+  return PARTY_ACCOUNT_PURPOSES.some((purpose) => purpose === value);
+}
+
 export function isAccountPurpose(value: string): value is AccountPurpose {
   return ACCOUNT_PURPOSES.some((purpose) => purpose === value);
 }

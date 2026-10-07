@@ -6,6 +6,7 @@ import {
   type Branch,
   contractErrorMap,
   isJournalSource,
+  isPartyAccountPurpose,
   isStockJournalSource,
   type JournalEntry,
   reverseJournalEntryInputSchema,
@@ -30,6 +31,7 @@ import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { call } from '../lib/api';
+import { partyLabel } from '../lib/customers';
 import { applyApiError } from '../lib/field-errors';
 import { totalsOf } from '../lib/journal';
 import { useCan } from '../lib/permissions';
@@ -267,6 +269,24 @@ export function EntryView({
                       </Link>
                     ) : (
                       '—'
+                    )}
+                    {/* The receivable's customer (step 15a), linked to their page. A line posted
+                        before customers were kept says so. */}
+                    {line.party ? (
+                      <Link
+                        to="/customers/$customerId"
+                        params={{ customerId: line.party.id }}
+                        className="block w-fit text-caption text-brand underline-offset-3 hover:underline"
+                      >
+                        {partyLabel(line.party)}
+                      </Link>
+                    ) : (
+                      account &&
+                      isPartyAccountPurpose(account.purpose) && (
+                        <span className="block text-caption text-ink-3">
+                          {t('journal.noCustomer')}
+                        </span>
+                      )
                     )}
                     {line.description && (
                       <span className="block text-caption text-ink-3">{line.description}</span>

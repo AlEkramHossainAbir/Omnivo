@@ -311,6 +311,8 @@ export function closeYear(data: WorkspaceData, end: string): FiscalYear {
   const lines = [...balances].map(([accountId, balance]) => ({
     accountId,
     branchId: null,
+    // Income and expense accounts: never kept per customer
+    partyId: null,
     description: null,
     debit: isNegativeMoney(balance) ? absMoney(balance) : '0',
     credit: isNegativeMoney(balance) ? '0' : balance,
@@ -320,6 +322,7 @@ export function closeYear(data: WorkspaceData, end: string): FiscalYear {
     lines.push({
       accountId: retained.id,
       branchId: null,
+      partyId: null,
       description: null,
       debit: isNegativeMoney(profit) ? absMoney(profit) : '0',
       credit: isNegativeMoney(profit) ? '0' : profit,

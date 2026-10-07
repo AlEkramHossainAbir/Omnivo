@@ -16,6 +16,7 @@ export const DOCUMENT_TYPES = [
   'inventory.adjustment',
   'inventory.transfer',
   'inventory.revaluation',
+  'sales.customer',
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -40,13 +41,15 @@ const DEFAULT_PREFIXES = {
   'inventory.adjustment': 'ADJ',
   'inventory.transfer': 'TRF',
   'inventory.revaluation': 'REV',
+  'sales.customer': 'C',
 } satisfies Record<DocumentType, string>;
 
 // টেন্যান্ট কিছু না বদলালে এই ছাঁচ — DB-তে রো লেখা হয় শুধু প্রথম বদলের সময়।
 // A product code is not a yearly document: P-00042 stays P-00042 for the product's whole life, so
 // its series never restarts (no year) and has room for 99,999 products before it grows a digit.
+// A customer code (step 15a) is the same kind of code: C-00042 for good.
 export function defaultNumberFormat(documentType: DocumentType): NumberFormat {
-  if (documentType === 'inventory.product') {
+  if (documentType === 'inventory.product' || documentType === 'sales.customer') {
     return { prefix: DEFAULT_PREFIXES[documentType], yearStyle: 'none', padding: 5 };
   }
   return { prefix: DEFAULT_PREFIXES[documentType], yearStyle: 'fiscal', padding: 4 };

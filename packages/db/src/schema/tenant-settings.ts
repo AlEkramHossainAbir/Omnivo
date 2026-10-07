@@ -29,6 +29,9 @@ export const tenantSettings = pgTable(
     logoAttachmentId: uuid('logo_attachment_id'),
     // Step 13: may an untracked product's stock go below zero? Read by migration 0022's trigger.
     allowNegativeStock: boolean('allow_negative_stock').notNull().default(false),
+    // Step 15a: do the prices the workspace types already hold the VAT? Off = before VAT, the way
+    // a distributor quotes. Read by step 15b's sales lines.
+    pricesIncludeVat: boolean('prices_include_vat').notNull().default(false),
     createdAt: baseColumns().createdAt,
     updatedAt: baseColumns().updatedAt,
     updatedBy: baseColumns().updatedBy,

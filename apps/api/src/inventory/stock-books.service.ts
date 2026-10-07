@@ -209,6 +209,8 @@ export class StockBooksService {
         {
           accountId: first.accountId,
           branchId: first.branchId,
+          // No stock account is kept per party
+          partyId: null,
           description: null,
           debit: debit ? total : '0',
           credit: debit ? '0' : negateMoney(total),

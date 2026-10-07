@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { journalEntryInputSchema, periodLockInputSchema, shiftIsoDate } from './journal.js';
+import {
+  journalEntryInputSchema,
+  openingBalancesInputSchema,
+  periodLockInputSchema,
+  shiftIsoDate,
+} from './journal.js';
 
 const cash = '01939d1c-0000-7000-8000-000000000001';
 const capital = '01939d1c-0000-7000-8000-000000000002';
@@ -78,5 +83,50 @@ describe('shiftIsoDate', () => {
     expect(shiftIsoDate('2026-07-01', -1)).toBe('2026-06-30');
     expect(shiftIsoDate('2027-01-01', -1)).toBe('2026-12-31');
     expect(shiftIsoDate('2028-02-28', 1)).toBe('2028-02-29');
+  });
+});
+
+describe('journal lines with a party (step 15a)', () => {
+  const receivable = '01939d1c-0000-7000-8000-000000000003';
+  const dealer = '01939d1c-0000-7000-8000-000000000004';
+
+  it('reads a missing or empty customer as "no party"', () => {
+    const parsed = journalEntryInputSchema.parse(
+      entry([
+        {
+          accountId: receivable,
+          branchId: '',
+          description: '',
+          debit: '1200',
+          credit: '',
+          partyId: dealer,
+        },
+        { accountId: cash, branchId: '', description: '', debit: '', credit: '1200', partyId: '' },
+        { accountId: capital, branchId: '', description: '', debit: '', credit: '1' },
+      ]),
+    );
+    expect(parsed.lines.map((line) => line.partyId)).toEqual([dealer, null, null]);
+  });
+
+  it('refuses the same account and customer twice in the opening balances', () => {
+    const line = { accountId: receivable, partyId: dealer, debit: '5000', credit: '' };
+    const result = openingBalancesInputSchema.safeParse({
+      goLiveDate: '2026-07-01',
+      replaces: null,
+      lines: [line, { ...line, partyId: '01939d1c-0000-7000-8000-000000000005' }, line],
+    });
+    expect(result.error?.issues).toEqual([
+      expect.objectContaining({ path: ['lines', 2, 'debit'], message: 'opening_balance_twice' }),
+    ]);
+  });
+
+  it('lets empty lines repeat: the server drops them', () => {
+    const empty = { accountId: receivable, partyId: '', debit: '', credit: '' };
+    const result = openingBalancesInputSchema.safeParse({
+      goLiveDate: '2026-07-01',
+      replaces: null,
+      lines: [empty, empty, { ...empty, partyId: dealer, debit: '5000' }],
+    });
+    expect(result.success).toBe(true);
   });
 });

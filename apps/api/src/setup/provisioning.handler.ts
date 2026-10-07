@@ -12,6 +12,7 @@ import { notify } from '../notifications/notify.js';
 import { seedCatalog } from './seed-catalog.js';
 import { seedChart } from './seed-chart.js';
 import { seedStockAccounts } from './seed-stock-accounts.js';
+import { seedTaxRates } from './seed-tax-rates.js';
 import { INDUSTRY_TEMPLATES, type RoleTemplate } from './templates.js';
 
 type Event = OutboxEvent<'workspace.setup_requested'>;
@@ -96,6 +97,9 @@ export class ProvisioningHandler implements EventHandler<'workspace.setup_reques
       // null when step 12's migration already gave this workspace its catalog (a failed setup
       // retried after the catalog job ran)
       const catalog = await seedCatalog(tx, tenantId, template.catalog);
+      // Step 15a: null when step 15a's migration already gave this workspace its VAT rates (a failed
+      // setup retried after that job ran)
+      const rates = await seedTaxRates(tx, tenantId);
       await tx.update(tenants).set({ setupStatus: 'ready' }).where(eq(tenants.id, tenantId));
       // No actorUserId: the audit log shows "System" — the job did it, not a person
       await audit(tx, {
@@ -109,6 +113,7 @@ export class ProvisioningHandler implements EventHandler<'workspace.setup_reques
           units: catalog?.units ?? null,
           categories: catalog?.categories ?? null,
           customFields: catalog?.customFields ?? null,
+          taxRates: rates,
         }),
       });
       await notify(tx, {

@@ -332,6 +332,51 @@ const stockReorderRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/stock-reorder'), 'StockReorderPage'),
 });
 
+// Sales (step 15a): customers, their groups, price lists. '/customers/new' beats
+// '/customers/$customerId', like the products. The new and edit pages have a file of their own
+// (routes/customer-edit.tsx), so the form does not load the statement's table and date pickers.
+const customersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/customers',
+  component: lazyRouteComponent(() => import('./routes/customers'), 'CustomersPage'),
+});
+
+const newCustomerRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/customers/new',
+  component: lazyRouteComponent(() => import('./routes/customer-edit'), 'NewCustomerPage'),
+});
+
+const customerRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/customers/$customerId',
+  component: lazyRouteComponent(() => import('./routes/customer'), 'CustomerPage'),
+});
+
+const editCustomerRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/customers/$customerId/edit',
+  component: lazyRouteComponent(() => import('./routes/customer-edit'), 'EditCustomerPage'),
+});
+
+const customerGroupsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/customer-groups',
+  component: lazyRouteComponent(() => import('./routes/customer-groups'), 'CustomerGroupsPage'),
+});
+
+const priceListsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/price-lists',
+  component: lazyRouteComponent(() => import('./routes/price-lists'), 'PriceListsPage'),
+});
+
+const priceListRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/price-lists/$priceListId',
+  component: lazyRouteComponent(() => import('./routes/price-list'), 'PriceListPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -410,6 +455,13 @@ const routeTree = rootRoute.addChildren([
     stockRevaluationsRoute,
     newStockRevaluationRoute,
     stockRevaluationRoute,
+    customersRoute,
+    newCustomerRoute,
+    customerRoute,
+    editCustomerRoute,
+    customerGroupsRoute,
+    priceListsRoute,
+    priceListRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

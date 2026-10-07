@@ -9,6 +9,7 @@ import {
   roleListSchema,
   setupSchema,
   stockAccountsSchema,
+  taxRateListSchema,
   unitListSchema,
 } from '@omnivo/contracts';
 import postgres from 'postgres';
@@ -32,7 +33,7 @@ import {
 import { bearer, type SignedIn, signUp } from '../testing/http.js';
 import { accountCount, catalogCount } from '../testing/chart.js';
 import { lastMailTo } from '../testing/mailpit.js';
-import { INDUSTRY_TEMPLATES } from './templates.js';
+import { INDUSTRY_TEMPLATES, TAX_RATES } from './templates.js';
 
 const GARMENTS_ACCOUNTS = accountCount(INDUSTRY_TEMPLATES.garments.chart);
 const GARMENTS_CATALOG = catalogCount(INDUSTRY_TEMPLATES.garments.catalog);
@@ -140,9 +141,12 @@ describe('starting the setup', () => {
           'core.user.read',
           'inventory.stock.revalue',
           'inventory.stock.value',
+          'sales.customer.balance',
+          'sales.customer.manage',
+          'sales.price_list.manage',
         ],
       ],
-      ['Merchandiser', ['core.user.read', 'inventory.product.manage']],
+      ['Merchandiser', ['core.user.read', 'inventory.product.manage', 'sales.customer.manage']],
       [
         'Store keeper',
         ['inventory.product.manage', 'inventory.stock.adjust', 'inventory.stock.transfer'],
@@ -161,6 +165,16 @@ describe('starting the setup', () => {
     expect(codeOf(choices.damaged)).toBe('5150');
     expect(codeOf(choices.revaluation)).toBe('5190');
     expect(codeOf(choices.internal_use)).toBe('5290');
+    // Step 15a: the VAT rates, the same for every business type, with 15% as the default
+    const rates = taxRateListSchema.parse((await send('GET', '/tax-rates')).json());
+    expect(rates.items.map((rate) => [rate.name, rate.kind, rate.rate, rate.isDefault])).toEqual([
+      ['VAT 15%', 'standard', '15.00', true],
+      ['VAT 10%', 'reduced', '10.00', false],
+      ['VAT 7.5%', 'reduced', '7.50', false],
+      ['VAT 5%', 'reduced', '5.00', false],
+      ['Exempt', 'exempt', '0.00', false],
+      ['Zero-rated', 'zero_rated', '0.00', false],
+    ]);
   });
 
   it('writes the audit log as the system, with the request that started it', async () => {
@@ -182,6 +196,7 @@ describe('starting the setup', () => {
         units: { from: null, to: GARMENTS_CATALOG.units },
         categories: { from: null, to: GARMENTS_CATALOG.categories },
         customFields: { from: null, to: GARMENTS_CATALOG.customFields },
+        taxRates: { from: null, to: TAX_RATES.length },
       },
     });
     // The worker ran in the context of the POST /setup request: one click, traced end to end
@@ -274,15 +289,22 @@ describe('when the setup job fails', () => {
     await superuserSql(
       (sql) => sql`UPDATE tenants SET industry = 'pharma' WHERE slug = 'karim-pharma'`,
     );
-    // Step 9's migration queues a chart, and step 12's a catalog, for every workspace that is not
-    // 'pending' — this failed one too. Both arrive before the retry, so the retried setup job must
-    // leave them alone.
+    // Step 9's migration queues a chart, step 12's a catalog and step 15a's the VAT rates, for
+    // every workspace that is not 'pending' — this failed one too. All three arrive before the
+    // retry, so the retried setup job must leave them alone.
     await superuserSql(
       (sql) => sql`INSERT INTO outbox_events (id, tenant_id, type, payload)
                    SELECT gen_random_uuid(), id, event, '{}'::jsonb
-                   FROM tenants, unnest(ARRAY['workspace.chart_requested', 'workspace.catalog_requested']) AS event
+                   FROM tenants, unnest(ARRAY['workspace.chart_requested', 'workspace.catalog_requested',
+                                              'workspace.tax_rates_requested']) AS event
                    WHERE slug = 'karim-pharma'`,
     );
+    await eventually(async () => {
+      const rates = taxRateListSchema.parse(
+        (await send('GET', '/tax-rates', undefined, pharmaOwner)).json(),
+      );
+      expect(rates.items).toHaveLength(TAX_RATES.length);
+    });
     await eventually(async () => {
       const units = unitListSchema.parse(
         (await send('GET', '/units', undefined, pharmaOwner)).json(),
@@ -321,11 +343,17 @@ describe('when the setup job fails', () => {
       description: 'Our own',
       permissions: [],
     });
-    // Still one chart, and the setup's audit row says it added none
+    // Still one chart, and the setup's audit row says it added none (no taxRates in it either)
     const chart = accountListSchema.parse(
       (await send('GET', '/accounts', undefined, pharmaOwner)).json(),
     );
     expect(chart.items).toHaveLength(pharmaAccounts);
+    // …one set of VAT rates, with one default…
+    const rates = taxRateListSchema.parse(
+      (await send('GET', '/tax-rates', undefined, pharmaOwner)).json(),
+    );
+    expect(rates.items).toHaveLength(TAX_RATES.length);
+    expect(rates.items.filter((rate) => rate.isDefault)).toHaveLength(1);
     const log = auditPageSchema.parse(
       (await send('GET', '/audit-logs?entityType=workspace', undefined, pharmaOwner)).json(),
     );
@@ -402,5 +430,60 @@ describe('a workspace set up before the chart of accounts', () => {
       (await send('GET', '/audit-logs?entityType=workspace', undefined, oldOwner)).json(),
     );
     expect(items.filter((entry) => entry.action === 'workspace.chart_created')).toHaveLength(1);
+  });
+
+  // Step 15a: migration 0026 queues one 'workspace.tax_rates_requested' per workspace that is not
+  // 'pending'. This one has none yet.
+  async function requestTaxRates(): Promise<void> {
+    await superuserSql(
+      (sql) => sql`INSERT INTO outbox_events (id, tenant_id, type, payload)
+                   SELECT gen_random_uuid(), id, 'workspace.tax_rates_requested', '{}'::jsonb
+                   FROM tenants WHERE slug = 'hossain-traders'`,
+    );
+  }
+
+  async function taxRates() {
+    return taxRateListSchema.parse((await send('GET', '/tax-rates', undefined, oldOwner)).json())
+      .items;
+  }
+
+  it('gets the VAT rates from the worker, logged as the system', async () => {
+    expect(await taxRates()).toEqual([]);
+    await requestTaxRates();
+    await eventually(async () => {
+      expect(await taxRates()).toHaveLength(TAX_RATES.length);
+    });
+    const { items } = auditPageSchema.parse(
+      (await send('GET', '/audit-logs?entityType=workspace', undefined, oldOwner)).json(),
+    );
+    expect(items[0]).toMatchObject({
+      action: 'tax_rates.created',
+      actor: null,
+      changes: { rates: { from: null, to: TAX_RATES.length } },
+    });
+  });
+
+  it('adds no second set when the event comes again, even after the owner changed them', async () => {
+    // The owner archives a rate the business never uses. A second set would bring it back.
+    const fivePercent = (await taxRates()).find((rate) => rate.name === 'VAT 5%');
+    if (!fivePercent) throw new Error('no 5% rate');
+    const archived = await send(
+      'POST',
+      `/tax-rates/${fivePercent.id}/archive`,
+      { version: fivePercent.version },
+      oldOwner,
+    );
+    expect(archived.statusCode).toBe(200);
+
+    await requestTaxRates();
+    await eventually(() => unpublished(0));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const after = await taxRates();
+    expect(after).toHaveLength(TAX_RATES.length);
+    expect(after.find((rate) => rate.id === fivePercent.id)?.archivedAt).not.toBeNull();
+    const { items } = auditPageSchema.parse(
+      (await send('GET', '/audit-logs?entityType=workspace', undefined, oldOwner)).json(),
+    );
+    expect(items.filter((entry) => entry.action === 'tax_rates.created')).toHaveLength(1);
   });
 });

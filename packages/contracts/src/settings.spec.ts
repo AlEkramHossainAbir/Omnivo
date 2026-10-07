@@ -16,6 +16,7 @@ const valid = {
   fiscalYearStartMonth: 7,
   timezone: 'Asia/Dhaka',
   allowNegativeStock: false,
+  pricesIncludeVat: false,
 } as const;
 
 describe('settings input', () => {

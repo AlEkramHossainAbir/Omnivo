@@ -3,6 +3,7 @@ import type { Industry, Setup } from '@omnivo/contracts';
 import { seedAccounts, seedStockAccounts } from './accounting-data';
 import { MockProblem } from './mock';
 import { startingCatalog } from './product-data';
+import { startingTaxRates } from './sales-data';
 import { record, type WorkspaceData } from './workspace-data';
 
 // How long the pretend setup job takes — long enough to see "Preparing the roles…"
@@ -59,6 +60,8 @@ export function settleSetup(data: WorkspaceData): void {
     data.stockAccounts = seedStockAccounts(data.accounts, industry);
   }
   if (data.catalog.units.length === 0) data.catalog = startingCatalog(industry);
+  // Step 15a: the VAT rates, like the API's TaxRatesHandler (skipped if there are any)
+  if (data.sales.taxRates.length === 0) data.sales.taxRates = startingTaxRates();
   data.setup = { status: 'ready', industry };
   data.setupReadyAt = null;
   record(data, 'workspace.provisioned', 'workspace', crypto.randomUUID(), {

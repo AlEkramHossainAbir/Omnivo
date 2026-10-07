@@ -7,11 +7,13 @@ import {
   fiscalYearOf,
   formatDocumentNumber,
   isNegativeMoney,
+  isPartyAccountPurpose,
   isStockJournalSource,
   isZeroMoney,
   type JournalEntry,
   type JournalEntrySummary,
   type JournalLineInput,
+  type JournalLine,
   type JournalSource,
   type LedgerPage,
   negateMoney,
@@ -26,6 +28,7 @@ import {
 } from '@omnivo/contracts';
 
 import { MockProblem } from './mock';
+import { partyRefOf } from './sales-data';
 import type { WorkspaceData } from './workspace-data';
 
 // The mock's books: the API's rules (journal.service.ts, posting.service.ts) on plain arrays, so
@@ -44,7 +47,10 @@ export function emptyJournal(): MockJournal {
   return { entries: [], lockDate: null, lockVersion: 0, counters: new Map() };
 }
 
-type LineIn = Pick<JournalLineInput, 'accountId' | 'branchId' | 'description' | 'debit' | 'credit'>;
+type LineIn = Pick<
+  JournalLineInput,
+  'accountId' | 'branchId' | 'partyId' | 'description' | 'debit' | 'credit'
+>;
 
 // "18500" → "18500.0000", the way Postgres sends NUMERIC(19,4)
 function fixed(value: string): string {
@@ -72,11 +78,47 @@ export function stockAccountIds(data: WorkspaceData): Set<string> {
   );
 }
 
+type PartyCode = 'journal_party_required' | 'journal_party_not_allowed' | 'journal_party_invalid';
+
+// The party rule (step 15a, the API's checkParties()): a line on the receivable names a customer,
+// and no other line names anyone. Each wrong line gets its own code under lines.N.partyId, so the
+// form marks every row at once. allowMissing: a draft, or a reversal of an entry from before 15a.
+export function partyIssues(
+  data: WorkspaceData,
+  lines: readonly { accountId: string; partyId: string | null }[],
+  { allowMissing = false, allowArchived = false } = {},
+): { index: number; code: PartyCode }[] {
+  return lines.flatMap((line, index): { index: number; code: PartyCode }[] => {
+    const account = data.accounts.find((item) => item.id === line.accountId);
+    const perParty = isPartyAccountPurpose(account?.purpose ?? null);
+    if (line.partyId === null) {
+      return perParty && !allowMissing ? [{ index, code: 'journal_party_required' }] : [];
+    }
+    if (!perParty) return [{ index, code: 'journal_party_not_allowed' }];
+    return partyRefOf(data.sales, line.partyId, allowArchived)
+      ? []
+      : [{ index, code: 'journal_party_invalid' }];
+  });
+}
+
+export function partyProblem(issues: readonly { index: number; code: PartyCode }[]): MockProblem {
+  return new MockProblem(
+    409,
+    issues[0]?.code ?? 'journal_party_invalid',
+    Object.fromEntries(
+      issues.map((issue) => [`lines.${String(issue.index)}.partyId`, [issue.code]]),
+    ),
+  );
+}
+
 export function checkLines(
   data: WorkspaceData,
-  lines: readonly LineIn[],
-  allowArchived = false,
-  allowStock = false,
+  lines: readonly Pick<LineIn, 'accountId' | 'branchId' | 'partyId'>[],
+  {
+    allowArchived = false,
+    allowStock = false,
+    allowMissingParty = false,
+  }: { allowArchived?: boolean; allowStock?: boolean; allowMissingParty?: boolean } = {},
 ): void {
   const badAccounts = lines.flatMap((line, index) => {
     const account = data.accounts.find((item) => item.id === line.accountId);
@@ -97,6 +139,27 @@ export function checkLines(
     return branch && (allowArchived || branch.archivedAt === null) ? [] : [index];
   });
   if (badBranches.length > 0) throw linesProblem('journal_branch_invalid', 'branchId', badBranches);
+  const parties = partyIssues(data, lines, { allowMissing: allowMissingParty, allowArchived });
+  if (parties.length > 0) throw partyProblem(parties);
+}
+
+// The stored lines: the customer's code and name kept with its id (refreshPartyRefs() keeps them
+// current after a rename). Checked before this, so an id that finds nothing is not expected.
+function toLines(data: WorkspaceData, lines: readonly LineIn[]): JournalLine[] {
+  return lines.map((line) => ({
+    id: crypto.randomUUID(),
+    accountId: line.accountId,
+    branchId: line.branchId,
+    party: line.partyId === null ? null : (partyRefOf(data.sales, line.partyId, true) ?? null),
+    description: line.description,
+    debit: fixed(line.debit),
+    credit: fixed(line.credit),
+  }));
+}
+
+// A stored line back as input: what a reversal or a post re-checks
+function asInput(line: JournalLine): LineIn {
+  return { ...line, partyId: line.party?.id ?? null };
 }
 
 function assertOpen(data: WorkspaceData, date: string): void {
@@ -168,20 +231,14 @@ export function writeDraft(
     postedAt: null,
     version: 1,
     updatedAt: now,
-    lines: input.lines.map((line) => ({
-      id: crypto.randomUUID(),
-      accountId: line.accountId,
-      branchId: line.branchId,
-      description: line.description,
-      debit: fixed(line.debit),
-      credit: fixed(line.credit),
-    })),
+    lines: toLines(data, input.lines),
   };
   data.journal.entries.push(entry);
   return entry;
 }
 
 export function replaceDraft(
+  data: WorkspaceData,
   entry: JournalEntry,
   input: { date: string; narration: string | null; lines: readonly LineIn[] },
 ): void {
@@ -191,14 +248,7 @@ export function replaceDraft(
     total: sumMoney(input.lines.map((line) => line.debit)),
     version: entry.version + 1,
     updatedAt: new Date().toISOString(),
-    lines: input.lines.map((line) => ({
-      id: crypto.randomUUID(),
-      accountId: line.accountId,
-      branchId: line.branchId,
-      description: line.description,
-      debit: fixed(line.debit),
-      credit: fixed(line.credit),
-    })),
+    lines: toLines(data, input.lines),
   });
 }
 
@@ -209,7 +259,12 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
   const credits = sumMoney(entry.lines.map((line) => line.credit));
   if (debits !== credits) throw new MockProblem(409, 'journal_unbalanced');
   const oldWork = entry.source === 'reversal' || entry.source === 'year_close';
-  checkLines(data, entry.lines, oldWork, oldWork || isStockJournalSource(entry.source));
+  checkLines(data, entry.lines.map(asInput), {
+    allowArchived: oldWork,
+    allowStock: oldWork || isStockJournalSource(entry.source),
+    // A reversal of an entry posted before step 15a: its receivable line had no customer
+    allowMissingParty: entry.source === 'reversal',
+  });
   Object.assign(entry, {
     status: 'posted',
     number: nextNumber(data, entry.date),
@@ -241,7 +296,11 @@ export function reverseEntry(
     {
       date,
       narration: `Reversal of ${entry.number ?? ''}`,
-      lines: entry.lines.map((line) => ({ ...line, debit: line.credit, credit: line.debit })),
+      lines: entry.lines.map((line) => ({
+        ...asInput(line),
+        debit: line.credit,
+        credit: line.debit,
+      })),
     },
     'reversal',
     { id: entry.id, number: entry.number ?? '' },
@@ -273,28 +332,51 @@ export function postNew(
   return entry;
 }
 
-export function ledgerOf(
-  data: WorkspaceData,
-  accountId: string,
-  query: {
-    from?: string | undefined;
-    to?: string | undefined;
-    cursor?: string | undefined;
-    limit: number;
-  },
-): LedgerPage {
+interface LedgerQuery {
+  from?: string | undefined;
+  to?: string | undefined;
+  cursor?: string | undefined;
+  limit: number;
+}
+
+export function ledgerOf(data: WorkspaceData, accountId: string, query: LedgerQuery): LedgerPage {
   if (!data.accounts.some((account) => account.id === accountId)) {
     throw new MockProblem(404, 'not_found');
   }
+  return pageOf(data, (line) => line.accountId === accountId, query);
+}
+
+// A customer's statement (step 15a): the same page over the receivable lines that name it
+export function statementOf(data: WorkspaceData, partyId: string, query: LedgerQuery): LedgerPage {
+  if (!data.sales.customers.some((item) => item.id === partyId)) {
+    throw new MockProblem(404, 'not_found');
+  }
+  const receivable = new Set(
+    data.accounts
+      .filter((account) => account.purpose === 'accounts_receivable')
+      .map((account) => account.id),
+  );
+  return pageOf(
+    data,
+    (line) => line.party?.id === partyId && receivable.has(line.accountId),
+    query,
+  );
+}
+
+// The posted lines that match, in date order, with the running balance and the balances around
+// the dates asked for
+function pageOf(
+  data: WorkspaceData,
+  matches: (line: JournalLine) => boolean,
+  query: LedgerQuery,
+): LedgerPage {
   const order = new Map(data.journal.entries.map((entry, index) => [entry.id, index]));
   const all = data.journal.entries
     .filter((entry) => entry.status === 'posted')
     .toSorted(
       (a, b) => a.date.localeCompare(b.date) || (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0),
     )
-    .flatMap((entry) =>
-      entry.lines.filter((line) => line.accountId === accountId).map((line) => ({ entry, line })),
-    );
+    .flatMap((entry) => entry.lines.filter(matches).map((line) => ({ entry, line })));
   const before = all.filter(({ entry }) => query.from !== undefined && entry.date < query.from);
   const inRange = all.filter(
     ({ entry }) =>
@@ -322,6 +404,7 @@ export function ledgerOf(
         date: entry.date,
         narration: entry.narration,
         description: line.description,
+        party: line.party,
         debit: line.debit,
         credit: line.credit,
         balance,
@@ -355,7 +438,12 @@ export function openingOf(data: WorkspaceData): OpeningBalances {
     entry: { id: entry.id, number: entry.number },
     lines: entry.lines
       .filter((line) => line.accountId !== equity?.id)
-      .map((line) => ({ accountId: line.accountId, debit: line.debit, credit: line.credit })),
+      .map((line) => ({
+        accountId: line.accountId,
+        party: line.party,
+        debit: line.debit,
+        credit: line.credit,
+      })),
   };
 }
 
@@ -397,11 +485,23 @@ export function saveOpening(data: WorkspaceData, input: OpeningBalancesInput): v
       ),
     );
   }
+  // Step 15a: the receivable is split by customer. Checked on the page's rows, not on the posted
+  // entry, whose lines have no zero rows and an extra equity line.
+  const parties = partyIssues(data, filled);
+  if (parties.length > 0) {
+    throw partyProblem(
+      parties.flatMap((issue) => {
+        const line = filled[issue.index];
+        return line ? [{ ...issue, index: line.index }] : [];
+      }),
+    );
+  }
   if (current) reverseEntry(data, current, current.date);
   if (filled.length === 0) return;
   const lines: LineIn[] = filled.map((line) => ({
     accountId: line.accountId,
     branchId: null,
+    partyId: line.partyId,
     description: null,
     debit: line.debit,
     credit: line.credit,
@@ -416,6 +516,7 @@ export function saveOpening(data: WorkspaceData, input: OpeningBalancesInput): v
     lines.push({
       accountId: equity.id,
       branchId: null,
+      partyId: null,
       description: null,
       debit: negative ? amount : '0',
       credit: negative ? '0' : amount,
@@ -454,6 +555,7 @@ export function postStockEntry(
       return {
         accountId: sum.accountId,
         branchId: sum.branchId,
+        partyId: null,
         description: null,
         debit: debit ? sum.total : '0',
         credit: debit ? '0' : negateMoney(sum.total),
@@ -510,9 +612,22 @@ export function seedJournal(data: WorkspaceData): void {
     return found.id;
   };
   const factory = data.branches.find((branch) => branch.code === 'GZP')?.id ?? null;
-  const line = (code: string, debit: string, credit: string, branchId: string | null = null) => ({
+  // Step 15a: a receivable line names its customer, by name (seedSales() made them)
+  const customer = (name: string) => {
+    const found = data.sales.customers.find((item) => item.name.startsWith(name));
+    if (!found) throw new Error(`The mock has no customer ${name}`);
+    return found.id;
+  };
+  const line = (
+    code: string,
+    debit: string,
+    credit: string,
+    branchId: string | null = null,
+    partyId: string | null = null,
+  ) => ({
     accountId: id(code),
     branchId,
+    partyId,
     description: null,
     debit,
     credit,
@@ -523,7 +638,7 @@ export function seedJournal(data: WorkspaceData): void {
   postNew(data, {
     date: lastYearDay(45),
     narration: 'Export sale to H&M, Stockholm',
-    lines: [line('1140', '3850000', '0'), line('4110', '0', '3850000')],
+    lines: [line('1140', '3850000', '0', null, customer('H&M')), line('4110', '0', '3850000')],
   });
   postNew(data, {
     date: lastYearDay(120),
@@ -569,7 +684,10 @@ export function seedJournal(data: WorkspaceData): void {
   postNew(data, {
     date: day(3),
     narration: 'Export sale to Primark, Dublin',
-    lines: [line('1140', '2450000', '0', factory), line('4110', '0', '2450000', factory)],
+    lines: [
+      line('1140', '2450000', '0', factory, customer('Primark')),
+      line('4110', '0', '2450000', factory),
+    ],
   });
   writeDraft(data, {
     date: day(2),

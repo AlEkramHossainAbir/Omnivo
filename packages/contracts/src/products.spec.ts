@@ -30,6 +30,7 @@ function product(extra: Partial<ProductFormValues> = {}): ProductFormValues {
     purchaseUnitId: '',
     tracking: 'none',
     hasExpiry: false,
+    taxRateId: '',
     options: [],
     variants: [variant()],
     units: [],

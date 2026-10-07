@@ -25,11 +25,14 @@ import {
   Settings02Icon,
   Store01Icon,
   TableIcon,
+  Tag01Icon,
   TaskEdit01Icon,
   TextIcon,
   UnfoldMoreIcon,
   UserCircleIcon,
+  UserGroup03Icon,
   UserGroupIcon,
+  UserMultiple02Icon,
   WarehouseIcon,
   WorkHistoryIcon,
 } from '@hugeicons/core-free-icons';
@@ -291,6 +294,19 @@ export function AppShell() {
               </NavLink>
             </NavGroup>
           )}
+          {/* Sales (step 15a): everyone reads the customers and the price lists — every sales
+              document picks them. Changing them is checked on the pages and by the API. */}
+          <NavGroup label={t('nav.sales')}>
+            <NavLink to="/customers" icon={UserMultiple02Icon}>
+              {t('nav.customers')}
+            </NavLink>
+            <NavLink to="/customer-groups" icon={UserGroup03Icon}>
+              {t('nav.customerGroups')}
+            </NavLink>
+            <NavLink to="/price-lists" icon={Tag01Icon}>
+              {t('nav.priceLists')}
+            </NavLink>
+          </NavGroup>
           {/* Every member reads products (every sales and stock line picks one); imports change
               them, so only managers see that page */}
           <NavGroup label={t('nav.inventory')}>

@@ -176,6 +176,20 @@
       "when": 1791256097716,
       "tag": "0024_stock-valuation-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791276258210,
+      "tag": "0025_customers",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791276278487,
+      "tag": "0026_customers-rules",
+      "breakpoints": true
     }
   ]
 }

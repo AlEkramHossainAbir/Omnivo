@@ -11,7 +11,9 @@ import {
   productCategoriesQuery,
   productFieldsQuery,
   productQuery,
+  settingsQuery,
   setupQuery,
+  taxRatesQuery,
   unitsQuery,
 } from '../lib/queries';
 import { useSession } from '../lib/session-store';
@@ -22,14 +24,17 @@ const ProductForm = lazy(async () => ({
   default: (await import('../components/product-form')).ProductForm,
 }));
 
-// What both pages need: the units, the categories, the active custom fields, and the business
-// type (a pharma company's new products start with batch tracking)
+// What both pages need: the units, the categories, the active custom fields, the business type (a
+// pharma company's new products start with batch tracking), and from step 15a the VAT rates and
+// whether prices include VAT
 function useProductData() {
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const units = useQuery(unitsQuery(tenantId)).data;
   const categories = useQuery(productCategoriesQuery(tenantId)).data;
   const allFields = useQuery(productFieldsQuery(tenantId)).data;
   const industry = useQuery(setupQuery(tenantId)).data?.industry ?? null;
+  const taxRates = useQuery(taxRatesQuery(tenantId)).data;
+  const pricesIncludeVat = useQuery(settingsQuery(tenantId)).data?.pricesIncludeVat;
   const fields = useMemo(
     () => allFields?.filter((field) => field.archivedAt === null),
     [allFields],
@@ -39,14 +44,16 @@ function useProductData() {
     units,
     categories,
     fields,
+    taxRates,
+    pricesIncludeVat,
     defaults: trackingDefault(industry !== null && isIndustry(industry) ? industry : null),
   };
 }
 
 export function NewProductPage() {
   const canManage = useCan()('inventory.product.manage');
-  const { units, categories, fields, defaults } = useProductData();
-  if (!units || !categories || !fields) return null;
+  const { units, categories, fields, taxRates, pricesIncludeVat, defaults } = useProductData();
+  if (!units || !categories || !fields || !taxRates || pricesIncludeVat === undefined) return null;
   return (
     <Suspense fallback={null}>
       <ProductForm
@@ -55,6 +62,8 @@ export function NewProductPage() {
         categories={categories}
         fields={fields}
         defaults={defaults}
+        taxRates={taxRates}
+        pricesIncludeVat={pricesIncludeVat}
         canManage={canManage}
       />
     </Suspense>
@@ -65,7 +74,8 @@ export function ProductPage() {
   const { t } = useLocale();
   const { productId = '' } = useParams({ strict: false });
   const canManage = useCan()('inventory.product.manage');
-  const { tenantId, units, categories, fields, defaults } = useProductData();
+  const { tenantId, units, categories, fields, taxRates, pricesIncludeVat, defaults } =
+    useProductData();
   const { data: product, isError } = useQuery({
     ...productQuery(tenantId, productId),
     enabled: productId !== '',
@@ -87,7 +97,9 @@ export function ProductPage() {
       </div>
     );
   }
-  if (!product || !units || !categories || !fields) return null;
+  if (!product || !units || !categories || !fields || !taxRates || pricesIncludeVat === undefined) {
+    return null;
+  }
   return (
     <Suspense fallback={null}>
       {/* key: a saved product comes back with a new version, and the form starts from it again */}
@@ -98,6 +110,8 @@ export function ProductPage() {
         categories={categories}
         fields={fields}
         defaults={defaults}
+        taxRates={taxRates}
+        pricesIncludeVat={pricesIncludeVat}
         canManage={canManage}
       />
     </Suspense>

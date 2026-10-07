@@ -132,9 +132,18 @@ test('adds a custom field, which the product form then shows', async ({ page }) 
   await dialog.getByLabel('Choices').fill('Hand wash\nMachine wash 30°C');
   await dialog.getByRole('button', { name: 'Add field' }).click();
   await expect(page.getByText('Wash care added')).toBeVisible();
+  // A date field: the form loads its picker as a chunk of its own (date-input.tsx, step 15a)
+  await page.getByRole('button', { name: 'Add field' }).click();
+  await dialog.getByLabel('Label').fill('Lab dip approved on');
+  await dialog.getByLabel('Type').selectOption({ label: 'Date' });
+  await dialog.getByRole('button', { name: 'Add field' }).click();
+  await expect(page.getByText('Lab dip approved on added')).toBeVisible();
 
   await newProduct(page);
   await expect(page.getByLabel('Wash care')).toBeVisible();
+  await page.getByLabel('Lab dip approved on').click();
+  await expect(page.getByRole('grid')).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.getByLabel('GSM').fill('heavy');
   await page.getByLabel('Name').fill('Rib cuff sweatshirt');
   await page.getByRole('button', { name: 'Add product' }).click();
@@ -174,4 +183,22 @@ test('imports a CSV file, or lists what to fix in it', async ({ page }) => {
   await expect(page.getByText('Pick a CSV file.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Import', exact: true })).toBeDisabled();
   await expectNoSideScroll(page);
+});
+
+// Step 15a: a product follows the workspace's VAT rate unless it is given its own
+test('keeps the workspace VAT rate, or gives a product its own', async ({ page }) => {
+  await openFromNav(page, 'Products');
+  await page.getByRole('searchbox', { name: 'Search products' }).fill('pique');
+  await listItem(page, /Pique polo shirt/).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'Edit ST-118' })).toBeVisible();
+  const rate = page.getByLabel('VAT rate');
+  await expect(rate).toHaveValue('');
+  await expect(rate.locator('option:checked')).toHaveText('Workspace default: VAT 15% · 15%');
+  // The garments workspace types its prices before VAT
+  await expect(page.getByText('Before VAT').first()).toBeVisible();
+
+  await rate.selectOption({ label: 'VAT 5% · 5%' });
+  await page.getByRole('button', { name: 'Save product' }).click();
+  await expect(page.getByText('Pique polo shirt saved')).toBeVisible();
+  await expect(rate.locator('option:checked')).toHaveText('VAT 5% · 5%');
 });

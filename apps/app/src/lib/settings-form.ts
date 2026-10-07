@@ -22,5 +22,6 @@ export function settingsToForm(settings: Settings): SettingsFormValues {
     fiscalYearStartMonth: settings.fiscalYearStartMonth,
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
+    pricesIncludeVat: settings.pricesIncludeVat,
   };
 }

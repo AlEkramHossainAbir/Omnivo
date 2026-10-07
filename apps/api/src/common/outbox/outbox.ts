@@ -32,6 +32,8 @@ export const outboxPayloadSchemas = {
   }),
   // Like the chart's: the workspace and its business type say everything (step 14)
   'workspace.stock_accounts_requested': z.object({}),
+  // Like the chart's: the rates are the same for every workspace (step 15a)
+  'workspace.tax_rates_requested': z.object({}),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

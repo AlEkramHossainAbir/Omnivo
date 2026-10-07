@@ -9,7 +9,7 @@ import {
   subtractMoney,
   sumMoney,
 } from '@omnivo/contracts';
-import { journalEntries, journalLines, ledgerAccounts } from '@omnivo/db';
+import { journalEntries, journalLines, ledgerAccounts, parties } from '@omnivo/db';
 import { and, asc, desc, eq, isNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 
@@ -18,7 +18,13 @@ import { AppError, versionConflict } from '../common/http/app-error.js';
 import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
-import { type LineInput, PostingService, stockAccountIds } from './posting.service.js';
+import {
+  checkParties,
+  type LineInput,
+  partyError,
+  PostingService,
+  stockAccountIds,
+} from './posting.service.js';
 
 const reversal = alias(journalEntries, 'reversal');
 
@@ -27,7 +33,7 @@ const reversal = alias(journalEntries, 'reversal');
 const OPENING_TYPES = ['asset', 'liability', 'equity'] as const;
 
 function invalidLines(
-  code: 'opening_account_invalid' | 'opening_account_twice' | 'journal_account_stock',
+  code: 'opening_account_invalid' | 'journal_account_stock',
   indexes: number[],
 ) {
   return new AppError(409, code, 'Some lines cannot take an opening balance.', {
@@ -62,18 +68,10 @@ export class OpeningBalancesService {
       if ((current?.id ?? null) !== input.replaces) throw versionConflict();
 
       // Keep each line's index in the request, so an error lands under the right row of the page
+      // The same account (and customer) twice is refused by the contract (opening_balance_twice)
       const filled = input.lines.flatMap((line, index) =>
         isZeroMoney(line.debit) && isZeroMoney(line.credit) ? [] : [{ ...line, index }],
       );
-      const seen = new Set<string>();
-      const twice = filled.flatMap((line) => {
-        if (!seen.has(line.accountId)) {
-          seen.add(line.accountId);
-          return [];
-        }
-        return [line.index];
-      });
-      if (twice.length > 0) throw invalidLines('opening_account_twice', twice);
 
       const accounts = await tx
         .select({
@@ -106,6 +104,23 @@ export class OpeningBalancesService {
       const stock = await stockAccountIds(tx);
       const onStock = filled.flatMap((line) => (stock.has(line.accountId) ? [line.index] : []));
       if (onStock.length > 0) throw invalidLines('journal_account_stock', onStock);
+      // Step 15a: the receivable is split by customer, and only the receivable names one. Checked
+      // here and not only when the entry is posted below: the posted entry has no zero lines and an
+      // extra equity line, so its line numbers are not the page's rows.
+      const partyIssues = await checkParties(
+        tx,
+        filled,
+        new Map(accounts.map((account) => [account.id, account.purpose])),
+      );
+      if (partyIssues.length > 0) {
+        // An issue's index is its place in `filled`; the page needs the row it came from
+        throw partyError(
+          partyIssues.flatMap((issue) => {
+            const line = filled[issue.index];
+            return line ? [{ ...issue, index: line.index }] : [];
+          }),
+        );
+      }
 
       if (current) {
         const lines = await this.linesOf(tx, current.id);
@@ -123,6 +138,7 @@ export class OpeningBalancesService {
         const lines: LineInput[] = filled.map((line) => ({
           accountId: line.accountId,
           branchId: null,
+          partyId: line.partyId,
           description: null,
           debit: line.debit,
           credit: line.credit,
@@ -138,6 +154,7 @@ export class OpeningBalancesService {
           lines.push({
             accountId: equity.id,
             branchId: null,
+            partyId: null,
             description: null,
             debit: isNegativeMoney(difference) ? amount : '0',
             credit: isNegativeMoney(difference) ? '0' : amount,
@@ -159,7 +176,9 @@ export class OpeningBalancesService {
         entityId: tenantId,
         changes: created({
           goLiveDate: filled.length > 0 ? input.goLiveDate : null,
-          accounts: filled.length,
+          accounts: new Set(filled.map((line) => line.accountId)).size,
+          // How many customers' dues came in with it (step 15a)
+          customers: filled.filter((line) => line.partyId !== null).length,
           entry: number,
         }),
       });
@@ -213,14 +232,30 @@ export class OpeningBalancesService {
         ),
       );
     const equityIds = new Set(equity.map((account) => account.id));
-    const lines = await this.linesOf(tx, current.id);
+    const lines = await tx
+      .select({ line: journalLines, partyCode: parties.code, partyName: parties.name })
+      .from(journalLines)
+      .leftJoin(
+        parties,
+        and(eq(parties.tenantId, journalLines.tenantId), eq(parties.id, journalLines.partyId)),
+      )
+      .where(and(eq(journalLines.tenantId, getTenantId()), eq(journalLines.entryId, current.id)))
+      .orderBy(asc(journalLines.lineNo));
     return {
       goLiveDate: shiftIsoDate(current.date, 1),
       entry: { id: current.id, number: current.number },
       // The equity line is the server's own; the page shows it as "the difference"
       lines: lines
-        .filter((line) => !equityIds.has(line.accountId))
-        .map((line) => ({ accountId: line.accountId, debit: line.debit, credit: line.credit })),
+        .filter(({ line }) => !equityIds.has(line.accountId))
+        .map(({ line, partyCode, partyName }) => ({
+          accountId: line.accountId,
+          party:
+            line.partyId !== null && partyCode !== null && partyName !== null
+              ? { id: line.partyId, code: partyCode, name: partyName }
+              : null,
+          debit: line.debit,
+          credit: line.credit,
+        })),
     };
   }
 }

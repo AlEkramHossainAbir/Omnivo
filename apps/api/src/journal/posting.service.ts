@@ -1,11 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import {
   type ErrorCode,
+  isPartyAccountPurpose,
   isStockJournalSource,
   type JournalSource,
   sumMoney,
 } from '@omnivo/contracts';
-import { branches, journalEntries, journalLines, ledgerAccounts, stockAccounts } from '@omnivo/db';
+import {
+  branches,
+  journalEntries,
+  journalLines,
+  ledgerAccounts,
+  parties,
+  stockAccounts,
+} from '@omnivo/db';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
 import { AppError } from '../common/http/app-error.js';
@@ -21,6 +29,8 @@ export type EntryRow = typeof journalEntries.$inferSelect;
 export interface LineInput {
   accountId: string;
   branchId: string | null;
+  // Step 15a: the customer on a receivable line; null on every other line
+  partyId: string | null;
   description: string | null;
   debit: string;
   credit: string;
@@ -43,6 +53,70 @@ function lineErrors(code: ErrorCode, field: string, indexes: readonly number[]):
     fieldErrors: Object.fromEntries(
       indexes.map((index) => [`lines.${String(index)}.${field}`, [code]]),
     ),
+  });
+}
+
+type PartyCode = 'journal_party_required' | 'journal_party_not_allowed' | 'journal_party_invalid';
+
+// One line that breaks the party rule, by its index in the caller's list
+export interface PartyIssue {
+  index: number;
+  code: PartyCode;
+}
+
+// The party problems as the API's answer: each line's own code under lines.N.partyId, so the form
+// marks every wrong row at once
+export function partyError(issues: readonly PartyIssue[]): AppError {
+  const first = issues[0]?.code ?? 'journal_party_invalid';
+  return new AppError(409, first, 'Some lines have a wrong customer, or need one.', {
+    fieldErrors: Object.fromEntries(
+      issues.map((issue) => [`lines.${String(issue.index)}.partyId`, [issue.code]]),
+    ),
+  });
+}
+
+// The party rule (step 15a): a line on an account kept per party (the receivable) names a
+// customer, and no other line names anyone. Migration 0026 checks the same at posting, as a safety
+// net; here a person gets an answer per line instead of one database error.
+// purposeOf: each line's account → its purpose, from a query the caller already made.
+// allowMissing: the receivable line may have no customer yet — a draft (the person picks the
+// customer before posting), or a reversal of an entry posted before step 15a, which had none.
+// allowArchived: a reversal undoes old work, even for a customer archived since.
+// FOR SHARE on the parties, like the accounts: nobody archives one until we commit.
+export async function checkParties(
+  tx: Transaction,
+  lines: readonly { accountId: string; partyId: string | null }[],
+  purposeOf: ReadonlyMap<string, string | null>,
+  { allowMissing = false, allowArchived = false } = {},
+): Promise<PartyIssue[]> {
+  const partyIds = [
+    ...new Set(lines.flatMap((line) => (line.partyId === null ? [] : [line.partyId]))),
+  ];
+  const found =
+    partyIds.length === 0
+      ? []
+      : await tx
+          .select({ id: parties.id })
+          .from(parties)
+          .where(
+            and(
+              eq(parties.tenantId, getTenantId()),
+              inArray(parties.id, partyIds),
+              // Step 17 adds suppliers: a payable line will need is_supplier instead
+              eq(parties.isCustomer, true),
+              allowArchived ? undefined : isNull(parties.archivedAt),
+            ),
+          )
+          .for('share');
+  const usable = new Set(found.map((party) => party.id));
+  return lines.flatMap((line, index): PartyIssue[] => {
+    const perParty = isPartyAccountPurpose(purposeOf.get(line.accountId) ?? null);
+    if (line.partyId === null) {
+      return perParty && !allowMissing ? [{ index, code: 'journal_party_required' }] : [];
+    }
+    if (!perParty) return [{ index, code: 'journal_party_not_allowed' }];
+    // Unknown, archived, not a customer, another tenant's: one answer, like the accounts
+    return usable.has(line.partyId) ? [] : [{ index, code: 'journal_party_invalid' }];
   });
 }
 
@@ -85,13 +159,15 @@ export class PostingService {
   // since — archiving hides an account from new work, it must not block fixing old work.
   // allowStock: the entry may post to the inventory and goods in transit accounts — a stock
   // document's entry, or a reversal or closing entry of old work. Every other entry may not.
+  // allowMissingParty: see checkParties() — a draft, or a reversal.
   async checkLines(
     tx: Transaction,
     lines: readonly LineInput[],
     {
       allowArchived = false,
       allowStock = false,
-    }: { allowArchived?: boolean; allowStock?: boolean } = {},
+      allowMissingParty = false,
+    }: { allowArchived?: boolean; allowStock?: boolean; allowMissingParty?: boolean } = {},
   ): Promise<void> {
     const tenantId = getTenantId();
     const accountIds = [...new Set(lines.map((line) => line.accountId))];
@@ -99,6 +175,7 @@ export class PostingService {
       .select({
         id: ledgerAccounts.id,
         isGroup: ledgerAccounts.isGroup,
+        purpose: ledgerAccounts.purpose,
         archivedAt: ledgerAccounts.archivedAt,
       })
       .from(ledgerAccounts)
@@ -119,6 +196,14 @@ export class PostingService {
       const onStock = lines.flatMap((line, index) => (stock.has(line.accountId) ? [index] : []));
       if (onStock.length > 0) throw lineErrors('journal_account_stock', 'accountId', onStock);
     }
+    // After the accounts: the rule depends on each line's account, which is valid by now
+    const partyIssues = await checkParties(
+      tx,
+      lines,
+      new Map(accounts.map((account) => [account.id, account.purpose])),
+      { allowMissing: allowMissingParty, allowArchived },
+    );
+    if (partyIssues.length > 0) throw partyError(partyIssues);
 
     const branchIds = [
       ...new Set(lines.flatMap((line) => (line.branchId === null ? [] : [line.branchId]))),
@@ -155,6 +240,7 @@ export class PostingService {
         lineNo: index + 1,
         accountId: line.accountId,
         branchId: line.branchId,
+        partyId: line.partyId,
         description: line.description,
         debit: line.debit,
         credit: line.credit,
@@ -217,6 +303,8 @@ export class PostingService {
         entry.source === 'reversal' ||
         entry.source === 'year_close' ||
         isStockJournalSource(entry.source),
+      // The same exception as migration 0026's: only a reversal, which copies its original's lines
+      allowMissingParty: entry.source === 'reversal',
     });
 
     // In the same transaction: if anything after this fails, the number goes back (step 6)

@@ -110,6 +110,7 @@ async function product(name: string, extra: Partial<ProductFormValues>): Promise
     purchaseUnitId: '',
     tracking: 'none',
     hasExpiry: false,
+    taxRateId: '',
     options: [],
     variants: [
       { id: null, sku: '', optionValues: [], barcode: '', salePrice: '', archived: false },
@@ -170,6 +171,7 @@ function settingsForm(settings: Settings) {
     fiscalYearStartMonth: settings.fiscalYearStartMonth,
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
+    pricesIncludeVat: settings.pricesIncludeVat,
   };
 }
 
@@ -871,6 +873,7 @@ describe('a product with stock', () => {
       purchaseUnitId: '',
       tracking: 'none',
       hasExpiry: false,
+      taxRateId: current.taxRateId ?? '',
       options: [],
       variants: current.variants.map((variant) => ({
         id: variant.id,

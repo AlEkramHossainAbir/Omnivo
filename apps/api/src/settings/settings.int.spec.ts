@@ -91,6 +91,7 @@ function form(settings: Settings) {
     fiscalYearStartMonth: settings.fiscalYearStartMonth,
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
+    pricesIncludeVat: settings.pricesIncludeVat,
   };
 }
 
@@ -102,6 +103,8 @@ describe('settings', () => {
       fiscalYearStartMonth: 7,
       timezone: 'Asia/Dhaka',
       logo: null,
+      // Step 15a: prices are typed before VAT, the way a distributor quotes
+      pricesIncludeVat: false,
       version: 1,
     });
   });
@@ -233,5 +236,29 @@ describe('company logo', () => {
     expect(problemSchema.parse(res.json()).fieldErrors).toEqual({
       contentType: ['file_type_not_allowed'],
     });
+  });
+});
+
+// Last: it changes the settings' version, which the tests above count
+describe('prices and VAT', () => {
+  it('remembers whether the prices typed include VAT (step 15a)', async () => {
+    const res = await send('PUT', '/settings', {
+      ...form(await current()),
+      pricesIncludeVat: true,
+    });
+    expect(settingsSchema.parse(res.json()).pricesIncludeVat).toBe(true);
+    const audit = auditPageSchema.parse(
+      (await send('GET', '/audit-logs?entityType=workspace')).json(),
+    );
+    expect(audit.items.find((item) => item.action === 'settings.updated')?.changes).toEqual({
+      pricesIncludeVat: { from: false, to: true },
+    });
+    // The settings form always sends the whole form: a body without the switch is refused, not
+    // read as "off"
+    const partial = Object.fromEntries(
+      Object.entries(form(await current())).filter(([key]) => key !== 'pricesIncludeVat'),
+    );
+    const without = await send('PUT', '/settings', partial);
+    expect(without.statusCode).toBe(400);
   });
 });

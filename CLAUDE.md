@@ -326,6 +326,14 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   icon in `ink-3` on the right. Use it for fixed lists (currency, month, time zone); use a dropdown menu for actions.
 - **Select (bare):** `Select` from `@omnivo/ui` is the select box without its label, for controls labelled by a
   column header (journal lines). `SelectField` is built on it.
+- **Combobox:** `Combobox` from `@omnivo/ui`, for picking one of many rows the server searches (a customer).
+  The button looks exactly like an input (17px leading icon, an `ArrowDown01` icon on the right, the chosen
+  label or the placeholder in `ink-3`). It opens a popover as wide as the button, at least 288px, with a search
+  box on top and the matches below: 13.5px label, a 12px `ink-3` detail line (code · phone), highlighted
+  `subtle`, the chosen one with a `brand` `Tick02` icon. "Searching…" and "Nothing matches" (or the page's own
+  text, "No active customer matches") are a `role="status"` line. The focus stays in the search box (the ARIA
+  combobox pattern). The page owns the search and runs it on the server; use a native select for short fixed
+  lists.
 - **Line editor (journal lines, opening balances):** a card that is a container (`@container`); each row is a
   `role="group"` labelled "Line 2". On a wide card (`@3xl`) the rows share one grid template with the header and
   the totals row, and each control's label is `sr-only`; on a narrow card the labels show and debit/credit sit
@@ -372,6 +380,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Stock is always counted in the product's base unit.
 - **Stock values:** to the paisa, like money; a unit cost keeps 4 decimals and is shown with 2. Lists and the
   stock card's KPIs show whole taka; documents, the stock card's history and the journal show paisa.
+- **A customer's balance:** "Owes ৳1,15,000" when the customer owes the company, "৳20,000 in advance" when the
+  company owes the customer (an advance or an overpayment), "Nothing owed" at zero. Shown only with
+  `sales.customer.balance`; without it the balance column is left out.
+- **VAT rates:** a rate is shown with its name and percent ("VAT 15% · 15%", "Exempt · 0%"). Zero-rated and
+  exempt are different rates, even though both are 0%.
 - **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. In Bangla, `২৩ সেপ, ২০২৬`
   and `সেপ্টেম্বর ২০২৬`. The fiscal year defaults to July – June.
 - **Language:** every user-facing string goes through `t()` from `@omnivo/i18n`, and

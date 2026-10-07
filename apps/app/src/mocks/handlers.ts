@@ -47,6 +47,7 @@ import {
   saveOpening,
   setLockDate,
   sortedEntries,
+  statementOf,
   summaryOf,
   writeDraft,
 } from './journal-data';
@@ -72,6 +73,30 @@ import {
   productSummaryOf,
   toImport,
 } from './product-data';
+import {
+  assertCustomerUnused,
+  assertGroupNameFree,
+  assertPriceListNameFree,
+  assertProductTaxRate,
+  createTaxRate,
+  customerSummaryOf,
+  dropStalePrices,
+  findCustomer,
+  findGroup,
+  findPriceList,
+  findTaxRate,
+  listCustomers,
+  priceItemsOf,
+  refreshPartyRefs,
+  saveCustomer,
+  setPriceItems,
+  setTaxRateArchived,
+  sortedTaxRates,
+  toCustomer,
+  toGroup,
+  toPriceList,
+  updateTaxRate,
+} from './sales-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
   batchReport,
@@ -155,6 +180,7 @@ function guarded(resolver: HttpResponseResolver): HttpResponseResolver {
 function editable(settings: Settings) {
   return {
     allowNegativeStock: settings.allowNegativeStock,
+    pricesIncludeVat: settings.pricesIncludeVat,
     companyName: settings.companyName,
     legalName: settings.legalName,
     bin: settings.bin,
@@ -807,7 +833,8 @@ export const handlers = [
     guarded(async ({ request }) => {
       const body = await readBody(routes.journal.create.body, request);
       const data = current();
-      checkLines(data, body.lines);
+      // A draft may leave the customer for later; posting needs it (the API's allowMissingParty)
+      checkLines(data, body.lines, { allowMissingParty: !body.post });
       const entry = body.post ? postNew(data, body) : writeDraft(data, body);
       record(data, 'journal.created', 'journal_entry', entry.id);
       if (body.post) {
@@ -829,10 +856,10 @@ export const handlers = [
       const entry = findEntry(data, id);
       if (entry.status !== 'draft') throw new MockProblem(409, 'journal_not_draft');
       checkVersion(entry.version, version);
-      checkLines(data, fields.lines);
+      checkLines(data, fields.lines, { allowMissingParty: !post });
       // All or nothing, like the API's transaction: post a copy, keep it only if it posts
       const before = structuredClone(entry);
-      replaceDraft(entry, fields);
+      replaceDraft(data, entry, fields);
       if (post) {
         try {
           postDraft(data, entry);
@@ -1429,6 +1456,7 @@ export const handlers = [
     guarded(async ({ request }) => {
       const body = await readBody(routes.products.create.body, request);
       const data = current();
+      assertProductTaxRate(data.sales, body.taxRateId, null);
       const saved = saveProduct(data.catalog, body);
       data.catalog.products.push(saved);
       record(
@@ -1451,8 +1479,12 @@ export const handlers = [
       const data = current();
       const target = findProduct(data.catalog, id);
       checkVersion(target.version, version);
+      // An archived rate the product already has is kept, like an archived unit
+      assertProductTaxRate(data.sales, body.taxRateId, target.taxRateId);
       const saved = saveProduct(data.catalog, body, target);
       data.catalog.products = data.catalog.products.map((item) => (item.id === id ? saved : item));
+      // A dropped pack or variant takes its price-list prices with it
+      dropStalePrices(data);
       record(
         data,
         'product.updated',
@@ -1494,6 +1526,7 @@ export const handlers = [
       const target = findProduct(data.catalog, id);
       checkVersion(target.version, version);
       data.catalog.products = data.catalog.products.filter((item) => item.id !== id);
+      dropStalePrices(data);
       record(data, 'product.deleted', 'product', id, diff({ name: target.name }, { name: null }));
       return reply(routes.products.remove, undefined);
     }),
@@ -1970,6 +2003,388 @@ export const handlers = [
         ),
       );
       return reply(routes.stockAccounts.update, data.stockAccounts);
+    }),
+  ),
+
+  // ---------------------------------------------------------------------------------------------
+  // VAT rates, customers, customer groups and price lists (step 15a)
+
+  mock(routes.taxRates.list, () =>
+    reply(routes.taxRates.list, { items: sortedTaxRates(current().sales) }),
+  ),
+
+  mock(
+    routes.taxRates.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.taxRates.create.body, request);
+      const data = current();
+      const created = createTaxRate(data.sales, body);
+      record(
+        data,
+        'tax_rate.created',
+        'tax_rate',
+        created.id,
+        diff({}, { name: created.name, kind: created.kind, rate: created.rate }),
+      );
+      return reply(routes.taxRates.create, created);
+    }),
+  ),
+
+  mock(
+    routes.taxRates.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.taxRates.update.params.parse(params);
+      const body = await readBody(routes.taxRates.update.body, request);
+      const data = current();
+      const target = findTaxRate(data.sales, id);
+      const before = { name: target.name, kind: target.kind, rate: target.rate };
+      updateTaxRate(data.sales, target, body);
+      record(
+        data,
+        'tax_rate.updated',
+        'tax_rate',
+        id,
+        diff(before, { name: target.name, kind: target.kind, rate: target.rate }),
+      );
+      return reply(routes.taxRates.update, target);
+    }),
+  ),
+
+  ...(['archive', 'restore'] as const).map((action) =>
+    mock(
+      routes.taxRates[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.taxRates[action].params.parse(params);
+        const { version } = await readBody(routes.taxRates[action].body, request);
+        const data = current();
+        const target = findTaxRate(data.sales, id);
+        setTaxRateArchived(target, version, action === 'archive');
+        record(
+          data,
+          action === 'archive' ? 'tax_rate.archived' : 'tax_rate.restored',
+          'tax_rate',
+          id,
+        );
+        return reply(routes.taxRates[action], target);
+      }),
+    ),
+  ),
+
+  mock(routes.customers.list, async ({ request }) => {
+    const query = readQuery(routes.customers.list.query, request);
+    const data = current();
+    const start = query.cursor === undefined ? 0 : Number(query.cursor);
+    const all = listCustomers(data.sales, query);
+    const items = all
+      .slice(start, start + query.limit)
+      .map((item) => customerSummaryOf(data, item));
+    const end = start + items.length;
+    if (start > 0) await delay(300);
+    return reply(routes.customers.list, {
+      items,
+      nextCursor: end < all.length ? String(end) : null,
+    });
+  }),
+
+  mock(
+    routes.customers.get,
+    guarded(({ params }) => {
+      const { id } = routes.customers.get.params.parse(params);
+      const data = current();
+      return reply(routes.customers.get, toCustomer(data, findCustomer(data.sales, id)));
+    }),
+  ),
+
+  mock(
+    routes.customers.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.customers.create.body, request);
+      const data = current();
+      const saved = saveCustomer(data, body);
+      data.sales.customers.push(saved);
+      record(
+        data,
+        'customer.created',
+        'customer',
+        saved.id,
+        diff({}, { code: saved.code, name: saved.name }),
+      );
+      await delay();
+      return reply(routes.customers.create, toCustomer(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.customers.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.customers.update.params.parse(params);
+      const { version, ...body } = await readBody(routes.customers.update.body, request);
+      const data = current();
+      const target = findCustomer(data.sales, id);
+      checkVersion(target.version, version);
+      const saved = saveCustomer(data, body, target);
+      data.sales.customers = data.sales.customers.map((item) => (item.id === id ? saved : item));
+      refreshPartyRefs(data, saved);
+      record(
+        data,
+        'customer.updated',
+        'customer',
+        id,
+        diff(
+          { code: target.code, name: target.name, paymentTermsDays: target.paymentTermsDays },
+          { code: saved.code, name: saved.name, paymentTermsDays: saved.paymentTermsDays },
+        ),
+      );
+      await delay();
+      return reply(routes.customers.update, toCustomer(data, saved));
+    }),
+  ),
+
+  ...(['archive', 'restore'] as const).map((action) =>
+    mock(
+      routes.customers[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.customers[action].params.parse(params);
+        const { version } = await readBody(routes.customers[action].body, request);
+        const data = current();
+        const target = findCustomer(data.sales, id);
+        checkVersion(target.version, version);
+        // Archiving an archived customer changes nothing, like the API
+        if ((target.archivedAt !== null) !== (action === 'archive')) {
+          Object.assign(target, {
+            archivedAt: action === 'archive' ? new Date().toISOString() : null,
+            version: version + 1,
+            updatedAt: new Date().toISOString(),
+          });
+          record(
+            data,
+            action === 'archive' ? 'customer.archived' : 'customer.restored',
+            'customer',
+            id,
+          );
+        }
+        return reply(routes.customers[action], toCustomer(data, target));
+      }),
+    ),
+  ),
+
+  mock(
+    routes.customers.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.customers.remove.params.parse(params);
+      const { version } = readQuery(routes.customers.remove.query, request);
+      const data = current();
+      const target = findCustomer(data.sales, id);
+      checkVersion(target.version, version);
+      assertCustomerUnused(data, id);
+      data.sales.customers = data.sales.customers.filter((item) => item.id !== id);
+      record(
+        data,
+        'customer.deleted',
+        'customer',
+        id,
+        diff({ code: target.code, name: target.name }, { code: null, name: null }),
+      );
+      return reply(routes.customers.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.customers.statement,
+    guarded(({ request, params }) => {
+      const { id } = routes.customers.statement.params.parse(params);
+      const query = readQuery(routes.customers.statement.query, request);
+      return reply(routes.customers.statement, statementOf(current(), id, query));
+    }),
+  ),
+
+  mock(routes.customerGroups.list, () => {
+    const { sales } = current();
+    return reply(routes.customerGroups.list, {
+      items: sales.groups
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .map((item) => toGroup(sales, item)),
+    });
+  }),
+
+  mock(
+    routes.customerGroups.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.customerGroups.create.body, request);
+      const data = current();
+      assertGroupNameFree(data.sales, body.name);
+      const created = {
+        id: crypto.randomUUID(),
+        name: body.name,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.sales.groups.push(created);
+      record(data, 'customer_group.created', 'customer_group', created.id, {
+        name: { from: null, to: created.name },
+      });
+      return reply(routes.customerGroups.create, toGroup(data.sales, created));
+    }),
+  ),
+
+  mock(
+    routes.customerGroups.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.customerGroups.update.params.parse(params);
+      const { version, name } = await readBody(routes.customerGroups.update.body, request);
+      const data = current();
+      const target = findGroup(data.sales, id);
+      checkVersion(target.version, version);
+      assertGroupNameFree(data.sales, name, id);
+      const before = target.name;
+      Object.assign(target, { name, version: version + 1, updatedAt: new Date().toISOString() });
+      record(
+        data,
+        'customer_group.updated',
+        'customer_group',
+        id,
+        diff({ name: before }, { name }),
+      );
+      return reply(routes.customerGroups.update, toGroup(data.sales, target));
+    }),
+  ),
+
+  mock(
+    routes.customerGroups.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.customerGroups.remove.params.parse(params);
+      const { version } = readQuery(routes.customerGroups.remove.query, request);
+      const data = current();
+      const target = findGroup(data.sales, id);
+      checkVersion(target.version, version);
+      // Archived customers count too (the API's parties_customer_group_fk)
+      if (data.sales.customers.some((item) => item.groupId === id)) {
+        throw new MockProblem(409, 'customer_group_in_use');
+      }
+      data.sales.groups = data.sales.groups.filter((item) => item.id !== id);
+      record(data, 'customer_group.deleted', 'customer_group', id, {
+        name: { from: target.name, to: null },
+      });
+      return reply(routes.customerGroups.remove, undefined);
+    }),
+  ),
+
+  mock(routes.priceLists.list, () => {
+    const { sales } = current();
+    return reply(routes.priceLists.list, {
+      items: sales.priceLists
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .map((item) => toPriceList(sales, item)),
+    });
+  }),
+
+  mock(
+    routes.priceLists.get,
+    guarded(({ params }) => {
+      const { id } = routes.priceLists.get.params.parse(params);
+      const { sales } = current();
+      return reply(routes.priceLists.get, toPriceList(sales, findPriceList(sales, id)));
+    }),
+  ),
+
+  mock(
+    routes.priceLists.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.priceLists.create.body, request);
+      const data = current();
+      assertPriceListNameFree(data.sales, body.name);
+      const created = {
+        id: crypto.randomUUID(),
+        ...body,
+        archivedAt: null,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.sales.priceLists.push(created);
+      record(
+        data,
+        'price_list.created',
+        'price_list',
+        created.id,
+        diff({}, { name: created.name, description: created.description }),
+      );
+      return reply(routes.priceLists.create, toPriceList(data.sales, created));
+    }),
+  ),
+
+  mock(
+    routes.priceLists.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.priceLists.update.params.parse(params);
+      const { version, ...fields } = await readBody(routes.priceLists.update.body, request);
+      const data = current();
+      const target = findPriceList(data.sales, id);
+      checkVersion(target.version, version);
+      assertPriceListNameFree(data.sales, fields.name, id);
+      const before = { name: target.name, description: target.description };
+      Object.assign(target, fields, { version: version + 1, updatedAt: new Date().toISOString() });
+      record(data, 'price_list.updated', 'price_list', id, diff(before, fields));
+      return reply(routes.priceLists.update, toPriceList(data.sales, target));
+    }),
+  ),
+
+  ...(['archive', 'restore'] as const).map((action) =>
+    mock(
+      routes.priceLists[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.priceLists[action].params.parse(params);
+        const { version } = await readBody(routes.priceLists[action].body, request);
+        const data = current();
+        const target = findPriceList(data.sales, id);
+        checkVersion(target.version, version);
+        if ((target.archivedAt !== null) !== (action === 'archive')) {
+          Object.assign(target, {
+            archivedAt: action === 'archive' ? new Date().toISOString() : null,
+            version: version + 1,
+            updatedAt: new Date().toISOString(),
+          });
+          record(
+            data,
+            action === 'archive' ? 'price_list.archived' : 'price_list.restored',
+            'price_list',
+            id,
+          );
+        }
+        return reply(routes.priceLists[action], toPriceList(data.sales, target));
+      }),
+    ),
+  ),
+
+  mock(
+    routes.priceLists.items,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.priceLists.items.params.parse(params);
+      const query = readQuery(routes.priceLists.items.query, request);
+      const data = current();
+      findPriceList(data.sales, id);
+      const start = query.cursor === undefined ? 0 : Number(query.cursor);
+      const all = priceItemsOf(data, id, query.search);
+      const items = all.slice(start, start + query.limit);
+      const end = start + items.length;
+      if (start > 0) await delay(300);
+      return reply(routes.priceLists.items, {
+        items,
+        nextCursor: end < all.length ? String(end) : null,
+      });
+    }),
+  ),
+
+  mock(
+    routes.priceLists.setItems,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.priceLists.setItems.params.parse(params);
+      const body = await readBody(routes.priceLists.setItems.body, request);
+      const data = current();
+      const target = findPriceList(data.sales, id);
+      const counts = setPriceItems(data, target, body);
+      record(data, 'price_list.prices_changed', 'price_list', id, diff({}, counts));
+      await delay();
+      return reply(routes.priceLists.setItems, toPriceList(data.sales, target));
     }),
   ),
 ];

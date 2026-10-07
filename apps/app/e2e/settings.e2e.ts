@@ -48,3 +48,50 @@ test('shows the regional defaults for Bangladesh', async ({ page }) => {
   await expect(page.getByLabel('Fiscal year starts in')).toHaveValue('7');
   await expect(page.getByLabel('Time zone')).toHaveValue('Asia/Dhaka');
 });
+
+// Step 15a: the VAT rates card. The mock workspace has the six NBR rates, VAT 15% the default.
+test('adds a VAT rate, makes it the default, and keeps the default from being archived', async ({
+  page,
+}) => {
+  await expect(page.getByRole('button', { name: /^VAT 15%/ })).toContainText('Default');
+  await page.getByRole('button', { name: 'Add rate' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Add VAT rate' });
+  await dialog.getByLabel('Name').fill('VAT 2.4%');
+  await dialog.getByLabel('Kind').selectOption({ label: 'Reduced' });
+  // A reduced rate charges something: 0% would put the sale in the wrong box of the return
+  await dialog.getByLabel('Rate', { exact: true }).fill('0');
+  await dialog.getByRole('button', { name: 'Add rate' }).click();
+  await expect(
+    dialog.getByText(
+      'Standard and reduced rates are above 0%. Zero-rated and exempt rates are 0%.',
+    ),
+  ).toBeVisible();
+  await dialog.getByLabel('Rate', { exact: true }).fill('2.4');
+  await dialog.getByText('Use it for products without their own rate').click();
+  await dialog.getByRole('button', { name: 'Add rate' }).click();
+  await expect(page.getByText('VAT 2.4% added')).toBeVisible();
+  // One default: the new one took it over
+  await expect(page.getByRole('button', { name: /^VAT 2\.4%/ })).toContainText('Default');
+  await expect(page.getByRole('button', { name: /^VAT 15%/ })).not.toContainText('Default');
+
+  await page.getByRole('button', { name: /^VAT 2\.4%/ }).click();
+  const edit = page.getByRole('dialog', { name: 'Edit VAT 2.4%' });
+  await expect(
+    edit.getByText('This is the default. To change it, make another rate the default.'),
+  ).toBeVisible();
+  await edit.getByRole('button', { name: 'Archive' }).click();
+  await expect(
+    edit.getByText('The default rate cannot be archived. Make another rate the default first.'),
+  ).toBeVisible();
+  await expectNoSideScroll(page);
+});
+
+test('says whether the prices include VAT', async ({ page }) => {
+  const box = page.getByLabel('Prices include VAT');
+  // The garments workspace quotes before VAT
+  await expect(box).not.toBeChecked();
+  await page.getByText('Prices include VAT', { exact: true }).click();
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await expect(page.getByText('Settings saved')).toBeVisible();
+  await expect(box).toBeChecked();
+});

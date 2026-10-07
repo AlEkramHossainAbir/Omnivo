@@ -79,6 +79,25 @@ export const AUDIT_ACTIONS = [
   'stock_accounts.changed',
   'stock_accounts.created',
   'stock_revaluation.posted',
+  // step 15a
+  'tax_rate.created',
+  'tax_rate.updated',
+  'tax_rate.archived',
+  'tax_rate.restored',
+  'tax_rates.created',
+  'customer.created',
+  'customer.updated',
+  'customer.archived',
+  'customer.restored',
+  'customer.deleted',
+  'customer_group.created',
+  'customer_group.updated',
+  'customer_group.deleted',
+  'price_list.created',
+  'price_list.updated',
+  'price_list.archived',
+  'price_list.restored',
+  'price_list.prices_changed',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -108,6 +127,10 @@ export const AUDIT_ENTITY_TYPES = [
   'stock_transfer',
   'reorder_level',
   'stock_revaluation',
+  'tax_rate',
+  'customer',
+  'customer_group',
+  'price_list',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
