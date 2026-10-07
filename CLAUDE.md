@@ -248,6 +248,10 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `tabular-nums`, shown grouped (`18,42,600.50`) when not focused. The input always
   shows ASCII digits; Bangla digits typed on a Bangla keyboard are accepted and
   converted. The form value is a decimal string, never a `number`.
+- **Discount input:** `DiscountInput` from `@omnivo/ui`, the money input's box with a number (right-aligned,
+  `tabular-nums`, 2 decimals) and a native `%` / `৳` select inside it on the right, after a 1px `line` divider,
+  13.5px/500 `ink-2` with an `ArrowDown01` icon. The select is the unit, so there is no `৳` prefix. The ring
+  shows while either part has the focus. The form value is a decimal string plus a type (`percent` | `amount`).
 - **Date picker:** the trigger looks exactly like an input, with a `Calendar03` leading
   icon. The calendar opens in a popover; the selected day is filled `brand` with
   `brand-ink` text, today is `brand` text at weight 600. Form values are ISO date
@@ -300,7 +304,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   and an optional action button.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
-  `subtle` background.
+  `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
+  its own box on a phone; the page never scrolls sideways.
 - **Sidebar nav:** 14px/500 `ink-2` items with `ink-3` icons, radius 8px, hover
   `subtle`. The active item uses a `brand-soft` background with `brand` text and icon.
   Group labels are 11.5px/500 `ink-3`. Counts are right-aligned (`crit` when they need
@@ -338,6 +343,25 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `role="group"` labelled "Line 2". On a wide card (`@3xl`) the rows share one grid template with the header and
   the totals row, and each control's label is `sr-only`; on a narrow card the labels show and debit/credit sit
   side by side. Totals row on `subtle` with a `good` "Balanced" or `crit` "Out by" pill.
+- **Sales line editor (quotations, orders):** `SalesLinesEditor`, a card that is a container (`@container`) and
+  its own lazy chunk. The lines are one controlled form value (a `Controller` on `lines`), so two form types
+  share it. On a wide card (`@5xl`) item, unit, quantity, price, discount, VAT rate and amount share one grid
+  template with a caption header; on a narrow card each control shows its label. The price column says "Price
+  with VAT" or "Price before VAT" from the document's own setting. A new line shows where its price came from
+  under the box (12px `ink-3`: "From their price list", "Product price", "No price set: type one"). When a line
+  was priced for another customer, a text link at the top offers "Use this customer's prices on every line";
+  changing the customer never reprices by itself. Under the lines, a totals block on `subtle` (line discounts
+  only when there are any, before VAT, VAT, total at 500) with paisa, and on the left whether prices include VAT.
+- **Sales document statuses:** quotation Open (`brand`, `Clock01`), Accepted (`good`, `CheckmarkCircle02`),
+  Declined (neutral, `CancelCircle`), Expired (`warn`, `Hourglass`, worked out by the page: open and past its
+  date). Order Draft (neutral, `FileEdit`), Confirmed (`brand`, `Agreement01`), Partly delivered (`brand`,
+  `DeliveryTruck01`), Delivered (`good`, `PackageDelivered`), Closed (neutral, `StopCircle`), Cancelled (neutral,
+  `CancelCircle`), plus a second `warn` "Late" pill (`Time04`) for a confirmed order past its delivery date.
+  Delivery Draft (neutral, `FileEdit`), Posted (`good`, `CheckmarkCircle02`). Work in progress is `brand`, not
+  `warn`; `warn` is for something the person must act on.
+- **Document notice:** a line above a document that says what its state means and what to do next: radius
+  10px, 13.5px text, a 17px icon, `warn-bg` with `warn` text and an `Hourglass` icon for an offer that has ended,
+  `subtle` with `ink-2` text and an `InformationCircle` icon otherwise.
 - **Stock line rows (adjustments, transfers):** a card that is a container (`@container`); one grid template for a
   caption header and every row on a wide card (`@3xl`): item (name, SKU, stock here), unit, quantity (with
   "= 72 pcs" under it), and on a line that brings stock in, the unit cost per unit of the line (a `MoneyInput`

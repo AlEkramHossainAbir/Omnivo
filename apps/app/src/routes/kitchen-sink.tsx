@@ -24,6 +24,7 @@ import {
   DataTable,
   dataTableColumns,
   DatePicker,
+  DiscountInput,
   EmptyState,
   FormField,
   IconButton,
@@ -193,6 +194,9 @@ const lcSchema = z.object({
   shipBy: z.string().min(1, 'Pick the latest shipment date.'),
   buyer: z.string().min(1, 'Pick the buyer who opens the LC.'),
   bank: z.string().trim(),
+  // DiscountInput (step 15b): a percent or an amount, the type beside it
+  discount: z.string(),
+  discountType: z.enum(['percent', 'amount']),
   partialShipment: z.boolean(),
 });
 
@@ -210,6 +214,9 @@ function LetterOfCreditForm() {
       shipBy: '',
       buyer: '',
       bank: '',
+      discount: '',
+      // as const: the literal, not string, so it matches the schema's enum
+      discountType: 'percent' as const,
       partialShipment: false,
     },
   });
@@ -246,6 +253,22 @@ function LetterOfCreditForm() {
         <FormField control={control} name="shipBy" label="Latest shipment date">
           {(field) => <DatePicker {...field} />}
         </FormField>
+        <Controller
+          control={control}
+          name="discountType"
+          render={({ field: typeField }) => (
+            <FormField control={control} name="discount" label="Buyer's discount" optional>
+              {(field) => (
+                <DiscountInput
+                  {...field}
+                  placeholder="0.00"
+                  discountType={typeField.value}
+                  onDiscountTypeChange={typeField.onChange}
+                />
+              )}
+            </FormField>
+          )}
+        />
         <FormField control={control} name="buyer" label="Applicant (buyer)">
           {(field) => (
             <Combobox

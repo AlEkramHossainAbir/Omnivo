@@ -133,6 +133,21 @@ export function StockPage() {
               </span>
             ),
         }),
+        // Step 15b: what confirmed orders still have to deliver from here. Next to "On hand",
+        // not taken off it: nothing is held for an order (the hint above the table says so).
+        column.accessor('onOrder', {
+          header: t('stock.columns.onOrder'),
+          enableSorting: false,
+          meta: { align: 'end', card: 'detail' },
+          cell: ({ row }) =>
+            isZeroQuantity(row.original.onOrder) ? (
+              <span className="text-ink-3">—</span>
+            ) : (
+              <span className="tabular-nums">
+                {quantity(row.original.onOrder, row.original.baseUnitId)}
+              </span>
+            ),
+        }),
         ...(canSeeValues
           ? [
               // A list: whole taka, like every list and dashboard (CLAUDE.md → Money)
@@ -252,6 +267,9 @@ export function StockPage() {
         />
       </div>
       {isError && <p className="text-body-sm text-crit">{t('stock.loadFailed')}</p>}
+      <p className="text-caption text-ink-3">
+        {t('stock.columns.onOrder')}: {t('stock.onOrderHint')}
+      </p>
       {items && (
         <DataTable
           label={t('stock.title')}

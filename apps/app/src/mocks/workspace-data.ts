@@ -29,6 +29,11 @@ import { type People, seedPeople } from './people-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import type { MockExport } from './report-data';
 import { emptySales, type MockSales, seedSales } from './sales-data';
+import {
+  emptySalesDocuments,
+  type MockSalesDocuments,
+  seedSalesDocuments,
+} from './sales-document-data';
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
@@ -55,6 +60,8 @@ export interface WorkspaceData {
   stockAccounts: StockAccounts;
   // VAT rates, customers and their groups, price lists (step 15a)
   sales: MockSales;
+  // Quotations, sales orders and deliveries (step 15b)
+  salesDocuments: MockSalesDocuments;
 }
 
 function now(): string {
@@ -114,12 +121,15 @@ function seed(workspace: Workspace): WorkspaceData {
     catalog: garments ? garmentsCatalog() : pharmaCatalog(),
     stock: emptyStock(),
     sales: emptySales(),
+    salesDocuments: emptySalesDocuments(),
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   // Before the journal: its receivable lines name the customers
   seedSales(data, garments);
   if (garments) seedJournal(data);
   seedStock(data, garments);
+  // After the stock: an order is sent from a warehouse
+  seedSalesDocuments(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -252,6 +262,9 @@ function usedNumbers(data: WorkspaceData, documentType: DocumentType, period: st
   if (documentType === 'inventory.transfer') return data.stock.counters.transfer;
   if (documentType === 'inventory.revaluation') return data.stock.counters.revaluation;
   if (documentType === 'sales.customer') return data.sales.lastCode;
+  if (documentType === 'sales.quotation') return data.salesDocuments.counters.quotation;
+  if (documentType === 'sales.order') return data.salesDocuments.counters.order;
+  if (documentType === 'sales.delivery') return data.salesDocuments.counters.delivery;
   return 0;
 }
 

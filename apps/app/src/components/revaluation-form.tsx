@@ -1,4 +1,4 @@
-import { Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
+import { Calendar03Icon, Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -17,18 +17,18 @@ import {
   Button,
   Card,
   cn,
-  DatePicker,
   Dialog,
   FormAlert,
   FormField,
   IconButton,
+  Input,
   MoneyInput,
   PageHeader,
   TextField,
   toast,
 } from '@omnivo/ui';
 import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Controller, type Path, useFieldArray, useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
@@ -48,6 +48,10 @@ import {
 // Revaluing stock (step 14): its own chunk, loaded by routes/stock-revaluation.tsx. One line per
 // item: what it has now (its stock and average cost, company-wide), the new cost per base unit, and
 // the difference that will go to the books. Posted when it is saved.
+
+// The date's picker as a chunk of its own (date-input.tsx says why): with the popover inside, this
+// chunk went over its 100 KB budget once step 15b grew the contracts every page shares
+const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
 type FormValues = StockRevaluationFormValues;
 
@@ -125,7 +129,11 @@ export function RevaluationForm({ today }: { today: string }) {
         {failure && <FormAlert message={failure} />}
         <Card className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-x-4">
           <FormField control={control} name="date" label={t('revaluations.date')}>
-            {(field) => <DatePicker {...field} />}
+            {(field) => (
+              <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
+                <DatePicker {...field} />
+              </Suspense>
+            )}
           </FormField>
           <TextField
             label={t('revaluations.note')}

@@ -15,11 +15,15 @@ import { meRoutes } from './preferences.js';
 import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js';
 import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
+import { deliveryRoutes } from './deliveries.js';
 import { priceListRoutes } from './price-lists.js';
 import { productCategoryRoutes } from './product-categories.js';
 import { productImportRoutes } from './product-imports.js';
 import { productRoutes } from './products.js';
+import { quotationRoutes } from './quotations.js';
 import { roleRoutes } from './roles.js';
+import { salesOrderRoutes } from './sales-orders.js';
+import { salesPriceRoutes } from './sales.js';
 import { settingsRoutes } from './settings.js';
 import { setupRoutes } from './setup.js';
 import { stockAccountRoutes } from './stock-accounts.js';
@@ -81,4 +85,8 @@ export const routes = {
   customers: customerRoutes,
   customerGroups: customerGroupRoutes,
   priceLists: priceListRoutes,
+  salesPrices: salesPriceRoutes,
+  quotations: quotationRoutes,
+  salesOrders: salesOrderRoutes,
+  deliveries: deliveryRoutes,
 };

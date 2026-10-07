@@ -377,6 +377,74 @@ const priceListRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/price-list'), 'PriceListPage'),
 });
 
+// Quotations, sales orders and deliveries (step 15b). '/…/new' beats '/…/$id', like the stock
+// documents. A new order may start from a quotation, and a new delivery from an order: the id comes
+// in the search, so "Make order" and "New delivery" are plain links. A search value that is not a
+// UUID is dropped here, and the page starts empty instead of asking the API for nonsense.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const quotationsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/quotations',
+  component: lazyRouteComponent(() => import('./routes/quotations'), 'QuotationsPage'),
+});
+
+const newQuotationRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/quotations/new',
+  component: lazyRouteComponent(() => import('./routes/quotation'), 'NewQuotationPage'),
+});
+
+const quotationRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/quotations/$quotationId',
+  component: lazyRouteComponent(() => import('./routes/quotation'), 'QuotationPage'),
+});
+
+const salesOrdersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sales-orders',
+  component: lazyRouteComponent(() => import('./routes/sales-orders'), 'SalesOrdersPage'),
+});
+
+const newSalesOrderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sales-orders/new',
+  validateSearch: (search: Record<string, unknown>): { quotationId?: string } => ({
+    ...(typeof search.quotationId === 'string' &&
+      UUID.test(search.quotationId) && { quotationId: search.quotationId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/sales-order'), 'NewSalesOrderPage'),
+});
+
+const salesOrderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sales-orders/$orderId',
+  component: lazyRouteComponent(() => import('./routes/sales-order'), 'SalesOrderPage'),
+});
+
+const deliveriesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/deliveries',
+  component: lazyRouteComponent(() => import('./routes/deliveries'), 'DeliveriesPage'),
+});
+
+const newDeliveryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/deliveries/new',
+  validateSearch: (search: Record<string, unknown>): { orderId?: string } => ({
+    ...(typeof search.orderId === 'string' &&
+      UUID.test(search.orderId) && { orderId: search.orderId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/delivery'), 'NewDeliveryPage'),
+});
+
+const deliveryRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/deliveries/$deliveryId',
+  component: lazyRouteComponent(() => import('./routes/delivery'), 'DeliveryPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -462,6 +530,15 @@ const routeTree = rootRoute.addChildren([
     customerGroupsRoute,
     priceListsRoute,
     priceListRoute,
+    quotationsRoute,
+    newQuotationRoute,
+    quotationRoute,
+    salesOrdersRoute,
+    newSalesOrderRoute,
+    salesOrderRoute,
+    deliveriesRoute,
+    newDeliveryRoute,
+    deliveryRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

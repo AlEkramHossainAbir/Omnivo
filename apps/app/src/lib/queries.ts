@@ -5,9 +5,11 @@ import {
   type CustomerStatus,
   type JournalStatus,
   type MemberSort,
+  type OrderStatus,
   type ProductSort,
   type ProductStatus,
   type ProfitAndLossQuery,
+  type QuotationStatus,
   routes,
   type StockDocumentStatus,
   type StockFilter,
@@ -696,5 +698,108 @@ export function productSearchQuery(tenantId: string, search: string) {
         })
       ).items,
     placeholderData: keepPreviousData,
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Quotations, sales orders and deliveries (step 15b). Everything starts with ['sales', tenantId]:
+// one invalidate after a save refreshes the lists and the documents together. A delivery changes
+// its order (what is delivered) as well, which is one more reason for one prefix.
+
+// The lists' filters: a status ('' = all) and a customer ('' = all)
+export interface SalesListFilter<TStatus extends string> {
+  status: TStatus | '';
+  customerId: string;
+}
+
+export function quotationsQuery(tenantId: string, filter: SalesListFilter<QuotationStatus>) {
+  return infiniteQueryOptions({
+    queryKey: ['sales', tenantId, 'quotations', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.quotations.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function quotationQuery(tenantId: string, quotationId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'quotation', quotationId],
+    queryFn: () => call(routes.quotations.get, { params: { id: quotationId } }),
+    retry: false,
+  });
+}
+
+export function salesOrdersQuery(tenantId: string, filter: SalesListFilter<OrderStatus>) {
+  return infiniteQueryOptions({
+    queryKey: ['sales', tenantId, 'orders', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.salesOrders.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// The delivery form's order box: the customer's confirmed orders, the ones a delivery can take
+// goods against. 100 at most: a customer with more open orders than that is a problem of its own.
+export function openOrdersQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'orders', 'open', customerId],
+    queryFn: async () =>
+      (
+        await call(routes.salesOrders.list, {
+          query: { limit: 100, status: 'confirmed', customerId },
+        })
+      ).items,
+  });
+}
+
+export function salesOrderQuery(tenantId: string, orderId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'order', orderId],
+    queryFn: () => call(routes.salesOrders.get, { params: { id: orderId } }),
+    retry: false,
+  });
+}
+
+export function deliveriesQuery(tenantId: string, filter: SalesListFilter<StockDocumentStatus>) {
+  return infiniteQueryOptions({
+    queryKey: ['sales', tenantId, 'deliveries', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.deliveries.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function deliveryQuery(tenantId: string, deliveryId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'delivery', deliveryId],
+    queryFn: () => call(routes.deliveries.get, { params: { id: deliveryId } }),
+    retry: false,
   });
 }

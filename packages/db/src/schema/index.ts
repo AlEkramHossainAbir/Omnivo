@@ -33,3 +33,4 @@ export * from './stock-valuation.js';
 export * from './tax-rates.js';
 export * from './price-lists.js';
 export * from './parties.js';
+export * from './sales-documents.js';

@@ -234,7 +234,13 @@ Weighted Average (পুরো কোম্পানিতে প্রতি �
 ঠিকানা, payment terms, credit limit (চেক ১৫c-তে); AR একটাই control account, প্রতিটা AR লাইনে `party_id` — কাস্টমারের
 balance ও statement সেখান থেকে; opening balances পেজে AR কাস্টমার ধরে ভাগ; VAT rates টেবিল (standard, reduced,
 zero-rated, exempt; একটা default), workspace সেটিং "prices include VAT"; নামসহ price list (variant + unit ধরে দাম)।
-**১৫b** quotation → order → delivery · **১৫c** invoice, payment, credit limit · **১৫d** return ও credit note।
+**১৫b (quotation → order → delivery):** quotation (QT, save করলেই নম্বর; open/accepted/declined, মেয়াদ পেরোলে
+"Expired" — পেজ নিজে হিসাব করে), sales order (confirm করলে SO নম্বর; delivered/closed/cancelled), delivery challan
+(DC, post করলে স্টক বের হয়, একটা order কয়েক challan-এ; batch/serial, FEFO)। Delivery post করলেই moving average
+cost-এ Dr Cost of goods sold / Cr Inventory; স্টক hold হয় না, স্টক পেজে "On order"। লাইনের হিসাব (discount, তারপর
+VAT, লাইন ধরে paisa-তে round) contracts-এ, form-API-mock একই function; price lookup: কাস্টমারের price list → প্রোডাক্টের
+দাম। প্রিন্ট নেই (১৫c বা পরে)।
+**১৫c** invoice, payment, credit limit · **১৫d** return ও credit note।
 
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 

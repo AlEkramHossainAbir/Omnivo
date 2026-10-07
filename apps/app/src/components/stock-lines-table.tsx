@@ -2,6 +2,7 @@ import { Alert02Icon } from '@hugeicons/core-free-icons';
 import {
   type AdjustmentLine,
   compareQuantity,
+  type DeliveryLine,
   subtractMoney,
   subtractQuantity,
   sumMoney,
@@ -12,24 +13,28 @@ import { Card, Pill } from '@omnivo/ui';
 
 import { useIsoDate, useQuantity, useUnitCode, useValue, VariantCell } from './stock-parts';
 
+// A line of any stock document this table shows; a delivery's (step 15b) has a value and no cost
+type DocumentLine = AdjustmentLine | TransferLine | DeliveryLine;
+
 // Step 14: what a line was worth (null without inventory.stock.value), and on an adjustment the
-// cost a person typed. Read from either kind of line.
-function valueOf(line: AdjustmentLine | TransferLine): string | null {
+// cost a person typed. Read from any kind of line.
+function valueOf(line: DocumentLine): string | null {
   return line.value;
 }
 
-function typedCostOf(line: AdjustmentLine | TransferLine): string | null {
+function typedCostOf(line: DocumentLine): string | null {
   return 'unitCost' in line ? line.unitCost : null;
 }
 
-// The lines of a posted adjustment or a sent transfer: a real <table> in a card, scrolling inside
-// its own box on a phone. What was typed (3 case), the base quantity it was (72 pcs), the batch
-// with its expiry or the serial numbers — and for a received transfer, what arrived.
+// The lines of a posted adjustment, a sent transfer or a posted delivery: a real <table> in a
+// card, scrolling inside its own box on a phone. What was typed (3 case), the base quantity it was
+// (72 pcs), the batch with its expiry or the serial numbers — and for a received transfer, what
+// arrived.
 export function StockLinesTable({
   lines,
   received = false,
 }: {
-  lines: readonly (AdjustmentLine | TransferLine)[];
+  lines: readonly DocumentLine[];
   received?: boolean;
 }) {
   const { t } = useLocale();

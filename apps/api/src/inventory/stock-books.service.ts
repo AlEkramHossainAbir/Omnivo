@@ -31,12 +31,13 @@ interface WarehouseValue {
   value: string;
 }
 
-// The accounts a stock entry may need. inventory and equity are found by their purpose (every chart
-// has them, and they cannot be deleted or archived); the others are the choices in Settings →
-// Inventory, each of which must still be an active ledger.
+// The accounts a stock entry may need. inventory, equity and cost of goods sold are found by their
+// purpose (every chart has them, and they cannot be deleted or archived); the others are the
+// choices in Settings → Inventory, each of which must still be an active ledger.
 interface Accounts {
   inventory: string;
   openingEquity: string;
+  costOfGoodsSold: () => string;
   use: (use: StockAccountUse) => string;
 }
 
@@ -173,6 +174,24 @@ export class StockBooksService {
     ]);
   }
 
+  // A delivery (step 15b): the goods leave the inventory account at what they cost, into cost of
+  // goods sold (Dr Cost of goods sold / Cr Inventory), both with the warehouse's branch, so each
+  // branch's profit and loss carries the cost of what it sold. The sale itself is the invoice's
+  // entry (15c): the receivable, the sales account and the VAT.
+  async delivery(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    moved: WarehouseValue,
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [moved]);
+    const branchId = branchOf(moved.warehouseId);
+    return this.write(tx, document, 'sales_delivery', `Delivery ${document.number}`, [
+      { accountId: accounts.costOfGoodsSold(), branchId, amount: moved.value },
+      { accountId: accounts.inventory, branchId, amount: negateMoney(moved.value) },
+    ]);
+  }
+
   // The posted entries of a document, oldest first: an adjustment has at most one, a transfer two
   async entriesOf(tx: Transaction, documentId: string): Promise<EntryRef[]> {
     const rows = await tx
@@ -242,12 +261,17 @@ export class StockBooksService {
       .where(
         and(
           eq(ledgerAccounts.tenantId, tenantId),
-          inArray(ledgerAccounts.purpose, ['inventory', 'opening_balance_equity']),
+          inArray(ledgerAccounts.purpose, [
+            'inventory',
+            'opening_balance_equity',
+            'cost_of_goods_sold',
+          ]),
         ),
       )
       .for('share');
     const inventory = purposes.find((row) => row.purpose === 'inventory')?.id;
     const openingEquity = purposes.find((row) => row.purpose === 'opening_balance_equity')?.id;
+    const costOfGoodsSold = purposes.find((row) => row.purpose === 'cost_of_goods_sold')?.id;
     // A workspace whose chart is still being made by the setup job
     if (inventory === undefined) throw missing('inventory');
     if (openingEquity === undefined) throw missing('opening_balance_equity');
@@ -274,6 +298,11 @@ export class StockBooksService {
     return {
       inventory,
       openingEquity,
+      // Asked for only by a delivery: the other stock documents never needed it
+      costOfGoodsSold: () => {
+        if (costOfGoodsSold === undefined) throw missing('cost_of_goods_sold');
+        return costOfGoodsSold;
+      },
       use: (use) => {
         const id = byUse.get(use);
         if (id === undefined) throw missing(use);

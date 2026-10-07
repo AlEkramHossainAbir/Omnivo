@@ -24,9 +24,11 @@ import { WarehousesService } from './warehouses.service.js';
 // StockPostingService and StockBooksService are exported: purchases, sales and POS (steps 15–20)
 // import this module, call post() for the stock and its values, and write their own journal entry
 // in the same transaction, the way every module that posts to the books uses the journal's
-// PostingService. JournalModule gives StockBooksService that PostingService; RbacModule gives
-// ValueAccess the permission check. The low-stock alert's worker half (low-stock.handler.ts) is
-// wired in worker/worker.module.ts, like every handler.
+// PostingService. ValueAccess too (step 15b): a delivery shows what its goods cost only to
+// someone with inventory.stock.value, like every stock document. JournalModule gives
+// StockBooksService that PostingService; RbacModule gives ValueAccess the permission check. The
+// low-stock alert's worker half (low-stock.handler.ts) is wired in worker/worker.module.ts, like
+// every handler.
 @Module({
   imports: [NumberingModule, JournalModule, RbacModule],
   controllers: [
@@ -48,6 +50,6 @@ import { WarehousesService } from './warehouses.service.js';
     StockAccountsService,
     ValueAccess,
   ],
-  exports: [StockPostingService, StockBooksService],
+  exports: [StockPostingService, StockBooksService, ValueAccess],
 })
 export class InventoryModule {}

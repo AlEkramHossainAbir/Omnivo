@@ -1,4 +1,9 @@
-import { Notebook02Icon, PlusSignIcon, SquareLock02Icon } from '@hugeicons/core-free-icons';
+import {
+  Calendar03Icon,
+  Notebook02Icon,
+  PlusSignIcon,
+  SquareLock02Icon,
+} from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -14,20 +19,20 @@ import {
   Button,
   DataTable,
   dataTableColumns,
-  DatePicker,
   Dialog,
   DialogClose,
   DialogContent,
   EmptyState,
   FormAlert,
   FormField,
+  Input,
   PageHeader,
   SegmentedControl,
   toast,
 } from '@omnivo/ui';
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { JournalStatusPill, useIsoDate } from '../components/journal-parts';
@@ -36,6 +41,13 @@ import { applyApiError } from '../lib/field-errors';
 import { useCan } from '../lib/permissions';
 import { journalListQuery, periodLockQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
+
+// The lock date's picker, loaded when the lock dialog opens (date-input.tsx says why). With the
+// popover inside, this page went over its 100 KB budget once the sales documents of step 15b grew
+// the contracts every page shares.
+const DatePicker = lazy(async () => ({
+  default: (await import('../components/date-input')).DatePicker,
+}));
 
 const column = dataTableColumns<JournalEntrySummary>();
 const LOCK_FIELDS = periodLockInputSchema.keyof().options;
@@ -102,7 +114,11 @@ function LockDateForm({ lock, onDone }: { lock: PeriodLock; onDone: () => void }
             label={t('journal.lock.field')}
             hint={t('journal.lock.hint')}
           >
-            {(field) => <DatePicker {...field} value={field.value ?? ''} />}
+            {(field) => (
+              <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
+                <DatePicker {...field} value={field.value ?? ''} />
+              </Suspense>
+            )}
           </FormField>
           {/* Clearing the date opens every period again; it is saved like any other date */}
           <Button

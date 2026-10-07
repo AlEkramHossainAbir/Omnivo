@@ -146,10 +146,24 @@ describe('starting the setup', () => {
           'sales.price_list.manage',
         ],
       ],
-      ['Merchandiser', ['core.user.read', 'inventory.product.manage', 'sales.customer.manage']],
+      [
+        'Merchandiser',
+        [
+          'core.user.read',
+          'inventory.product.manage',
+          'sales.customer.manage',
+          'sales.order.manage',
+          'sales.quotation.manage',
+        ],
+      ],
       [
         'Store keeper',
-        ['inventory.product.manage', 'inventory.stock.adjust', 'inventory.stock.transfer'],
+        [
+          'inventory.product.manage',
+          'inventory.stock.adjust',
+          'inventory.stock.transfer',
+          'sales.delivery.manage',
+        ],
       ],
     ]);
     const chart = accountListSchema.parse((await send('GET', '/accounts')).json());

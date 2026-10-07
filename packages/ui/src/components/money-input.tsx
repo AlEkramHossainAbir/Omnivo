@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { isMoneyDraft, normalizeMoneyInput, toCanonicalMoney } from '../lib/money.js';
 import { Input, type InputProps } from './field.js';
 
-interface MoneyInputProps extends Omit<
+export interface DecimalInputProps extends Omit<
   InputProps,
-  'value' | 'defaultValue' | 'onChange' | 'type' | 'inputMode' | 'prefix' | 'align'
+  'value' | 'defaultValue' | 'onChange' | 'type' | 'inputMode' | 'align'
 > {
   // টাকা কখনো number না — string, যেমন DB-র NUMERIC(19,4) আর contracts-এর schema
   value: string;
@@ -15,14 +15,17 @@ interface MoneyInputProps extends Omit<
   scale?: number;
 }
 
-export function MoneyInput({
+// The money box's typing rules for any decimal: Bangla digits accepted, grouped when not focused,
+// the form value always a canonical string. MoneyInput adds the ৳; DiscountInput adds its % / ৳
+// select. Not exported from the package: a page uses one of those two.
+export function DecimalInput({
   value,
   onChange,
   onFocus,
   onBlur,
   scale = 2,
   ...props
-}: MoneyInputProps) {
+}: DecimalInputProps) {
   // null = এখন লেখা হচ্ছে না, তাই গোছানো রূপ দেখাও; string = ইউজার যা টাইপ করছে হুবহু
   const [draft, setDraft] = useState<string | null>(null);
 
@@ -37,7 +40,6 @@ export function MoneyInput({
       // ফোনে সংখ্যার কীবোর্ড, দশমিক বিন্দু সহ (system-design §৮.১)
       inputMode="decimal"
       autoComplete="off"
-      prefix="৳"
       align="end"
       value={display}
       onFocus={(event) => {
@@ -61,4 +63,10 @@ export function MoneyInput({
       }}
     />
   );
+}
+
+type MoneyInputProps = Omit<DecimalInputProps, 'prefix'>;
+
+export function MoneyInput(props: MoneyInputProps) {
+  return <DecimalInput {...props} prefix="৳" />;
 }

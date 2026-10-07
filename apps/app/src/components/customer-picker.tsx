@@ -24,13 +24,15 @@ interface CustomerPickerProps {
   disabled?: boolean | undefined;
   'aria-label'?: string | undefined;
   'aria-describedby'?: string | undefined;
+  // A list's filter (step 15b): the first option, '' = every customer, and the empty box's text
+  allLabel?: string | undefined;
 }
 
 // The customer box of a journal line and of the opening balances (step 15a): ui's Combobox with
 // the search on the server. Active customers only, like the API takes them on a new line.
 // `...box`: id, name, onBlur, ref and the aria props go to the Combobox as they came. Spread, not
 // one by one: with exactOptionalPropertyTypes, `name={name}` would pass an explicit undefined.
-export function CustomerPicker({ value, saved, onChange, ...box }: CustomerPickerProps) {
+export function CustomerPicker({ value, saved, onChange, allLabel, ...box }: CustomerPickerProps) {
   const { t } = useLocale();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const [search, setSearch] = useState('');
@@ -41,13 +43,16 @@ export function CustomerPicker({ value, saved, onChange, ...box }: CustomerPicke
   const [picked, setPicked] = useState<{ value: string; label: string } | null>(null);
 
   const options = useMemo<ComboboxOption[]>(
-    () =>
-      (data ?? []).map((customer) => ({
+    () => [
+      // A filter can go back to "every customer"; a form's box cannot be emptied this way
+      ...(allLabel === undefined ? [] : [{ value: '', label: allLabel }]),
+      ...(data ?? []).map((customer) => ({
         value: customer.id,
         label: customer.name,
         detail: [customer.code, customer.phone].filter((part) => part !== null).join(' · '),
       })),
-    [data],
+    ],
+    [data, allLabel],
   );
 
   const selectedLabel =
@@ -75,7 +80,7 @@ export function CustomerPicker({ value, saved, onChange, ...box }: CustomerPicke
       // Searching for the next word: the old matches stay, marked busy
       loading={isFetching}
       icon={UserIcon}
-      placeholder={t('journal.customerPlaceholder')}
+      placeholder={allLabel ?? t('journal.customerPlaceholder')}
       searchPlaceholder={t('customers.pickerSearch')}
       emptyText={t('customers.pickerEmpty')}
     />

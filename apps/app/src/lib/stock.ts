@@ -104,11 +104,14 @@ export function documentRoute(
   | '/stock/adjustments/$adjustmentId'
   | '/stock/transfers/$transferId'
   | '/stock/revaluations/$revaluationId'
+  | '/deliveries/$deliveryId'
   | null {
   if (kind === 'adjustment') return '/stock/adjustments/$adjustmentId';
   if (kind === 'transfer_out' || kind === 'transfer_in') return '/stock/transfers/$transferId';
   // Step 14: a change of value, without a change of quantity
   if (kind === 'revaluation') return '/stock/revaluations/$revaluationId';
+  // Step 15b: goods that left for a customer, on a delivery challan
+  if (kind === 'delivery') return '/deliveries/$deliveryId';
   return null;
 }
 

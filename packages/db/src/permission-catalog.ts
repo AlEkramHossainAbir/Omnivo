@@ -32,6 +32,9 @@ const DESCRIPTIONS = {
   'sales.customer.manage': 'Add, edit, archive and delete customers and customer groups',
   'sales.customer.balance': 'See what customers owe, and their statements',
   'sales.price_list.manage': 'Add, edit and archive price lists, and set their prices',
+  'sales.quotation.manage': 'Write, edit, decline and delete quotations',
+  'sales.order.manage': 'Write, confirm, reopen, close and cancel sales orders',
+  'sales.delivery.manage': 'Write and post deliveries (delivery challans), which take stock out',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

@@ -97,6 +97,30 @@ import {
   toPriceList,
   updateTaxRate,
 } from './sales-data';
+import {
+  answerQuotation,
+  changeOrderStatus,
+  confirmOrder,
+  createOrder,
+  findDelivery,
+  findOrder,
+  findQuotation,
+  listDeliveries,
+  listOrders,
+  listQuotations,
+  lookupPrices,
+  pageOf,
+  postDelivery,
+  removeDelivery,
+  removeOrder,
+  removeQuotation,
+  saveDelivery,
+  saveQuotation,
+  toDelivery,
+  toOrder,
+  toQuotation,
+  updateOrder,
+} from './sales-document-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
   batchReport,
@@ -2385,6 +2409,289 @@ export const handlers = [
       record(data, 'price_list.prices_changed', 'price_list', id, diff({}, counts));
       await delay();
       return reply(routes.priceLists.setItems, toPriceList(data.sales, target));
+    }),
+  ),
+
+  // Quotations, sales orders and deliveries (step 15b). The audit rows carry no field changes:
+  // the audit page shows what happened and to which document, which is what the e2e tests read.
+
+  mock(routes.salesPrices.lookup, async ({ request }) => {
+    const body = await readBody(routes.salesPrices.lookup.body, request);
+    return reply(routes.salesPrices.lookup, lookupPrices(current(), body));
+  }),
+
+  mock(routes.quotations.list, ({ request }) => {
+    const query = readQuery(routes.quotations.list.query, request);
+    return reply(routes.quotations.list, pageOf(listQuotations(current(), query), query));
+  }),
+
+  mock(
+    routes.quotations.get,
+    guarded(({ params }) => {
+      const { id } = routes.quotations.get.params.parse(params);
+      const data = current();
+      return reply(routes.quotations.get, toQuotation(data, findQuotation(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.quotations.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.quotations.create.body, request);
+      const data = current();
+      const saved = saveQuotation(data, body);
+      record(data, 'quotation.created', 'quotation', saved.id);
+      await delay();
+      return reply(routes.quotations.create, toQuotation(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.quotations.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.quotations.update.params.parse(params);
+      const { version, ...input } = await readBody(routes.quotations.update.body, request);
+      const data = current();
+      const target = findQuotation(data, id);
+      checkVersion(target.version, version);
+      const saved = saveQuotation(data, input, target);
+      record(data, 'quotation.updated', 'quotation', id);
+      await delay();
+      return reply(routes.quotations.update, toQuotation(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.quotations.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.quotations.remove.params.parse(params);
+      const { version } = readQuery(routes.quotations.remove.query, request);
+      const data = current();
+      const target = findQuotation(data, id);
+      checkVersion(target.version, version);
+      removeQuotation(data, target);
+      record(data, 'quotation.deleted', 'quotation', id);
+      return reply(routes.quotations.remove, undefined);
+    }),
+  ),
+
+  ...(['decline', 'reopen'] as const).map((action) =>
+    mock(
+      routes.quotations[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.quotations[action].params.parse(params);
+        const { version } = await readBody(routes.quotations[action].body, request);
+        const data = current();
+        const target = findQuotation(data, id);
+        checkVersion(target.version, version);
+        answerQuotation(target, action);
+        record(
+          data,
+          action === 'decline' ? 'quotation.declined' : 'quotation.reopened',
+          'quotation',
+          id,
+        );
+        return reply(routes.quotations[action], toQuotation(data, target));
+      }),
+    ),
+  ),
+
+  mock(routes.salesOrders.list, ({ request }) => {
+    const query = readQuery(routes.salesOrders.list.query, request);
+    return reply(routes.salesOrders.list, pageOf(listOrders(current(), query), query));
+  }),
+
+  mock(
+    routes.salesOrders.get,
+    guarded(({ params }) => {
+      const { id } = routes.salesOrders.get.params.parse(params);
+      const data = current();
+      return reply(routes.salesOrders.get, toOrder(data, findOrder(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.salesOrders.create,
+    guarded(async ({ request }) => {
+      const { confirm, quotationId, ...input } = await readBody(
+        routes.salesOrders.create.body,
+        request,
+      );
+      const data = current();
+      const saved = createOrder(data, input, quotationId);
+      record(data, 'sales_order.created', 'sales_order', saved.id);
+      // "Confirm order" on a new form: saved and confirmed in one step, like the API
+      if (confirm) {
+        confirmOrder(data, saved);
+        record(data, 'sales_order.confirmed', 'sales_order', saved.id);
+      }
+      await delay();
+      return reply(routes.salesOrders.create, toOrder(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.salesOrders.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.salesOrders.update.params.parse(params);
+      const { confirm, version, ...input } = await readBody(
+        routes.salesOrders.update.body,
+        request,
+      );
+      const data = current();
+      const target = findOrder(data, id);
+      checkVersion(target.version, version);
+      updateOrder(data, target, input);
+      record(data, 'sales_order.updated', 'sales_order', id);
+      if (confirm) {
+        confirmOrder(data, target);
+        record(data, 'sales_order.confirmed', 'sales_order', id);
+      }
+      await delay();
+      return reply(routes.salesOrders.update, toOrder(data, target));
+    }),
+  ),
+
+  mock(
+    routes.salesOrders.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.salesOrders.remove.params.parse(params);
+      const { version } = readQuery(routes.salesOrders.remove.query, request);
+      const data = current();
+      const target = findOrder(data, id);
+      checkVersion(target.version, version);
+      removeOrder(data, target);
+      record(data, 'sales_order.deleted', 'sales_order', id);
+      return reply(routes.salesOrders.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.salesOrders.confirm,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.salesOrders.confirm.params.parse(params);
+      const { version } = await readBody(routes.salesOrders.confirm.body, request);
+      const data = current();
+      const target = findOrder(data, id);
+      checkVersion(target.version, version);
+      confirmOrder(data, target);
+      record(data, 'sales_order.confirmed', 'sales_order', id);
+      return reply(routes.salesOrders.confirm, toOrder(data, target));
+    }),
+  ),
+
+  ...(['reopen', 'close', 'cancel'] as const).map((action) =>
+    mock(
+      routes.salesOrders[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.salesOrders[action].params.parse(params);
+        const { version } = await readBody(routes.salesOrders[action].body, request);
+        const data = current();
+        const target = findOrder(data, id);
+        checkVersion(target.version, version);
+        changeOrderStatus(data, target, action);
+        const done = {
+          reopen: 'sales_order.reopened',
+          close: 'sales_order.closed',
+          cancel: 'sales_order.cancelled',
+        } as const;
+        record(data, done[action], 'sales_order', id);
+        return reply(routes.salesOrders[action], toOrder(data, target));
+      }),
+    ),
+  ),
+
+  mock(routes.deliveries.list, ({ request }) => {
+    const query = readQuery(routes.deliveries.list.query, request);
+    return reply(routes.deliveries.list, pageOf(listDeliveries(current(), query), query));
+  }),
+
+  mock(
+    routes.deliveries.get,
+    guarded(({ params }) => {
+      const { id } = routes.deliveries.get.params.parse(params);
+      const data = current();
+      return reply(routes.deliveries.get, toDelivery(data, findDelivery(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.deliveries.create,
+    guarded(async ({ request }) => {
+      const { post, ...input } = await readBody(routes.deliveries.create.body, request);
+      const data = current();
+      const draft = saveDelivery(data, input);
+      record(data, 'delivery.created', 'delivery', draft.id);
+      // "Post delivery" on a new form: saved and posted in one step, or nothing at all, like the
+      // API's transaction
+      if (post) {
+        try {
+          postDelivery(data, draft);
+        } catch (error) {
+          removeDelivery(data, draft);
+          data.audit.shift();
+          throw error;
+        }
+        record(data, 'delivery.posted', 'delivery', draft.id);
+      }
+      await delay();
+      return reply(routes.deliveries.create, toDelivery(data, draft));
+    }),
+  ),
+
+  mock(
+    routes.deliveries.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.deliveries.update.params.parse(params);
+      const { post, version, ...input } = await readBody(routes.deliveries.update.body, request);
+      const data = current();
+      const target = findDelivery(data, id);
+      checkVersion(target.version, version);
+      const draft = saveDelivery(data, input, target);
+      record(data, 'delivery.updated', 'delivery', id);
+      if (post) {
+        try {
+          postDelivery(data, draft);
+        } catch (error) {
+          // Back to the draft as it was before this save
+          data.salesDocuments.deliveries = data.salesDocuments.deliveries.map((item) =>
+            item.id === id ? target : item,
+          );
+          data.audit.shift();
+          throw error;
+        }
+        record(data, 'delivery.posted', 'delivery', id);
+      }
+      await delay();
+      return reply(routes.deliveries.update, toDelivery(data, draft));
+    }),
+  ),
+
+  mock(
+    routes.deliveries.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.deliveries.remove.params.parse(params);
+      const { version } = readQuery(routes.deliveries.remove.query, request);
+      const data = current();
+      const target = findDelivery(data, id);
+      checkVersion(target.version, version);
+      removeDelivery(data, target);
+      record(data, 'delivery.deleted', 'delivery', id);
+      return reply(routes.deliveries.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.deliveries.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.deliveries.post.params.parse(params);
+      const { version } = await readBody(routes.deliveries.post.body, request);
+      const data = current();
+      const target = findDelivery(data, id);
+      checkVersion(target.version, version);
+      postDelivery(data, target);
+      record(data, 'delivery.posted', 'delivery', id);
+      return reply(routes.deliveries.post, toDelivery(data, target));
     }),
   ),
 ];

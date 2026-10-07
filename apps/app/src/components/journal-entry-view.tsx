@@ -104,7 +104,7 @@ function ReverseForm({
 }
 
 // A posted entry (read only, with Reverse), or a draft for someone who may post but not edit
-// The stock document a stock entry came from (step 14): its page, by the entry's source
+// The document a stock entry came from (step 14), or a delivery's (15b): its page, by the source
 function documentLinkOf(entry: JournalEntry) {
   const id = entry.document?.id;
   if (id === undefined) return null;
@@ -116,6 +116,10 @@ function documentLinkOf(entry: JournalEntry) {
   }
   if (entry.source === 'stock_revaluation') {
     return { to: '/stock/revaluations/$revaluationId', params: { revaluationId: id } } as const;
+  }
+  // Step 15b: the cost of goods sold of a delivery
+  if (entry.source === 'sales_delivery') {
+    return { to: '/deliveries/$deliveryId', params: { deliveryId: id } } as const;
   }
   return null;
 }

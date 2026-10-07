@@ -25,3 +25,11 @@ export async function expectNoSideScroll(page: Page): Promise<void> {
   );
   expect(overflow).toBeLessThanOrEqual(0);
 }
+
+// A toast, then wait for it to close. On a phone it sits over the buttons at the bottom of the
+// page, and it stays open while the pointer that just clicked rests on it: move the pointer away.
+export async function toastShown(page: Page, text: string | RegExp): Promise<void> {
+  await expect(page.getByText(text)).toBeVisible();
+  await page.mouse.move(0, 0);
+  await expect(page.getByText(text)).toBeHidden();
+}

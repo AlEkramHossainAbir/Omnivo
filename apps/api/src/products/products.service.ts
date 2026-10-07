@@ -58,6 +58,10 @@ const VARIANT_IN_USE = [
   'stock_balances_variant_fk',
   'stock_adjustment_lines_variant_fk',
   'stock_transfer_lines_variant_fk',
+  // step 15b
+  'quotation_lines_variant_fk',
+  'sales_order_lines_variant_fk',
+  'delivery_lines_variant_fk',
 ] as const;
 
 // The list's orders. Each sorts by one key and then the id, so the order is total and a cursor

@@ -5,10 +5,12 @@ import {
   addMoney,
   amountSchema,
   compareMoney,
+  includedTaxOf,
   isNegativeMoney,
   isZeroMoney,
   multiplyMoney,
   negateMoney,
+  percentOfMoney,
   prorateMoney,
   splitMoney,
   subtractMoney,
@@ -82,6 +84,21 @@ describe('money', () => {
     expect(unitCostOf('1000', '3')).toBe('333.3333');
     expect(unitCostOf('8.512', '10')).toBe('0.8512');
     expect(() => unitCostOf('10', '0')).toThrow();
+  });
+
+  it('works out a percent to the paisa', () => {
+    // 15% of ৳1,234.50 = ৳185.175: half a paisa rounds up
+    expect(percentOfMoney('1234.5', '15')).toBe('185.1800');
+    expect(percentOfMoney('100', '7.5')).toBe('7.5000');
+    expect(percentOfMoney('999.99', '0')).toBe('0.0000');
+  });
+
+  it('finds the VAT inside an amount that includes it', () => {
+    expect(includedTaxOf('1150', '15')).toBe('150.0000');
+    expect(includedTaxOf('107.5', '7.50')).toBe('7.5000');
+    // 100 × 15 ÷ 115 = 13.0434…
+    expect(includedTaxOf('100', '15')).toBe('13.0400');
+    expect(includedTaxOf('100', '0')).toBe('0.0000');
   });
 
   it('compares and negates', () => {

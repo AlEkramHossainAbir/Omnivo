@@ -194,7 +194,7 @@ export function warehouse(
 
 // --- Variants -----------------------------------------------------------------------------------
 
-function findVariant(
+export function findVariant(
   data: WorkspaceData,
   variantId: string,
 ): { product: Product; variant: ProductVariant } | undefined {
@@ -205,7 +205,7 @@ function findVariant(
   return undefined;
 }
 
-function decimalsOf(data: WorkspaceData, unitId: string): number {
+export function decimalsOf(data: WorkspaceData, unitId: string): number {
   return data.catalog.units.find((unit) => unit.id === unitId)?.decimals ?? 0;
 }
 
@@ -249,6 +249,24 @@ function inTransit(stock: MockStock, variantId: string, toWarehouseId: string | 
   );
 }
 
+// What confirmed orders still have to deliver from the warehouse (or from any): ordered − delivered,
+// goods lines only (step 15b, the API's sales_orders_open_idx query). Nothing is held for it.
+function onOrder(data: WorkspaceData, variantId: string, warehouseId: string | undefined): string {
+  return sumQuantity(
+    data.salesDocuments.orders
+      .filter(
+        (order) =>
+          order.status === 'confirmed' &&
+          (warehouseId === undefined || order.warehouseId === warehouseId),
+      )
+      .flatMap((order) =>
+        order.lines
+          .filter((line) => line.variantId === variantId && line.productType === 'goods')
+          .map((line) => subtractQuantity(line.baseQuantity, line.deliveredQuantity)),
+      ),
+  );
+}
+
 function isLow(
   stock: MockStock,
   balances: ReturnType<typeof balancesOf>,
@@ -266,7 +284,7 @@ function isLow(
   );
 }
 
-function refOf(product: Product, variant: ProductVariant) {
+export function refOf(product: Product, variant: ProductVariant) {
   return {
     variantId: variant.id,
     productId: product.id,
@@ -294,6 +312,7 @@ function itemOf(
     archived: product.archivedAt !== null || variant.archivedAt !== null,
     onHand: onHand(stock, balances, variant.id, warehouseId),
     inTransit: inTransit(stock, variant.id, warehouseId),
+    onOrder: onOrder(data, variant.id, warehouseId),
     low: isLow(stock, balances, variant.id, warehouseId),
     ...valueFields(stock, balances, variant.id, warehouseId),
   };
@@ -565,7 +584,7 @@ interface LineInput {
   unitCost?: string | null;
 }
 
-function issuesError(issues: { path: string; code: ErrorCode }[]): MockProblem {
+export function issuesError(issues: { path: string; code: ErrorCode }[]): MockProblem {
   const fieldErrors: Record<string, ErrorCode[]> = {};
   for (const issue of issues) (fieldErrors[issue.path] ??= []).push(issue.code);
   return new MockProblem(409, issues[0]?.code ?? 'invalid_input', fieldErrors);
@@ -573,7 +592,7 @@ function issuesError(issues: { path: string; code: ErrorCode }[]): MockProblem {
 
 // The API's line rules (stock-lines.ts), shortened: a stocked product, its unit, the decimals,
 // and what its tracking asks for. Returns the lines as the API stores them.
-function resolveLines(
+export function resolveLines(
   data: WorkspaceData,
   lines: readonly LineInput[],
   mode: 'in' | 'out',
@@ -657,7 +676,10 @@ function resolveLines(
   return resolved;
 }
 
-function assertWarehouses(data: WorkspaceData, places: { field: string; id: string }[]): void {
+export function assertWarehouses(
+  data: WorkspaceData,
+  places: { field: string; id: string }[],
+): void {
   const bad = places.filter(
     (place) => !data.stock.warehouses.some((row) => row.id === place.id && row.archivedAt === null),
   );
@@ -670,7 +692,7 @@ function assertWarehouses(data: WorkspaceData, places: { field: string; id: stri
   }
 }
 
-function assertDate(data: WorkspaceData, date: string): void {
+export function assertDate(data: WorkspaceData, date: string): void {
   if (date > todayIn(data.settings.timezone)) {
     throw new MockProblem(409, 'stock_date_future', { date: ['stock_date_future'] });
   }
@@ -710,7 +732,7 @@ interface Move {
 // The API's StockPostingService.post(), shortened: serial numbers and stock checked, the values
 // worked out (step 14), then the movements written (one per serial number for a serial product).
 // Returns each move's value.
-function postMoves(
+export function postMoves(
   data: WorkspaceData,
   posting: {
     date: string;
@@ -830,7 +852,7 @@ function postMoves(
 
 // --- The books (step 14, the API's StockBooksService) --------------------------------------------
 
-function branchOf(data: WorkspaceData, warehouseId: string): string | null {
+export function branchOf(data: WorkspaceData, warehouseId: string): string | null {
   return data.stock.warehouses.find((place) => place.id === warehouseId)?.branchId ?? null;
 }
 

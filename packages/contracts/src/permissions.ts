@@ -24,6 +24,9 @@ export const PERMISSION_KEYS = [
   'sales.customer.manage',
   'sales.customer.balance',
   'sales.price_list.manage',
+  'sales.quotation.manage',
+  'sales.order.manage',
+  'sales.delivery.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -62,4 +65,7 @@ export const PERMISSION_GROUP_OF = {
   'sales.customer.manage': 'sales',
   'sales.customer.balance': 'sales',
   'sales.price_list.manage': 'sales',
+  'sales.quotation.manage': 'sales',
+  'sales.order.manage': 'sales',
+  'sales.delivery.manage': 'sales',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

@@ -77,6 +77,15 @@ interface Snapshot {
   addresses: number;
 }
 
+// Rows that hold on to a customer. Deleting it is refused while one exists (customer_in_use).
+const CUSTOMER_IN_USE = [
+  'journal_lines_party_fk',
+  // step 15b
+  'quotations_customer_fk',
+  'sales_orders_customer_fk',
+  'deliveries_customer_fk',
+] as const;
+
 function codeTaken(): AppError {
   return new AppError(409, 'customer_code_taken', 'Another customer uses this code.', {
     fieldErrors: { code: ['customer_code_taken'] },
@@ -290,12 +299,12 @@ export class CustomersService {
         });
       });
     } catch (error) {
-      // No "is it used?" query first: the FK is the check. Step 15b adds the sales documents' FKs.
-      if (isForeignKeyViolation(error, 'journal_lines_party_fk')) {
+      // No "is it used?" query first: the FK is the check, here and on every sales document
+      if (CUSTOMER_IN_USE.some((constraint) => isForeignKeyViolation(error, constraint))) {
         throw new AppError(
           409,
           'customer_in_use',
-          'This customer has entries. Archive it instead.',
+          'Entries or sales documents use this customer. Archive it instead.',
         );
       }
       throw error;

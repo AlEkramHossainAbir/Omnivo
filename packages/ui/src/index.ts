@@ -16,6 +16,7 @@ export {
   type SortingState,
 } from './components/data-table.js';
 export { DatePicker } from './components/date-picker.js';
+export { DiscountInput, type DiscountType } from './components/discount-input.js';
 export { Dialog, DialogClose, DialogContent, DialogTrigger } from './components/dialog.js';
 export {
   DropdownMenu,

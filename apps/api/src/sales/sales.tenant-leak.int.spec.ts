@@ -9,17 +9,29 @@ import {
   customerGroupSchema,
   customerPageSchema,
   customerSchema,
+  type Delivery,
+  deliveryPageSchema,
+  deliverySchema,
   type PriceList,
   priceListListSchema,
   priceListSchema,
+  priceLookupSchema,
   type Product,
   productSchema,
   problemSchema,
+  type Quotation,
+  quotationPageSchema,
+  quotationSchema,
+  type SalesOrder,
+  salesOrderPageSchema,
+  salesOrderSchema,
   setupSchema,
   type TaxRate,
   taxRateListSchema,
   type Unit,
   unitListSchema,
+  type Warehouse,
+  warehouseListSchema,
 } from '@omnivo/contracts';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -54,6 +66,11 @@ let customerOfB: Customer;
 let listOfB: PriceList;
 let productOfB: Product;
 let rateOfB: TaxRate;
+// Step 15b: B's quotation, its confirmed order and a draft delivery against it
+let quotationOfB: Quotation;
+let orderOfB: SalesOrder;
+let deliveryOfB: Delivery;
+let warehouseOfB: Warehouse;
 
 function as(
   who: SignedIn,
@@ -379,5 +396,288 @@ describe('customer isolation over HTTP', () => {
     const res = await as(tenantA, 'POST', '/customers', customerForm('Nordic Apparel AB'));
     expect(res.statusCode, res.body).toBe(201);
     expect(customerSchema.parse(res.json()).code).toBe(customerOfB.code);
+  });
+});
+
+describe('sales document isolation over HTTP', () => {
+  let customerOfA: Customer;
+  let productOfA: Product;
+  let warehouseOfA: Warehouse;
+  let rateOfA: string;
+
+  function lineOf(product: Product, taxRateId: string) {
+    return {
+      variantId: product.variants[0]?.id,
+      unitId: product.baseUnitId,
+      quantity: '12',
+      description: '',
+      unitPrice: '22',
+      discountType: 'percent',
+      discount: '',
+      taxRateId,
+    };
+  }
+
+  function orderBody(customerId: string, warehouseId: string, line: object, extra: object = {}) {
+    return {
+      customerId,
+      date: '2026-10-02',
+      deliveryDate: '',
+      customerReference: '',
+      warehouseId,
+      shippingAddressId: '',
+      note: '',
+      lines: [line],
+      confirm: false,
+      ...extra,
+    };
+  }
+
+  function deliveryBody(customerId: string, orderId: string, warehouseId: string, line: object) {
+    return {
+      customerId,
+      orderId,
+      date: '2026-10-05',
+      warehouseId,
+      shippingAddressId: '',
+      vehicle: '',
+      note: '',
+      lines: [line],
+      post: false,
+    };
+  }
+
+  beforeAll(async () => {
+    // B: a quotation, the order made from it (confirmed), and a draft delivery of half of it
+    const [warehouse] = warehouseListSchema.parse(
+      (await as(tenantB, 'GET', '/warehouses')).json(),
+    ).items;
+    if (!warehouse) throw new Error('B has no warehouse');
+    warehouseOfB = warehouse;
+    const quote = await as(tenantB, 'POST', '/quotations', {
+      customerId: customerOfB.id,
+      date: '2026-10-01',
+      validUntil: '',
+      note: '',
+      lines: [lineOf(productOfB, rateOfB.id)],
+    });
+    expect(quote.statusCode, quote.body).toBe(201);
+    quotationOfB = quotationSchema.parse(quote.json());
+    const order = await as(
+      tenantB,
+      'POST',
+      '/sales-orders',
+      orderBody(customerOfB.id, warehouseOfB.id, lineOf(productOfB, rateOfB.id), {
+        quotationId: quotationOfB.id,
+        confirm: true,
+      }),
+    );
+    expect(order.statusCode, order.body).toBe(201);
+    orderOfB = salesOrderSchema.parse(order.json());
+    // Accepted by the order: a new version. A's attempts below send the current one, so only the
+    // tenant check stands between them and B's rows.
+    quotationOfB = quotationSchema.parse(
+      (await as(tenantB, 'GET', `/quotations/${quotationOfB.id}`)).json(),
+    );
+    const delivery = await as(
+      tenantB,
+      'POST',
+      '/deliveries',
+      deliveryBody(customerOfB.id, orderOfB.id, warehouseOfB.id, {
+        variantId: productOfB.variants[0]?.id,
+        unitId: productOfB.baseUnitId,
+        quantity: '6',
+        batchId: '',
+        serialNumbers: [],
+        orderLineId: orderOfB.lines[0]?.id,
+      }),
+    );
+    expect(delivery.statusCode, delivery.body).toBe(201);
+    deliveryOfB = deliverySchema.parse(delivery.json());
+
+    // A: its own customer, product, warehouse and VAT rate
+    customerOfA = customerSchema.parse(
+      (await as(tenantA, 'POST', '/customers', customerForm('Lindqvist Knitwear AB'))).json(),
+    );
+    const product = await as(
+      tenantA,
+      'POST',
+      '/products',
+      productForm('Knit polo shirt', unitsOfA, {
+        variants: [
+          { id: null, sku: '', optionValues: [], barcode: '', salePrice: '450', archived: false },
+        ],
+      }),
+    );
+    expect(product.statusCode, product.body).toBe(201);
+    productOfA = productSchema.parse(product.json());
+    const [own] = warehouseListSchema.parse((await as(tenantA, 'GET', '/warehouses')).json()).items;
+    if (!own) throw new Error('A has no warehouse');
+    warehouseOfA = own;
+    const rates = taxRateListSchema.parse((await as(tenantA, 'GET', '/tax-rates')).json()).items;
+    const standard = rates.find((rate) => rate.isDefault);
+    if (!standard) throw new Error('A has no default rate');
+    rateOfA = standard.id;
+  });
+
+  it("never lists or reads B's quotations, orders or deliveries", async () => {
+    const quotations = quotationPageSchema.parse((await as(tenantA, 'GET', '/quotations')).json());
+    expect(quotations.items).toEqual([]);
+    const orders = salesOrderPageSchema.parse((await as(tenantA, 'GET', '/sales-orders')).json());
+    expect(orders.items).toEqual([]);
+    const deliveries = deliveryPageSchema.parse((await as(tenantA, 'GET', '/deliveries')).json());
+    expect(deliveries.items).toEqual([]);
+    // Not even when A filters by B's customer
+    const byCustomer = await as(tenantA, 'GET', `/sales-orders?customerId=${customerOfB.id}`);
+    expect(salesOrderPageSchema.parse(byCustomer.json()).items).toEqual([]);
+    for (const url of [
+      `/quotations/${quotationOfB.id}`,
+      `/sales-orders/${orderOfB.id}`,
+      `/deliveries/${deliveryOfB.id}`,
+    ]) {
+      expect((await as(tenantA, 'GET', url)).statusCode, url).toBe(404);
+    }
+  });
+
+  it('cannot change, answer, confirm, deliver, post or delete any of them', async () => {
+    const line = lineOf(productOfA, rateOfA);
+    const quotation = { version: quotationOfB.version };
+    const order = { version: orderOfB.version };
+    const attempts = [
+      as(tenantA, 'PUT', `/quotations/${quotationOfB.id}`, {
+        customerId: customerOfA.id,
+        date: '2026-10-01',
+        validUntil: '',
+        note: '',
+        lines: [line],
+        ...quotation,
+      }),
+      as(tenantA, 'POST', `/quotations/${quotationOfB.id}/decline`, quotation),
+      as(tenantA, 'POST', `/quotations/${quotationOfB.id}/reopen`, quotation),
+      as(tenantA, 'DELETE', `/quotations/${quotationOfB.id}?version=1`),
+      as(tenantA, 'PUT', `/sales-orders/${orderOfB.id}`, {
+        ...orderBody(customerOfA.id, warehouseOfA.id, line),
+        ...order,
+      }),
+      as(tenantA, 'POST', `/sales-orders/${orderOfB.id}/confirm`, order),
+      as(tenantA, 'POST', `/sales-orders/${orderOfB.id}/reopen`, order),
+      as(tenantA, 'POST', `/sales-orders/${orderOfB.id}/close`, order),
+      as(tenantA, 'POST', `/sales-orders/${orderOfB.id}/cancel`, order),
+      as(tenantA, 'DELETE', `/sales-orders/${orderOfB.id}?version=1`),
+      as(tenantA, 'PUT', `/deliveries/${deliveryOfB.id}`, {
+        ...deliveryBody(customerOfA.id, '', warehouseOfA.id, {
+          variantId: productOfA.variants[0]?.id,
+          unitId: productOfA.baseUnitId,
+          quantity: '1',
+          batchId: '',
+          serialNumbers: [],
+          orderLineId: '',
+        }),
+        version: deliveryOfB.version,
+      }),
+      as(tenantA, 'POST', `/deliveries/${deliveryOfB.id}/post`, { version: deliveryOfB.version }),
+      as(tenantA, 'DELETE', `/deliveries/${deliveryOfB.id}?version=1`),
+    ];
+    for (const res of await Promise.all(attempts)) expect(res.statusCode, res.body).toBe(404);
+
+    // B's documents are as B left them
+    const quotationNow = quotationSchema.parse(
+      (await as(tenantB, 'GET', `/quotations/${quotationOfB.id}`)).json(),
+    );
+    expect(quotationNow).toMatchObject({ status: 'accepted', version: quotationOfB.version });
+    const orderNow = salesOrderSchema.parse(
+      (await as(tenantB, 'GET', `/sales-orders/${orderOfB.id}`)).json(),
+    );
+    expect(orderNow).toMatchObject({ status: 'confirmed', version: orderOfB.version });
+    const deliveryNow = deliverySchema.parse(
+      (await as(tenantB, 'GET', `/deliveries/${deliveryOfB.id}`)).json(),
+    );
+    expect(deliveryNow).toMatchObject({ status: 'draft', version: deliveryOfB.version });
+  });
+
+  it("cannot write its own documents with B's customer, item, VAT rate, quotation or order", async () => {
+    const quotation = (customerId: string, line: object) =>
+      as(tenantA, 'POST', '/quotations', {
+        customerId,
+        date: '2026-10-01',
+        validUntil: '',
+        note: '',
+        lines: [line],
+      });
+    const forB = await quotation(customerOfB.id, lineOf(productOfA, rateOfA));
+    expect(problemOf(forB).fieldErrors).toEqual({ customerId: ['sales_customer_invalid'] });
+    const itemOfB = await quotation(customerOfA.id, lineOf(productOfB, rateOfA));
+    expect(problemOf(itemOfB).fieldErrors).toEqual({ 'lines.0.variantId': ['sales_item_invalid'] });
+    const vatOfB = await quotation(customerOfA.id, lineOf(productOfA, rateOfB.id));
+    expect(problemOf(vatOfB).fieldErrors).toEqual({ 'lines.0.taxRateId': ['tax_rate_invalid'] });
+
+    const fromQuotationOfB = await as(
+      tenantA,
+      'POST',
+      '/sales-orders',
+      orderBody(customerOfA.id, warehouseOfA.id, lineOf(productOfA, rateOfA), {
+        quotationId: quotationOfB.id,
+      }),
+    );
+    expect(problemOf(fromQuotationOfB).fieldErrors).toEqual({
+      quotationId: ['order_quotation_invalid'],
+    });
+    const fromWarehouseOfB = await as(
+      tenantA,
+      'POST',
+      '/sales-orders',
+      orderBody(customerOfA.id, warehouseOfB.id, lineOf(productOfA, rateOfA)),
+    );
+    expect(problemOf(fromWarehouseOfB).fieldErrors).toEqual({
+      warehouseId: ['stock_warehouse_invalid'],
+    });
+
+    const againstOrderOfB = await as(
+      tenantA,
+      'POST',
+      '/deliveries',
+      deliveryBody(customerOfA.id, orderOfB.id, warehouseOfA.id, {
+        variantId: productOfA.variants[0]?.id,
+        unitId: productOfA.baseUnitId,
+        quantity: '1',
+        batchId: '',
+        serialNumbers: [],
+        orderLineId: orderOfB.lines[0]?.id,
+      }),
+    );
+    expect(problemOf(againstOrderOfB).fieldErrors).toEqual({ orderId: ['delivery_order_invalid'] });
+  });
+
+  it("prices nothing from B's price lists or items", async () => {
+    const res = await as(tenantA, 'POST', '/sales/price-lookup', {
+      customerId: customerOfB.id,
+      items: [
+        { variantId: productOfB.variants[0]?.id, unitId: productOfB.baseUnitId },
+        { variantId: productOfA.variants[0]?.id, unitId: productOfA.baseUnitId },
+      ],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    // B's juice is left out; A's shirt has its own price, never one from B's dealer list
+    expect(priceLookupSchema.parse(res.json()).items).toEqual([
+      {
+        variantId: productOfA.variants[0]?.id,
+        unitId: productOfA.baseUnitId,
+        price: '450.0000',
+        source: 'product',
+        taxRateId: rateOfA,
+      },
+    ]);
+  });
+
+  it("numbers its sales documents on its own: B's numbers take nothing from A", async () => {
+    const res = await as(tenantA, 'POST', '/quotations', {
+      customerId: customerOfA.id,
+      date: '2026-10-01',
+      validUntil: '',
+      note: '',
+      lines: [lineOf(productOfA, rateOfA)],
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    expect(quotationSchema.parse(res.json()).number).toBe(quotationOfB.number);
   });
 });

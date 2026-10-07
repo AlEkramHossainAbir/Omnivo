@@ -101,7 +101,17 @@ describe('number series endpoints', () => {
   it('lists every document type with its next number, without using it up', async () => {
     const today = periodOf(todayIn('Asia/Dhaka'), 'fiscal', 7);
     const { items } = numberSeriesListSchema.parse((await send('GET', '/number-series')).json());
-    expect(items.map((series) => series.documentType)).toHaveLength(11);
+    expect(items.map((series) => series.documentType)).toHaveLength(13);
+    // Quotations and deliveries (step 15b): numbered by fiscal year. A quotation takes its number
+    // when it is saved, a delivery when it is posted; this list only shows the next one.
+    expect(items.find((series) => series.documentType === 'sales.quotation')).toMatchObject({
+      prefix: 'QT',
+      nextNumber: `QT-${today}-0001`,
+    });
+    expect(items.find((series) => series.documentType === 'sales.delivery')).toMatchObject({
+      prefix: 'DC',
+      nextNumber: `DC-${today}-0001`,
+    });
     // Customer codes (step 15a): like product codes, no year and five digits
     expect(items.find((series) => series.documentType === 'sales.customer')).toMatchObject({
       prefix: 'C',

@@ -98,7 +98,8 @@ describe('stock helpers', () => {
     expect(documentRoute('adjustment')).toBe('/stock/adjustments/$adjustmentId');
     expect(documentRoute('transfer_in')).toBe('/stock/transfers/$transferId');
     expect(documentRoute('revaluation')).toBe('/stock/revaluations/$revaluationId');
-    expect(documentRoute('sales_delivery')).toBeNull();
+    expect(documentRoute('delivery')).toBe('/deliveries/$deliveryId');
+    expect(documentRoute('sales_invoice')).toBeNull();
   });
 });
 

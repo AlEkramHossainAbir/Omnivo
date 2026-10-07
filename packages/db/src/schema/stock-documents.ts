@@ -28,7 +28,8 @@ import { warehouses } from './warehouses.js';
 // The columns every stock document line has: which variant, in which unit and how many, and the
 // same quantity in the base unit. The factor is copied from the product at the time (1 for the
 // base unit): removing or resizing a pack later never changes what an old line meant.
-function lineColumns() {
+// Exported: a delivery line (step 15b, sales-documents.ts) is a stock document line too.
+export function stockLineColumns() {
   return {
     id: baseColumns().id,
     tenantId: uuid('tenant_id')
@@ -99,7 +100,7 @@ export const stockAdjustments = pgTable(
 export const stockAdjustmentLines = pgTable(
   'stock_adjustment_lines',
   {
-    ...lineColumns(),
+    ...stockLineColumns(),
     adjustmentId: uuid('adjustment_id').notNull(),
     // An "in" line of a batch product: the lot as typed. Posting finds or makes the batch.
     lotNumber: text('lot_number'),
@@ -212,7 +213,7 @@ export const stockTransfers = pgTable(
 export const stockTransferLines = pgTable(
   'stock_transfer_lines',
   {
-    ...lineColumns(),
+    ...stockLineColumns(),
     transferId: uuid('transfer_id').notNull(),
     // Set on receipt, in the base unit: what arrived. sent − received = the shortage.
     receivedQuantity: numeric('received_quantity', { precision: 19, scale: 4 }),

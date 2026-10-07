@@ -7,6 +7,7 @@ import {
   ChartIncreaseIcon,
   Coins01Icon,
   DashboardSquare01Icon,
+  DeliveryTruck01Icon,
   FileDownloadIcon,
   FileImportIcon,
   FolderTreeIcon,
@@ -16,6 +17,7 @@ import {
   LeftToRightListNumberIcon,
   Logout01Icon,
   MoneyExchange01Icon,
+  Note01Icon,
   Notebook02Icon,
   PackageIcon,
   PackageOutOfStockIcon,
@@ -23,6 +25,7 @@ import {
   RulerIcon,
   SecurityCheckIcon,
   Settings02Icon,
+  ShoppingCart01Icon,
   Store01Icon,
   TableIcon,
   Tag01Icon,
@@ -295,8 +298,19 @@ export function AppShell() {
             </NavGroup>
           )}
           {/* Sales (step 15a): everyone reads the customers and the price lists — every sales
-              document picks them. Changing them is checked on the pages and by the API. */}
+              document picks them. Changing them is checked on the pages and by the API. Step 15b:
+              the documents come first, in the order they follow each other; everyone reads them
+              too (a store keeper looks up an order before loading the truck). */}
           <NavGroup label={t('nav.sales')}>
+            <NavLink to="/quotations" icon={Note01Icon}>
+              {t('nav.quotations')}
+            </NavLink>
+            <NavLink to="/sales-orders" icon={ShoppingCart01Icon}>
+              {t('nav.salesOrders')}
+            </NavLink>
+            <NavLink to="/deliveries" icon={DeliveryTruck01Icon}>
+              {t('nav.deliveries')}
+            </NavLink>
             <NavLink to="/customers" icon={UserMultiple02Icon}>
               {t('nav.customers')}
             </NavLink>

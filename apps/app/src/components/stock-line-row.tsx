@@ -1,6 +1,6 @@
 import { Delete02Icon, Layers01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { plainQuantity, type StockItem, type StockLine } from '@omnivo/contracts';
+import { plainQuantity, type StockItem } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { cn, IconButton, Input, Select } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
@@ -28,7 +28,9 @@ export type LineItem = Pick<
   | 'units'
 >;
 
-export function toLineItem(source: StockItem | StockLine): LineItem {
+// LineItem in, not StockItem | StockLine: a sales order's line (step 15b) carries the same fields
+// and fills a delivery's lines
+export function toLineItem(source: LineItem): LineItem {
   return {
     variantId: source.variantId,
     productId: source.productId,
@@ -94,6 +96,7 @@ export function StockLineRow({
   dates,
   serials,
   cost,
+  note,
   errors,
   onRemove,
   onSplit,
@@ -119,6 +122,8 @@ export function StockLineRow({
   // Step 14: the unit cost box of a line that brings stock in, already in its LineField. Given =
   // the row has the cost column (the header must say costed too).
   cost?: ReactNode;
+  // Step 15b: a line under the item, such as what the order asked for and what it has left
+  note?: ReactNode;
   errors: LineErrors;
   onRemove: () => void;
   onSplit: (batches: readonly { batchId: string; quantity: string }[]) => void;
@@ -160,6 +165,7 @@ export function StockLineRow({
               {t('stockLines.inStock', { quantity: quantityText(here.onHand, item.baseUnitId) })}
             </span>
           )}
+          {note}
         </span>
         <span className="@3xl:hidden">{removeButton}</span>
       </div>

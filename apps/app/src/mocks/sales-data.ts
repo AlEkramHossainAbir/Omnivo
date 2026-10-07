@@ -581,22 +581,28 @@ export function saveCustomer(
   };
 }
 
-// The journal keeps a party's code and name on each line (the API joins them on read): after a
-// rename the lines show the new name, like the API's
+// The journal keeps a party's code and name on each line, and so does each sales document (step
+// 15b); the API joins them on read. After a rename they show the new name, like the API's.
 export function refreshPartyRefs(data: WorkspaceData, saved: MockCustomer): void {
+  const ref = { id: saved.id, code: saved.code, name: saved.name };
   for (const entry of data.journal.entries) {
     for (const line of entry.lines) {
-      if (line.party?.id === saved.id)
-        line.party = { id: saved.id, code: saved.code, name: saved.name };
+      if (line.party?.id === saved.id) line.party = ref;
     }
+  }
+  const { quotations, orders, deliveries } = data.salesDocuments;
+  for (const document of [...quotations, ...orders, ...deliveries]) {
+    if (document.customer.id === saved.id) document.customer = ref;
   }
 }
 
-// Only a customer no entry names, drafts included (the API's journal_lines_party_fk)
+// Only a customer no entry and no sales document names, drafts included (the API's
+// journal_lines_party_fk, and step 15b's quotations/sales_orders/deliveries_customer_fk)
 export function assertCustomerUnused(data: WorkspaceData, id: string): void {
-  const used = data.journal.entries.some((entry) =>
-    entry.lines.some((line) => line.party?.id === id),
-  );
+  const { quotations, orders, deliveries } = data.salesDocuments;
+  const used =
+    data.journal.entries.some((entry) => entry.lines.some((line) => line.party?.id === id)) ||
+    [...quotations, ...orders, ...deliveries].some((document) => document.customer.id === id);
   if (used) throw new MockProblem(409, 'customer_in_use');
 }
 

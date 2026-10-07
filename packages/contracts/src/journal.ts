@@ -19,6 +19,8 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // stock_adjustment, stock_transfer, stock_revaluation (step 14): the entry a stock document makes
 // when it is posted. It points back at its document (document), and only another stock document
 // can change it — the journal's Reverse refuses it, or the books and the stock would disagree.
+// sales_delivery (step 15b): a delivery challan's cost of goods sold. A stock document like the
+// others: it moves stock and its value together.
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -27,6 +29,7 @@ export const JOURNAL_SOURCES = [
   'stock_adjustment',
   'stock_transfer',
   'stock_revaluation',
+  'sales_delivery',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -39,6 +42,7 @@ export const STOCK_JOURNAL_SOURCES = [
   'stock_adjustment',
   'stock_transfer',
   'stock_revaluation',
+  'sales_delivery',
 ] as const satisfies readonly JournalSource[];
 export type StockJournalSource = (typeof STOCK_JOURNAL_SOURCES)[number];
 

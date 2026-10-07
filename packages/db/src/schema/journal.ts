@@ -76,10 +76,11 @@ export const journalEntries = pgTable(
       'journal_entries_reversal_check',
       sql`(${table.source} = 'reversal') = (${table.reversalOfId} IS NOT NULL)`,
     ),
-    // A stock document's entry always points at its document, and no other entry does
+    // A stock document's entry (a delivery's too, step 15b) always points at its document, and no
+    // other entry does. The list is contracts' STOCK_JOURNAL_SOURCES.
     check(
       'journal_entries_document_check',
-      sql`(${table.source} IN ('stock_adjustment', 'stock_transfer', 'stock_revaluation')) = (${table.documentId} IS NOT NULL AND ${table.documentNumber} IS NOT NULL)`,
+      sql`(${table.source} IN ('stock_adjustment', 'stock_transfer', 'stock_revaluation', 'sales_delivery')) = (${table.documentId} IS NOT NULL AND ${table.documentNumber} IS NOT NULL)`,
     ),
     // A stock document's entries (a transfer has up to two)
     index('journal_entries_document_idx')

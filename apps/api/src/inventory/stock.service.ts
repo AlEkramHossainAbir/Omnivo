@@ -69,6 +69,7 @@ const itemRowSchema = z.object({
   archived: z.boolean(),
   on_hand: z.string(),
   in_transit: z.string(),
+  on_order: z.string(),
   low: z.boolean(),
   unit_cost: z.string().nullable(),
   value: z.string().nullable(),
@@ -92,6 +93,7 @@ function toItem(row: z.output<typeof itemRowSchema>, canSee: boolean): StockItem
     archived: row.archived,
     onHand: row.on_hand,
     inTransit: row.in_transit,
+    onOrder: row.on_order,
     low: row.low,
     unitCost: canSee ? row.unit_cost : null,
     value: canSee ? row.value : null,
@@ -833,6 +835,16 @@ export class StockService {
                   JOIN stock_transfers t ON t.tenant_id = l.tenant_id AND t.id = l.transfer_id
                  WHERE l.tenant_id = v.tenant_id AND l.variant_id = v.id AND t.status = 'in_transit'
                    AND ${inWarehouse(sql`t.to_warehouse_id`)})`)} AS in_transit,
+               ${
+                 // What confirmed orders still have to deliver from the warehouse (step 15b).
+                 // l.product_id lets sales_order_lines_variant_idx find the lines; the order's
+                 // status and warehouse are sales_orders_open_idx's.
+                 quantityText(sql`(SELECT sum(l.base_quantity - l.delivered_quantity)
+                  FROM sales_order_lines l
+                  JOIN sales_orders o ON o.tenant_id = l.tenant_id AND o.id = l.order_id
+                 WHERE l.tenant_id = v.tenant_id AND l.product_id = p.id AND l.variant_id = v.id
+                   AND o.status = 'confirmed' AND ${inWarehouse(sql`o.warehouse_id`)})`)
+               } AS on_order,
                ${lowCondition(warehouseId)} AS low,
                round(sv.unit_cost, 4)::text AS unit_cost,
                ${

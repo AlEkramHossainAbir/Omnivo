@@ -24,6 +24,15 @@ export const priceSchema = z
   .transform((value) => (value === '' ? null : value))
   .nullable();
 
+// A price that must be there: the price on a sales line (step 15b). ৳0 is a price — a free sample
+// is a real line — but an empty box is a price nobody typed. One error per box: the format check
+// leaves an empty box to the first one.
+export const requiredPriceSchema = z
+  .string()
+  .trim()
+  .refine((value) => value !== '', errorCode('sales_price_required'))
+  .refine((value) => value === '' || MONEY.test(value), errorCode('money_format'));
+
 // The arithmetic below works in ten-thousandths of a taka, as BigInt: "18450.5" is 184505000n.
 // Exact like decimal.js for what the journal does — adding and subtracting amounts with at most
 // 4 decimals, so nothing is ever rounded — and it keeps this package on zod alone (the
@@ -47,6 +56,11 @@ function fromUnits(units: bigint): string {
   const size = units < 0n ? -units : units;
   const fraction = String(size % UNITS_PER_TAKA).padStart(4, '0');
   return `${units < 0n ? '-' : ''}${String(size / UNITS_PER_TAKA)}.${fraction}`;
+}
+
+// A complete amount with at most 4 decimals: what a price box must hold before a line is worked out
+export function isMoneyAmount(value: string): boolean {
+  return MONEY.test(value);
 }
 
 // '' counts as 0, so a half-filled form can be totalled while it is typed
@@ -137,4 +151,26 @@ export function unitCostOf(value: string, quantity: string): string {
   if (quantityUnits <= 0n) throw new Error(`No unit cost for a quantity of "${quantity}"`);
   // value (10^-4) × 10^4 ÷ quantity (10^-4) = 10^-4 taka per unit
   return fromUnits(divideRounded(toUnits(value) * 10_000n, quantityUnits));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sales lines (step 15b): a percent discount and the VAT, to the paisa
+
+const HUNDRED_PERCENT = 100n * UNITS_PER_TAKA;
+
+// percent % of an amount, to the paisa: 15% of ৳1,234.50 = ৳185.18 (185.175 rounds up). A line's
+// percent discount, and the VAT on a price typed without VAT.
+export function percentOfMoney(amount: string, percent: string): string {
+  // amount (10^-4) × percent (10^-4) = 10^-8, and ÷ 100 for the percent: one paisa is 10^8 of those
+  return fromUnits(divideRounded(toUnits(amount) * toUnits(percent), 100_000_000n) * PAISA);
+}
+
+// The VAT inside an amount that includes it: ৳1,150 at 15% holds ৳150 (1,150 × 15 ÷ 115), to the
+// paisa. The rate is a percent ("7.5"), never negative.
+export function includedTaxOf(amount: string, rate: string): string {
+  const rateUnits = toUnits(rate);
+  // amount (10^-4) × rate (10^-4) ÷ (100 + rate) (10^-4) = 10^-4 taka; ÷ 100 more for the paisa
+  return fromUnits(
+    divideRounded(toUnits(amount) * rateUnits, (HUNDRED_PERCENT + rateUnits) * PAISA) * PAISA,
+  );
 }

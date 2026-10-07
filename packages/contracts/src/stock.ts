@@ -10,7 +10,14 @@ import { levelSchema, quantitySchema } from './quantities.js';
 // journal source: a newer server's new kind (a sales delivery, step 15) must not break an older
 // offline client.
 // revaluation (step 14): a change of value without a change of quantity — its quantity is zero.
-export const MOVEMENT_KINDS = ['adjustment', 'transfer_out', 'transfer_in', 'revaluation'] as const;
+// delivery (step 15b): goods leaving for a customer on a delivery challan.
+export const MOVEMENT_KINDS = [
+  'adjustment',
+  'transfer_out',
+  'transfer_in',
+  'revaluation',
+  'delivery',
+] as const;
 export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 
 export function isMovementKind(value: string): value is MovementKind {
@@ -32,13 +39,13 @@ export const serialNumberSchema = z
   .trim()
   .regex(/^[\x21-\x7E]{1,64}$/, errorCode('serial_number_format'));
 
-// The form's "not chosen" is ''
-const optionalIdSchema = z
+// The form's "not chosen" is '' (the sales documents of step 15b use these two as well)
+export const optionalIdSchema = z
   .union([z.uuid(), z.literal('')])
   .transform((value) => (value === '' ? null : value))
   .nullable();
 
-const optionalDateSchema = z
+export const optionalDateSchema = z
   .union([z.iso.date(), z.literal('')])
   .transform((value) => (value === '' ? null : value))
   .nullable();
@@ -142,6 +149,10 @@ export const stockItemSchema = variantRefSchema.extend({
   onHand: z.string(),
   // Sent from another warehouse and not received yet (to the chosen warehouse, or anywhere)
   inTransit: z.string(),
+  // Promised and not delivered yet (step 15b): what confirmed sales orders still have to deliver
+  // from the chosen warehouse (or from any). Nothing is held for them; it is shown next to onHand,
+  // so a salesperson sees what is already promised.
+  onOrder: z.string(),
   // At or below its reorder level in the chosen warehouse (or in any warehouse)
   low: z.boolean(),
   // Step 14, only for someone with inventory.stock.value (null for everyone else, and for a

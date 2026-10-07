@@ -100,6 +100,12 @@ export interface IndustryTemplate {
 const SELLING = ['sales.customer.manage', 'sales.customer.balance'] as const;
 const SALES_ADMIN = [...SELLING, 'sales.price_list.manage'] as const;
 
+// Step 15b. The people who sell write quotations and orders; the people who keep the stock post
+// the deliveries (challans). The accountant gets neither: reading a sales document needs no
+// permission, and the books get the delivery's entry without anyone posting it by hand.
+const ORDERING = ['sales.quotation.manage', 'sales.order.manage'] as const;
+const DELIVERING = ['sales.delivery.manage'] as const;
+
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
 const ACCOUNTANT: RoleTemplate = {
@@ -128,7 +134,7 @@ const STOCK_WORK = ['inventory.stock.adjust', 'inventory.stock.transfer'] as con
 const STORE_KEEPER: RoleTemplate = {
   name: 'Store keeper',
   description: 'Receives goods and writes GRNs',
-  permissions: ['inventory.product.manage', ...STOCK_WORK],
+  permissions: ['inventory.product.manage', ...STOCK_WORK, ...DELIVERING],
 };
 
 function group(
@@ -330,7 +336,12 @@ export const INDUSTRY_TEMPLATES = {
         name: 'Merchandiser',
         description: 'Buyer POs, LCs and shipment dates',
         // The buyers are the merchandiser's customers
-        permissions: ['core.user.read', 'inventory.product.manage', 'sales.customer.manage'],
+        permissions: [
+          'core.user.read',
+          'inventory.product.manage',
+          'sales.customer.manage',
+          ...ORDERING,
+        ],
       },
       STORE_KEEPER,
     ],
@@ -390,12 +401,13 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.product.manage',
           'inventory.warehouse.manage',
           ...STOCK_WORK,
+          ...DELIVERING,
         ],
       },
       {
         name: 'Sales representative',
         description: 'Orders from pharmacies',
-        permissions: ['sales.customer.manage'],
+        permissions: ['sales.customer.manage', ...ORDERING],
       },
     ],
     chart: standardChart({
@@ -459,12 +471,13 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.product.manage',
           'inventory.warehouse.manage',
           ...STOCK_WORK,
+          ...DELIVERING,
         ],
       },
       {
         name: 'Sales officer',
         description: 'Orders and collections from retailers',
-        permissions: [...SELLING],
+        permissions: [...SELLING, ...ORDERING],
       },
     ],
     chart: standardChart({
@@ -557,6 +570,8 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.warehouse.manage',
           ...STOCK_WORK,
           ...SALES_ADMIN,
+          ...ORDERING,
+          ...DELIVERING,
         ],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [] },
@@ -603,6 +618,8 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.warehouse.manage',
           ...STOCK_WORK,
           ...SALES_ADMIN,
+          ...ORDERING,
+          ...DELIVERING,
         ],
       },
     ],
