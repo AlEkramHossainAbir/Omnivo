@@ -21,6 +21,8 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // can change it — the journal's Reverse refuses it, or the books and the stock would disagree.
 // sales_delivery (step 15b): a delivery challan's cost of goods sold. A stock document like the
 // others: it moves stock and its value together.
+// sales_invoice, sales_receipt (step 15c): an invoice's sale (receivable, sales, VAT) and a money
+// receipt (cash or bank, receivable). They point at their document like a stock document's entry.
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -30,6 +32,8 @@ export const JOURNAL_SOURCES = [
   'stock_transfer',
   'stock_revaluation',
   'sales_delivery',
+  'sales_invoice',
+  'sales_receipt',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -49,6 +53,26 @@ export type StockJournalSource = (typeof STOCK_JOURNAL_SOURCES)[number];
 export function isStockJournalSource(value: string): value is StockJournalSource {
   return STOCK_JOURNAL_SOURCES.some((source) => source === value);
 }
+
+// The sources a sales document posts (step 15c). Their entries are not reversed from the journal
+// either: an invoice is corrected by a credit note (15d), a receipt by voiding it on its own page,
+// so the document and the books never disagree.
+export const SALES_JOURNAL_SOURCES = [
+  'sales_invoice',
+  'sales_receipt',
+] as const satisfies readonly JournalSource[];
+export type SalesJournalSource = (typeof SALES_JOURNAL_SOURCES)[number];
+
+export function isSalesJournalSource(value: string): value is SalesJournalSource {
+  return SALES_JOURNAL_SOURCES.some((source) => source === value);
+}
+
+// Every source whose entry points at the document that made it (journal_entries_document_check in
+// the database holds the same list)
+export const DOCUMENT_JOURNAL_SOURCES = [
+  ...STOCK_JOURNAL_SOURCES,
+  ...SALES_JOURNAL_SOURCES,
+] as const satisfies readonly JournalSource[];
 
 // '2026-07-01' and -1 → '2026-06-30'. The arithmetic runs in UTC, so no time zone can move the
 // day (the same reason periodOf() reads the parts of the string, numbering.ts).
@@ -104,8 +128,9 @@ export const journalEntrySummarySchema = z.object({
   // This entry undoes reversalOf; reversedBy undid this entry
   reversalOf: entryRefSchema.nullable(),
   reversedBy: entryRefSchema.nullable(),
-  // The stock document that made this entry (step 14): its id and number. Which kind of document
-  // it is follows from the source. null for every other entry.
+  // The document that made this entry (a stock document, step 14; an invoice or a receipt, step
+  // 15c): its id and number. Which kind of document it is follows from the source. null for every
+  // other entry.
   document: z.object({ id: z.uuid(), number: z.string() }).nullable(),
   postedAt: z.iso.datetime().nullable(),
   version: z.number().int(),

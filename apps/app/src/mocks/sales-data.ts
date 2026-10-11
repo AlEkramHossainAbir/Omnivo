@@ -432,8 +432,9 @@ function isReceivable(data: WorkspaceData, accountId: string): boolean {
   );
 }
 
-// What the customer owes: debit − credit of its posted receivable lines
-function balanceOf(data: WorkspaceData, partyId: string): string {
+// What the customer owes: debit − credit of its posted receivable lines. The credit limit
+// (invoice-data.ts) starts from the same number, like the API's CreditService.
+export function balanceOf(data: WorkspaceData, partyId: string): string {
   const lines = data.journal.entries
     .filter((entry) => entry.status === 'posted')
     .flatMap((entry) => entry.lines)
@@ -591,18 +592,23 @@ export function refreshPartyRefs(data: WorkspaceData, saved: MockCustomer): void
     }
   }
   const { quotations, orders, deliveries } = data.salesDocuments;
-  for (const document of [...quotations, ...orders, ...deliveries]) {
+  const { invoices, receipts } = data.billing;
+  for (const document of [...quotations, ...orders, ...deliveries, ...invoices, ...receipts]) {
     if (document.customer.id === saved.id) document.customer = ref;
   }
 }
 
 // Only a customer no entry and no sales document names, drafts included (the API's
-// journal_lines_party_fk, and step 15b's quotations/sales_orders/deliveries_customer_fk)
+// journal_lines_party_fk, step 15b's quotations/sales_orders/deliveries_customer_fk, and step
+// 15c's invoices/receipts_customer_fk)
 export function assertCustomerUnused(data: WorkspaceData, id: string): void {
   const { quotations, orders, deliveries } = data.salesDocuments;
+  const { invoices, receipts } = data.billing;
   const used =
     data.journal.entries.some((entry) => entry.lines.some((line) => line.party?.id === id)) ||
-    [...quotations, ...orders, ...deliveries].some((document) => document.customer.id === id);
+    [...quotations, ...orders, ...deliveries, ...invoices, ...receipts].some(
+      (document) => document.customer.id === id,
+    );
   if (used) throw new MockProblem(409, 'customer_in_use');
 }
 

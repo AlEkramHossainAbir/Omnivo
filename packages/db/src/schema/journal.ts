@@ -41,9 +41,9 @@ export const journalEntries = pgTable(
     source: text('source', { enum: JOURNAL_SOURCES }).notNull().default('manual'),
     // Set on a reversal: the entry it undoes
     reversalOfId: uuid('reversal_of_id'),
-    // The stock document that made this entry (step 14): which one follows from the source (an
-    // adjustment, a transfer, a revaluation); its number never changes once posted, so the
-    // journal shows it without a join
+    // The document that made this entry (step 14; sales documents since 15b): which one follows
+    // from the source (an adjustment, a transfer, a delivery, an invoice, a receipt …); its number
+    // never changes once posted, so the journal shows it without a join
     documentId: uuid('document_id'),
     documentNumber: text('document_number'),
     postedAt: timestamp('posted_at', { withTimezone: true }),
@@ -76,13 +76,15 @@ export const journalEntries = pgTable(
       'journal_entries_reversal_check',
       sql`(${table.source} = 'reversal') = (${table.reversalOfId} IS NOT NULL)`,
     ),
-    // A stock document's entry (a delivery's too, step 15b) always points at its document, and no
-    // other entry does. The list is contracts' STOCK_JOURNAL_SOURCES.
+    // A document's entry (a stock document's, a delivery's since step 15b, an invoice's and a
+    // receipt's since 15c) always points at its document, and no other entry does. The list is
+    // contracts' DOCUMENT_JOURNAL_SOURCES.
     check(
       'journal_entries_document_check',
-      sql`(${table.source} IN ('stock_adjustment', 'stock_transfer', 'stock_revaluation', 'sales_delivery')) = (${table.documentId} IS NOT NULL AND ${table.documentNumber} IS NOT NULL)`,
+      sql`(${table.source} IN ('stock_adjustment', 'stock_transfer', 'stock_revaluation', 'sales_delivery', 'sales_invoice', 'sales_receipt')) = (${table.documentId} IS NOT NULL AND ${table.documentNumber} IS NOT NULL)`,
     ),
-    // A stock document's entries (a transfer has up to two)
+    // A document's entries (a transfer has up to two; an invoice or a receipt has one, which the
+    // invoice page and the receipt page find here)
     index('journal_entries_document_idx')
       .on(table.tenantId, table.documentId)
       .where(sql`${table.documentId} IS NOT NULL`),

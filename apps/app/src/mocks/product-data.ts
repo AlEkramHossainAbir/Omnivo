@@ -321,6 +321,20 @@ export function garmentsCatalog(): MockCatalog {
       categoryId: null,
       tracking: 'serial',
     },
+    // Step 15c: a service an order can carry, billed straight from the order (no challan: a
+    // service is never delivered). A code of its own, outside the P-… series, so the next new
+    // product is still P-00006.
+    {
+      ...product(catalog, {
+        code: 'SVC-EMB',
+        name: 'Logo embroidery',
+        category: 'Finished garments',
+        base: 'pcs',
+        price: '18.0000',
+      }),
+      categoryId: null,
+      type: 'service',
+    },
   ];
   const generated = Array.from({ length: 10_000 }, (_, index) => {
     const garment = GARMENTS[index % GARMENTS.length] ?? 'T-shirt';

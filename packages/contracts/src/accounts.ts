@@ -65,6 +65,10 @@ export const accountSchema = z.object({
   // z.string(), not an enum: a newer server's new purpose must not break an older offline client
   // (the same rule as error codes). The app narrows it with isAccountPurpose().
   purpose: z.string().nullable(),
+  // Step 15c: money is kept here — cash, a bank account, a bKash wallet. On a group it means every
+  // account in it, so a new bank account under "Bank accounts" needs no tick of its own. A money
+  // receipt goes into one of these (moneyAccountIds below). Asset accounts only.
+  holdsMoney: z.boolean(),
   description: z.string().nullable(),
   // null = active. An archived account is hidden from pickers but stays in old reports.
   archivedAt: z.iso.datetime().nullable(),
@@ -72,6 +76,33 @@ export const accountSchema = z.object({
   updatedAt: z.iso.datetime(),
 });
 export type Account = z.infer<typeof accountSchema>;
+
+type MoneyAccountFields = Pick<
+  Account,
+  'id' | 'parentId' | 'isGroup' | 'holdsMoney' | 'archivedAt'
+>;
+
+// The accounts money can go into: active, not a group, and flagged themselves or under a flagged
+// group at any depth. The app and the API both call this on the whole chart (it is small, a few
+// hundred accounts at most), so the receipt form offers exactly what the server accepts.
+export function moneyAccountIds(accounts: readonly MoneyAccountFields[]): Set<string> {
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  const ids = new Set<string>();
+  for (const account of accounts) {
+    if (account.isGroup || account.archivedAt !== null) continue;
+    // Up the tree to the top. The database refuses a loop (account_parent_loop); the step count
+    // only keeps a broken chart from hanging the page.
+    let current: MoneyAccountFields | undefined = account;
+    for (let step = 0; current !== undefined && step <= accounts.length; step += 1) {
+      if (current.holdsMoney) {
+        ids.add(account.id);
+        break;
+      }
+      current = current.parentId === null ? undefined : byId.get(current.parentId);
+    }
+  }
+  return ids;
+}
 
 // Digits, optionally split into parts by dots or hyphens: 1110, 1-1-10, 11.10. No letters: codes
 // sort and group by their digits, and every accountant in Bangladesh reads them that way.
@@ -93,6 +124,9 @@ export const createAccountInputSchema = z.object({
   code: accountCodeSchema,
   name: accountNameSchema,
   isGroup: z.boolean(),
+  // Only on an asset account; the type comes from the parent, so the server checks it
+  // (account_money_type)
+  holdsMoney: z.boolean(),
   description: optionalText(300),
 });
 export type CreateAccountInput = z.infer<typeof createAccountInputSchema>;
@@ -103,6 +137,7 @@ export const updateAccountInputSchema = z.object({
   parentId: parentIdSchema.nullable(),
   code: accountCodeSchema,
   name: accountNameSchema,
+  holdsMoney: z.boolean(),
   description: optionalText(300),
   version: versionSchema,
 });

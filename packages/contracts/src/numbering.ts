@@ -19,6 +19,7 @@ export const DOCUMENT_TYPES = [
   'sales.customer',
   'sales.quotation',
   'sales.delivery',
+  'sales.receipt',
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -47,6 +48,8 @@ const DEFAULT_PREFIXES = {
   'sales.quotation': 'QT',
   // A delivery challan
   'sales.delivery': 'DC',
+  // A money receipt: what a customer paid (step 15c)
+  'sales.receipt': 'MR',
 } satisfies Record<DocumentType, string>;
 
 // টেন্যান্ট কিছু না বদলালে এই ছাঁচ — DB-তে রো লেখা হয় শুধু প্রথম বদলের সময়।

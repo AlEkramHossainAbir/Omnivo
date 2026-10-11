@@ -54,7 +54,8 @@ test('cancels a confirmed order that delivered nothing', async ({ page }) => {
   await openFromNav(page, 'Sales orders');
   await listItem(page, /SO-\d{4}-\d{2}-0001/).click();
   await expect(page.getByRole('heading', { level: 1, name: /SO-\d{4}-\d{2}-0001/ })).toBeVisible();
-  await expect(page.getByText('PO-HM-2026-1187')).toBeVisible();
+  // The first is the page's; the printed order (step 15c) has it too, hidden until printing
+  await expect(page.getByText('PO-HM-2026-1187').first()).toBeVisible();
   // Nothing went out yet: "Close" (stop delivering the rest) is for a partly delivered order
   await expect(page.getByRole('button', { name: 'Close order' })).toHaveCount(0);
 

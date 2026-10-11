@@ -114,3 +114,31 @@ test('protects system accounts, archives only empty groups and deletes in two cl
   await expect(page.getByText('Accumulated depreciation deleted')).toBeVisible();
   await expect(account(page, 'Accumulated depreciation')).toBeHidden();
 });
+
+// Step 15c: a money receipt goes into an account that holds money, ticked on the account itself or
+// on a group above it
+test('marks an account as holding money, or shows that its group does', async ({ page }) => {
+  await group(page, 'Bank accounts')
+    .getByRole('button', { name: 'Add an account to Bank accounts' })
+    .click();
+  const inBank = page.getByRole('dialog', { name: 'Add account' });
+  await expect(inBank.getByRole('checkbox', { name: 'Holds money' })).toBeChecked();
+  await expect(inBank.getByRole('checkbox', { name: 'Holds money' })).toBeDisabled();
+  await expect(
+    inBank.getByText('Holds money, because the group Bank accounts does.'),
+  ).toBeVisible();
+  await page.keyboard.press('Escape');
+
+  await group(page, 'Current assets')
+    .getByRole('button', { name: 'Add an account to Current assets' })
+    .click();
+  const dialog = page.getByRole('dialog', { name: 'Add account' });
+  await dialog.getByLabel('Name').fill('Petty cash, Gazipur factory');
+  await dialog.getByRole('checkbox', { name: 'Holds money' }).check();
+  await dialog.getByRole('button', { name: 'Add account' }).click();
+  await expect(dialog).toBeHidden();
+  await account(page, 'Petty cash, Gazipur factory').click();
+  await expect(
+    page.getByRole('dialog').getByRole('checkbox', { name: 'Holds money' }),
+  ).toBeChecked();
+});

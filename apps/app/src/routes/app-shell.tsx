@@ -12,11 +12,13 @@ import {
   FileImportIcon,
   FolderTreeIcon,
   HourglassIcon,
+  Invoice03Icon,
   Layers01Icon,
   LayoutGridIcon,
   LeftToRightListNumberIcon,
   Logout01Icon,
   MoneyExchange01Icon,
+  MoneyReceive02Icon,
   Note01Icon,
   Notebook02Icon,
   PackageIcon,
@@ -300,7 +302,8 @@ export function AppShell() {
           {/* Sales (step 15a): everyone reads the customers and the price lists — every sales
               document picks them. Changing them is checked on the pages and by the API. Step 15b:
               the documents come first, in the order they follow each other; everyone reads them
-              too (a store keeper looks up an order before loading the truck). */}
+              too (a store keeper looks up an order before loading the truck). Step 15c: the
+              invoice and the money receipt end the chain. */}
           <NavGroup label={t('nav.sales')}>
             <NavLink to="/quotations" icon={Note01Icon}>
               {t('nav.quotations')}
@@ -310,6 +313,12 @@ export function AppShell() {
             </NavLink>
             <NavLink to="/deliveries" icon={DeliveryTruck01Icon}>
               {t('nav.deliveries')}
+            </NavLink>
+            <NavLink to="/invoices" icon={Invoice03Icon}>
+              {t('nav.invoices')}
+            </NavLink>
+            <NavLink to="/receipts" icon={MoneyReceive02Icon}>
+              {t('nav.receipts')}
             </NavLink>
             <NavLink to="/customers" icon={UserMultiple02Icon}>
               {t('nav.customers')}

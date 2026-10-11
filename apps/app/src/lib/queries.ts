@@ -3,13 +3,20 @@ import {
   type BranchStatus,
   type CustomerSort,
   type CustomerStatus,
+  type DeliveryInvoiceFilter,
+  type InvoicePage,
+  type InvoicePaymentFilter,
+  type InvoiceStatus,
+  type InvoiceSummary,
   type JournalStatus,
+  MAX_RECEIPT_ALLOCATIONS,
   type MemberSort,
   type OrderStatus,
   type ProductSort,
   type ProductStatus,
   type ProfitAndLossQuery,
   type QuotationStatus,
+  type ReceiptStatus,
   routes,
   type StockDocumentStatus,
   type StockFilter,
@@ -626,6 +633,16 @@ export function customerQuery(tenantId: string, customerId: string) {
   });
 }
 
+// Step 15c: the credit line under the customer on the order and invoice forms. Under
+// ['customers', tenantId]: every sales save refreshes that prefix (useSalesRefresh), because
+// confirming an order, posting an invoice and saving a receipt all move it.
+export function customerCreditQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['customers', tenantId, 'credit', customerId],
+    queryFn: () => call(routes.customers.credit, { params: { id: customerId } }),
+  });
+}
+
 // The statement reads posted journal lines, so it lives under ['journal', tenantId] like the
 // ledger: posting or reversing an entry refreshes it
 export function customerStatementQuery(
@@ -712,6 +729,11 @@ export interface SalesListFilter<TStatus extends string> {
   customerId: string;
 }
 
+// The delivery list's billing filter (step 15c, '' = all)
+export interface DeliveryListFilter extends SalesListFilter<StockDocumentStatus> {
+  invoice: DeliveryInvoiceFilter | '';
+}
+
 export function quotationsQuery(tenantId: string, filter: SalesListFilter<QuotationStatus>) {
   return infiniteQueryOptions({
     queryKey: ['sales', tenantId, 'quotations', filter],
@@ -778,7 +800,7 @@ export function salesOrderQuery(tenantId: string, orderId: string) {
   });
 }
 
-export function deliveriesQuery(tenantId: string, filter: SalesListFilter<StockDocumentStatus>) {
+export function deliveriesQuery(tenantId: string, filter: DeliveryListFilter) {
   return infiniteQueryOptions({
     queryKey: ['sales', tenantId, 'deliveries', filter],
     queryFn: ({ pageParam }: { pageParam: string | null }) =>
@@ -787,6 +809,7 @@ export function deliveriesQuery(tenantId: string, filter: SalesListFilter<StockD
           limit: 50,
           ...(filter.status !== '' && { status: filter.status }),
           ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(filter.invoice !== '' && { invoice: filter.invoice }),
           ...(pageParam !== null && { cursor: pageParam }),
         },
       }),
@@ -800,6 +823,121 @@ export function deliveryQuery(tenantId: string, deliveryId: string) {
   return queryOptions({
     queryKey: ['sales', tenantId, 'delivery', deliveryId],
     queryFn: () => call(routes.deliveries.get, { params: { id: deliveryId } }),
+    retry: false,
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Invoices and money receipts (step 15c), under the same ['sales', tenantId] prefix: posting an
+// invoice changes its challans (billed), its orders (invoiced) and the lists at once.
+
+export interface InvoiceListFilter extends SalesListFilter<InvoiceStatus> {
+  payment: InvoicePaymentFilter | '';
+}
+
+export function invoicesQuery(tenantId: string, filter: InvoiceListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['sales', tenantId, 'invoices', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.invoices.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(filter.payment !== '' && { payment: filter.payment }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function invoiceQuery(tenantId: string, invoiceId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'invoice', invoiceId],
+    queryFn: () => call(routes.invoices.get, { params: { id: invoiceId } }),
+    retry: false,
+  });
+}
+
+// The receipt form's list: the customer's posted invoices not paid in full, the oldest due date
+// first (the API's order for this filter). A receipt applies to at most MAX_RECEIPT_ALLOCATIONS
+// invoices, so the pages are read up to that many, in one go: the table and "Apply oldest first"
+// need them all at once.
+export function openInvoicesQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'invoices', 'open', customerId],
+    queryFn: async () => {
+      const items: InvoiceSummary[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: InvoicePage = await call(routes.invoices.list, {
+          query: {
+            limit: 100,
+            payment: 'open',
+            customerId,
+            ...(cursor !== null && { cursor }),
+          },
+        });
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== null && items.length < MAX_RECEIPT_ALLOCATIONS);
+      return items.slice(0, MAX_RECEIPT_ALLOCATIONS);
+    },
+  });
+}
+
+// The invoice form's "Add challans": the customer's posted challans with a line not billed yet
+export function challansToInvoiceQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'deliveries', 'to-invoice', customerId],
+    queryFn: async () =>
+      (
+        await call(routes.deliveries.list, {
+          query: { limit: 100, invoice: 'to_invoice', customerId },
+        })
+      ).items,
+  });
+}
+
+// The invoice form's "Add order charges": the customer's orders a service line can be billed from
+// (confirmed, delivered or closed), newest first. The list has no filter for "has a service left",
+// so the dialog opens an order to see its lines.
+export function billableOrdersQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'orders', 'billable', customerId],
+    queryFn: async () =>
+      (await call(routes.salesOrders.list, { query: { limit: 100, customerId } })).items.filter(
+        (order) =>
+          order.status === 'confirmed' || order.status === 'delivered' || order.status === 'closed',
+      ),
+  });
+}
+
+export function receiptsQuery(tenantId: string, filter: SalesListFilter<ReceiptStatus>) {
+  return infiniteQueryOptions({
+    queryKey: ['sales', tenantId, 'receipts', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.receipts.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function receiptQuery(tenantId: string, receiptId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'receipt', receiptId],
+    queryFn: () => call(routes.receipts.get, { params: { id: receiptId } }),
     retry: false,
   });
 }

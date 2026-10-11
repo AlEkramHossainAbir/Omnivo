@@ -13,6 +13,24 @@ import { delay, http, HttpResponse, type HttpResponseResolver } from 'msw';
 
 import { API_URL } from '../lib/api';
 import { meIn, OWNER, WORKSPACES, type Workspace } from './fixtures';
+import {
+  allocateReceipt,
+  assertNotVoided,
+  confirmWithCredit,
+  createReceipt,
+  creditOf,
+  findInvoice,
+  findReceipt,
+  listInvoices,
+  listReceipts,
+  type MockInvoice,
+  postInvoice,
+  removeInvoice,
+  saveInvoice,
+  toInvoice,
+  toReceipt,
+  voidReceipt,
+} from './invoice-data';
 import { mock, MockProblem, problem, readBody, readQuery, reply } from './mock';
 import {
   assertCanChange,
@@ -100,7 +118,6 @@ import {
 import {
   answerQuotation,
   changeOrderStatus,
-  confirmOrder,
   createOrder,
   findDelivery,
   findOrder,
@@ -109,6 +126,7 @@ import {
   listOrders,
   listQuotations,
   lookupPrices,
+  type MockOrder,
   pageOf,
   postDelivery,
   removeDelivery,
@@ -151,6 +169,8 @@ import {
   record,
   seriesList,
   startFresh,
+  transaction,
+  type WorkspaceData,
 } from './workspace-data';
 
 // mock সার্ভারের অবস্থা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে
@@ -243,6 +263,37 @@ function assertCategoryPlace(
       category.name.toLowerCase() === name.toLowerCase(),
   );
   if (taken) throw new MockProblem(409, 'category_name_taken', { name: ['category_name_taken'] });
+}
+
+// Only an asset account holds money (step 15c, the API's assertMoneyType)
+function assertMoneyType(holdsMoney: boolean, type: Account['type']): void {
+  if (holdsMoney && type !== 'asset') {
+    throw new MockProblem(409, 'account_money_type', { holdsMoney: ['account_money_type'] });
+  }
+}
+
+// Confirming an order checks the credit limit (step 15c). The audit rows are the API's: confirmed,
+// then the override when there was one, with the limit and what the customer owes now.
+function confirmAndRecord(data: WorkspaceData, order: MockOrder, overrideCreditLimit: boolean) {
+  const overridden = confirmWithCredit(data, order, overrideCreditLimit);
+  record(data, 'sales_order.confirmed', 'sales_order', order.id);
+  if (overridden) {
+    record(data, 'credit_limit.overridden', 'sales_order', order.id, diff({}, overridden));
+  }
+}
+
+// Posting an invoice, with the audit rows the API writes: the challan it made for its own goods
+// (created and posted), the credit override, then the invoice posted
+function postAndRecord(data: WorkspaceData, draft: MockInvoice, overrideCreditLimit: boolean) {
+  const { challan, overridden } = postInvoice(data, draft, overrideCreditLimit);
+  if (challan) {
+    record(data, 'delivery.created', 'delivery', challan.id);
+    record(data, 'delivery.posted', 'delivery', challan.id);
+  }
+  if (overridden) {
+    record(data, 'credit_limit.overridden', 'invoice', draft.id, diff({}, overridden));
+  }
+  record(data, 'invoice.posted', 'invoice', draft.id);
 }
 
 // UI-র প্রতিটা পথ দেখার জন্য: লগইনে পাসওয়ার্ড "wrong-password" → invalid_credentials,
@@ -712,6 +763,8 @@ export const handlers = [
       const data = current();
       const parent = parentFor(data.accounts, body.parentId);
       assertAccountCodeFree(data.accounts, body.code);
+      // A new account takes its parent's type
+      assertMoneyType(body.holdsMoney, parent.type);
       const created = {
         ...body,
         id: crypto.randomUUID(),
@@ -729,7 +782,13 @@ export const handlers = [
         created.id,
         diff(
           {},
-          { code: body.code, name: body.name, description: body.description, parent: parent.code },
+          {
+            code: body.code,
+            name: body.name,
+            description: body.description,
+            parent: parent.code,
+            holdsMoney: body.holdsMoney,
+          },
         ),
       );
       await delay();
@@ -750,11 +809,13 @@ export const handlers = [
         parentFor(data.accounts, fields.parentId, target);
       }
       assertAccountCodeFree(data.accounts, fields.code, id);
+      assertMoneyType(fields.holdsMoney, target.type);
       const snapshot = (account: Account) => ({
         code: account.code,
         name: account.name,
         description: account.description,
         parent: codeOf(data.accounts, account.parentId),
+        holdsMoney: account.holdsMoney,
       });
       const before = snapshot(target);
       Object.assign(target, fields, { version: version + 1, updatedAt: new Date().toISOString() });
@@ -2222,6 +2283,15 @@ export const handlers = [
     }),
   ),
 
+  // The credit line on the order and invoice forms (step 15c)
+  mock(
+    routes.customers.credit,
+    guarded(({ params }) => {
+      const { id } = routes.customers.credit.params.parse(params);
+      return reply(routes.customers.credit, creditOf(current(), id));
+    }),
+  ),
+
   mock(routes.customerGroups.list, () => {
     const { sales } = current();
     return reply(routes.customerGroups.list, {
@@ -2513,18 +2583,19 @@ export const handlers = [
   mock(
     routes.salesOrders.create,
     guarded(async ({ request }) => {
-      const { confirm, quotationId, ...input } = await readBody(
+      const { confirm, quotationId, overrideCreditLimit, ...input } = await readBody(
         routes.salesOrders.create.body,
         request,
       );
       const data = current();
-      const saved = createOrder(data, input, quotationId);
-      record(data, 'sales_order.created', 'sales_order', saved.id);
-      // "Confirm order" on a new form: saved and confirmed in one step, like the API
-      if (confirm) {
-        confirmOrder(data, saved);
-        record(data, 'sales_order.confirmed', 'sales_order', saved.id);
-      }
+      // "Confirm order" on a new form: saved and confirmed in one step, or nothing at all, like
+      // the API (step 15c: the credit check may refuse the confirmation)
+      const saved = transaction(data, () => {
+        const created = createOrder(data, input, quotationId);
+        record(data, 'sales_order.created', 'sales_order', created.id);
+        if (confirm) confirmAndRecord(data, created, overrideCreditLimit);
+        return created;
+      });
       await delay();
       return reply(routes.salesOrders.create, toOrder(data, saved));
     }),
@@ -2534,19 +2605,18 @@ export const handlers = [
     routes.salesOrders.update,
     guarded(async ({ request, params }) => {
       const { id } = routes.salesOrders.update.params.parse(params);
-      const { confirm, version, ...input } = await readBody(
+      const { confirm, version, overrideCreditLimit, ...input } = await readBody(
         routes.salesOrders.update.body,
         request,
       );
       const data = current();
       const target = findOrder(data, id);
       checkVersion(target.version, version);
-      updateOrder(data, target, input);
-      record(data, 'sales_order.updated', 'sales_order', id);
-      if (confirm) {
-        confirmOrder(data, target);
-        record(data, 'sales_order.confirmed', 'sales_order', id);
-      }
+      transaction(data, () => {
+        updateOrder(data, target, input);
+        record(data, 'sales_order.updated', 'sales_order', id);
+        if (confirm) confirmAndRecord(data, target, overrideCreditLimit);
+      });
       await delay();
       return reply(routes.salesOrders.update, toOrder(data, target));
     }),
@@ -2570,12 +2640,16 @@ export const handlers = [
     routes.salesOrders.confirm,
     guarded(async ({ request, params }) => {
       const { id } = routes.salesOrders.confirm.params.parse(params);
-      const { version } = await readBody(routes.salesOrders.confirm.body, request);
+      const { version, overrideCreditLimit } = await readBody(
+        routes.salesOrders.confirm.body,
+        request,
+      );
       const data = current();
       const target = findOrder(data, id);
       checkVersion(target.version, version);
-      confirmOrder(data, target);
-      record(data, 'sales_order.confirmed', 'sales_order', id);
+      transaction(data, () => {
+        confirmAndRecord(data, target, overrideCreditLimit);
+      });
       return reply(routes.salesOrders.confirm, toOrder(data, target));
     }),
   ),
@@ -2692,6 +2766,156 @@ export const handlers = [
       postDelivery(data, target);
       record(data, 'delivery.posted', 'delivery', id);
       return reply(routes.deliveries.post, toDelivery(data, target));
+    }),
+  ),
+
+  // Invoices and money receipts (step 15c). Every save that also posts runs in a transaction():
+  // a refused posting (stock, period lock, credit limit) leaves nothing behind, not even the draft.
+
+  mock(routes.invoices.list, ({ request }) => {
+    const query = readQuery(routes.invoices.list.query, request);
+    return reply(routes.invoices.list, pageOf(listInvoices(current(), query), query));
+  }),
+
+  mock(
+    routes.invoices.get,
+    guarded(({ params }) => {
+      const { id } = routes.invoices.get.params.parse(params);
+      const data = current();
+      return reply(routes.invoices.get, toInvoice(data, findInvoice(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.invoices.create,
+    guarded(async ({ request }) => {
+      const { post, overrideCreditLimit, ...input } = await readBody(
+        routes.invoices.create.body,
+        request,
+      );
+      const data = current();
+      const saved = transaction(data, () => {
+        const draft = saveInvoice(data, input);
+        record(data, 'invoice.created', 'invoice', draft.id);
+        if (post) postAndRecord(data, draft, overrideCreditLimit);
+        return draft;
+      });
+      await delay();
+      return reply(routes.invoices.create, toInvoice(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.invoices.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.invoices.update.params.parse(params);
+      const { post, overrideCreditLimit, version, ...input } = await readBody(
+        routes.invoices.update.body,
+        request,
+      );
+      const data = current();
+      const target = findInvoice(data, id);
+      checkVersion(target.version, version);
+      const saved = transaction(data, () => {
+        const draft = saveInvoice(data, input, target);
+        record(data, 'invoice.updated', 'invoice', id);
+        if (post) postAndRecord(data, draft, overrideCreditLimit);
+        return draft;
+      });
+      await delay();
+      return reply(routes.invoices.update, toInvoice(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.invoices.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.invoices.remove.params.parse(params);
+      const { version } = readQuery(routes.invoices.remove.query, request);
+      const data = current();
+      const target = findInvoice(data, id);
+      checkVersion(target.version, version);
+      removeInvoice(data, target);
+      record(data, 'invoice.deleted', 'invoice', id);
+      return reply(routes.invoices.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.invoices.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.invoices.post.params.parse(params);
+      const { version, overrideCreditLimit } = await readBody(routes.invoices.post.body, request);
+      const data = current();
+      const target = findInvoice(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        postAndRecord(data, target, overrideCreditLimit);
+      });
+      return reply(routes.invoices.post, toInvoice(data, target));
+    }),
+  ),
+
+  mock(routes.receipts.list, ({ request }) => {
+    const query = readQuery(routes.receipts.list.query, request);
+    return reply(routes.receipts.list, pageOf(listReceipts(current(), query), query));
+  }),
+
+  mock(
+    routes.receipts.get,
+    guarded(({ params }) => {
+      const { id } = routes.receipts.get.params.parse(params);
+      const data = current();
+      return reply(routes.receipts.get, toReceipt(data, findReceipt(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.receipts.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.receipts.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const receipt = createReceipt(data, body);
+        record(data, 'receipt.created', 'receipt', receipt.id);
+        return receipt;
+      });
+      await delay();
+      return reply(routes.receipts.create, toReceipt(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.receipts.allocate,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.receipts.allocate.params.parse(params);
+      const { version, allocations } = await readBody(routes.receipts.allocate.body, request);
+      const data = current();
+      const target = findReceipt(data, id);
+      assertNotVoided(target);
+      checkVersion(target.version, version);
+      allocateReceipt(data, target, allocations);
+      record(data, 'receipt.allocated', 'receipt', id);
+      await delay();
+      return reply(routes.receipts.allocate, toReceipt(data, target));
+    }),
+  ),
+
+  mock(
+    routes.receipts.void,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.receipts.void.params.parse(params);
+      const { version, ...input } = await readBody(routes.receipts.void.body, request);
+      const data = current();
+      const target = findReceipt(data, id);
+      assertNotVoided(target);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        voidReceipt(data, target, input);
+        record(data, 'receipt.voided', 'receipt', id);
+      });
+      await delay();
+      return reply(routes.receipts.void, toReceipt(data, target));
     }),
   ),
 ];

@@ -84,6 +84,9 @@ const CUSTOMER_IN_USE = [
   'quotations_customer_fk',
   'sales_orders_customer_fk',
   'deliveries_customer_fk',
+  // step 15c
+  'invoices_customer_fk',
+  'receipts_customer_fk',
 ] as const;
 
 function codeTaken(): AppError {

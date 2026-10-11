@@ -1,54 +1,27 @@
-import {
-  Delete02Icon,
-  HourglassIcon,
-  InformationCircleIcon,
-  PencilEdit02Icon,
-  ShoppingCart01Icon,
-} from '@hugeicons/core-free-icons';
+import { Delete02Icon, PencilEdit02Icon, ShoppingCart01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { type Quotation, routes } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { Button, Card, FormAlert, PageHeader, toast } from '@omnivo/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { type ReactNode, useState } from 'react';
+import { useState } from 'react';
 
 import { call } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { isExpired } from '../lib/sales';
 import { Fact } from './adjustment-view';
 import { failureOf } from './journal-parts';
+import { PrintButton, QuotationPrint } from './print-documents';
 import { SalesLinesTable } from './sales-lines-table';
-import { CustomerLink, QuotationStatusPill, SalesBackLink, useSalesRefresh } from './sales-parts';
+import {
+  CustomerLink,
+  DocumentNotice,
+  QuotationStatusPill,
+  SalesBackLink,
+  useSalesRefresh,
+} from './sales-parts';
 import { useIsoDate } from './stock-parts';
-
-// A notice above a document: what its state means and what to do next. Icon plus words, never
-// colour alone; warn for an offer that has ended, neutral otherwise.
-export function DocumentNotice({
-  tone,
-  children,
-}: {
-  tone: 'warn' | 'neutral';
-  children: ReactNode;
-}) {
-  return (
-    <p
-      className={
-        tone === 'warn'
-          ? 'flex items-start gap-2 rounded-control border border-warn/30 bg-warn-bg px-3 py-2.5 text-body-sm text-warn'
-          : 'flex items-start gap-2 rounded-control border border-line bg-subtle px-3 py-2.5 text-body-sm text-ink-2'
-      }
-    >
-      <HugeiconsIcon
-        icon={tone === 'warn' ? HourglassIcon : InformationCircleIcon}
-        size={17}
-        strokeWidth={1.5}
-        className="mt-px shrink-0"
-      />
-      <span>{children}</span>
-    </p>
-  );
-}
 
 // A quotation as the customer got it, with what can be done with it next: make the order, change
 // it, mark it declined or delete it while it is open; open it again once declined.
@@ -106,7 +79,12 @@ export function QuotationView({
       <PageHeader
         title={quotation.number}
         description={quotation.customer.name}
-        actions={<QuotationStatusPill quotation={quotation} today={today} />}
+        actions={
+          <>
+            <QuotationStatusPill quotation={quotation} today={today} />
+            <PrintButton />
+          </>
+        }
       />
       {failure && <FormAlert message={failure} />}
       {isExpired(quotation, today) && quotation.validUntil !== null && (
@@ -224,6 +202,7 @@ export function QuotationView({
           </Button>
         </div>
       )}
+      <QuotationPrint quotation={quotation} />
     </div>
   );
 }

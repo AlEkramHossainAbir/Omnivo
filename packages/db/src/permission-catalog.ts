@@ -35,6 +35,9 @@ const DESCRIPTIONS = {
   'sales.quotation.manage': 'Write, edit, decline and delete quotations',
   'sales.order.manage': 'Write, confirm, reopen, close and cancel sales orders',
   'sales.delivery.manage': 'Write and post deliveries (delivery challans), which take stock out',
+  'sales.invoice.manage': 'Write, post and delete draft sales invoices',
+  'sales.receipt.manage': 'Record money receipts, apply them to invoices and void them',
+  'sales.credit.override': "Confirm orders and post invoices over a customer's credit limit",
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

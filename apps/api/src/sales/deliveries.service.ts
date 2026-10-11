@@ -3,6 +3,8 @@ import {
   compareQuantity,
   type Delivery,
   type DeliveryInput,
+  type DeliveryInvoiceFilter,
+  type DeliveryInvoiceState,
   type DeliverySummary,
   type PartyRef,
   type StockDocumentStatus,
@@ -14,13 +16,15 @@ import {
 import {
   deliveries,
   deliveryLines,
+  invoiceLines,
+  invoices,
   parties,
   products,
   salesOrderLines,
   salesOrders,
   warehouses,
 } from '@omnivo/db';
-import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -58,6 +62,30 @@ const lineCount = sql<number>`(
    WHERE l.tenant_id = deliveries.tenant_id AND l.delivery_id = deliveries.id
 )`;
 
+// Step 15c: does a line of it still wait for an invoice? (delivery_lines_to_invoice_idx)
+const lineToInvoice = sql`EXISTS (
+  SELECT 1 FROM delivery_lines l
+   WHERE l.tenant_id = deliveries.tenant_id AND l.delivery_id = deliveries.id AND NOT l.invoiced
+)`;
+const lineInvoiced = sql`EXISTS (
+  SELECT 1 FROM delivery_lines l
+   WHERE l.tenant_id = deliveries.tenant_id AND l.delivery_id = deliveries.id AND l.invoiced
+)`;
+
+// A draft is never invoiced: only posted lines can be billed
+const invoiceState = sql<DeliveryInvoiceState>`CASE
+  WHEN deliveries.status <> 'posted' OR NOT ${lineInvoiced} THEN 'not_invoiced'
+  WHEN ${lineToInvoice} THEN 'partly_invoiced'
+  ELSE 'invoiced' END`;
+
+// The list's invoice filter: posted, with a line still to bill (what the invoice form offers), or
+// with every line billed
+function invoiceFilter(filter: DeliveryInvoiceFilter | undefined): SQL | undefined {
+  if (filter === undefined) return undefined;
+  const lines = filter === 'to_invoice' ? lineToInvoice : sql`NOT ${lineToInvoice}`;
+  return and(eq(deliveries.status, 'posted'), lines);
+}
+
 function notDraft(): AppError {
   return new AppError(
     409,
@@ -71,6 +99,7 @@ function toSummary(
   customer: PartyRef,
   order: { id: string; number: string | null } | null,
   lines: number,
+  invoiced: DeliveryInvoiceState,
 ): DeliverySummary {
   return {
     id: row.id,
@@ -84,6 +113,7 @@ function toSummary(
     vehicle: row.vehicle,
     note: row.note,
     lineCount: lines,
+    invoiceState: invoiced,
     postedAt: row.postedAt?.toISOString() ?? null,
     version: row.version,
     updatedAt: row.updatedAt.toISOString(),
@@ -123,6 +153,7 @@ export class DeliveriesService {
     status?: StockDocumentStatus | undefined;
     customerId?: string | undefined;
     warehouseId?: string | undefined;
+    invoice?: DeliveryInvoiceFilter | undefined;
   }): Promise<{ items: DeliverySummary[]; nextCursor: string | null }> {
     const after = decodeCursor(query.cursor, cursorSchema);
     return this.withTenant(async (tx) => {
@@ -134,6 +165,7 @@ export class DeliveriesService {
           query.warehouseId === undefined
             ? undefined
             : eq(deliveries.warehouseId, query.warehouseId),
+          invoiceFilter(query.invoice),
           after === undefined
             ? undefined
             : sql`(${deliveries.date}, ${deliveries.id}) < (${after[0]}::date, ${after[1]}::uuid)`,
@@ -143,7 +175,7 @@ export class DeliveriesService {
       const page = toPage(rows, query.limit, (last) => [last.delivery.date, last.delivery.id]);
       return {
         items: page.items.map((row) =>
-          toSummary(row.delivery, row.customer, row.order, row.lineCount),
+          toSummary(row.delivery, row.customer, row.order, row.lineCount, row.invoiceState),
         ),
         nextCursor: page.nextCursor,
       };
@@ -270,12 +302,58 @@ export class DeliveriesService {
     });
   }
 
+  // Step 15c: the challan a direct invoice makes for its own goods lines, posted in the invoice's
+  // transaction. It is an ordinary challan — numbered, in the stock ledger, with its cost of goods
+  // sold — so the stock, the books and the challan list need nothing new: the invoice only bills
+  // its lines. No order and no shipping address: the goods went over the counter, or the invoice
+  // says where. Returns its number and its line ids in the order of `lines`; the invoice points its
+  // lines at them, and marks them invoiced with the challan lines it bills. The line errors name
+  // this challan's lines (lines.0, lines.1 …): the caller renames them to its own.
+  async deliverForInvoice(
+    tx: Transaction,
+    input: {
+      customerId: string;
+      date: string;
+      warehouseId: string;
+      note: string;
+      lines: readonly LineInput[];
+    },
+  ): Promise<{ id: string; number: string; lineIds: string[] }> {
+    const customer = await this.customerOf(tx, input.customerId);
+    const lines = await resolveLines(tx, input.lines, 'out');
+    const orderLineIds = lines.map(() => null);
+    const [row] = await tx
+      .insert(deliveries)
+      .values({
+        tenantId: getTenantId(),
+        date: input.date,
+        customerId: input.customerId,
+        warehouseId: input.warehouseId,
+        note: input.note,
+        createdBy: currentPrincipal().userId,
+        updatedBy: currentPrincipal().userId,
+      })
+      .returning();
+    if (!row) throw new Error('Delivery insert returned no row');
+    await this.writeLines(tx, row.id, lines, orderLineIds);
+    await audit(tx, {
+      action: 'delivery.created',
+      entityType: 'delivery',
+      entityId: row.id,
+      changes: created(await this.snapshot(tx, row, customer, null, lines.length)),
+    });
+    const number = await this.postAndLog(tx, row);
+    // Posting wrote the lines again with their values, so their ids are new: read them now
+    const posted = await this.linesOf(tx, row.id);
+    return { id: row.id, number, lineIds: posted.map((line) => line.id) };
+  }
+
   // A draft out of the warehouse, like a stock adjustment "out": the date and the warehouse
   // checked, the lines checked again against their products and (for an order) against what the
   // order still has to deliver, the number taken, the stock moved at its average cost, and the
   // cost of goods sold booked — all in the caller's transaction, so a refused line leaves nothing
-  // posted and no number used.
-  private async postAndLog(tx: Transaction, draft: DeliveryRow): Promise<void> {
+  // posted and no number used. Returns the number (a direct invoice's challan needs it, step 15c).
+  private async postAndLog(tx: Transaction, draft: DeliveryRow): Promise<string> {
     await this.posting.assertDate(tx, draft.date);
     await assertWarehousesActive(tx, [{ field: 'warehouseId', warehouseId: draft.warehouseId }]);
     // Locked before anything moves: two deliveries of one order post one after the other, and the
@@ -330,6 +408,7 @@ export class DeliveriesService {
       entityId: draft.id,
       changes: created({ number, entry: entry?.number ?? null }),
     });
+    return number;
   }
 
   // The order of a delivery: this customer's, and confirmed (waiting for deliveries). FOR UPDATE,
@@ -536,6 +615,7 @@ export class DeliveriesService {
         customer: { id: parties.id, code: parties.code, name: parties.name },
         order: { id: salesOrders.id, number: salesOrders.number },
         lineCount,
+        invoiceState,
       })
       .from(deliveries)
       .innerJoin(
@@ -556,7 +636,7 @@ export class DeliveriesService {
     if (!found) throw notFound('Delivery');
     const { delivery: row } = found;
     const lines = await this.linesOf(tx, id);
-    const [canSee, entries, variants, batches] = await Promise.all([
+    const [canSee, entries, variants, batches, billedBy] = await Promise.all([
       this.access.canSee(),
       this.books.entriesOf(tx, id),
       loadVariants(
@@ -567,9 +647,13 @@ export class DeliveriesService {
         tx,
         lines.map((line) => line.batchId),
       ),
+      this.invoicesOf(
+        tx,
+        lines.map((line) => line.id),
+      ),
     ]);
     return {
-      ...toSummary(row, found.customer, found.order, found.lineCount),
+      ...toSummary(row, found.customer, found.order, found.lineCount, found.invoiceState),
       shippingAddressId: row.shippingAddressId,
       lines: lines.flatMap((line) => {
         const variant = variants.get(line.variantId);
@@ -585,11 +669,34 @@ export class DeliveriesService {
             orderLineId: line.orderLineId,
             // Worked out from the books: needs inventory.stock.value (step 14)
             value: canSee ? line.value : null,
+            invoiced: line.invoiced,
           },
         ];
       }),
       entry: entries[0] ?? null,
+      invoices: billedBy,
     };
+  }
+
+  // The posted invoices that bill some of these lines, by number (step 15c). A draft invoice that
+  // names a line has claimed nothing yet, so it is not shown.
+  private async invoicesOf(tx: Transaction, lineIds: readonly string[]) {
+    if (lineIds.length === 0) return [];
+    return tx
+      .selectDistinct({ id: invoices.id, number: invoices.number })
+      .from(invoiceLines)
+      .innerJoin(
+        invoices,
+        and(eq(invoices.tenantId, invoiceLines.tenantId), eq(invoices.id, invoiceLines.invoiceId)),
+      )
+      .where(
+        and(
+          eq(invoiceLines.tenantId, getTenantId()),
+          inArray(invoiceLines.deliveryLineId, [...lineIds]),
+          eq(invoices.status, 'posted'),
+        ),
+      )
+      .orderBy(asc(invoices.number));
   }
 
   private async customerOf(tx: Transaction, customerId: string): Promise<PartyRef> {

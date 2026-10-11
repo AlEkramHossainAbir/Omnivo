@@ -10,6 +10,7 @@ import {
   isZeroMoney,
   multiplyMoney,
   negateMoney,
+  priceInUnit,
   percentOfMoney,
   prorateMoney,
   splitMoney,
@@ -106,5 +107,16 @@ describe('money', () => {
     expect(compareMoney('-1', '0')).toBe(-1);
     expect(negateMoney('12.5')).toBe('-12.5000');
     expect(negateMoney('0')).toBe('0.0000');
+  });
+
+  it('moves a price to another pack of the product', () => {
+    // A case of 24 at ৳504 is ৳21 a piece, and back
+    expect(priceInUnit('504', '24.000000', '1')).toBe('21.0000');
+    expect(priceInUnit('21', '1', '24')).toBe('504.0000');
+    // ৳500 a case is ৳20.8333… a piece: 4 decimals, rounded
+    expect(priceInUnit('500', '24', '1')).toBe('20.8333');
+    // A yard is 0.9144 m: ৳100 a metre is ৳91.44 a yard
+    expect(priceInUnit('100', '1', '0.914400')).toBe('91.4400');
+    expect(() => priceInUnit('100', '0', '1')).toThrow();
   });
 });

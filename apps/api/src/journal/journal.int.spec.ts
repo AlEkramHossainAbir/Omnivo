@@ -375,6 +375,7 @@ describe('a posted entry', () => {
           code: '1121',
           name: 'Dutch-Bangla Bank CD A/C 1234',
           isGroup: false,
+          holdsMoney: false,
           description: '',
         })
       ).json(),
@@ -418,6 +419,7 @@ describe('the ledger', () => {
           code: '5295',
           name: 'Tea and entertainment',
           isGroup: false,
+          holdsMoney: false,
           description: '',
         })
       ).json(),

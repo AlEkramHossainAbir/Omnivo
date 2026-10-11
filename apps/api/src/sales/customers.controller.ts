@@ -3,6 +3,7 @@ import { type RouteInput, type RouteResponse, routes } from '@omnivo/contracts';
 
 import { Endpoint } from '../common/http/endpoint.js';
 import { LedgerService } from '../journal/ledger.service.js';
+import { CreditService } from './credit.service.js';
 import { CustomerGroupsService } from './customer-groups.service.js';
 import { CustomersService } from './customers.service.js';
 
@@ -14,6 +15,7 @@ export class CustomersController {
   constructor(
     private readonly customers: CustomersService,
     private readonly ledgers: LedgerService,
+    private readonly credits: CreditService,
   ) {}
 
   @Endpoint(routes.customers.list)
@@ -64,6 +66,12 @@ export class CustomersController {
     query,
   }: RouteInput<Routes['statement']>): Promise<RouteResponse<Routes['statement']>> {
     return this.ledgers.statement(params.id, query);
+  }
+
+  // Step 15c: also sales.customer.balance — the numbers say what the customer owes
+  @Endpoint(routes.customers.credit)
+  credit({ params }: RouteInput<Routes['credit']>): Promise<RouteResponse<Routes['credit']>> {
+    return this.credits.get(params.id);
   }
 }
 

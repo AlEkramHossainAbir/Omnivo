@@ -45,7 +45,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ChangeEvent, useCallback, useMemo, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 
-import { accountTree, groupOptions, suggestCode } from '../lib/account-tree';
+import { accountTree, groupOptions, moneyGroupOf, suggestCode } from '../lib/account-tree';
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { useCan } from '../lib/permissions';
@@ -69,6 +69,46 @@ function TypeLine({ type, prefix }: { type: AccountType; prefix?: string }) {
     balance: t(`accounts.balances.${NORMAL_BALANCE[type]}`),
   });
   return <p className="text-label text-ink-3">{prefix ? `${prefix} · ${line}` : line}</p>;
+}
+
+// Step 15c: "Holds money", for asset accounts only (the server's account_money_type). Under a
+// group that holds money, the box shows ticked and cannot be changed, and says why: the group
+// counts for every account inside it. A plain controlled box: each form wraps it in a Controller
+// of its own type.
+function HoldsMoneyBox({
+  checked,
+  onChange,
+  accounts,
+  type,
+  parentId,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  accounts: readonly Account[];
+  type: AccountType | undefined;
+  parentId: string | null;
+}) {
+  const { t } = useLocale();
+  if (type !== 'asset') return null;
+  const group = moneyGroupOf(accounts, parentId);
+  return (
+    <div className="grid gap-1.5">
+      <Checkbox
+        id="account-holds-money"
+        label={t('accounts.holdsMoney')}
+        checked={group !== undefined || checked}
+        disabled={group !== undefined}
+        onCheckedChange={(next) => {
+          onChange(next === true);
+        }}
+      />
+      <p className="pl-[27px] text-label text-ink-3">
+        {group === undefined
+          ? t('accounts.holdsMoneyHint')
+          : t('accounts.holdsMoneyFromGroup', { name: group.name })}
+      </p>
+    </div>
+  );
 }
 
 function useRefresh() {
@@ -105,6 +145,7 @@ function NewAccountForm({
       code: start ? suggestCode(start, accounts) : '',
       name: '',
       isGroup: false,
+      holdsMoney: false,
       description: '',
     },
   });
@@ -204,6 +245,19 @@ function NewAccountForm({
             error={errors.name?.message}
           />
         </div>
+        <Controller
+          control={control}
+          name="holdsMoney"
+          render={({ field }) => (
+            <HoldsMoneyBox
+              checked={field.value}
+              onChange={field.onChange}
+              accounts={accounts}
+              type={parent?.type}
+              parentId={chosen === '' ? null : chosen}
+            />
+          )}
+        />
         <TextAreaField
           label={t('accounts.about')}
           optional
@@ -237,6 +291,7 @@ function EditAccountForm({
     account.purpose !== null && isAccountPurpose(account.purpose) ? account.purpose : null;
   const {
     register,
+    control,
     handleSubmit,
     setError,
     formState: { errors, isSubmitting },
@@ -246,10 +301,13 @@ function EditAccountForm({
       parentId: account.parentId,
       code: account.code,
       name: account.name,
+      holdsMoney: account.holdsMoney,
       description: account.description ?? '',
       version: account.version,
     },
   });
+  // The group the account sits in now, as the person may have just changed it
+  const parentId = useWatch({ control, name: 'parentId' });
 
   const toggle = useMutation({
     mutationFn: () =>
@@ -381,6 +439,19 @@ function EditAccountForm({
             error={errors.name?.message}
           />
         </div>
+        <Controller
+          control={control}
+          name="holdsMoney"
+          render={({ field }) => (
+            <HoldsMoneyBox
+              checked={field.value}
+              onChange={field.onChange}
+              accounts={accounts}
+              type={account.type}
+              parentId={parentId}
+            />
+          )}
+        />
         <TextAreaField
           label={t('accounts.about')}
           optional

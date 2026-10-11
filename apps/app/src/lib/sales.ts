@@ -123,7 +123,8 @@ export function formTotals(
 // ---------------------------------------------------------------------------------------------
 // The line editor's data
 
-// What a line needs to know about its product, beside what the form sends
+// What a line needs to know about its product, beside what the form sends. The tracking (step 15c):
+// an invoice's own goods line picks its batch or serial numbers like a challan line.
 export type SalesItem = Pick<
   SalesLine,
   | 'variantId'
@@ -135,6 +136,8 @@ export type SalesItem = Pick<
   | 'baseUnitId'
   | 'units'
   | 'productType'
+  | 'tracking'
+  | 'hasExpiry'
 >;
 
 // What the editor keeps per line, beside the form value, at the same index
@@ -162,7 +165,8 @@ export const SALES_LINE_FIELDS = [
   'taxRateId',
 ] as const;
 
-function salesItemOf(line: SalesLine): SalesItem {
+// The item of a saved line (step 15c: also an order's service line on an invoice)
+export function salesItemOf(line: SalesLine): SalesItem {
   return {
     variantId: line.variantId,
     productId: line.productId,
@@ -173,6 +177,8 @@ function salesItemOf(line: SalesLine): SalesItem {
     baseUnitId: line.baseUnitId,
     units: line.units,
     productType: line.productType,
+    tracking: line.tracking,
+    hasExpiry: line.hasExpiry,
   };
 }
 

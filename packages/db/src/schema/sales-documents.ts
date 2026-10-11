@@ -32,13 +32,16 @@ import { warehouses } from './warehouses.js';
 
 // Step 15b: quotations, sales orders and deliveries (challans). The rules on what may change when
 // (a confirmed order's lines, a posted delivery) live in migration 0028, like the stock documents'.
+// Step 15c adds what invoices write here: an order line's invoiced quantity and a challan line's
+// invoiced flag (rules in migration 0030). The invoices themselves are in invoices.ts.
 
 // The columns a quotation line and an order line share: the product, the quantity (as typed and in
 // the base unit, like a stock line), the price and discount as typed, and a copy of the VAT rate.
 // net, vat and total are what contracts' lineAmounts() gave when the line was saved: stored, not
 // worked out on every read, so a list shows the totals without the arithmetic, and a document reads
 // the same in five years whatever happens to the code.
-function salesLineColumns() {
+// Exported: an invoice line (step 15c, invoices.ts) is a sales line too.
+export function salesLineColumns() {
   return {
     id: baseColumns().id,
     tenantId: uuid('tenant_id')
@@ -70,8 +73,9 @@ function salesLineColumns() {
   };
 }
 
-// The totals every quotation and order keeps: the sums of its lines (contracts' documentTotals)
-function totalColumns() {
+// The totals every quotation, order and invoice keeps: the sums of its lines (contracts'
+// documentTotals)
+export function totalColumns() {
   return {
     discount: numeric('discount', { precision: 19, scale: 4 }).notNull().default('0'),
     net: numeric('net', { precision: 19, scale: 4 }).notNull().default('0'),
@@ -260,6 +264,12 @@ export const salesOrderLines = pgTable(
     deliveredQuantity: numeric('delivered_quantity', { precision: 19, scale: 4 })
       .notNull()
       .default('0'),
+    // In the base unit: what posted invoices billed (step 15c). A goods line through its challan
+    // lines, a service line straight from the order. Written by the invoice's posting, under a
+    // lock on the order; read by the credit check ("what confirmed orders will still bill").
+    invoicedQuantity: numeric('invoiced_quantity', { precision: 19, scale: 4 })
+      .notNull()
+      .default('0'),
   },
   (table) => [
     uniqueIndex('sales_order_lines_line_idx').on(table.tenantId, table.orderId, table.lineNo),
@@ -305,6 +315,11 @@ export const salesOrderLines = pgTable(
     check(
       'sales_order_lines_delivered_check',
       sql`${table.deliveredQuantity} BETWEEN 0 AND ${table.baseQuantity}`,
+    ),
+    // Never billed more than was ordered, whatever the API checked first
+    check(
+      'sales_order_lines_invoiced_check',
+      sql`${table.invoicedQuantity} BETWEEN 0 AND ${table.baseQuantity}`,
     ),
   ],
 );
@@ -378,9 +393,19 @@ export const deliveryLines = pgTable(
     orderLineId: uuid('order_line_id'),
     // What the goods cost, at the average cost when posted (step 14); NULL while a draft
     value: numeric('value', { precision: 19, scale: 4 }),
+    // Billed by a posted invoice (step 15c). An invoice bills a challan line whole, so a yes/no is
+    // enough. It goes from false to true once, when the invoice is posted (migration 0030).
+    invoiced: boolean('invoiced').notNull().default(false),
   },
   (table) => [
     uniqueIndex('delivery_lines_line_idx').on(table.tenantId, table.deliveryId, table.lineNo),
+    // The target of the invoice line's FK (step 15c)
+    uniqueIndex('delivery_lines_tenant_id_idx').on(table.tenantId, table.id),
+    // The challans still to bill (the invoice form's picker). Partial: after a year almost every
+    // line is invoiced, and only the few that are not stay in it.
+    index('delivery_lines_to_invoice_idx')
+      .on(table.tenantId, table.deliveryId)
+      .where(sql`NOT ${table.invoiced}`),
     index('delivery_lines_variant_idx').on(table.tenantId, table.productId, table.variantId),
     // The order line FK's check when a draft order's lines are replaced
     index('delivery_lines_order_line_idx')

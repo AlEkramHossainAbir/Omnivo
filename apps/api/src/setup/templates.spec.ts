@@ -60,6 +60,17 @@ describe.each(INDUSTRIES)('the %s chart', (industry) => {
     }
   });
 
+  // Step 15c: a money receipt needs somewhere to put the money from the first day
+  it('flags cash and the bank and wallet groups as money, and only assets', () => {
+    const money = ACCOUNT_TYPES.flatMap((type) =>
+      flatten(chart[type])
+        .filter((node) => node.holdsMoney === true)
+        .map((node) => ({ code: node.code, type, purpose: node.purpose })),
+    );
+    expect(money.every((node) => node.type === 'asset')).toBe(true);
+    expect(money.some((node) => node.purpose === 'cash')).toBe(true);
+  });
+
   it('starts each type with a group, and puts every code under its type digit', () => {
     ACCOUNT_TYPES.forEach((type, index) => {
       expect(chart[type].children).toBeDefined();

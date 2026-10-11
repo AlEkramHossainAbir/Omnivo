@@ -26,6 +26,12 @@ import {
 // delivered in as many deliveries as it takes), or on its own, for a customer who collects goods
 // without an order. Its lines carry no prices: the invoice (15c) prices them.
 
+// How much of a posted delivery is billed (step 15c). An invoice bills each of its lines whole,
+// so a delivery is partly invoiced only when an invoice left some of its lines out. A draft is
+// not_invoiced.
+export const DELIVERY_INVOICE_STATES = ['not_invoiced', 'partly_invoiced', 'invoiced'] as const;
+export type DeliveryInvoiceState = (typeof DELIVERY_INVOICE_STATES)[number];
+
 // ---------------------------------------------------------------------------------------------
 // What the API sends
 
@@ -44,6 +50,7 @@ export const deliverySummarySchema = z.object({
   vehicle: z.string().nullable(),
   note: z.string().nullable(),
   lineCount: z.number().int(),
+  invoiceState: z.enum(DELIVERY_INVOICE_STATES),
   postedAt: z.iso.datetime().nullable(),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),
@@ -56,6 +63,8 @@ export const deliveryLineSchema = stockLineSchema.extend({
   orderLineId: z.uuid().nullable(),
   // What the goods cost, once posted (step 14); null for a draft, and without inventory.stock.value
   value: z.string().nullable(),
+  // Billed by a posted invoice (step 15c)
+  invoiced: z.boolean(),
 });
 export type DeliveryLine = z.infer<typeof deliveryLineSchema>;
 
@@ -64,6 +73,8 @@ export const deliverySchema = deliverySummarySchema.extend({
   lines: z.array(deliveryLineSchema),
   // The cost of goods sold entry; null for a draft, or when the goods cost nothing in the books
   entry: entryRefSchema.nullable(),
+  // The posted invoices that bill its lines (step 15c); a direct invoice's own delivery has one
+  invoices: z.array(documentRefSchema),
 });
 export type Delivery = z.infer<typeof deliverySchema>;
 
@@ -130,10 +141,15 @@ export const deleteDeliveryQuerySchema = z.object({
   version: z.coerce.number<number>().int().min(1),
 });
 
+// to_invoice: posted, with a line no posted invoice bills yet — what the invoice form offers
+export const DELIVERY_INVOICE_FILTERS = ['to_invoice', 'invoiced'] as const;
+export type DeliveryInvoiceFilter = (typeof DELIVERY_INVOICE_FILTERS)[number];
+
 export const deliveryListQuerySchema = pageQuerySchema.extend({
   status: z.enum(STOCK_DOCUMENT_STATUSES).optional(),
   customerId: z.uuid().optional(),
   warehouseId: z.uuid().optional(),
+  invoice: z.enum(DELIVERY_INVOICE_FILTERS).optional(),
 });
 export type DeliveryListQuery = z.input<typeof deliveryListQuerySchema>;
 

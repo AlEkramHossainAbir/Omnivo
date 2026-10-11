@@ -7,6 +7,7 @@ import { authRoutes } from './auth.js';
 import { branchRoutes } from './branches.js';
 import { defineRoute } from './http.js';
 import { invitationRoutes } from './invitations.js';
+import { invoiceRoutes } from './invoices.js';
 import { journalRoutes, ledgerRoutes, openingBalanceRoutes, periodLockRoutes } from './journal.js';
 import { memberRoutes } from './members.js';
 import { notificationRoutes } from './notifications.js';
@@ -21,6 +22,7 @@ import { productCategoryRoutes } from './product-categories.js';
 import { productImportRoutes } from './product-imports.js';
 import { productRoutes } from './products.js';
 import { quotationRoutes } from './quotations.js';
+import { receiptRoutes } from './receipts.js';
 import { roleRoutes } from './roles.js';
 import { salesOrderRoutes } from './sales-orders.js';
 import { salesPriceRoutes } from './sales.js';
@@ -89,4 +91,6 @@ export const routes = {
   quotations: quotationRoutes,
   salesOrders: salesOrderRoutes,
   deliveries: deliveryRoutes,
+  invoices: invoiceRoutes,
+  receipts: receiptRoutes,
 };

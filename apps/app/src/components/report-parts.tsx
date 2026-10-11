@@ -8,13 +8,11 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  DEFAULT_SETTINGS,
   type ExportFormat,
   isZeroMoney,
   type ReportExportInput,
   type ReportSection,
   routes,
-  todayIn,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
@@ -30,30 +28,22 @@ import {
   SelectField,
   toast,
 } from '@omnivo/ui';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
 
 import { call } from '../lib/api';
 import { balanceSide } from '../lib/journal';
-import { settingsQuery } from '../lib/queries';
 import { type DateRange, PERIOD_PRESETS, type PeriodPreset, presetRange } from '../lib/reports';
 import { useSession } from '../lib/session-store';
 import { failureOf } from './journal-parts';
+import { useAmount, useReportCalendar } from './report-hooks';
+
+// Step 15c: the two hooks live in report-hooks.ts; the report pages still import them from here
+export { useAmount, useReportCalendar } from './report-hooks';
 
 // Shared by the three report pages. Here, not in a route file: each route is its own lazy chunk,
 // and importing from one would pull that whole page into the others.
-
-// Today and the fiscal year's first month, on the company's clock (not the browser's): the
-// presets are worked out from them
-export function useReportCalendar(): { today: string; startMonth: number } {
-  const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
-  const settings = useQuery(settingsQuery(tenantId)).data;
-  return {
-    today: todayIn(settings?.timezone ?? DEFAULT_SETTINGS.timezone),
-    startMonth: settings?.fiscalYearStartMonth ?? DEFAULT_SETTINGS.fiscalYearStartMonth,
-  };
-}
 
 // A report's period: a preset ("This fiscal year") until someone picks a date by hand, then
 // "Custom dates" with what they picked. The preset's dates follow the settings once they load.
@@ -80,12 +70,6 @@ export function usePeriod(initial: Exclude<PeriodPreset, 'custom'> = 'this_year'
       setCustom(next);
     },
   };
-}
-
-// "৳18,42,600.50": 2 decimals, so a statement's totals visibly add up (CLAUDE.md → Money)
-export function useAmount(): (value: string) => string {
-  const { format } = useLocale();
-  return (value: string) => format.money(value, { decimals: 2 });
 }
 
 // The period: a preset, and the two dates it stands for. Changing a date makes it "Custom dates".

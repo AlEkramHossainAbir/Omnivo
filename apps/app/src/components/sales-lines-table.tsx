@@ -17,7 +17,8 @@ import { useQuantity } from './stock-parts';
 
 // The lines of a quotation or an order that is no longer edited here: a real <table> in a card,
 // scrolling inside its own box on a phone, with the document's totals under it. An order's lines
-// (`delivered`) also say how much went out and how much is left.
+// (`delivered`) also say how much went out and how much is left, and (step 15c) how much of it
+// posted invoices bill. An invoice's lines use the table as they are.
 export function SalesLinesTable({
   lines,
   totals,
@@ -27,6 +28,7 @@ export function SalesLinesTable({
   lines: readonly (SalesLine | SalesOrderLine)[];
   totals: DocumentTotals;
   pricesIncludeVat: boolean;
+  // An order past its draft: the Delivered and Invoiced columns
   delivered?: boolean;
 }) {
   const { t, format } = useLocale();
@@ -61,6 +63,11 @@ export function SalesLinesTable({
               {delivered && (
                 <th scope="col" className="px-5 py-2.5 text-right">
                   {t('salesOrders.delivered')}
+                </th>
+              )}
+              {delivered && (
+                <th scope="col" className="px-5 py-2.5 text-right">
+                  {t('salesOrders.invoiced')}
                 </th>
               )}
             </tr>
@@ -122,6 +129,12 @@ export function SalesLinesTable({
                         </span>
                       </>
                     )}
+                  </td>
+                )}
+                {/* In the base unit, like Delivered: a challan in pieces bills part of a case */}
+                {delivered && 'invoicedQuantity' in line && (
+                  <td className="px-5 py-3 text-right whitespace-nowrap tabular-nums">
+                    {quantity(line.invoicedQuantity, line.baseUnitId)}
                   </td>
                 )}
               </tr>

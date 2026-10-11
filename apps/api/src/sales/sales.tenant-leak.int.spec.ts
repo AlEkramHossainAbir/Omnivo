@@ -8,10 +8,14 @@ import {
   customerGroupListSchema,
   customerGroupSchema,
   customerPageSchema,
+  customerCreditSchema,
   customerSchema,
   type Delivery,
   deliveryPageSchema,
   deliverySchema,
+  type Invoice,
+  invoicePageSchema,
+  invoiceSchema,
   type PriceList,
   priceListListSchema,
   priceListSchema,
@@ -22,6 +26,9 @@ import {
   type Quotation,
   quotationPageSchema,
   quotationSchema,
+  type Receipt,
+  receiptPageSchema,
+  receiptSchema,
   type SalesOrder,
   salesOrderPageSchema,
   salesOrderSchema,
@@ -679,5 +686,285 @@ describe('sales document isolation over HTTP', () => {
     });
     expect(res.statusCode, res.body).toBe(201);
     expect(quotationSchema.parse(res.json()).number).toBe(quotationOfB.number);
+  });
+});
+
+describe('invoice and receipt isolation over HTTP', () => {
+  let customerOfA: Customer;
+  let serviceOfA: Product;
+  let branchOfA: string;
+  let rateOfA: string;
+  let invoiceOfB: Invoice;
+  let draftOfB: Invoice;
+  let receiptOfB: Receipt;
+  let cashOfB: string;
+
+  function invoiceBody(customerId: string, branchId: string, line: object, extra: object = {}) {
+    return {
+      customerId,
+      date: '2026-10-06',
+      dueDate: '',
+      customerReference: '',
+      branchId,
+      warehouseId: '',
+      note: '',
+      lines: [line],
+      post: true,
+      ...extra,
+    };
+  }
+
+  function serviceLine(product: Product, taxRateId: string, extra: object = {}) {
+    return {
+      variantId: product.variants[0]?.id,
+      unitId: product.baseUnitId,
+      quantity: '1',
+      description: '',
+      unitPrice: '500',
+      discountType: 'percent',
+      discount: '',
+      taxRateId,
+      deliveryLineId: '',
+      orderLineId: '',
+      batchId: '',
+      serialNumbers: [],
+      ...extra,
+    };
+  }
+
+  function receiptBody(
+    customerId: string,
+    accountId: string,
+    branchId: string,
+    allocations: object[],
+  ) {
+    return {
+      customerId,
+      date: '2026-10-07',
+      amount: '200',
+      accountId,
+      method: 'cash',
+      reference: '',
+      branchId,
+      note: '',
+      allocations,
+    };
+  }
+
+  beforeAll(async () => {
+    // B: a posted invoice for a delivery charge (no stock needed), a draft, and a cash receipt
+    // that pays part of the posted one
+    const unitsOfB = unitListSchema.parse((await as(tenantB, 'GET', '/units')).json()).items;
+    const service = await as(
+      tenantB,
+      'POST',
+      '/products',
+      productForm('Delivery charge', unitsOfB, { type: 'service' }),
+    );
+    expect(service.statusCode, service.body).toBe(201);
+    const serviceOfB = productSchema.parse(service.json());
+    const posted = await as(
+      tenantB,
+      'POST',
+      '/invoices',
+      invoiceBody(customerOfB.id, warehouseOfB.branchId, serviceLine(serviceOfB, rateOfB.id)),
+    );
+    expect(posted.statusCode, posted.body).toBe(201);
+    const draft = await as(
+      tenantB,
+      'POST',
+      '/invoices',
+      invoiceBody(customerOfB.id, warehouseOfB.branchId, serviceLine(serviceOfB, rateOfB.id), {
+        post: false,
+      }),
+    );
+    expect(draft.statusCode, draft.body).toBe(201);
+    draftOfB = invoiceSchema.parse(draft.json());
+    const accountsOfB = accountListSchema.parse(
+      (await as(tenantB, 'GET', '/accounts')).json(),
+    ).items;
+    cashOfB = accountsOfB.find((account) => account.purpose === 'cash')?.id ?? '';
+    const receipt = await as(
+      tenantB,
+      'POST',
+      '/receipts',
+      receiptBody(customerOfB.id, cashOfB, warehouseOfB.branchId, [
+        { invoiceId: invoiceSchema.parse(posted.json()).id, amount: '200' },
+      ]),
+    );
+    expect(receipt.statusCode, receipt.body).toBe(201);
+    receiptOfB = receiptSchema.parse(receipt.json());
+    // Paid in part: a new version. A's attempts below send B's current ones.
+    invoiceOfB = invoiceSchema.parse(
+      (await as(tenantB, 'GET', `/invoices/${invoiceSchema.parse(posted.json()).id}`)).json(),
+    );
+
+    // A: its own customer, a service of its own, its branch and its VAT rate
+    customerOfA = customerSchema.parse(
+      (await as(tenantA, 'POST', '/customers', customerForm('H&M Hennes & Mauritz AB'))).json(),
+    );
+    const product = await as(
+      tenantA,
+      'POST',
+      '/products',
+      productForm('Sample courier charge', unitsOfA, { type: 'service' }),
+    );
+    expect(product.statusCode, product.body).toBe(201);
+    serviceOfA = productSchema.parse(product.json());
+    const [own] = warehouseListSchema.parse((await as(tenantA, 'GET', '/warehouses')).json()).items;
+    if (!own) throw new Error('A has no warehouse');
+    branchOfA = own.branchId;
+    const rates = taxRateListSchema.parse((await as(tenantA, 'GET', '/tax-rates')).json()).items;
+    const standard = rates.find((rate) => rate.isDefault);
+    if (!standard) throw new Error('A has no default rate');
+    rateOfA = standard.id;
+  });
+
+  it("never lists or reads B's invoices, receipts or credit", async () => {
+    const invoices = invoicePageSchema.parse((await as(tenantA, 'GET', '/invoices')).json());
+    expect(invoices.items).toEqual([]);
+    const open = await as(tenantA, 'GET', `/invoices?payment=open&customerId=${customerOfB.id}`);
+    expect(invoicePageSchema.parse(open.json()).items).toEqual([]);
+    const receipts = receiptPageSchema.parse((await as(tenantA, 'GET', '/receipts')).json());
+    expect(receipts.items).toEqual([]);
+    for (const url of [
+      `/invoices/${invoiceOfB.id}`,
+      `/invoices/${draftOfB.id}`,
+      `/receipts/${receiptOfB.id}`,
+      `/customers/${customerOfB.id}/credit`,
+    ]) {
+      expect((await as(tenantA, 'GET', url)).statusCode, url).toBe(404);
+    }
+    // B's own answer, for comparison: the credit route exists and B can read it
+    const own = await as(tenantB, 'GET', `/customers/${customerOfB.id}/credit`);
+    expect(customerCreditSchema.parse(own.json()).balance).toBe('13500.0000');
+  });
+
+  it('cannot change, post, delete, apply or void any of them', async () => {
+    const attempts = [
+      as(tenantA, 'PUT', `/invoices/${draftOfB.id}`, {
+        ...invoiceBody(customerOfA.id, branchOfA, serviceLine(serviceOfA, rateOfA)),
+        version: draftOfB.version,
+      }),
+      as(tenantA, 'POST', `/invoices/${draftOfB.id}/post`, { version: draftOfB.version }),
+      as(tenantA, 'DELETE', `/invoices/${draftOfB.id}?version=${String(draftOfB.version)}`),
+      as(tenantA, 'PUT', `/receipts/${receiptOfB.id}/allocations`, {
+        version: receiptOfB.version,
+        allocations: [],
+      }),
+      as(tenantA, 'POST', `/receipts/${receiptOfB.id}/void`, {
+        version: receiptOfB.version,
+        date: '2026-10-08',
+        reason: 'Taken over',
+      }),
+    ];
+    for (const res of await Promise.all(attempts)) expect(res.statusCode, res.body).toBe(404);
+
+    const draftNow = invoiceSchema.parse(
+      (await as(tenantB, 'GET', `/invoices/${draftOfB.id}`)).json(),
+    );
+    expect(draftNow).toMatchObject({ status: 'draft', version: draftOfB.version, number: null });
+    const receiptNow = receiptSchema.parse(
+      (await as(tenantB, 'GET', `/receipts/${receiptOfB.id}`)).json(),
+    );
+    expect(receiptNow).toMatchObject({
+      status: 'posted',
+      applied: '200.0000',
+      version: receiptOfB.version,
+    });
+  });
+
+  it("cannot bill B's customer, challan, order or branch, or pay B's invoice", async () => {
+    const forB = await as(
+      tenantA,
+      'POST',
+      '/invoices',
+      invoiceBody(customerOfB.id, branchOfA, serviceLine(serviceOfA, rateOfA)),
+    );
+    expect(problemOf(forB).fieldErrors).toEqual({ customerId: ['sales_customer_invalid'] });
+    const branchOfB = await as(
+      tenantA,
+      'POST',
+      '/invoices',
+      invoiceBody(customerOfA.id, warehouseOfB.branchId, serviceLine(serviceOfA, rateOfA)),
+    );
+    expect(problemOf(branchOfB).fieldErrors).toEqual({ branchId: ['sales_branch_invalid'] });
+    const challanOfB = await as(
+      tenantA,
+      'POST',
+      '/invoices',
+      invoiceBody(
+        customerOfA.id,
+        branchOfA,
+        serviceLine(serviceOfA, rateOfA, { deliveryLineId: deliveryOfB.lines[0]?.id }),
+      ),
+    );
+    expect(problemOf(challanOfB).fieldErrors).toEqual({
+      'lines.0.deliveryLineId': ['invoice_delivery_line_invalid'],
+    });
+    const orderLineOfB = await as(
+      tenantA,
+      'POST',
+      '/invoices',
+      invoiceBody(
+        customerOfA.id,
+        branchOfA,
+        serviceLine(serviceOfA, rateOfA, { orderLineId: orderOfB.lines[0]?.id }),
+      ),
+    );
+    expect(problemOf(orderLineOfB).fieldErrors).toEqual({
+      'lines.0.orderLineId': ['invoice_order_line_invalid'],
+    });
+
+    const cashOfA = accountOfA('1110');
+    const receiptForB = await as(
+      tenantA,
+      'POST',
+      '/receipts',
+      receiptBody(customerOfB.id, cashOfA, branchOfA, []),
+    );
+    expect(problemOf(receiptForB).fieldErrors).toEqual({ customerId: ['sales_customer_invalid'] });
+    const intoCashOfB = await as(
+      tenantA,
+      'POST',
+      '/receipts',
+      receiptBody(customerOfA.id, cashOfB, branchOfA, []),
+    );
+    expect(problemOf(intoCashOfB).fieldErrors).toEqual({ accountId: ['receipt_account_invalid'] });
+    const payingB = await as(
+      tenantA,
+      'POST',
+      '/receipts',
+      receiptBody(customerOfA.id, cashOfA, branchOfA, [
+        { invoiceId: invoiceOfB.id, amount: '100' },
+      ]),
+    );
+    expect(problemOf(payingB).fieldErrors).toEqual({
+      'allocations.0.invoiceId': ['receipt_invoice_invalid'],
+    });
+    // B's invoice is as B left it
+    const after = invoiceSchema.parse(
+      (await as(tenantB, 'GET', `/invoices/${invoiceOfB.id}`)).json(),
+    );
+    expect(after.amountPaid).toBe('200.0000');
+  });
+
+  it("numbers its invoices and receipts on its own: B's numbers take nothing from A", async () => {
+    const invoice = await as(
+      tenantA,
+      'POST',
+      '/invoices',
+      invoiceBody(customerOfA.id, branchOfA, serviceLine(serviceOfA, rateOfA)),
+    );
+    expect(invoice.statusCode, invoice.body).toBe(201);
+    expect(invoiceSchema.parse(invoice.json()).number).toBe(invoiceOfB.number);
+    const receipt = await as(
+      tenantA,
+      'POST',
+      '/receipts',
+      receiptBody(customerOfA.id, accountOfA('1110'), branchOfA, []),
+    );
+    expect(receipt.statusCode, receipt.body).toBe(201);
+    expect(receiptSchema.parse(receipt.json()).number).toBe(receiptOfB.number);
   });
 });

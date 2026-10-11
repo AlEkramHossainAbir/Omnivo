@@ -115,6 +115,17 @@ export const AUDIT_ACTIONS = [
   'delivery.updated',
   'delivery.deleted',
   'delivery.posted',
+  // step 15c
+  'invoice.created',
+  'invoice.updated',
+  'invoice.deleted',
+  'invoice.posted',
+  'receipt.created',
+  'receipt.allocated',
+  'receipt.voided',
+  // An order confirmed or an invoice posted over the customer's credit limit, by someone with
+  // sales.credit.override. The entity is that order or invoice.
+  'credit_limit.overridden',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -151,6 +162,8 @@ export const AUDIT_ENTITY_TYPES = [
   'quotation',
   'sales_order',
   'delivery',
+  'invoice',
+  'receipt',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

@@ -40,6 +40,7 @@ function orderLine(extra: Partial<SalesOrderLine> = {}): SalesOrderLine {
     vat: '151.2000',
     total: '1159.2000',
     deliveredQuantity: '0.0000',
+    invoicedQuantity: '0.0000',
     ...extra,
   };
 }

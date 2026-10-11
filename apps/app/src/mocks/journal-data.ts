@@ -8,6 +8,7 @@ import {
   formatDocumentNumber,
   isNegativeMoney,
   isPartyAccountPurpose,
+  isSalesJournalSource,
   isStockJournalSource,
   isZeroMoney,
   type JournalEntry,
@@ -274,12 +275,18 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
   });
 }
 
-// allowYearClose: only the year-end reopen (report-data.ts) may reverse a closing entry
+// allowYearClose: only the year-end reopen (report-data.ts) may reverse a closing entry.
+// allowSales: only a voided money receipt (invoice-data.ts) reverses its own entry, with its own
+// narration; the Reverse button refuses every sales entry (journal_is_sales, step 15c).
 export function reverseEntry(
   data: WorkspaceData,
   entry: JournalEntry,
   date: string,
-  { allowYearClose = false }: { allowYearClose?: boolean } = {},
+  {
+    allowYearClose = false,
+    allowSales = false,
+    narration,
+  }: { allowYearClose?: boolean; allowSales?: boolean; narration?: string } = {},
 ): JournalEntry {
   if (entry.status !== 'posted') throw new MockProblem(409, 'journal_not_posted');
   if (entry.source === 'reversal') throw new MockProblem(409, 'journal_is_reversal');
@@ -287,6 +294,10 @@ export function reverseEntry(
     throw new MockProblem(409, 'journal_is_year_close');
   }
   if (isStockJournalSource(entry.source)) throw new MockProblem(409, 'journal_is_stock');
+  // An invoice is corrected by a credit note (15d), a receipt by Void
+  if (isSalesJournalSource(entry.source) && !allowSales) {
+    throw new MockProblem(409, 'journal_is_sales');
+  }
   if (entry.reversedBy !== null) throw new MockProblem(409, 'journal_already_reversed');
   if (date < entry.date) {
     throw new MockProblem(409, 'journal_reversal_date', { date: ['journal_reversal_date'] });
@@ -295,7 +306,7 @@ export function reverseEntry(
     data,
     {
       date,
-      narration: `Reversal of ${entry.number ?? ''}`,
+      narration: narration ?? `Reversal of ${entry.number ?? ''}`,
       lines: entry.lines.map((line) => ({
         ...asInput(line),
         debit: line.credit,

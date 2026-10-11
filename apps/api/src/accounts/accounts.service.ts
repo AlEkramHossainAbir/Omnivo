@@ -21,6 +21,7 @@ function toAccount(row: AccountRow): Account {
     type: row.type,
     isGroup: row.isGroup,
     purpose: row.purpose,
+    holdsMoney: row.holdsMoney,
     description: row.description,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     version: row.version,
@@ -30,8 +31,27 @@ function toAccount(row: AccountRow): Account {
 
 // What the audit log shows: the form's fields, with the group as its code — an id would mean
 // nothing to the person reading the log
-function snapshot(row: Pick<AccountRow, 'code' | 'name' | 'description'>, parent: string | null) {
-  return { code: row.code, name: row.name, description: row.description, parent };
+function snapshot(
+  row: Pick<AccountRow, 'code' | 'name' | 'description' | 'holdsMoney'>,
+  parent: string | null,
+) {
+  return {
+    code: row.code,
+    name: row.name,
+    description: row.description,
+    holdsMoney: row.holdsMoney,
+    parent,
+  };
+}
+
+// Money is an asset (step 15c). The type comes from the group, so only the server can tell; the
+// database checks it too (ledger_accounts_money_type), as the last word.
+function assertMoneyType(holdsMoney: boolean, type: AccountRow['type']): void {
+  if (holdsMoney && type !== 'asset') {
+    throw new AppError(409, 'account_money_type', 'Only an asset account can hold money.', {
+      fieldErrors: { holdsMoney: ['account_money_type'] },
+    });
+  }
 }
 
 function codeTaken(code: string): AppError {
@@ -120,6 +140,7 @@ export class AccountsService {
       return await this.withTenant(async (tx) => {
         await lockChart(tx);
         const parent = await this.parent(tx, input.parentId);
+        assertMoneyType(input.holdsMoney, parent.type);
         const [row] = await tx
           .insert(ledgerAccounts)
           .values({
@@ -130,6 +151,7 @@ export class AccountsService {
             isGroup: input.isGroup,
             code: input.code,
             name: input.name,
+            holdsMoney: input.holdsMoney,
             description: input.description,
             createdBy: currentPrincipal().userId,
           })
@@ -156,6 +178,8 @@ export class AccountsService {
         await lockChart(tx);
         const before = await this.lock(tx, id, true);
         if (before.version !== input.version) throw versionConflict();
+        // A move keeps the type (move() refuses another type), so the account's own is the one
+        assertMoneyType(input.holdsMoney, before.type);
         const parentBefore = await this.codeOf(tx, before.parentId);
         const parentAfter =
           input.parentId === before.parentId
@@ -165,6 +189,7 @@ export class AccountsService {
           parentId: input.parentId,
           code: input.code,
           name: input.name,
+          holdsMoney: input.holdsMoney,
           description: input.description,
         });
         await audit(tx, {
@@ -266,6 +291,7 @@ export class AccountsService {
             code: null,
             name: null,
             description: null,
+            holdsMoney: null,
             parent: null,
           }),
         });
@@ -282,7 +308,11 @@ export class AccountsService {
         );
       }
       // Journal lines point at it (a draft's too): the history must keep its account
-      if (isForeignKeyViolation(error, 'journal_lines_account_fk')) {
+      // Money receipts name it too (step 15c), though each one's entry already does
+      if (
+        isForeignKeyViolation(error, 'journal_lines_account_fk') ||
+        isForeignKeyViolation(error, 'receipts_account_fk')
+      ) {
         throw new AppError(409, 'account_in_use', 'Archive this account instead: entries use it.');
       }
       // Chosen for a stock use in Settings → Inventory (step 14)
@@ -362,7 +392,9 @@ export class AccountsService {
   private async write(
     tx: Transaction,
     id: string,
-    fields: Partial<Pick<AccountRow, 'parentId' | 'code' | 'name' | 'description' | 'archivedAt'>>,
+    fields: Partial<
+      Pick<AccountRow, 'parentId' | 'code' | 'name' | 'holdsMoney' | 'description' | 'archivedAt'>
+    >,
   ): Promise<AccountRow> {
     const [row] = await tx
       .update(ledgerAccounts)

@@ -1,9 +1,11 @@
 import {
   AlertCircleIcon,
+  Calendar03Icon,
   CheckmarkCircle02Icon,
   Delete02Icon,
   Alert02Icon,
   PlusSignIcon,
+  UserIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -22,7 +24,6 @@ import {
   Button,
   Card,
   cn,
-  DatePicker,
   FormAlert,
   FormField,
   IconButton,
@@ -36,7 +37,7 @@ import {
 } from '@omnivo/ui';
 import { useMutation } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { lazy, Suspense, useMemo, useState } from 'react';
 import { Controller, type Path, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import type { z } from 'zod';
 
@@ -44,8 +45,14 @@ import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { balanceSide, formAmount, ledgerOptions, linePath, totalsOf } from '../lib/journal';
 import { useCan } from '../lib/permissions';
-import { CustomerPicker } from './customer-picker';
 import { BackLink, failureOf, LineField, useJournalRefresh } from './journal-parts';
+
+// The date picker and the customer box as chunks of their own (step 15c): both bring the popover,
+// and the 15c contracts took this chunk over its 100 KB budget (the delivery form's fix)
+const CustomerPicker = lazy(async () => ({
+  default: (await import('./customer-picker')).CustomerPicker,
+}));
+const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
 // The entry form: a chunk of its own (loaded by routes/journal-entry.tsx), because the form
 // library, the date picker and the money input are only needed to write — a posted entry, the most
@@ -218,7 +225,11 @@ export function EntryForm({
         {failure && <FormAlert message={failure} />}
         <Card className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-[13rem_minmax(0,1fr)] sm:gap-x-4">
           <FormField control={control} name="date" label={t('journal.date')}>
-            {(field) => <DatePicker {...field} />}
+            {(field) => (
+              <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
+                <DatePicker {...field} />
+              </Suspense>
+            )}
           </FormField>
           <TextField
             label={t('journal.narration')}
@@ -312,17 +323,21 @@ export function EntryForm({
                           label={t('journal.customer')}
                           error={fieldState.error?.message}
                         >
-                          <CustomerPicker
-                            id={field.name}
-                            name={field.name}
-                            ref={field.ref}
-                            value={field.value ?? ''}
-                            saved={savedParties.get(field.value ?? '') ?? null}
-                            onChange={field.onChange}
-                            onBlur={field.onBlur}
-                            invalid={fieldState.error !== undefined}
-                            aria-describedby={fieldState.error ? `${field.name}-error` : undefined}
-                          />
+                          <Suspense fallback={<Input id={field.name} icon={UserIcon} disabled />}>
+                            <CustomerPicker
+                              id={field.name}
+                              name={field.name}
+                              ref={field.ref}
+                              value={field.value ?? ''}
+                              saved={savedParties.get(field.value ?? '') ?? null}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              invalid={fieldState.error !== undefined}
+                              aria-describedby={
+                                fieldState.error ? `${field.name}-error` : undefined
+                              }
+                            />
+                          </Suspense>
                         </LineField>
                       )}
                     />

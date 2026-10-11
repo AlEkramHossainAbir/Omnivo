@@ -21,6 +21,7 @@ import { call } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { Fact } from './adjustment-view';
 import { failureOf } from './journal-parts';
+import { PrintButton, SalesOrderPrint } from './print-documents';
 import { SalesLinesTable } from './sales-lines-table';
 import {
   CustomerLink,
@@ -81,7 +82,13 @@ export function SalesOrderView({ order, today }: { order: SalesOrder; today: str
       <PageHeader
         title={order.number ?? t('salesOrders.draftTitle')}
         description={order.customer.name}
-        actions={<OrderStatusPills order={order} today={today} />}
+        actions={
+          <>
+            <OrderStatusPills order={order} today={today} />
+            {/* A draft has no number yet: nothing to send the customer */}
+            {order.number !== null && <PrintButton />}
+          </>
+        }
       />
       {failureOf(act.error) && asking === null && (
         <FormAlert message={failureOf(act.error) ?? ''} />
@@ -255,6 +262,7 @@ export function SalesOrderView({ order, today }: { order: SalesOrder; today: str
           </DialogContent>
         )}
       </Dialog>
+      {order.number !== null && <SalesOrderPrint order={order} />}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from '@omnivo/contracts';
 import {
   deliveries,
+  invoiceLines,
   parties,
   quotations,
   salesOrderLines,
@@ -27,6 +28,7 @@ import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { assertWarehousesActive } from '../inventory/stock-lines.js';
 import { NumberingService } from '../numbering/numbering.service.js';
+import { CreditService } from './credit.service.js';
 import {
   assertCustomer,
   customerRefs,
@@ -68,6 +70,14 @@ function notConfirmed(): AppError {
   return new AppError(409, 'order_not_confirmed', 'This order is not waiting for deliveries.');
 }
 
+function hasInvoices(): AppError {
+  return new AppError(
+    409,
+    'order_has_invoices',
+    'Invoices bill this order. Close it and write a new order instead.',
+  );
+}
+
 function toSummary(
   row: OrderRow,
   customer: PartyRef,
@@ -99,6 +109,7 @@ export class SalesOrdersService {
   constructor(
     @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
     private readonly numbering: NumberingService,
+    private readonly credit: CreditService,
   ) {}
 
   list(query: {
@@ -180,7 +191,7 @@ export class SalesOrdersService {
           quotation: quotation?.number ?? null,
         }),
       });
-      if (input.confirm) await this.confirmAndLog(tx, row);
+      if (input.confirm) await this.confirmAndLog(tx, row, input.overrideCreditLimit);
       return this.read(tx, row.id);
     });
   }
@@ -239,7 +250,7 @@ export class SalesOrdersService {
           await this.snapshot(tx, updated, customer, lines.length),
         ),
       });
-      if (input.confirm) await this.confirmAndLog(tx, updated);
+      if (input.confirm) await this.confirmAndLog(tx, updated, input.overrideCreditLimit);
       return this.read(tx, id);
     });
   }
@@ -279,16 +290,21 @@ export class SalesOrdersService {
     });
   }
 
-  confirm(id: string, version: number): Promise<SalesOrder> {
+  confirm(
+    id: string,
+    input: { version: number; overrideCreditLimit: boolean },
+  ): Promise<SalesOrder> {
     return this.withTenant(async (tx) => {
-      const draft = await this.lockDraft(tx, id, version);
-      await this.confirmAndLog(tx, draft);
+      const draft = await this.lockDraft(tx, id, input.version);
+      await this.confirmAndLog(tx, draft, input.overrideCreditLimit);
       return this.read(tx, id);
     });
   }
 
   // Back to draft, to be changed: only while no delivery points at it, not even a draft one (its
-  // lines point at the order's lines, which a save replaces). The number stays.
+  // lines point at the order's lines, which a save replaces). The number stays. Since step 15c the
+  // same goes for invoices: a service line billed straight from the order (no challan, so the
+  // check above misses it) must not be rewritten under its invoice.
   reopen(id: string, version: number): Promise<SalesOrder> {
     return this.withTenant(async (tx) => {
       const row = await this.lock(tx, id, version);
@@ -305,6 +321,7 @@ export class SalesOrdersService {
           'Deliveries were made for this order. Close it and write a new order instead.',
         );
       }
+      if (await this.anyInvoiceLine(tx, id)) throw hasInvoices();
       // The check sales_orders_confirmed_check: a draft has no confirmation
       await this.write(tx, id, { status: 'draft', confirmedAt: null, confirmedBy: null });
       await audit(tx, { action: 'sales_order.reopened', entityType: 'sales_order', entityId: id });
@@ -312,16 +329,18 @@ export class SalesOrdersService {
     });
   }
 
-  // Partly delivered, and the rest will not be: the customer took what there was
+  // Partly delivered, and the rest will not be: the customer took what there was. Since step 15c,
+  // also an order of services that was billed: it has nothing to deliver, so it never becomes
+  // "delivered" by itself.
   close(id: string, version: number): Promise<SalesOrder> {
     return this.withTenant(async (tx) => {
       const row = await this.lock(tx, id, version);
       if (row.status !== 'confirmed') throw notConfirmed();
-      if (!(await this.anythingDelivered(tx, id))) {
+      if (!(await this.anythingDelivered(tx, id)) && !(await this.anythingInvoiced(tx, id))) {
         throw new AppError(
           409,
           'order_nothing_delivered',
-          'Nothing was delivered for this order. Cancel it instead.',
+          'Nothing was delivered or billed for this order. Cancel it instead.',
         );
       }
       await this.write(tx, id, { status: 'closed' });
@@ -342,14 +361,24 @@ export class SalesOrdersService {
           'Some of this order was delivered. Close it instead.',
         );
       }
+      // A billed service line: the customer owes for it, so the order did happen (step 15c)
+      if (await this.anythingInvoiced(tx, id)) throw hasInvoices();
       await this.write(tx, id, { status: 'cancelled' });
       await audit(tx, { action: 'sales_order.cancelled', entityType: 'sales_order', entityId: id });
       return this.read(tx, id);
     });
   }
 
-  // The number the first time; a reopened order confirms again with the number it already has
-  private async confirmAndLog(tx: Transaction, draft: OrderRow): Promise<void> {
+  // The number the first time; a reopened order confirms again with the number it already has.
+  // Step 15c: confirming checks the credit limit (you chose this). The exposure is read before and
+  // after the order counts in it; CreditService.check refuses when the order takes the customer
+  // over the limit, unless overridden by someone allowed to.
+  private async confirmAndLog(
+    tx: Transaction,
+    draft: OrderRow,
+    overrideCreditLimit: boolean,
+  ): Promise<void> {
+    const before = await this.credit.lock(tx, draft.customerId);
     const number = draft.number ?? (await this.numbering.next(tx, 'sales.order', draft.date));
     await this.write(tx, draft.id, {
       status: 'confirmed',
@@ -362,6 +391,13 @@ export class SalesOrdersService {
       entityType: 'sales_order',
       entityId: draft.id,
       changes: created({ number }),
+    });
+    await this.credit.check(tx, {
+      customerId: draft.customerId,
+      before,
+      overrideCreditLimit,
+      entityType: 'sales_order',
+      entityId: draft.id,
     });
   }
 
@@ -424,6 +460,40 @@ export class SalesOrdersService {
           sql`${salesOrderLines.deliveredQuantity} > 0`,
         ),
       )
+      .limit(1);
+    return line !== undefined;
+  }
+
+  // Billed by a posted invoice (step 15c): a challan's goods or a service straight from the order
+  private async anythingInvoiced(tx: Transaction, orderId: string): Promise<boolean> {
+    const [line] = await tx
+      .select({ id: salesOrderLines.id })
+      .from(salesOrderLines)
+      .where(
+        and(
+          eq(salesOrderLines.tenantId, getTenantId()),
+          eq(salesOrderLines.orderId, orderId),
+          sql`${salesOrderLines.invoicedQuantity} > 0`,
+        ),
+      )
+      .limit(1);
+    return line !== undefined;
+  }
+
+  // An invoice line, even a draft's, points at one of its lines: a save of the reopened order would
+  // replace the line under it (the FK invoice_lines_order_line_fk would refuse it)
+  private async anyInvoiceLine(tx: Transaction, orderId: string): Promise<boolean> {
+    const [line] = await tx
+      .select({ id: invoiceLines.id })
+      .from(invoiceLines)
+      .innerJoin(
+        salesOrderLines,
+        and(
+          eq(salesOrderLines.tenantId, invoiceLines.tenantId),
+          eq(salesOrderLines.id, invoiceLines.orderLineId),
+        ),
+      )
+      .where(and(eq(invoiceLines.tenantId, getTenantId()), eq(salesOrderLines.orderId, orderId)))
       .limit(1);
     return line !== undefined;
   }
@@ -536,6 +606,7 @@ export class SalesOrdersService {
       lines: lines.map(({ row: line, variant }) => ({
         ...toSalesLine(line, variant),
         deliveredQuantity: line.deliveredQuantity,
+        invoicedQuantity: line.invoicedQuantity,
       })),
       quotation: quotation ?? null,
       deliveries: made,

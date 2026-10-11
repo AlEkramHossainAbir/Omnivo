@@ -1,4 +1,4 @@
-import { Alert02Icon } from '@hugeicons/core-free-icons';
+import { Alert02Icon, Invoice02Icon } from '@hugeicons/core-free-icons';
 import {
   type AdjustmentLine,
   compareQuantity,
@@ -113,8 +113,16 @@ export function StockLinesTable({
                       {line.serialNumbers.join(', ')}
                     </span>
                   )}
-                  {line.lotNumber === null && line.serialNumbers.length === 0 && (
-                    <span className="text-ink-3">—</span>
+                  {line.lotNumber === null &&
+                    line.serialNumbers.length === 0 &&
+                    !('invoiced' in line && line.invoiced) && <span className="text-ink-3">—</span>}
+                  {/* Step 15c: a challan line a posted invoice bills (it is billed whole) */}
+                  {'invoiced' in line && line.invoiced && (
+                    <span className="mt-1 block">
+                      <Pill tone="good" icon={Invoice02Icon}>
+                        {t('deliveries.lineInvoiced')}
+                      </Pill>
+                    </span>
                   )}
                 </td>
                 {received && (

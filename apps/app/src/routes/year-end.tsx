@@ -23,7 +23,7 @@ import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 
 import { useIsoDate } from '../components/journal-parts';
-import { useAmount, useReportCalendar } from '../components/report-parts';
+import { useAmount, useReportCalendar } from '../components/report-hooks';
 import { ApiRequestError, call } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { fiscalYearsQuery } from '../lib/queries';

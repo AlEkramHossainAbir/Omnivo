@@ -82,3 +82,19 @@ export function suggestCode(parent: Account, accounts: readonly Account[]): stri
     next += step;
   }
 }
+
+// Step 15c: the group at or above `parentId` that holds money, if any. An account under it holds
+// money already (moneyAccountIds in the contracts walks up the same way), so its own tick says
+// nothing more. The step count only keeps a broken chart from hanging the page.
+export function moneyGroupOf(
+  accounts: readonly Account[],
+  parentId: string | null,
+): Account | undefined {
+  const byId = new Map(accounts.map((account) => [account.id, account]));
+  let current = parentId === null ? undefined : byId.get(parentId);
+  for (let step = 0; current !== undefined && step <= accounts.length; step += 1) {
+    if (current.holdsMoney) return current;
+    current = current.parentId === null ? undefined : byId.get(current.parentId);
+  }
+  return undefined;
+}

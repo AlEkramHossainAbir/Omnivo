@@ -3,14 +3,18 @@ import { type RouteInput, type RouteResponse, routes } from '@omnivo/contracts';
 
 import { Endpoint } from '../common/http/endpoint.js';
 import { DeliveriesService } from './deliveries.service.js';
+import { InvoicesService } from './invoices.service.js';
 import { PriceLookupService } from './price-lookup.service.js';
 import { QuotationsService } from './quotations.service.js';
+import { ReceiptsService } from './receipts.service.js';
 import { SalesOrdersService } from './sales-orders.service.js';
 
 type PriceRoutes = typeof routes.salesPrices;
 type QuotationRoutes = typeof routes.quotations;
 type OrderRoutes = typeof routes.salesOrders;
 type DeliveryRoutes = typeof routes.deliveries;
+type InvoiceRoutes = typeof routes.invoices;
+type ReceiptRoutes = typeof routes.receipts;
 
 @Controller()
 export class SalesPricesController {
@@ -118,7 +122,7 @@ export class SalesOrdersController {
     params,
     body,
   }: RouteInput<OrderRoutes['confirm']>): Promise<RouteResponse<OrderRoutes['confirm']>> {
-    return this.orders.confirm(params.id, body.version);
+    return this.orders.confirm(params.id, body);
   }
 
   @Endpoint(routes.salesOrders.reopen)
@@ -190,5 +194,90 @@ export class DeliveriesController {
     body,
   }: RouteInput<DeliveryRoutes['post']>): Promise<RouteResponse<DeliveryRoutes['post']>> {
     return this.deliveries.post(params.id, body.version);
+  }
+}
+
+@Controller()
+export class InvoicesController {
+  constructor(private readonly invoices: InvoicesService) {}
+
+  @Endpoint(routes.invoices.list)
+  list({
+    query,
+  }: RouteInput<InvoiceRoutes['list']>): Promise<RouteResponse<InvoiceRoutes['list']>> {
+    return this.invoices.list(query);
+  }
+
+  @Endpoint(routes.invoices.get)
+  get({ params }: RouteInput<InvoiceRoutes['get']>): Promise<RouteResponse<InvoiceRoutes['get']>> {
+    return this.invoices.get(params.id);
+  }
+
+  @Endpoint(routes.invoices.create)
+  create({
+    body,
+  }: RouteInput<InvoiceRoutes['create']>): Promise<RouteResponse<InvoiceRoutes['create']>> {
+    return this.invoices.create(body);
+  }
+
+  @Endpoint(routes.invoices.update)
+  update({
+    params,
+    body,
+  }: RouteInput<InvoiceRoutes['update']>): Promise<RouteResponse<InvoiceRoutes['update']>> {
+    return this.invoices.update(params.id, body);
+  }
+
+  @Endpoint(routes.invoices.remove)
+  remove({ params, query }: RouteInput<InvoiceRoutes['remove']>): Promise<void> {
+    return this.invoices.remove(params.id, query.version);
+  }
+
+  @Endpoint(routes.invoices.post)
+  post({
+    params,
+    body,
+  }: RouteInput<InvoiceRoutes['post']>): Promise<RouteResponse<InvoiceRoutes['post']>> {
+    return this.invoices.post(params.id, body);
+  }
+}
+
+@Controller()
+export class ReceiptsController {
+  constructor(private readonly receipts: ReceiptsService) {}
+
+  @Endpoint(routes.receipts.list)
+  list({
+    query,
+  }: RouteInput<ReceiptRoutes['list']>): Promise<RouteResponse<ReceiptRoutes['list']>> {
+    return this.receipts.list(query);
+  }
+
+  @Endpoint(routes.receipts.get)
+  get({ params }: RouteInput<ReceiptRoutes['get']>): Promise<RouteResponse<ReceiptRoutes['get']>> {
+    return this.receipts.get(params.id);
+  }
+
+  @Endpoint(routes.receipts.create)
+  create({
+    body,
+  }: RouteInput<ReceiptRoutes['create']>): Promise<RouteResponse<ReceiptRoutes['create']>> {
+    return this.receipts.create(body);
+  }
+
+  @Endpoint(routes.receipts.allocate)
+  allocate({
+    params,
+    body,
+  }: RouteInput<ReceiptRoutes['allocate']>): Promise<RouteResponse<ReceiptRoutes['allocate']>> {
+    return this.receipts.allocate(params.id, body);
+  }
+
+  @Endpoint(routes.receipts.void)
+  void({
+    params,
+    body,
+  }: RouteInput<ReceiptRoutes['void']>): Promise<RouteResponse<ReceiptRoutes['void']>> {
+    return this.receipts.void(params.id, body);
   }
 }

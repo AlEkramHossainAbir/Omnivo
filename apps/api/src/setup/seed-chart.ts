@@ -43,6 +43,7 @@ export async function seedChart(
           type,
           isGroup: node.children !== undefined,
           purpose: node.purpose ?? null,
+          holdsMoney: node.holdsMoney ?? false,
         })),
       )
       .returning({ id: ledgerAccounts.id, code: ledgerAccounts.code });

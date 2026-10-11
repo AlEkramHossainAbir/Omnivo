@@ -30,8 +30,10 @@ export function AppShell({
   children,
 }: AppShellProps) {
   return (
-    <div className="min-h-dvh min-[860px]:grid min-[860px]:grid-cols-[244px_minmax(0,1fr)]">
-      <aside className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 min-[860px]:sticky min-[860px]:top-0 min-[860px]:h-dvh min-[860px]:gap-5 min-[860px]:border-r min-[860px]:border-b-0 min-[860px]:px-3 min-[860px]:py-5">
+    // print:block: on paper there is no sidebar column, even when a landscape page is wider than
+    // 860px. print:hidden: the navigation is never printed.
+    <div className="min-h-dvh min-[860px]:grid min-[860px]:grid-cols-[244px_minmax(0,1fr)] print:block">
+      <aside className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 min-[860px]:sticky min-[860px]:top-0 min-[860px]:h-dvh min-[860px]:gap-5 min-[860px]:border-r min-[860px]:border-b-0 min-[860px]:px-3 min-[860px]:py-5 print:hidden">
         <div className="flex items-center justify-between gap-3 px-2">
           {brand}
           <div className="flex items-center gap-1">
@@ -48,7 +50,9 @@ export function AppShell({
         )}
       </aside>
       {/* min-w-0: grid-এর ভেতরে চওড়া টেবিল কলামটাকে ঠেলে বড় করতে না পারে — পেজ আড়াআড়ি scroll হয় না */}
-      <main className="min-w-0 px-4 py-6 min-[860px]:px-8 min-[860px]:py-8">{children}</main>
+      <main className="min-w-0 px-4 py-6 min-[860px]:px-8 min-[860px]:py-8 print:p-0">
+        {children}
+      </main>
     </div>
   );
 }

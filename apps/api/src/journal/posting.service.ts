@@ -42,7 +42,7 @@ export interface NewEntry {
   source: JournalSource;
   // Only for source 'reversal'
   reversalOfId?: string;
-  // Only for a stock document's entry (step 14): the document that made it
+  // Only for a document's entry: a stock document's (step 14), an invoice's or a receipt's (15c)
   document?: { id: string; number: string };
   lines: readonly LineInput[];
 }

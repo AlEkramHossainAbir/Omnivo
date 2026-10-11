@@ -174,3 +174,28 @@ export function includedTaxOf(amount: string, rate: string): string {
     divideRounded(toUnits(amount) * rateUnits, (HUNDRED_PERCENT + rateUnits) * PAISA) * PAISA,
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// Invoices (step 15c): a price moved to another pack of the same product
+
+// A unit's size in the base unit, as product_units.factor stores it: up to 6 decimals ("0.914400"
+// for a yard in metres)
+const FACTOR = /^(\d+)(?:\.(\d{1,6}))?$/;
+
+function factorMicros(factor: string): bigint {
+  const match = FACTOR.exec(factor);
+  const whole = match?.[1];
+  if (match === null || whole === undefined) throw new Error(`Not a unit factor: "${factor}"`);
+  const micros = BigInt(whole) * 1_000_000n + BigInt((match[2] ?? '').padEnd(6, '0'));
+  if (micros <= 0n) throw new Error(`A unit factor must be positive: "${factor}"`);
+  return micros;
+}
+
+// A price per one `from` unit, as a price per one `to` unit: price × toFactor ÷ fromFactor, to 4
+// decimals like any price. An order priced by the case of 24 at ৳504 and delivered by the piece
+// bills ৳21 a piece. The base unit's factor is "1".
+export function priceInUnit(price: string, fromFactor: string, toFactor: string): string {
+  return fromUnits(
+    divideRounded(toUnits(price) * factorMicros(toFactor), factorMicros(fromFactor)),
+  );
+}

@@ -359,9 +359,25 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `CancelCircle`), plus a second `warn` "Late" pill (`Time04`) for a confirmed order past its delivery date.
   Delivery Draft (neutral, `FileEdit`), Posted (`good`, `CheckmarkCircle02`). Work in progress is `brand`, not
   `warn`; `warn` is for something the person must act on.
+- **Invoice and receipt statuses:** invoice Draft (neutral, `FileEdit`), then by payment Unpaid (`brand`,
+  `Clock01`), Partly paid (`brand`, `Coins01`), Paid (`good`, `CheckmarkCircle02`), plus a second `crit` "Overdue"
+  pill (`Time04`) for a posted invoice not paid by its due date (worked out by the page, in the workspace's time
+  zone). Money receipt Posted (`good`, `CheckmarkCircle02`), Voided (neutral, `CancelCircle`). A challan's billing:
+  Not invoiced (neutral, `Invoice01`), Partly invoiced (`brand`, `Invoice03`), Invoiced (`good`, `Invoice02`), also
+  per line. An overdue invoice has a `warn` document notice (`Hourglass`) that says how many days.
 - **Document notice:** a line above a document that says what its state means and what to do next: radius
   10px, 13.5px text, a 17px icon, `warn-bg` with `warn` text and an `Hourglass` icon for an offer that has ended,
   `subtle` with `ink-2` text and an `InformationCircle` icon otherwise.
+- **Credit line and credit dialog:** under the customer box on an order or invoice form, a 13px line: "Credit
+  left: ৳35,000 of ৳2,00,000 · ৳40,000 on confirmed orders" in `ink-3`, whole taka, `tabular-nums`; over the limit
+  it is `crit`/500 with a 15px `Alert02` icon. Shown only with `sales.customer.balance`. When the API refuses a
+  document over the limit, someone with `sales.credit.override` gets a dialog (what the customer would owe and the
+  limit, in paisa; "The audit log records that you went over the limit."; Back and "Confirm anyway" / "Post
+  anyway"); everyone else gets the error text under the form with the same amounts.
+- **Allocation table (money receipts):** the invoices the customer still owes on, oldest due date first, in an
+  `overflow-x-auto` box: invoice number (`Geist Mono`) with its dates under it, the total, what is still due
+  (500), and a money input for this receipt. Above it "Apply oldest first" and "Clear" (secondary `sm`); below
+  it a `subtle` row with Applied and "Left as advance" (or a `crit` "Over by ৳x" with an `Alert02` icon).
 - **Stock line rows (adjustments, transfers):** a card that is a container (`@container`); one grid template for a
   caption header and every row on a wide card (`@3xl`): item (name, SKU, stock here), unit, quantity (with
   "= 72 pcs" under it), and on a line that brings stock in, the unit cost per unit of the line (a `MoneyInput`
@@ -389,6 +405,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Never use dual axes.
 - **Logo:** two offset rounded squares, a filled `brand` square and an outlined
   `brand` square (debit/credit columns), next to "Omnivo" in 17px/600.
+- **Print layout:** `PrintSheet` and `PrintBlock` from `@omnivo/ui`. A document page renders its sheet into
+  `<body>`, hidden on screen; the browser's Print (`window.print()`) prints only the sheet, in the light palette
+  whatever the theme, on A4 with 12mm margins. White paper, `ink` text, 1px rules (`ink` under the header and the
+  table head, `line` between rows), no fills, no shadows, no radius. The header has the logo, the company (legal
+  name, address lines, BIN, phone) on the left, the document's title (24px) and its details on the right. Lines
+  are a real `<table>` whose `<thead>` repeats on every page; rows, blocks, totals and the signature lines use
+  `break-inside-avoid`. Only a numbered document prints (a draft on paper looks real); a voided receipt does not.
 
 ### Content and formatting
 

@@ -1,6 +1,8 @@
 import {
   Archive02Icon,
+  Invoice03Icon,
   Location01Icon,
+  MoneyReceive02Icon,
   Notebook02Icon,
   PencilEdit02Icon,
   TruckDeliveryIcon,
@@ -42,6 +44,7 @@ import { useCustomerText } from '../lib/customers';
 import { fiscalYearStart } from '../lib/journal';
 import { useCan } from '../lib/permissions';
 import {
+  customerCreditQuery,
   customerGroupsQuery,
   customerQuery,
   customerStatementQuery,
@@ -211,12 +214,20 @@ function Statement({ customerId }: { customerId: string }) {
 }
 
 function CustomerView({ customer }: { customer: Customer }) {
-  const { t } = useLocale();
+  const { t, format } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tenantId = useTenantId();
   const can = useCan();
   const canManage = can('sales.customer.manage');
+  // Step 15c: bill the customer, take their money. An archived customer is not sold to any more.
+  const canBill = can('sales.invoice.manage') && customer.archivedAt === null;
+  const canPay = can('sales.receipt.manage');
+  // What counts against the credit limit, with the numbers the order and invoice forms check
+  const credit = useQuery({
+    ...customerCreditQuery(tenantId, customer.id),
+    enabled: customer.balance !== null,
+  }).data;
   const text = useCustomerText();
   const [confirming, setConfirming] = useState(false);
   const groups = useQuery(customerGroupsQuery(tenantId)).data;
@@ -265,43 +276,67 @@ function CustomerView({ customer }: { customer: Customer }) {
         title={customer.name}
         description={<span className="font-mono tabular-nums">{customer.code}</span>}
         actions={
-          canManage && (
-            <>
-              {/* Delete takes two clicks: it cannot be undone */}
+          <>
+            {canBill && (
               <Button
                 variant="secondary"
-                disabled={busy}
-                onClick={() => {
-                  if (confirming) remove.mutate();
-                  else setConfirming(true);
-                }}
-              >
-                {confirming
-                  ? t('customers.confirmDelete', { code: customer.code })
-                  : t('customers.delete')}
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() => {
-                  toggle.mutate();
-                }}
-              >
-                {customer.archivedAt === null ? t('customers.archive') : t('customers.restore')}
-              </Button>
-              <Button
                 onClick={() =>
-                  void navigate({
-                    to: '/customers/$customerId/edit',
-                    params: { customerId: customer.id },
-                  })
+                  void navigate({ to: '/invoices/new', search: { customerId: customer.id } })
                 }
               >
-                <HugeiconsIcon icon={PencilEdit02Icon} size={17} strokeWidth={1.5} />
-                {t('customers.edit')}
+                <HugeiconsIcon icon={Invoice03Icon} size={17} strokeWidth={1.5} />
+                {t('customers.newInvoice')}
               </Button>
-            </>
-          )
+            )}
+            {canPay && (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void navigate({ to: '/receipts/new', search: { customerId: customer.id } })
+                }
+              >
+                <HugeiconsIcon icon={MoneyReceive02Icon} size={17} strokeWidth={1.5} />
+                {t('customers.recordPayment')}
+              </Button>
+            )}
+            {canManage && (
+              <>
+                {/* Delete takes two clicks: it cannot be undone */}
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    if (confirming) remove.mutate();
+                    else setConfirming(true);
+                  }}
+                >
+                  {confirming
+                    ? t('customers.confirmDelete', { code: customer.code })
+                    : t('customers.delete')}
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => {
+                    toggle.mutate();
+                  }}
+                >
+                  {customer.archivedAt === null ? t('customers.archive') : t('customers.restore')}
+                </Button>
+                <Button
+                  onClick={() =>
+                    void navigate({
+                      to: '/customers/$customerId/edit',
+                      params: { customerId: customer.id },
+                    })
+                  }
+                >
+                  <HugeiconsIcon icon={PencilEdit02Icon} size={17} strokeWidth={1.5} />
+                  {t('customers.edit')}
+                </Button>
+              </>
+            )}
+          </>
         }
       />
       {confirming && <p className="text-body-sm text-ink-2">{t('customers.deleteWarning')}</p>}
@@ -330,6 +365,20 @@ function CustomerView({ customer }: { customer: Customer }) {
             ? { label: t('customers.fields.group'), value: group?.name ?? '—' }
             : { label: t('customers.kpis.balance'), value: text.balance(customer.balance) },
           { label: t('customers.kpis.creditLimit'), value: text.creditLimit(customer.creditLimit) },
+          // Step 15c, with the balance's permission: what confirmed orders will still bill, and
+          // what is left under the limit (negative once over it)
+          ...(credit
+            ? [
+                { label: t('customers.kpis.onOrder'), value: format.money(credit.onOrder) },
+                {
+                  label: t('customers.kpis.creditLeft'),
+                  value:
+                    credit.available === null
+                      ? t('customers.credit.noLimit')
+                      : format.money(credit.available),
+                },
+              ]
+            : []),
           { label: t('customers.kpis.terms'), value: text.terms(customer.paymentTermsDays) },
         ]}
       />

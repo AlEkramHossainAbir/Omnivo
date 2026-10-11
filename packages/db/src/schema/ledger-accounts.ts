@@ -36,6 +36,10 @@ export const ledgerAccounts = pgTable(
     isGroup: boolean('is_group').notNull().default(false),
     // What the system uses this account for (contracts: ACCOUNT_PURPOSES). NULL for most accounts.
     purpose: text('purpose', { enum: ACCOUNT_PURPOSES }),
+    // Step 15c: money is kept here (cash, a bank, a wallet). On a group it covers every account in
+    // it, at any depth: contracts' moneyAccountIds() walks up the tree. A money receipt goes into
+    // one of these.
+    holdsMoney: boolean('holds_money').notNull().default(false),
     description: text('description'),
     // Like branches: hidden from new entries, never removed from old reports
     archivedAt: timestamp('archived_at', { withTimezone: true }),
@@ -72,5 +76,8 @@ export const ledgerAccounts = pgTable(
       'ledger_accounts_purpose_not_group',
       sql`${table.purpose} IS NULL OR NOT ${table.isGroup}`,
     ),
+    // Money is an asset. The type comes from the parent, so this is the last word on
+    // account_money_type, whatever the API checked first.
+    check('ledger_accounts_money_type', sql`NOT ${table.holdsMoney} OR ${table.type} = 'asset'`),
   ],
 );

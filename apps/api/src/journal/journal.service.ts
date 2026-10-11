@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  isSalesJournalSource,
   isStockJournalSource,
   type JournalEntry,
   type JournalEntryInput,
@@ -196,6 +197,17 @@ export class JournalService {
             409,
             'journal_is_stock',
             'This entry belongs to a stock document. Post another stock document to correct it.',
+          );
+        }
+        if (isSalesJournalSource(entry.source)) {
+          // An invoice's or a receipt's entry (step 15c): reversing it here would leave the
+          // document saying one thing and the books another. A credit note corrects an invoice
+          // (15d); a receipt is voided on its own page, which reverses the entry and takes its
+          // money off the invoices in one step.
+          throw new AppError(
+            409,
+            'journal_is_sales',
+            'This entry belongs to an invoice or a money receipt. Correct it from that document.',
           );
         }
         if (entry.version !== input.version) throw versionConflict();

@@ -1,27 +1,41 @@
+import { Invoice03Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import type { Delivery } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { Card, PageHeader } from '@omnivo/ui';
-import { Link } from '@tanstack/react-router';
+import { Button, Card, CardHeader, PageHeader } from '@omnivo/ui';
+import { Link, useNavigate } from '@tanstack/react-router';
 
+import { useCan } from '../lib/permissions';
 import { Fact } from './adjustment-view';
 import { EntryLinks } from './entry-links';
-import { CustomerLink, DeliveryStatusPill, SalesBackLink } from './sales-parts';
+import { DeliveryPrint, PrintButton } from './print-documents';
+import { CustomerLink, DeliveryStatusPill, InvoiceStatePill, SalesBackLink } from './sales-parts';
 import { StockLinesTable } from './stock-lines-table';
 import { useIsoDate, useWarehouses, warehouseLabel } from './stock-parts';
 
 // A posted delivery (or a draft for someone who may not write deliveries), read only. A posted one
-// never changes: goods that come back are a return (15d).
+// never changes: goods that come back are a return (15d). Step 15c: what bills it, "Make invoice"
+// while some of it is not billed, and the printed challan.
 export function DeliveryView({ delivery }: { delivery: Delivery }) {
   const { t, format } = useLocale();
+  const navigate = useNavigate();
   const isoDate = useIsoDate();
   const { byId } = useWarehouses();
+  const canBill = useCan()('sales.invoice.manage');
+  const posted = delivery.status === 'posted';
   return (
     <div className="grid max-w-6xl grid-cols-1 gap-5">
       <SalesBackLink to="/deliveries" label={t('deliveries.back')} />
       <PageHeader
         title={delivery.number ?? t('deliveries.draftTitle')}
         description={delivery.customer.name}
-        actions={<DeliveryStatusPill status={delivery.status} />}
+        actions={
+          <>
+            <DeliveryStatusPill status={delivery.status} />
+            {posted && <InvoiceStatePill state={delivery.invoiceState} />}
+            {posted && <PrintButton />}
+          </>
+        }
       />
       <Card className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 sm:grid-cols-3">
         <div className="grid min-w-0 gap-0.5">
@@ -83,6 +97,50 @@ export function DeliveryView({ delivery }: { delivery: Delivery }) {
         )}
       </Card>
       <StockLinesTable lines={delivery.lines} />
+      {posted && (
+        <Card className="overflow-hidden">
+          <CardHeader
+            title={t('deliveries.invoicesTitle')}
+            subtitle={t('deliveries.invoicesSubtitle')}
+          />
+          {delivery.invoices.length === 0 ? (
+            <p className="px-5 pt-3 pb-5 text-body-sm text-ink-2">
+              {t('deliveries.notInvoicedYet')}
+            </p>
+          ) : (
+            <ul className="mt-3 grid grid-cols-1">
+              {delivery.invoices.map((invoice) => (
+                <li key={invoice.id}>
+                  <Link
+                    to="/invoices/$invoiceId"
+                    params={{ invoiceId: invoice.id }}
+                    className="flex items-center gap-3 border-t border-line px-5 py-3 text-body-sm hover:bg-subtle"
+                  >
+                    {/* A posted invoice: it has a number */}
+                    <span className="font-mono font-medium text-brand tabular-nums">
+                      {invoice.number ?? ''}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+      {/* The accountant's next step: bill what is left on the challan */}
+      {posted && canBill && delivery.invoiceState !== 'invoiced' && (
+        <div className="flex justify-end">
+          <Button
+            onClick={() =>
+              void navigate({ to: '/invoices/new', search: { deliveryId: delivery.id } })
+            }
+          >
+            <HugeiconsIcon icon={Invoice03Icon} size={17} strokeWidth={1.5} />
+            {t('deliveries.makeInvoice')}
+          </Button>
+        </div>
+      )}
+      {posted && <DeliveryPrint delivery={delivery} />}
     </div>
   );
 }

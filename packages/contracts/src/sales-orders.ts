@@ -54,6 +54,9 @@ export type SalesOrderSummary = z.infer<typeof salesOrderSummarySchema>;
 export const salesOrderLineSchema = salesLineSchema.extend({
   // In the base unit, by posted deliveries. A service line stays at zero: it is never delivered.
   deliveredQuantity: z.string(),
+  // In the base unit, by posted invoices (step 15c): a goods line through its challans, a service
+  // line straight from the order
+  invoicedQuantity: z.string(),
 });
 export type SalesOrderLine = z.infer<typeof salesOrderLineSchema>;
 
@@ -92,6 +95,9 @@ const salesOrderFieldsSchema = salesDocumentFieldsSchema.extend({
   shippingAddressId: optionalIdSchema,
   // true = "Confirm": save and confirm in one step, or nothing at all
   confirm: z.boolean(),
+  // Confirm even though it takes the customer over the credit limit (step 15c). Only someone with
+  // sales.credit.override may send true, after a dialog showed the amount (invoices.ts says how).
+  overrideCreditLimit: z.boolean().default(false),
 });
 
 type OrderRuleInput = z.output<typeof salesOrderFieldsSchema>;
@@ -121,6 +127,12 @@ export type UpdateSalesOrderInput = z.infer<typeof updateSalesOrderInputSchema>;
 export type SalesOrderFormValues = z.input<typeof updateSalesOrderInputSchema>;
 
 export const salesOrderVersionInputSchema = z.object({ version: versionSchema });
+
+// Confirming checks the credit limit (step 15c), so it can carry the override
+export const confirmSalesOrderInputSchema = salesOrderVersionInputSchema.extend({
+  overrideCreditLimit: z.boolean().default(false),
+});
+export type ConfirmSalesOrderInput = z.infer<typeof confirmSalesOrderInputSchema>;
 
 export const deleteSalesOrderQuerySchema = z.object({
   version: z.coerce.number<number>().int().min(1),
@@ -196,7 +208,7 @@ export const salesOrderRoutes = {
     permission: 'sales.order.manage',
     status: 200,
     params: salesOrderParamsSchema,
-    body: salesOrderVersionInputSchema,
+    body: confirmSalesOrderInputSchema,
     response: salesOrderSchema,
   }),
   reopen: defineRoute({

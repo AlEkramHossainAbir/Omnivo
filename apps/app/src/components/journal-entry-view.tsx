@@ -7,6 +7,7 @@ import {
   contractErrorMap,
   isJournalSource,
   isPartyAccountPurpose,
+  isSalesJournalSource,
   isStockJournalSource,
   type JournalEntry,
   reverseJournalEntryInputSchema,
@@ -103,8 +104,8 @@ function ReverseForm({
   );
 }
 
-// A posted entry (read only, with Reverse), or a draft for someone who may post but not edit
-// The document a stock entry came from (step 14), or a delivery's (15b): its page, by the source
+// The document a stock entry came from (step 14), a delivery's (15b), or an invoice's or a money
+// receipt's (15c): its page, by the source
 function documentLinkOf(entry: JournalEntry) {
   const id = entry.document?.id;
   if (id === undefined) return null;
@@ -120,6 +121,13 @@ function documentLinkOf(entry: JournalEntry) {
   // Step 15b: the cost of goods sold of a delivery
   if (entry.source === 'sales_delivery') {
     return { to: '/deliveries/$deliveryId', params: { deliveryId: id } } as const;
+  }
+  // Step 15c: the sale of an invoice, and the money of a receipt
+  if (entry.source === 'sales_invoice') {
+    return { to: '/invoices/$invoiceId', params: { invoiceId: id } } as const;
+  }
+  if (entry.source === 'sales_receipt') {
+    return { to: '/receipts/$receiptId', params: { receiptId: id } } as const;
   }
   return null;
 }
@@ -154,16 +162,19 @@ export function EntryView({
     },
   });
 
-  // A closing entry is undone by reopening its year (the Year-end close page), and a stock
-  // document's entry by another stock document (step 14) — not from here
+  // A closing entry is undone by reopening its year (the Year-end close page), a stock document's
+  // entry by another stock document (step 14), and a sales document's by the document (15c: a
+  // credit note for an invoice, Void for a receipt) — not from here
   const fromStock = isStockJournalSource(entry.source);
+  const fromSales = isSalesJournalSource(entry.source);
   const canReverse =
     canPost &&
     entry.status === 'posted' &&
     entry.reversedBy === null &&
     entry.source !== 'reversal' &&
     entry.source !== 'year_close' &&
-    !fromStock;
+    !fromStock &&
+    !fromSales;
   const documentLink = documentLinkOf(entry);
   const failure = failureOf(post.error);
   const amount = (value: string) =>
@@ -235,6 +246,12 @@ export function EntryView({
         )}
       </div>
       {fromStock && <p className="text-label text-ink-3">{t('journal.stockEntryHint')}</p>}
+      {entry.source === 'sales_invoice' && (
+        <p className="text-label text-ink-3">{t('journal.invoiceEntryHint')}</p>
+      )}
+      {entry.source === 'sales_receipt' && (
+        <p className="text-label text-ink-3">{t('journal.receiptEntryHint')}</p>
+      )}
       {entry.narration && <p className="text-body text-ink">{entry.narration}</p>}
       {/* A plain table in its own scroll box: four columns, a handful of rows, a totals row */}
       <Card className="overflow-x-auto">

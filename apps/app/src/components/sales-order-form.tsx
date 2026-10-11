@@ -1,4 +1,4 @@
-import { Delete02Icon } from '@hugeicons/core-free-icons';
+import { Calendar03Icon, Delete02Icon, UserIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -15,8 +15,8 @@ import {
   Button,
   Card,
   FormAlert,
-  DatePicker,
   FormField,
+  Input,
   PageHeader,
   SelectField,
   TextField,
@@ -31,8 +31,15 @@ import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { rowPath } from '../lib/products';
 import { SALES_LINE_FIELDS, savedLines } from '../lib/sales';
+import { useCan } from '../lib/permissions';
 import { customerQuery } from '../lib/queries';
-import { CustomerPicker } from './customer-picker';
+import {
+  CreditLimitDialog,
+  CreditLine,
+  type CreditStop,
+  creditStopOf,
+  useCreditText,
+} from './credit-parts';
 import { failureOf } from './journal-parts';
 import { addressLabel, SalesBackLink, useSalesRefresh } from './sales-parts';
 import { useTenantId, useWarehouses, warehouseLabel } from './stock-parts';
@@ -45,6 +52,12 @@ import { useTenantId, useWarehouses, warehouseLabel } from './stock-parts';
 const SalesLinesEditor = lazy(async () => ({
   default: (await import('./sales-line-editor')).SalesLinesEditor,
 }));
+// The customer box and the date picker too (step 15c): both bring the popover, and with the 15c
+// contracts and the credit line this chunk went over its budget (the delivery form did the same)
+const CustomerPicker = lazy(async () => ({
+  default: (await import('./customer-picker')).CustomerPicker,
+}));
+const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
 type FormValues = SalesOrderFormValues;
 
@@ -92,6 +105,11 @@ export function SalesOrderForm({
   const refresh = useSalesRefresh();
   const { active } = useWarehouses();
   const [confirming, setConfirming] = useState(false);
+  // Step 15c: the limit and the amount when confirming would go over the customer's credit limit,
+  // for someone who may go over it (the dialog asks); null otherwise
+  const [stop, setStop] = useState<CreditStop | null>(null);
+  const canOverride = useCan()('sales.credit.override');
+  const creditText = useCreditText();
   const [start] = useState(() => {
     if (order) return savedLines(order.lines, order.customer.id);
     if (quotation) return savedLines(quotation.lines, quotation.customer.id);
@@ -156,10 +174,11 @@ export function SalesOrderForm({
     setValue('shippingAddressId', shippingAddresses(picked.addresses)[0]?.id ?? '');
   };
 
-  const save = (confirm: boolean) =>
+  // override: the second try, after the person saw the credit dialog and went on
+  const save = (confirm: boolean, override = false) =>
     handleSubmit(async ({ version, ...values }) => {
       try {
-        const body = { ...values, confirm };
+        const body = { ...values, confirm, overrideCreditLimit: override };
         const saved = order
           ? await call(routes.salesOrders.update, {
               params: { id: order.id },
@@ -174,6 +193,7 @@ export function SalesOrderForm({
             ? t('salesOrders.confirmed', { number: saved.number ?? '' })
             : t('salesOrders.draftSaved'),
         );
+        setStop(null);
         if (!order) {
           void navigate({
             to: '/sales-orders/$orderId',
@@ -182,7 +202,16 @@ export function SalesOrderForm({
           });
         }
       } catch (error) {
-        applyApiError(error, fieldNames(lineCount), setError);
+        // Over the credit limit: ask, if the person may go over it; else say so, with the amounts
+        const credit = creditStopOf(error);
+        if (credit !== null && canOverride && !override) {
+          setStop(credit);
+          return;
+        }
+        setStop(null);
+        const text = creditText(error);
+        if (text !== null) setError('root.server', { message: text });
+        else applyApiError(error, fieldNames(lineCount), setError);
       }
     });
 
@@ -224,23 +253,32 @@ export function SalesOrderForm({
           </p>
         )}
         <Card className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:gap-x-4 lg:grid-cols-3">
-          <FormField
-            control={control}
-            name="customerId"
-            label={t('salesOrders.customer')}
-            hint={customerLocked ? t('salesOrders.customerLocked') : undefined}
-          >
-            {(field) => (
-              <CustomerPicker
-                {...field}
-                saved={savedCustomer}
-                disabled={customerLocked}
-                onChange={(next) => void changeCustomer(next)}
-              />
-            )}
-          </FormField>
+          <div className="grid content-start gap-1.5">
+            <FormField
+              control={control}
+              name="customerId"
+              label={t('salesOrders.customer')}
+              hint={customerLocked ? t('salesOrders.customerLocked') : undefined}
+            >
+              {(field) => (
+                <Suspense fallback={<Input id={field.id} icon={UserIcon} disabled />}>
+                  <CustomerPicker
+                    {...field}
+                    saved={savedCustomer}
+                    disabled={customerLocked}
+                    onChange={(next) => void changeCustomer(next)}
+                  />
+                </Suspense>
+              )}
+            </FormField>
+            <CreditLine customerId={customerId} />
+          </div>
           <FormField control={control} name="date" label={t('salesOrders.date')}>
-            {(field) => <DatePicker {...field} />}
+            {(field) => (
+              <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
+                <DatePicker {...field} />
+              </Suspense>
+            )}
           </FormField>
           <FormField
             control={control}
@@ -249,7 +287,11 @@ export function SalesOrderForm({
             optional
             hint={t('salesOrders.deliveryDateHint')}
           >
-            {(field) => <DatePicker {...field} value={field.value ?? ''} />}
+            {(field) => (
+              <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
+                <DatePicker {...field} value={field.value ?? ''} />
+              </Suspense>
+            )}
           </FormField>
           <TextField
             label={t('salesOrders.customerReference')}
@@ -338,6 +380,16 @@ export function SalesOrderForm({
         </div>
         <p className="text-right text-label text-ink-3">{t('salesOrders.confirmHint')}</p>
       </form>
+      <CreditLimitDialog
+        stop={stop}
+        customer={customer?.name ?? savedCustomer?.name ?? ''}
+        confirmLabel={t('creditLimit.confirmOrder')}
+        pending={isSubmitting}
+        onConfirm={() => void save(true, true)()}
+        onClose={() => {
+          setStop(null);
+        }}
+      />
     </div>
   );
 }

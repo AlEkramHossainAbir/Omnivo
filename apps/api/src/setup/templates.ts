@@ -21,6 +21,8 @@ export interface AccountTemplate {
   code: string;
   name: string;
   purpose?: AccountPurpose;
+  // Step 15c: money is kept here. On a group, every account the company adds under it.
+  holdsMoney?: true;
   children?: readonly AccountTemplate[];
 }
 
@@ -106,6 +108,16 @@ const SALES_ADMIN = [...SELLING, 'sales.price_list.manage'] as const;
 const ORDERING = ['sales.quotation.manage', 'sales.order.manage'] as const;
 const DELIVERING = ['sales.delivery.manage'] as const;
 
+// Step 15c. The accountant bills and takes the money in, and so does a distributor's sales officer,
+// who collects from the retailers they sell to. The people who post challans do not bill them: the
+// person who lets goods out of the gate should not also decide what they cost the customer (a shop
+// manager or a small company's manager runs everything, so they get it all). A cashier takes money.
+// Going over a credit limit is a manager's decision, never the accountant's alone: the person who
+// books the sale should not also wave away the limit on it.
+const INVOICING = ['sales.invoice.manage'] as const;
+const COLLECTING = ['sales.receipt.manage'] as const;
+const CREDIT_OVERRIDE = ['sales.credit.override'] as const;
+
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
 const ACCOUNTANT: RoleTemplate = {
@@ -125,6 +137,9 @@ const ACCOUNTANT: RoleTemplate = {
     'inventory.stock.revalue',
     // Step 15a: the customers' accounts, their balances and statements, and the price lists
     ...SALES_ADMIN,
+    // Step 15c: invoices and money receipts
+    ...INVOICING,
+    ...COLLECTING,
   ],
 };
 
@@ -143,6 +158,11 @@ function group(
   children: readonly AccountTemplate[] = [],
 ): AccountTemplate {
   return { code, name, children };
+}
+
+// Step 15c: an account or a group that holds money (a money receipt goes into one of these)
+function money(node: AccountTemplate): AccountTemplate {
+  return { ...node, holdsMoney: true };
 }
 
 // exactOptionalPropertyTypes: `purpose: undefined` is not the same as no purpose, so the key is
@@ -177,10 +197,11 @@ function standardChart(industry: IndustryAccounts): ChartTemplate {
   return {
     asset: group('1000', 'Assets', [
       group('1100', 'Current assets', [
-        account('1110', 'Cash in hand', 'cash'),
-        // Empty: every company adds its own banks ("Dutch-Bangla Bank CD A/C …") and wallets
-        group('1120', 'Bank accounts'),
-        group('1130', 'Mobile wallets (bKash, Nagad)'),
+        money(account('1110', 'Cash in hand', 'cash')),
+        // Empty: every company adds its own banks ("Dutch-Bangla Bank CD A/C …") and wallets. The
+        // groups hold money, so each bank added under them is a money account with no tick of its own.
+        money(group('1120', 'Bank accounts')),
+        money(group('1130', 'Mobile wallets (bKash, Nagad)')),
         account('1140', 'Accounts receivable', 'accounts_receivable'),
         industry.stock,
         group('1160', 'Advances, deposits and prepayments', [
@@ -477,7 +498,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Sales officer',
         description: 'Orders and collections from retailers',
-        permissions: [...SELLING, ...ORDERING],
+        permissions: [...SELLING, ...ORDERING, ...INVOICING, ...COLLECTING],
       },
     ],
     chart: standardChart({
@@ -572,9 +593,12 @@ export const INDUSTRY_TEMPLATES = {
           ...SALES_ADMIN,
           ...ORDERING,
           ...DELIVERING,
+          ...INVOICING,
+          ...COLLECTING,
+          ...CREDIT_OVERRIDE,
         ],
       },
-      { name: 'Cashier', description: 'Sells at the counter', permissions: [] },
+      { name: 'Cashier', description: 'Sells at the counter', permissions: [...COLLECTING] },
     ],
     chart: standardChart({
       stock: TRADER_STOCK,
@@ -620,6 +644,9 @@ export const INDUSTRY_TEMPLATES = {
           ...SALES_ADMIN,
           ...ORDERING,
           ...DELIVERING,
+          ...INVOICING,
+          ...COLLECTING,
+          ...CREDIT_OVERRIDE,
         ],
       },
     ],

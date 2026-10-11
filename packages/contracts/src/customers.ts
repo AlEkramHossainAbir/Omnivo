@@ -171,6 +171,25 @@ export type CustomerListQuery = z.input<typeof customerListQuerySchema>;
 export const customerPageSchema = pageOf(customerSummarySchema);
 export type CustomerPage = z.infer<typeof customerPageSchema>;
 
+// What counts against the credit limit (step 15c, you chose this): what the customer owes now,
+// plus what confirmed orders will still bill. An order line counts for what is not invoiced yet;
+// a closed order only for what it delivered. A challan without an order has no price yet, so it
+// does not count until its invoice. Saving an order (confirm) or an invoice (post) adds the
+// document itself and refuses to go over the limit.
+export const customerCreditSchema = z.object({
+  // null = no limit; "0.0000" = cash only
+  limit: z.string().nullable(),
+  // The receivable lines with this customer: the same number as the customer's balance
+  balance: z.string(),
+  // Confirmed orders, not invoiced yet
+  onOrder: z.string(),
+  // balance + onOrder
+  exposure: z.string(),
+  // limit − exposure; null without a limit, negative when already over it
+  available: z.string().nullable(),
+});
+export type CustomerCredit = z.infer<typeof customerCreditSchema>;
+
 const customerParamsSchema = z.object({ id: z.uuid() });
 
 // Reading needs no permission, like products: every sales document picks a customer. The balance
@@ -261,6 +280,17 @@ export const customerRoutes = {
     params: customerParamsSchema,
     query: ledgerQuerySchema,
     response: ledgerPageSchema,
+  }),
+  // What the forms show under the customer (step 15c), with the same numbers the credit check uses
+  credit: defineRoute({
+    method: 'GET',
+    path: '/customers/:id/credit',
+    summary: "A customer's credit limit, what counts against it, and what is left",
+    auth: 'bearer',
+    permission: 'sales.customer.balance',
+    status: 200,
+    params: customerParamsSchema,
+    response: customerCreditSchema,
   }),
 };
 

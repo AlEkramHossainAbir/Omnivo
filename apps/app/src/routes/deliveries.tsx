@@ -1,6 +1,8 @@
 import { DeliveryTruck01Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
+  DELIVERY_INVOICE_FILTERS,
+  type DeliveryInvoiceFilter,
   type DeliverySummary,
   STOCK_DOCUMENT_STATUSES,
   type StockDocumentStatus,
@@ -19,7 +21,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { CustomerPicker } from '../components/customer-picker';
-import { DeliveryStatusPill } from '../components/sales-parts';
+import { DeliveryStatusPill, InvoiceStatePill } from '../components/sales-parts';
 import { useIsoDate, useTenantId, useWarehouses, warehouseLabel } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
 import { deliveriesQuery } from '../lib/queries';
@@ -34,8 +36,10 @@ export function DeliveriesPage() {
   const { byId } = useWarehouses();
   const [status, setStatus] = useState<StockDocumentStatus | ''>('');
   const [customerId, setCustomerId] = useState('');
+  // Step 15c: "To invoice" is the accountant's queue: posted challans with a line not billed yet
+  const [invoice, setInvoice] = useState<DeliveryInvoiceFilter | ''>('');
   const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
-    deliveriesQuery(useTenantId(), { status, customerId }),
+    deliveriesQuery(useTenantId(), { status, customerId, invoice }),
   );
   const rows = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
   const loadMore = useCallback(() => {
@@ -106,7 +110,13 @@ export function DeliveriesPage() {
           header: t('deliveries.columns.status'),
           enableSorting: false,
           meta: { card: 'trailing' },
-          cell: ({ getValue }) => <DeliveryStatusPill status={getValue()} />,
+          // A posted challan also says how much of it is billed; a draft cannot be billed yet
+          cell: ({ row, getValue }) => (
+            <span className="inline-flex flex-wrap gap-1.5">
+              <DeliveryStatusPill status={getValue()} />
+              {getValue() === 'posted' && <InvoiceStatePill state={row.original.invoiceState} />}
+            </span>
+          ),
         }),
       ]),
     [t, isoDate, byId],
@@ -148,6 +158,18 @@ export function DeliveriesPage() {
             })),
           ]}
           onChange={setStatus}
+        />
+        <SegmentedControl
+          label={t('deliveries.billing')}
+          value={invoice}
+          options={[
+            { value: '', label: t('deliveries.all') },
+            ...DELIVERY_INVOICE_FILTERS.map((value) => ({
+              value,
+              label: t(`deliveries.invoiceFilters.${value}`),
+            })),
+          ]}
+          onChange={setInvoice}
         />
       </div>
       {isError && <p className="text-body-sm text-crit">{t('deliveries.loadFailed')}</p>}

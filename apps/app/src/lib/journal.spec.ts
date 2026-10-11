@@ -11,6 +11,7 @@ function account(code: string, fields: Partial<Account> = {}): Account {
     name: `Account ${code}`,
     type: 'asset',
     isGroup: false,
+    holdsMoney: false,
     purpose: null,
     description: null,
     archivedAt: null,

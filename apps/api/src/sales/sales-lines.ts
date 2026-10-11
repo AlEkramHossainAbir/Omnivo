@@ -11,8 +11,8 @@ import {
   type TaxRateKind,
   toBaseQuantity,
 } from '@omnivo/contracts';
-import { parties, partyAddresses, taxRates, tenantSettings } from '@omnivo/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { branches, parties, partyAddresses, taxRates, tenantSettings } from '@omnivo/db';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 import { AppError } from '../common/http/app-error.js';
 import { getTenantId } from '../common/tenant/tenant-context.js';
@@ -63,8 +63,15 @@ export async function assertCustomer(
   return { id: row.id, code: row.code, name: row.name };
 }
 
-// An address of this customer, and its text as the document keeps it: the label, the address and
-// the phone on their own lines, the way a challan prints them. null = no address chosen.
+// An address as a document keeps it: the label, the address and the phone on their own lines, the
+// way a challan or an invoice prints them
+function addressText(row: { label: string | null; address: string; phone: string | null }): string {
+  return [row.label, row.address, row.phone]
+    .filter((part): part is string => part !== null)
+    .join('\n');
+}
+
+// An address of this customer, and its text as the document keeps it. null = no address chosen.
 export async function shippingAddressOf(
   tx: Transaction,
   customerId: string,
@@ -92,10 +99,50 @@ export async function shippingAddressOf(
       'Pick one of this customer’s addresses.',
     );
   }
-  const text = [row.label, row.address, row.phone]
-    .filter((part): part is string => part !== null)
-    .join('\n');
-  return { id: addressId, text };
+  return { id: addressId, text: addressText(row) };
+}
+
+// The customer's billing address (one at most, step 15a) as an invoice keeps it (step 15c). The
+// invoice copies the text when it is saved: what was sent to the customer must print the same
+// after the customer moves. null = the customer has none.
+export async function billingAddressOf(
+  tx: Transaction,
+  customerId: string,
+): Promise<string | null> {
+  const [row] = await tx
+    .select({
+      label: partyAddresses.label,
+      address: partyAddresses.address,
+      phone: partyAddresses.phone,
+    })
+    .from(partyAddresses)
+    .where(
+      and(
+        eq(partyAddresses.tenantId, getTenantId()),
+        eq(partyAddresses.partyId, customerId),
+        eq(partyAddresses.kind, 'billing'),
+      ),
+    );
+  return row === undefined ? null : addressText(row);
+}
+
+// The branch an invoice or a receipt belongs to (step 15c): an active branch of this workspace.
+// Checked here, under the form's own field, before the journal would refuse it as
+// journal_branch_invalid under a line the person never saw. FOR SHARE: nobody archives it before we
+// commit.
+export async function assertBranch(tx: Transaction, branchId: string): Promise<void> {
+  const [row] = await tx
+    .select({ id: branches.id })
+    .from(branches)
+    .where(
+      and(
+        eq(branches.tenantId, getTenantId()),
+        eq(branches.id, branchId),
+        isNull(branches.archivedAt),
+      ),
+    )
+    .for('share');
+  if (!row) throw fieldError('sales_branch_invalid', 'branchId', 'Pick an active branch.');
 }
 
 // The workspace setting now (step 15a). A new document copies it and keeps its copy: when the owner
@@ -149,13 +196,16 @@ export interface ResolvedSalesLine {
 // Every rule of a sales line the contract cannot check: the variant is an active product or
 // service of this workspace, the unit is its base unit or one of its packs, the quantity fits the
 // unit, and the VAT rate is an active one. keptRateIds: the rates the document's lines already use;
-// they stay usable after the rate is archived, so an old draft can still be saved. All problems
-// come back at once, each under its own field, like resolveLines() of the stock documents.
+// they stay usable after the rate is archived, so an old draft can still be saved. keptVariantIds
+// (step 15c): items that stay usable after they are archived — an invoice bills goods that already
+// left on a challan, whatever happened to the product since. All problems come back at once, each
+// under its own field, like resolveLines() of the stock documents.
 export async function resolveSalesLines(
   tx: Transaction,
   lines: readonly SalesLineInput[],
   pricesIncludeVat: boolean,
   keptRateIds: ReadonlySet<string> = new Set(),
+  keptVariantIds: ReadonlySet<string> = new Set(),
 ): Promise<ResolvedSalesLine[]> {
   const variants = await loadVariants(
     tx,
@@ -183,7 +233,7 @@ export async function resolveSalesLines(
     // Unknown, another workspace's or archived: the same answer. A service is fine here: it is
     // sold, just never delivered.
     const variant = variants.get(line.variantId);
-    if (variant === undefined || variant.archived) {
+    if (variant === undefined || (variant.archived && !keptVariantIds.has(variant.variantId))) {
       at('variantId', 'sales_item_invalid');
       return;
     }
@@ -238,7 +288,7 @@ export async function resolveSalesLines(
   return resolved;
 }
 
-// The columns a quotation line and an order line share, for an insert
+// The columns every sales line shares (quotation, order, invoice), for an insert
 export function salesLineValues(line: ResolvedSalesLine, index: number) {
   return {
     tenantId: getTenantId(),

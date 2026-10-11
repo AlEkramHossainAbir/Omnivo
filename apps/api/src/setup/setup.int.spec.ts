@@ -143,7 +143,9 @@ describe('starting the setup', () => {
           'inventory.stock.value',
           'sales.customer.balance',
           'sales.customer.manage',
+          'sales.invoice.manage',
           'sales.price_list.manage',
+          'sales.receipt.manage',
         ],
       ],
       [

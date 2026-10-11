@@ -6,6 +6,8 @@ import {
   defaultNumberFormat,
   type Delivery,
   type DeliveryInput,
+  type DeliveryInvoiceFilter,
+  type DeliveryInvoiceState,
   documentTotals,
   type DocumentType,
   type ErrorCode,
@@ -64,8 +66,12 @@ export type MockOrder = Omit<SalesOrder, 'partlyDelivered' | 'quotation' | 'deli
   quotationId: string | null;
 };
 
-// A delivery as stored, with its order's id: the order's number is looked up on read
-export type MockDelivery = Omit<Delivery, 'order'> & { orderId: string | null };
+// A delivery as stored, with its order's id: the order's number is looked up on read. So are the
+// invoices that bill it and how much of it is billed (step 15c): an invoice posted a second ago
+// shows on its challan at once.
+export type MockDelivery = Omit<Delivery, 'order' | 'invoiceState' | 'invoices'> & {
+  orderId: string | null;
+};
 
 export interface MockSalesDocuments {
   quotations: MockQuotation[];
@@ -85,11 +91,11 @@ export function emptySalesDocuments(): MockSalesDocuments {
   };
 }
 
-function now(): string {
+export function now(): string {
   return new Date().toISOString();
 }
 
-function fieldProblem(code: ErrorCode, field: string): MockProblem {
+export function fieldProblem(code: ErrorCode, field: string): MockProblem {
   return new MockProblem(409, code, { [field]: [code] });
 }
 
@@ -106,7 +112,7 @@ export function pageOf<T>(
 
 // Newest date first, like the API. Two documents of one day keep the array's order: a new one is
 // put first, so it comes first, like the API's uuidv7 ids.
-function newestFirst<T extends { date: string }>(items: readonly T[]): T[] {
+export function newestFirst<T extends { date: string }>(items: readonly T[]): T[] {
   return items.toSorted((a, b) => b.date.localeCompare(a.date));
 }
 
@@ -118,23 +124,36 @@ const SERIES = {
   delivery: 'sales.delivery',
 } as const satisfies Record<Series, DocumentType>;
 
-// The next number of a series, in the format saved on the Numbering page (or the default one)
-function nextNumber(data: WorkspaceData, series: Series, date: string): string {
-  const type = SERIES[series];
+// A number of a series, in the format saved on the Numbering page (or the default one). The
+// invoices and receipts (invoice-data.ts) keep their own counters and use this too.
+export function seriesNumber(
+  data: WorkspaceData,
+  type: DocumentType,
+  value: number,
+  date: string,
+): string {
   const format = data.series.get(type) ?? defaultNumberFormat(type);
-  data.salesDocuments.counters[series] += 1;
   return formatDocumentNumber(
     format,
     periodOf(date, format.yearStyle, data.settings.fiscalYearStartMonth),
-    data.salesDocuments.counters[series],
+    value,
   );
+}
+
+function nextNumber(data: WorkspaceData, series: Series, date: string): string {
+  data.salesDocuments.counters[series] += 1;
+  return seriesNumber(data, SERIES[series], data.salesDocuments.counters[series], date);
 }
 
 // --- What every sales document checks -----------------------------------------------------------
 
 // An active customer. A draft keeps its customer (keptId) even after the customer is archived,
 // like the API's assertCustomer(), so the person can still finish it.
-function customerOf(data: WorkspaceData, customerId: string, keptId: string | null): PartyRef {
+export function customerOf(
+  data: WorkspaceData,
+  customerId: string,
+  keptId: string | null,
+): PartyRef {
   const found = data.sales.customers.find((item) => item.id === customerId);
   if (!found || (found.archivedAt !== null && found.id !== keptId)) {
     throw fieldProblem('sales_customer_invalid', 'customerId');
@@ -160,19 +179,21 @@ function shippingAddressOf(
   return { id: address.id, text };
 }
 
-interface ResolvedLine {
+export interface ResolvedLine {
   line: SalesLine;
   amounts: LineAmounts;
 }
 
 // The API's resolveSalesLines(): an active product or service, its unit, the decimals, and an
 // active VAT rate (or one the document's lines already use: keptRateIds). Every problem at once,
-// each under its own field.
-function resolveSalesLines(
+// each under its own field. keptVariantIds (step 15c): an archived product still billed on an
+// invoice line, because the challan or the order behind that line already sold it.
+export function resolveSalesLines(
   data: WorkspaceData,
   lines: readonly SalesLineInput[],
   pricesIncludeVat: boolean,
   keptRateIds: ReadonlySet<string>,
+  keptVariantIds: ReadonlySet<string> = new Set(),
 ): ResolvedLine[] {
   const issues: { path: string; code: ErrorCode }[] = [];
   const resolved = lines.flatMap((input, index): ResolvedLine[] => {
@@ -180,7 +201,8 @@ function resolveSalesLines(
       issues.push({ path: `lines.${String(index)}.${field}`, code });
     };
     const found = findVariant(data, input.variantId);
-    if (found?.product.archivedAt !== null || found.variant.archivedAt !== null) {
+    const archived = found?.product.archivedAt !== null || found.variant.archivedAt !== null;
+    if (!found || (archived && !keptVariantIds.has(input.variantId))) {
       at('variantId', 'sales_item_invalid');
       return [];
     }
@@ -247,12 +269,12 @@ function resolveSalesLines(
   return resolved;
 }
 
-function totalsOf(resolved: readonly ResolvedLine[]) {
+export function totalsOf(resolved: readonly ResolvedLine[]) {
   return documentTotals(resolved.map((item) => item.amounts));
 }
 
 // The VAT rates a document's lines use now: they stay usable on it after they are archived
-function ratesOf(lines: readonly SalesLine[]): Set<string> {
+export function ratesOf(lines: readonly SalesLine[]): Set<string> {
   return new Set(lines.map((line) => line.taxRate.id));
 }
 
@@ -402,7 +424,8 @@ export function answerQuotation(target: MockQuotation, action: 'decline' | 'reop
 
 // --- Sales orders -------------------------------------------------------------------------------
 
-type OrderFields = Omit<SalesOrderInput, 'confirm' | 'quotationId'>;
+// overrideCreditLimit is the handler's (invoice-data.ts → confirmWithCredit)
+type OrderFields = Omit<SalesOrderInput, 'confirm' | 'quotationId' | 'overrideCreditLimit'>;
 
 export function findOrder(data: WorkspaceData, id: string): MockOrder {
   const found = data.salesDocuments.orders.find((item) => item.id === id);
@@ -412,6 +435,19 @@ export function findOrder(data: WorkspaceData, id: string): MockOrder {
 
 function anythingDelivered(order: MockOrder): boolean {
   return order.lines.some((line) => !isZeroQuantity(line.deliveredQuantity));
+}
+
+function anythingInvoiced(order: MockOrder): boolean {
+  return order.lines.some((line) => !isZeroQuantity(line.invoicedQuantity));
+}
+
+// An invoice line, even a draft's, that bills a line of this order (step 15c). Read through the
+// WorkspaceData type, not a function of invoice-data.ts: that file imports this one.
+function anyInvoiceLine(data: WorkspaceData, order: MockOrder): boolean {
+  const lineIds = new Set(order.lines.map((line) => line.id));
+  return data.billing.invoices.some((invoice) =>
+    invoice.lines.some((line) => line.orderLineId !== null && lineIds.has(line.orderLineId)),
+  );
 }
 
 export function toOrder(data: WorkspaceData, stored: MockOrder): SalesOrder {
@@ -465,7 +501,11 @@ function orderParts(
     pricesIncludeVat,
     ...totalsOf(resolved),
     lineCount: resolved.length,
-    lines: resolved.map((item) => ({ ...item.line, deliveredQuantity: '0.0000' })),
+    lines: resolved.map((item) => ({
+      ...item.line,
+      deliveredQuantity: '0.0000',
+      invoicedQuantity: '0.0000',
+    })),
   };
 }
 
@@ -552,7 +592,9 @@ export function removeOrder(data: WorkspaceData, target: MockOrder): void {
 }
 
 // Back to draft (no delivery at all, not even a draft one), close (something delivered) or cancel
-// (nothing delivered): the API's three rules
+// (nothing delivered): the API's three rules. Step 15c adds the invoices: no reopen while an
+// invoice line points at the order, a billed services-only order may close, and nothing billed
+// may be cancelled.
 export function changeOrderStatus(
   data: WorkspaceData,
   target: MockOrder,
@@ -565,11 +607,17 @@ export function changeOrderStatus(
   ) {
     throw new MockProblem(409, 'order_has_deliveries');
   }
-  if (action === 'close' && !anythingDelivered(target)) {
+  if (action === 'reopen' && anyInvoiceLine(data, target)) {
+    throw new MockProblem(409, 'order_has_invoices');
+  }
+  if (action === 'close' && !anythingDelivered(target) && !anythingInvoiced(target)) {
     throw new MockProblem(409, 'order_nothing_delivered');
   }
   if (action === 'cancel' && anythingDelivered(target)) {
     throw new MockProblem(409, 'order_partly_delivered');
+  }
+  if (action === 'cancel' && anythingInvoiced(target)) {
+    throw new MockProblem(409, 'order_has_invoices');
   }
   const status = action === 'reopen' ? 'draft' : action === 'close' ? 'closed' : 'cancelled';
   Object.assign(target, {
@@ -590,10 +638,46 @@ export function findDelivery(data: WorkspaceData, id: string): MockDelivery {
   return found;
 }
 
+// How much of a delivery is billed: a draft never is; a posted one by the `invoiced` flags its
+// lines got from the invoices that billed them (the API's invoiceState)
+function invoiceStateOf(delivery: MockDelivery): DeliveryInvoiceState {
+  if (delivery.status !== 'posted' || !delivery.lines.some((line) => line.invoiced)) {
+    return 'not_invoiced';
+  }
+  return delivery.lines.every((line) => line.invoiced) ? 'invoiced' : 'partly_invoiced';
+}
+
+function matchesInvoiceFilter(
+  delivery: MockDelivery,
+  filter: DeliveryInvoiceFilter | undefined,
+): boolean {
+  if (filter === undefined) return true;
+  if (delivery.status !== 'posted') return false;
+  const toInvoice = delivery.lines.some((line) => !line.invoiced);
+  return filter === 'to_invoice' ? toInvoice : !toInvoice;
+}
+
 export function toDelivery(data: WorkspaceData, stored: MockDelivery): Delivery {
   const { orderId, ...delivery } = stored;
   const order = data.salesDocuments.orders.find((item) => item.id === orderId);
-  return { ...delivery, order: order ? { id: order.id, number: order.number } : null };
+  // The posted invoices that bill a line of it, by number. A draft has claimed nothing yet.
+  const lineIds = new Set(stored.lines.map((line) => line.id));
+  const invoices = data.billing.invoices
+    .filter(
+      (invoice) =>
+        invoice.status === 'posted' &&
+        invoice.lines.some(
+          (line) => line.deliveryLineId !== null && lineIds.has(line.deliveryLineId),
+        ),
+    )
+    .map((invoice) => ({ id: invoice.id, number: invoice.number }))
+    .toSorted((a, b) => (a.number ?? '').localeCompare(b.number ?? ''));
+  return {
+    ...delivery,
+    order: order ? { id: order.id, number: order.number } : null,
+    invoiceState: invoiceStateOf(stored),
+    invoices,
+  };
 }
 
 export function listDeliveries(
@@ -602,6 +686,7 @@ export function listDeliveries(
     status?: string | undefined;
     customerId?: string | undefined;
     warehouseId?: string | undefined;
+    invoice?: DeliveryInvoiceFilter | undefined;
   },
 ): Delivery[] {
   return newestFirst(data.salesDocuments.deliveries)
@@ -609,7 +694,8 @@ export function listDeliveries(
       (item) =>
         (query.status === undefined || item.status === query.status) &&
         (query.customerId === undefined || item.customer.id === query.customerId) &&
-        (query.warehouseId === undefined || item.warehouseId === query.warehouseId),
+        (query.warehouseId === undefined || item.warehouseId === query.warehouseId) &&
+        matchesInvoiceFilter(item, query.invoice),
     )
     .map((item) => toDelivery(data, item));
 }
@@ -692,6 +778,8 @@ export function saveDelivery(
       ...line,
       orderLineId: orderLineIds[index] ?? null,
       value: null,
+      // Set by the invoice that bills it, at posting (invoice-data.ts → postInvoice)
+      invoiced: false,
     })),
     entry: null,
   };

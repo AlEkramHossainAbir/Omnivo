@@ -17,6 +17,8 @@ interface MockNode {
   purpose?: AccountPurpose;
   children?: MockNode[];
   archived?: boolean;
+  // Step 15c: a money receipt goes into it (on a group: every account inside)
+  holdsMoney?: boolean;
 }
 
 const MAKERS: readonly Industry[] = ['garments', 'pharma', 'manufacturing'];
@@ -47,17 +49,23 @@ function template(industry: Industry): Record<AccountType, MockNode> {
           code: '1100',
           name: 'Current assets',
           children: [
-            { code: '1110', name: 'Cash in hand', purpose: 'cash' },
+            { code: '1110', name: 'Cash in hand', purpose: 'cash', holdsMoney: true },
             {
               code: '1120',
               name: 'Bank accounts',
+              holdsMoney: true,
               children: [
                 { code: '1121', name: 'Dutch-Bangla Bank CD A/C 1234' },
                 // Closed last year: shows up with "Show archived"
                 { code: '1122', name: 'Sonali Bank CD A/C 0071', archived: true },
               ],
             },
-            { code: '1130', name: 'Mobile wallets (bKash, Nagad)', children: [] },
+            {
+              code: '1130',
+              name: 'Mobile wallets (bKash, Nagad)',
+              holdsMoney: true,
+              children: [],
+            },
             { code: '1140', name: 'Accounts receivable', purpose: 'accounts_receivable' },
             stock,
             { code: '1170', name: 'Input VAT', purpose: 'vat_input' },
@@ -171,6 +179,7 @@ export function seedAccounts(industry: Industry): Account[] {
       type,
       isGroup: node.children !== undefined,
       purpose: node.purpose ?? null,
+      holdsMoney: node.holdsMoney ?? false,
       description: null,
       archivedAt: node.archived ? now : null,
       version: 1,

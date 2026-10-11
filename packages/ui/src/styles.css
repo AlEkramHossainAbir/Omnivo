@@ -97,6 +97,49 @@
   --overlay: rgb(0 0 0 / 0.6);
 }
 
+/* Paper is white, whatever the screen's theme. Without this, a dark theme prints its light text
+   on white paper, almost unreadable. The light colors again, for printing only: later in the
+   file than the dark rules and just as specific, so they win over both. */
+@media print {
+  :root,
+  :root:not([data-theme='light']),
+  :root[data-theme='dark'] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --subtle: #f1f3f6;
+    --line: #e4e7ec;
+    --line-strong: #d0d5dd;
+    --ink: #0f1728;
+    --ink-2: #475467;
+    --ink-3: #8a94a6;
+    --brand: #1f47b5;
+    --brand-hover: #193b97;
+    --brand-soft: #edf1fb;
+    --brand-line: #c9d5f3;
+    --brand-ink: #ffffff;
+    --good: #0a7a4b;
+    --good-bg: #ecf8f1;
+    --warn: #b25e09;
+    --warn-bg: #fef6e7;
+    --crit: #b42318;
+    --crit-bg: #fef1f0;
+  }
+
+  /* A document page puts its print sheet (PrintSheet) straight into <body>. While one is there,
+     only the sheet prints: the app, a toast or an open dialog stay on the screen. A page without
+     a sheet prints as it is, without the sidebar (AppShell). */
+  body:has(> [data-print-sheet]) > :not([data-print-sheet]) {
+    display: none;
+  }
+}
+
+/* Every printed document is A4, the paper offices in Bangladesh use */
+@page {
+  size: A4;
+  margin: 12mm;
+}
+
 /* shadcn/ui-র নিজের নাম আমাদের token-এ পয়েন্ট করা — shadcn থেকে কপি করা component
    (bg-primary, border-input …) কোনো বদল ছাড়াই একই রং পায়। নিজেদের কোডে brand/ink নামই লিখুন */
 :root {

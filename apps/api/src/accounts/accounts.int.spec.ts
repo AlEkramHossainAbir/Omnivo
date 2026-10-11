@@ -6,6 +6,7 @@ import {
   accountSchema,
   auditPageSchema,
   meResponseSchema,
+  moneyAccountIds,
   problemSchema,
   setupSchema,
 } from '@omnivo/contracts';
@@ -114,18 +115,26 @@ async function byCode(code: string): Promise<Account> {
 
 async function create(parentCode: string, code: string, name: string, isGroup = false) {
   const parent = await byCode(parentCode);
-  return send('POST', '/accounts', { parentId: parent.id, code, name, isGroup, description: '' });
+  return send('POST', '/accounts', {
+    parentId: parent.id,
+    code,
+    name,
+    isGroup,
+    holdsMoney: false,
+    description: '',
+  });
 }
 
 // The form sends every field; these tests change one or two
 async function edit(
   account: Account,
-  change: Partial<Record<'parentId' | 'code' | 'name', string>>,
+  change: Partial<Record<'parentId' | 'code' | 'name', string> & { holdsMoney: boolean }>,
 ) {
   return send('PUT', `/accounts/${account.id}`, {
     parentId: account.parentId,
     code: account.code,
     name: account.name,
+    holdsMoney: account.holdsMoney,
     description: account.description ?? '',
     version: account.version,
     ...change,
@@ -173,6 +182,7 @@ describe('adding accounts', () => {
         code: '1199',
         name: 'Petty cash',
         isGroup: false,
+        holdsMoney: false,
         description: '',
       });
       expect(res.statusCode).toBe(409);
@@ -254,6 +264,58 @@ describe('moving accounts', () => {
   });
 });
 
+describe('money accounts', () => {
+  it('starts with cash, the bank group and the wallet group holding money', async () => {
+    const flagged = (await chart()).filter((account) => account.holdsMoney);
+    expect(flagged.map((account) => account.code)).toEqual(['1110', '1120', '1130']);
+    // Not ticked itself, but inside a group that is (moved to 1130 above), so money can go in
+    const bank = await byCode('1121');
+    expect(bank.holdsMoney).toBe(false);
+    expect(moneyAccountIds(await chart()).has(bank.id)).toBe(true);
+  });
+
+  it('lets an asset account hold money, and nothing else', async () => {
+    const res = await send('POST', '/accounts', {
+      parentId: (await byCode('1100')).id,
+      code: '1105',
+      name: 'Petty cash, Gazipur factory',
+      isGroup: false,
+      holdsMoney: true,
+      description: '',
+    });
+    expect(res.statusCode).toBe(201);
+    expect(accountSchema.parse(res.json()).holdsMoney).toBe(true);
+
+    const liability = await send('POST', '/accounts', {
+      parentId: (await byCode('2100')).id,
+      code: '2195',
+      name: 'Cash from buyers',
+      isGroup: false,
+      holdsMoney: true,
+      description: '',
+    });
+    expect(liability.statusCode).toBe(409);
+    expect(problemSchema.parse(liability.json()).fieldErrors).toEqual({
+      holdsMoney: ['account_money_type'],
+    });
+    const expense = await edit(await byCode('5200'), { holdsMoney: true });
+    expect(problemSchema.parse(expense.json()).code).toBe('account_money_type');
+  });
+
+  it('takes the tick off, and logs it', async () => {
+    const res = await edit(await byCode('1105'), { holdsMoney: false });
+    expect(res.statusCode).toBe(200);
+    expect(accountSchema.parse(res.json()).holdsMoney).toBe(false);
+    const { items } = auditPageSchema.parse(
+      (await send('GET', '/audit-logs?entityType=account')).json(),
+    );
+    expect(items[0]).toMatchObject({
+      action: 'account.updated',
+      changes: { holdsMoney: { from: true, to: false } },
+    });
+  });
+});
+
 describe('archiving and deleting', () => {
   it('protects top-level groups and system accounts', async () => {
     for (const code of ['1000', '1140']) {
@@ -328,7 +390,14 @@ describe('permissions', () => {
     const res = await send(
       'POST',
       '/accounts',
-      { parentId: parent.id, code: '1122', name: 'BRAC Bank', isGroup: false, description: '' },
+      {
+        parentId: parent.id,
+        code: '1122',
+        name: 'BRAC Bank',
+        isGroup: false,
+        holdsMoney: false,
+        description: '',
+      },
       viewer,
     );
     expect(res.statusCode).toBe(403);

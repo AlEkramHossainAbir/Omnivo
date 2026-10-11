@@ -13,6 +13,7 @@ function account(code: string, parent: Account | null, fields: Partial<Account> 
     name: `Account ${code}`,
     type: parent?.type ?? 'asset',
     isGroup: false,
+    holdsMoney: false,
     purpose: null,
     description: null,
     archivedAt: null,

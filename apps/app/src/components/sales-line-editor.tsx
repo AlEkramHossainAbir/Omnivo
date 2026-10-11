@@ -11,6 +11,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import {
   defaultLineDescription,
   MAX_SALES_LINES,
+  plainQuantity,
   type PriceLookupItem,
   type Product,
   type ProductSummary,
@@ -45,12 +46,14 @@ import { productQuery, productSearchQuery, taxRatesQuery, unitsQuery } from '../
 import { useDebounced } from '../lib/use-debounced';
 import { failureOf, LineError } from './journal-parts';
 import { SalesTotals } from './sales-parts';
-import { useQuantity, useTenantId, VariantCell } from './stock-parts';
+import { useQuantity, useTenantId, useUnitCode, VariantCell } from './stock-parts';
 
-// The lines of a quotation or an order: one editor for both. The form holds the lines as one
-// controlled value (a Controller on "lines"), and this editor changes that array. A field array
-// would need the form's own type here, and the two forms have different types; one array value has
-// the same type in both (SalesLineFormValues[]), so neither form needs a cast.
+// The lines of a quotation, an order and (step 15c) an invoice: one editor for all three. The form
+// holds the lines as one controlled value (a Controller on "lines"), and this editor changes that
+// array. A field array would need the form's own type here, and the forms have different types;
+// one array value has the same type in the quotation and the order (SalesLineFormValues[]), so
+// neither form needs a cast. An invoice line has more fields, so the editor is generic over the
+// line (LinesEditor<L>), and SalesLinesEditor is its plain sales-line form.
 
 export type SalesLinesErrors = FieldErrors<{ lines: SalesLineFormValues[] }>['lines'];
 
@@ -68,8 +71,9 @@ const keyOf = (variantId: string, unitId: string) => `${variantId}:${unitId}`;
 const COLUMNS =
   '@5xl:grid-cols-[minmax(0,1fr)_6.5rem_6.5rem_8.5rem_8.5rem_8.5rem_7.5rem_2.25rem] @5xl:items-start @5xl:gap-2';
 
-// LineField's look, with the label hidden at @5xl (LineField hides it at @3xl)
-function SalesField({
+// LineField's look, with the label hidden at @5xl (LineField hides it at @3xl). Exported for the
+// invoice's own boxes under a line (invoice-lines.tsx).
+export function SalesField({
   id,
   label,
   error,
@@ -93,7 +97,62 @@ function SalesField({
   );
 }
 
-export function SalesLinesEditor({
+// A unit or a quantity a line cannot change (a challan line on an invoice): the same cell, as text
+function FixedValue({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: string;
+  className?: string;
+}) {
+  return (
+    <div className="grid content-start gap-1.5">
+      <span className="text-label font-medium text-ink @5xl:sr-only">{label}</span>
+      <span className={cn('py-2.5 text-body-sm text-ink-2 tabular-nums', className)}>{value}</span>
+    </div>
+  );
+}
+
+export interface LinesEditorProps<L extends SalesLineFormValues> {
+  lines: L[];
+  onChange: (lines: L[]) => void;
+  // The form's lines right now (react-hook-form's getValues): an add that waited for the price
+  // lookup appends to these, not to the lines of the render that started it
+  getLines: () => L[];
+  initialMeta: LineMeta[];
+  customerId: string;
+  pricesIncludeVat: boolean;
+  errors: SalesLinesErrors;
+  // The form's own line for a product added with "Add items" (an invoice line has more fields)
+  newLine: (line: SalesLineFormValues) => L;
+  // The most lines the document takes
+  maxLines?: number;
+  // A line whose item, unit and quantity come from elsewhere (a challan line on an invoice, billed
+  // whole): they are shown, not changed. Its price, discount and VAT rate still are.
+  fixed?: (line: L) => boolean;
+  // Under the item: where the line comes from, or the batch of an invoice's own goods line.
+  // `update` changes this line's own fields.
+  lineNote?: (line: {
+    value: L;
+    index: number;
+    item: SalesItem;
+    update: (patch: Partial<L>) => void;
+  }) => ReactNode;
+  // More buttons beside "Add items" (an invoice's "Add challans"). They add lines with their meta
+  // through `add`, which adds nothing and says false when the document would hold too many.
+  moreAdds?: (add: (entries: readonly { line: L; meta: LineMeta }[]) => boolean) => ReactNode;
+}
+
+const sameLine = (line: SalesLineFormValues): SalesLineFormValues => line;
+
+// The quotation's and the order's editor: a product added is a plain sales line
+export function SalesLinesEditor(props: Omit<LinesEditorProps<SalesLineFormValues>, 'newLine'>) {
+  return <LinesEditor {...props} newLine={sameLine} />;
+}
+
+export function LinesEditor<L extends SalesLineFormValues>({
   lines,
   onChange,
   getLines,
@@ -101,20 +160,16 @@ export function SalesLinesEditor({
   customerId,
   pricesIncludeVat,
   errors,
-}: {
-  lines: SalesLineFormValues[];
-  onChange: (lines: SalesLineFormValues[]) => void;
-  // The form's lines right now (react-hook-form's getValues): an add that waited for the price
-  // lookup appends to these, not to the lines of the render that started it
-  getLines: () => SalesLineFormValues[];
-  initialMeta: LineMeta[];
-  customerId: string;
-  pricesIncludeVat: boolean;
-  errors: SalesLinesErrors;
-}) {
+  newLine,
+  maxLines = MAX_SALES_LINES,
+  fixed = () => false,
+  lineNote,
+  moreAdds,
+}: LinesEditorProps<L>) {
   const { t, format, errorText } = useLocale();
   const tenantId = useTenantId();
   const quantityText = useQuantity();
+  const unitCode = useUnitCode();
   const rateText = useRateText();
   const units = useQuery(unitsQuery(tenantId)).data ?? [];
   const rates = useQuery(taxRatesQuery(tenantId)).data;
@@ -150,11 +205,19 @@ export function SalesLinesEditor({
     );
   };
 
+  // Lines made elsewhere (an invoice's challan picker), with their meta. false = too many.
+  const add = (entries: readonly { line: L; meta: LineMeta }[]): boolean => {
+    if (getLines().length + entries.length > maxLines) return false;
+    onChange([...getLines(), ...entries.map((entry) => entry.line)]);
+    setMeta((before) => [...before, ...entries.map((entry) => entry.meta)]);
+    return true;
+  };
+
   // "Add": every active variant of the product, in its selling unit, at the looked-up price.
   // false = the document would hold too many lines; nothing is added.
   const addProduct = async (product: Product): Promise<boolean> => {
     const variants = product.variants.filter((variant) => variant.archivedAt === null);
-    if (getLines().length + variants.length > MAX_SALES_LINES) return false;
+    if (getLines().length + variants.length > maxLines) return false;
     const unitId = product.salesUnitId ?? product.baseUnitId;
     const prices = await lookUp(variants.map((variant) => ({ variantId: variant.id, unitId })));
     const added = variants.map((variant) => {
@@ -180,15 +243,16 @@ export function SalesLinesEditor({
         baseUnitId: product.baseUnitId,
         units: product.units.map((pack) => ({ unitId: pack.unitId, factor: pack.factor })),
         productType: product.type,
+        tracking: product.tracking,
+        hasExpiry: product.hasExpiry,
       };
       return {
-        line,
+        line: newLine(line),
         meta: { key: nextKey(), item, source: found?.source ?? null, pricedFor: customerId },
       };
     });
-    onChange([...getLines(), ...added.map((entry) => entry.line)]);
-    setMeta((before) => [...before, ...added.map((entry) => entry.meta)]);
-    return true;
+    // Checked above, before the wait; another add may have come in meanwhile
+    return add(added);
   };
 
   const remove = (index: number) => {
@@ -196,7 +260,11 @@ export function SalesLinesEditor({
     setMeta((before) => before.filter((_, at) => at !== index));
   };
 
+  // The sales fields every line has, and (lineNote) the fields of the form's own line type
   const update = (index: number, patch: Partial<SalesLineFormValues>) => {
+    onChange(lines.map((line, at) => (at === index ? { ...line, ...patch } : line)));
+  };
+  const updateOwn = (index: number, patch: Partial<L>) => {
     onChange(lines.map((line, at) => (at === index ? { ...line, ...patch } : line)));
   };
 
@@ -302,6 +370,7 @@ export function SalesLinesEditor({
         const id = (field: string) => `lines.${String(index)}.${field}`;
         const preview = basePreview(item, line.unitId, line.quantity, units);
         const amount = amounts[index];
+        const locked = fixed(line);
         const removeButton = (
           <IconButton
             icon={Delete02Icon}
@@ -332,6 +401,14 @@ export function SalesLinesEditor({
                 </span>
                 <span className="@5xl:hidden">{removeButton}</span>
               </div>
+              {lineNote?.({
+                value: line,
+                index,
+                item,
+                update: (patch) => {
+                  updateOwn(index, patch);
+                },
+              })}
               <SalesField
                 id={id('description')}
                 label={t('salesLines.description')}
@@ -349,42 +426,55 @@ export function SalesLinesEditor({
                 />
               </SalesField>
             </div>
-            <SalesField
-              id={id('unitId')}
-              label={t('salesLines.unit')}
-              error={lineErrors?.unitId?.message}
-            >
-              <Select
-                id={id('unitId')}
-                options={unitChoices(item, units)}
-                value={line.unitId}
-                invalid={lineErrors?.unitId !== undefined}
-                onChange={(event) => void changeUnit(index, event.target.value)}
-              />
-            </SalesField>
-            <SalesField
-              id={id('quantity')}
-              label={t('salesLines.quantity')}
-              error={lineErrors?.quantity?.message}
-            >
-              <Input
-                id={id('quantity')}
-                inputMode="decimal"
-                autoComplete="off"
-                align="end"
-                value={line.quantity}
-                invalid={lineErrors?.quantity !== undefined}
-                aria-describedby={lineErrors?.quantity ? `${id('quantity')}-error` : undefined}
-                onChange={(event) => {
-                  update(index, { quantity: event.target.value });
-                }}
-              />
-              {preview !== null && (
-                <span className="text-right text-caption text-ink-3 tabular-nums">
-                  {t('stockLines.equals', { quantity: quantityText(preview, item.baseUnitId) })}
-                </span>
-              )}
-            </SalesField>
+            {locked ? (
+              <>
+                <FixedValue label={t('salesLines.unit')} value={unitCode(line.unitId)} />
+                <FixedValue
+                  label={t('salesLines.quantity')}
+                  value={plainQuantity(line.quantity)}
+                  className="text-right"
+                />
+              </>
+            ) : (
+              <>
+                <SalesField
+                  id={id('unitId')}
+                  label={t('salesLines.unit')}
+                  error={lineErrors?.unitId?.message}
+                >
+                  <Select
+                    id={id('unitId')}
+                    options={unitChoices(item, units)}
+                    value={line.unitId}
+                    invalid={lineErrors?.unitId !== undefined}
+                    onChange={(event) => void changeUnit(index, event.target.value)}
+                  />
+                </SalesField>
+                <SalesField
+                  id={id('quantity')}
+                  label={t('salesLines.quantity')}
+                  error={lineErrors?.quantity?.message}
+                >
+                  <Input
+                    id={id('quantity')}
+                    inputMode="decimal"
+                    autoComplete="off"
+                    align="end"
+                    value={line.quantity}
+                    invalid={lineErrors?.quantity !== undefined}
+                    aria-describedby={lineErrors?.quantity ? `${id('quantity')}-error` : undefined}
+                    onChange={(event) => {
+                      update(index, { quantity: event.target.value });
+                    }}
+                  />
+                  {preview !== null && (
+                    <span className="text-right text-caption text-ink-3 tabular-nums">
+                      {t('stockLines.equals', { quantity: quantityText(preview, item.baseUnitId) })}
+                    </span>
+                  )}
+                </SalesField>
+              </>
+            )}
             <SalesField
               id={id('unitPrice')}
               label={
@@ -467,7 +557,7 @@ export function SalesLinesEditor({
           {errorText(listError)}
         </p>
       )}
-      <div className="border-t border-line px-5 py-3">
+      <div className="flex flex-wrap gap-2 border-t border-line px-5 py-3">
         <Button
           variant="secondary"
           size="sm"
@@ -478,11 +568,12 @@ export function SalesLinesEditor({
           <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={1.5} />
           {t('salesLines.addItems')}
         </Button>
+        {moreAdds?.(add)}
       </div>
       {lines.length > 0 && <SalesTotals totals={totals} pricesIncludeVat={pricesIncludeVat} />}
 
       <Dialog open={picking} onOpenChange={setPicking}>
-        {picking && <SalesItemPicker onAdd={addProduct} />}
+        {picking && <SalesItemPicker onAdd={addProduct} maxLines={maxLines} />}
       </Dialog>
     </Card>
   );
@@ -490,7 +581,13 @@ export function SalesLinesEditor({
 
 // "Add items": search the products and services, then add one. The dialog stays open, so a long
 // order is put together without closing it; each click adds the product's lines at once.
-function SalesItemPicker({ onAdd }: { onAdd: (product: Product) => Promise<boolean> }) {
+function SalesItemPicker({
+  onAdd,
+  maxLines,
+}: {
+  onAdd: (product: Product) => Promise<boolean>;
+  maxLines: number;
+}) {
   const { t, errorText } = useLocale();
   const tenantId = useTenantId();
   const queryClient = useQueryClient();
@@ -508,7 +605,7 @@ function SalesItemPicker({ onAdd }: { onAdd: (product: Product) => Promise<boole
     try {
       const fits = await onAdd(await queryClient.query(productQuery(tenantId, summary.id)));
       if (fits) setAdded((before) => new Set(before).add(summary.id));
-      else setProblem(t('salesLines.tooMany', { max: MAX_SALES_LINES }));
+      else setProblem(t('salesLines.tooMany', { max: maxLines }));
     } catch (error) {
       setProblem(errorText(failureOf(error instanceof Error ? error : null) ?? 'unknown_error'));
     } finally {

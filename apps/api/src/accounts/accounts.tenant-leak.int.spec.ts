@@ -105,6 +105,7 @@ describe('chart of accounts isolation over HTTP', () => {
       code: '1129',
       name: 'Borrowed group',
       isGroup: false,
+      holdsMoney: false,
       description: '',
     });
     expect(res.statusCode).toBe(409);
@@ -117,6 +118,7 @@ describe('chart of accounts isolation over HTTP', () => {
       parentId: target.parentId,
       code: '5330',
       name: 'Taken over',
+      holdsMoney: false,
       description: '',
       version: 1,
     };

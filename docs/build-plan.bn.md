@@ -240,7 +240,15 @@ zero-rated, exempt; একটা default), workspace সেটিং "prices inc
 cost-এ Dr Cost of goods sold / Cr Inventory; স্টক hold হয় না, স্টক পেজে "On order"। লাইনের হিসাব (discount, তারপর
 VAT, লাইন ধরে paisa-তে round) contracts-এ, form-API-mock একই function; price lookup: কাস্টমারের price list → প্রোডাক্টের
 দাম। প্রিন্ট নেই (১৫c বা পরে)।
-**১৫c** invoice, payment, credit limit · **১৫d** return ও credit note।
+**১৫c (invoice → money receipt → credit limit):** invoice (post করলে INV নম্বর; এক কাস্টমারের এক বা একাধিক posted
+challan বিল করে — challan-এর প্রতিটা লাইন পুরোটা, একবারই; order-এর service লাইন সরাসরি; নিজের goods লাইন থাকলে
+invoice নিজেই একটা challan post করে, তাই COGS একবারই)। Post করলে Dr AR (কাস্টমার) / Cr Sales / Cr VAT payable।
+Unpaid / Partly paid / Paid, due date পেরোলে Overdue। Money receipt (MR, save করলেই নম্বর ও entry; Dr টাকার
+account / Cr AR), পুরনো invoice আগে (FIFO) ধরা হয়, বাকিটা advance; ভুল বা চেক ফেরত হলে বাতিল (reversal)।
+Credit limit order confirm ও invoice post-এ চেক, `sales.credit.override` থাকলে এগিয়ে যাওয়া যায় (audit log)।
+Chart of accounts-এ "Holds money"। কোটেশন, order, challan, invoice, receipt — এক A4 প্রিন্ট লেআউট (ব্রাউজারের
+Print / Save as PDF, offline)। Mushak 6.3 পরে।
+**১৫d** return ও credit note।
 
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 

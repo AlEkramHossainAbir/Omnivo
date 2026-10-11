@@ -27,6 +27,9 @@ export const PERMISSION_KEYS = [
   'sales.quotation.manage',
   'sales.order.manage',
   'sales.delivery.manage',
+  'sales.invoice.manage',
+  'sales.receipt.manage',
+  'sales.credit.override',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -68,4 +71,7 @@ export const PERMISSION_GROUP_OF = {
   'sales.quotation.manage': 'sales',
   'sales.order.manage': 'sales',
   'sales.delivery.manage': 'sales',
+  'sales.invoice.manage': 'sales',
+  'sales.receipt.manage': 'sales',
+  'sales.credit.override': 'sales',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

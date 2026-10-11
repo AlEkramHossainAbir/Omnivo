@@ -445,6 +445,61 @@ const deliveryRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/delivery'), 'DeliveryPage'),
 });
 
+// Invoices and money receipts (step 15c). "Make invoice" on a challan comes with ?deliveryId=, and
+// "New invoice" on a customer's page with ?customerId=; "Record payment" on an invoice comes with
+// ?customerId= and ?invoiceId=, on a customer's page with ?customerId= alone.
+const invoicesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/invoices',
+  component: lazyRouteComponent(() => import('./routes/invoices'), 'InvoicesPage'),
+});
+
+const newInvoiceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/invoices/new',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { deliveryId?: string; customerId?: string } => ({
+    ...(typeof search.deliveryId === 'string' &&
+      UUID.test(search.deliveryId) && { deliveryId: search.deliveryId }),
+    ...(typeof search.customerId === 'string' &&
+      UUID.test(search.customerId) && { customerId: search.customerId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/invoice'), 'NewInvoicePage'),
+});
+
+const invoiceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/invoices/$invoiceId',
+  component: lazyRouteComponent(() => import('./routes/invoice'), 'InvoicePage'),
+});
+
+const receiptsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/receipts',
+  component: lazyRouteComponent(() => import('./routes/receipts'), 'ReceiptsPage'),
+});
+
+const newReceiptRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/receipts/new',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { customerId?: string; invoiceId?: string } => ({
+    ...(typeof search.customerId === 'string' &&
+      UUID.test(search.customerId) && { customerId: search.customerId }),
+    ...(typeof search.invoiceId === 'string' &&
+      UUID.test(search.invoiceId) && { invoiceId: search.invoiceId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/receipt'), 'NewReceiptPage'),
+});
+
+const receiptRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/receipts/$receiptId',
+  component: lazyRouteComponent(() => import('./routes/receipt'), 'ReceiptPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -539,6 +594,12 @@ const routeTree = rootRoute.addChildren([
     deliveriesRoute,
     newDeliveryRoute,
     deliveryRoute,
+    invoicesRoute,
+    newInvoiceRoute,
+    invoiceRoute,
+    receiptsRoute,
+    newReceiptRoute,
+    receiptRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

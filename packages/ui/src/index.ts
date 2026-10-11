@@ -52,6 +52,7 @@ export { MoneyInput } from './components/money-input.js';
 export { PageHeader, SectionHeader } from './components/page-header.js';
 export { Pill, type PillTone } from './components/pill.js';
 export { Popover, PopoverContent, PopoverTrigger } from './components/popover.js';
+export { PrintBlock, PrintSheet, type PrintMeta } from './components/print-sheet.js';
 export { SegmentedControl } from './components/segmented-control.js';
 export { SelectableCardGroup, type SelectableCardOption } from './components/selectable-card.js';
 export { Stepper } from './components/stepper.js';
