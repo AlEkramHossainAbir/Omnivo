@@ -34,6 +34,8 @@ import { warehouses } from './warehouses.js';
 // (a confirmed order's lines, a posted delivery) live in migration 0028, like the stock documents'.
 // Step 15c adds what invoices write here: an order line's invoiced quantity and a challan line's
 // invoiced flag (rules in migration 0030). The invoices themselves are in invoices.ts.
+// Step 15d adds what sales returns write here: a challan line's returned quantity (rules in
+// migration 0032). The returns are in sales-returns.ts.
 
 // The columns a quotation line and an order line share: the product, the quantity (as typed and in
 // the base unit, like a stock line), the price and discount as typed, and a copy of the VAT rate.
@@ -396,16 +398,23 @@ export const deliveryLines = pgTable(
     // Billed by a posted invoice (step 15c). An invoice bills a challan line whole, so a yes/no is
     // enough. It goes from false to true once, when the invoice is posted (migration 0030).
     invoiced: boolean('invoiced').notNull().default(false),
+    // In the base unit: what posted sales returns brought back (step 15d). Written by the return's
+    // posting, under a lock on the line; it only grows (migration 0032). Before the line is billed,
+    // the invoice bills base_quantity − returned_quantity (contracts' billableQuantity).
+    returnedQuantity: numeric('returned_quantity', { precision: 19, scale: 4 })
+      .notNull()
+      .default('0'),
   },
   (table) => [
     uniqueIndex('delivery_lines_line_idx').on(table.tenantId, table.deliveryId, table.lineNo),
     // The target of the invoice line's FK (step 15c)
     uniqueIndex('delivery_lines_tenant_id_idx').on(table.tenantId, table.id),
     // The challans still to bill (the invoice form's picker). Partial: after a year almost every
-    // line is invoiced, and only the few that are not stay in it.
+    // line is invoiced, and only the few that are not stay in it. A line that all came back before
+    // it was billed has nothing to bill, so it leaves too (step 15d).
     index('delivery_lines_to_invoice_idx')
       .on(table.tenantId, table.deliveryId)
-      .where(sql`NOT ${table.invoiced}`),
+      .where(sql`NOT ${table.invoiced} AND ${table.returnedQuantity} < ${table.baseQuantity}`),
     index('delivery_lines_variant_idx').on(table.tenantId, table.productId, table.variantId),
     // The order line FK's check when a draft order's lines are replaced
     index('delivery_lines_order_line_idx')
@@ -441,5 +450,11 @@ export const deliveryLines = pgTable(
       sql`${table.quantity} > 0 AND ${table.factor} > 0 AND ${table.baseQuantity} > 0`,
     ),
     check('delivery_lines_value_check', sql`${table.value} IS NULL OR ${table.value} >= 0`),
+    // Never more back than left: the last word on return_over_delivered, whatever the API checked
+    // first, and the one that holds when two returns of one line are posted at the same moment
+    check(
+      'delivery_lines_returned_check',
+      sql`${table.returnedQuantity} BETWEEN 0 AND ${table.baseQuantity}`,
+    ),
   ],
 );

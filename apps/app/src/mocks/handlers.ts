@@ -33,6 +33,29 @@ import {
 } from './invoice-data';
 import { mock, MockProblem, problem, readBody, readQuery, reply } from './mock';
 import {
+  allocateCreditNote,
+  assertCreditNotePosted,
+  assertRefundNotVoided,
+  createRefund,
+  findCreditNote,
+  findRefund,
+  findReturn,
+  listCreditNotes,
+  listRefunds,
+  listReturns,
+  type MockCreditNote,
+  type MockSalesReturn,
+  postCreditNote,
+  postReturn,
+  removeCreditNote,
+  removeReturn,
+  saveCreditNote,
+  saveReturn,
+  toCreditNote,
+  toReturn,
+  voidRefund,
+} from './return-data';
+import {
   assertCanChange,
   assertRoleNameFree,
   demoPreview,
@@ -294,6 +317,29 @@ function postAndRecord(data: WorkspaceData, draft: MockInvoice, overrideCreditLi
     record(data, 'credit_limit.overridden', 'invoice', draft.id, diff({}, overridden));
   }
   record(data, 'invoice.posted', 'invoice', draft.id);
+}
+
+// Posting a return or a credit note, with the API's audit row (step 15d). A credit note's row says
+// what its posting applied to its own invoice.
+function postReturnAndRecord(data: WorkspaceData, draft: MockSalesReturn) {
+  postReturn(data, draft);
+  record(data, 'sales_return.posted', 'sales_return', draft.id, {
+    number: { from: null, to: draft.number },
+  });
+}
+
+function postCreditNoteAndRecord(data: WorkspaceData, draft: MockCreditNote) {
+  const applied = postCreditNote(data, draft);
+  record(data, 'credit_note.posted', 'credit_note', draft.id, {
+    number: { from: null, to: draft.number },
+    applied: { from: null, to: applied },
+  });
+}
+
+// The sales returns account chosen in Settings → Sales (step 15d) can be neither archived nor
+// deleted, like the API's account_used_by_sales
+function assertNotSalesAccount(data: WorkspaceData, id: string): void {
+  if (data.salesAccounts.returns === id) throw new MockProblem(409, 'account_used_by_sales');
 }
 
 // UI-র প্রতিটা পথ দেখার জন্য: লগইনে পাসওয়ার্ড "wrong-password" → invalid_credentials,
@@ -838,6 +884,7 @@ export const handlers = [
       if (Object.values(current().stockAccounts).includes(target.id)) {
         throw new MockProblem(409, 'account_used_by_stock');
       }
+      assertNotSalesAccount(data, target.id);
       if (data.accounts.some((child) => child.parentId === id && child.archivedAt === null)) {
         throw new MockProblem(409, 'account_has_active_children');
       }
@@ -878,6 +925,7 @@ export const handlers = [
       if (Object.values(current().stockAccounts).includes(target.id)) {
         throw new MockProblem(409, 'account_used_by_stock');
       }
+      assertNotSalesAccount(data, target.id);
       if (data.accounts.some((child) => child.parentId === id)) {
         throw new MockProblem(409, 'account_has_children');
       }
@@ -2916,6 +2964,259 @@ export const handlers = [
       });
       await delay();
       return reply(routes.receipts.void, toReceipt(data, target));
+    }),
+  ),
+
+  // Sales returns, credit notes, refunds and the sales returns account (step 15d). Like the
+  // invoices: every save that also posts, and every void, runs in a transaction().
+
+  mock(routes.salesReturns.list, ({ request }) => {
+    const query = readQuery(routes.salesReturns.list.query, request);
+    return reply(routes.salesReturns.list, pageOf(listReturns(current(), query), query));
+  }),
+
+  mock(
+    routes.salesReturns.get,
+    guarded(({ params }) => {
+      const { id } = routes.salesReturns.get.params.parse(params);
+      const data = current();
+      return reply(routes.salesReturns.get, toReturn(data, findReturn(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.salesReturns.create,
+    guarded(async ({ request }) => {
+      const { post, ...input } = await readBody(routes.salesReturns.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const draft = saveReturn(data, input);
+        record(data, 'sales_return.created', 'sales_return', draft.id);
+        if (post) postReturnAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.salesReturns.create, toReturn(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.salesReturns.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.salesReturns.update.params.parse(params);
+      const { post, version, ...input } = await readBody(routes.salesReturns.update.body, request);
+      const data = current();
+      const target = findReturn(data, id);
+      checkVersion(target.version, version);
+      const saved = transaction(data, () => {
+        const draft = saveReturn(data, input, target);
+        record(data, 'sales_return.updated', 'sales_return', id);
+        if (post) postReturnAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.salesReturns.update, toReturn(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.salesReturns.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.salesReturns.remove.params.parse(params);
+      const { version } = readQuery(routes.salesReturns.remove.query, request);
+      const data = current();
+      const target = findReturn(data, id);
+      checkVersion(target.version, version);
+      removeReturn(data, target);
+      record(data, 'sales_return.deleted', 'sales_return', id);
+      return reply(routes.salesReturns.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.salesReturns.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.salesReturns.post.params.parse(params);
+      const { version } = await readBody(routes.salesReturns.post.body, request);
+      const data = current();
+      const target = findReturn(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        postReturnAndRecord(data, target);
+      });
+      return reply(routes.salesReturns.post, toReturn(data, target));
+    }),
+  ),
+
+  mock(routes.creditNotes.list, ({ request }) => {
+    const query = readQuery(routes.creditNotes.list.query, request);
+    return reply(routes.creditNotes.list, pageOf(listCreditNotes(current(), query), query));
+  }),
+
+  mock(
+    routes.creditNotes.get,
+    guarded(({ params }) => {
+      const { id } = routes.creditNotes.get.params.parse(params);
+      const data = current();
+      return reply(routes.creditNotes.get, toCreditNote(data, findCreditNote(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.creditNotes.create,
+    guarded(async ({ request }) => {
+      const { post, ...input } = await readBody(routes.creditNotes.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const draft = saveCreditNote(data, input);
+        record(data, 'credit_note.created', 'credit_note', draft.id);
+        if (post) postCreditNoteAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.creditNotes.create, toCreditNote(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.creditNotes.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.creditNotes.update.params.parse(params);
+      const { post, version, ...input } = await readBody(routes.creditNotes.update.body, request);
+      const data = current();
+      const target = findCreditNote(data, id);
+      checkVersion(target.version, version);
+      const saved = transaction(data, () => {
+        const draft = saveCreditNote(data, input, target);
+        record(data, 'credit_note.updated', 'credit_note', id);
+        if (post) postCreditNoteAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.creditNotes.update, toCreditNote(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.creditNotes.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.creditNotes.remove.params.parse(params);
+      const { version } = readQuery(routes.creditNotes.remove.query, request);
+      const data = current();
+      const target = findCreditNote(data, id);
+      checkVersion(target.version, version);
+      removeCreditNote(data, target);
+      record(data, 'credit_note.deleted', 'credit_note', id);
+      return reply(routes.creditNotes.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.creditNotes.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.creditNotes.post.params.parse(params);
+      const { version } = await readBody(routes.creditNotes.post.body, request);
+      const data = current();
+      const target = findCreditNote(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        postCreditNoteAndRecord(data, target);
+      });
+      return reply(routes.creditNotes.post, toCreditNote(data, target));
+    }),
+  ),
+
+  mock(
+    routes.creditNotes.allocate,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.creditNotes.allocate.params.parse(params);
+      const { version, allocations } = await readBody(routes.creditNotes.allocate.body, request);
+      const data = current();
+      const target = findCreditNote(data, id);
+      assertCreditNotePosted(target);
+      checkVersion(target.version, version);
+      allocateCreditNote(data, target, allocations);
+      record(data, 'credit_note.allocated', 'credit_note', id);
+      await delay();
+      return reply(routes.creditNotes.allocate, toCreditNote(data, target));
+    }),
+  ),
+
+  mock(routes.refunds.list, ({ request }) => {
+    const query = readQuery(routes.refunds.list.query, request);
+    return reply(routes.refunds.list, pageOf(listRefunds(current(), query), query));
+  }),
+
+  mock(
+    routes.refunds.get,
+    guarded(({ params }) => {
+      const { id } = routes.refunds.get.params.parse(params);
+      return reply(routes.refunds.get, findRefund(current(), id));
+    }),
+  ),
+
+  mock(
+    routes.refunds.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.refunds.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const refund = createRefund(data, body);
+        record(data, 'refund.created', 'refund', refund.id);
+        return refund;
+      });
+      await delay();
+      return reply(routes.refunds.create, saved);
+    }),
+  ),
+
+  mock(
+    routes.refunds.void,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.refunds.void.params.parse(params);
+      const { version, ...input } = await readBody(routes.refunds.void.body, request);
+      const data = current();
+      const target = findRefund(data, id);
+      assertRefundNotVoided(target);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        voidRefund(data, target, input);
+        record(data, 'refund.voided', 'refund', id);
+      });
+      await delay();
+      return reply(routes.refunds.void, target);
+    }),
+  ),
+
+  mock(routes.salesAccounts.get, () => reply(routes.salesAccounts.get, current().salesAccounts)),
+
+  mock(
+    routes.salesAccounts.update,
+    guarded(async ({ request }) => {
+      const { returns } = await readBody(routes.salesAccounts.update.body, request);
+      const data = current();
+      // The API's rule: an active income ledger; empty = the Sales account itself
+      if (returns !== null) {
+        const account = data.accounts.find((row) => row.id === returns);
+        if (account?.type !== 'income' || account.isGroup || account.archivedAt !== null) {
+          throw new MockProblem(409, 'sales_account_invalid', {
+            returns: ['sales_account_invalid'],
+          });
+        }
+      }
+      const before = data.salesAccounts.returns;
+      data.salesAccounts = { returns };
+      record(
+        data,
+        'sales_accounts.changed',
+        'workspace',
+        crypto.randomUUID(),
+        diff(
+          { returns: codeOf(data.accounts, before) },
+          { returns: codeOf(data.accounts, returns) },
+        ),
+      );
+      return reply(routes.salesAccounts.update, data.salesAccounts);
     }),
   ),
 ];

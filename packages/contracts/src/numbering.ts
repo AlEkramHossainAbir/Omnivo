@@ -20,6 +20,9 @@ export const DOCUMENT_TYPES = [
   'sales.quotation',
   'sales.delivery',
   'sales.receipt',
+  'sales.return',
+  'sales.credit_note',
+  'sales.refund',
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -50,6 +53,10 @@ const DEFAULT_PREFIXES = {
   'sales.delivery': 'DC',
   // A money receipt: what a customer paid (step 15c)
   'sales.receipt': 'MR',
+  // Goods a customer sent back, a credit note and money paid back to a customer (step 15d)
+  'sales.return': 'SR',
+  'sales.credit_note': 'CN',
+  'sales.refund': 'RF',
 } satisfies Record<DocumentType, string>;
 
 // টেন্যান্ট কিছু না বদলালে এই ছাঁচ — DB-তে রো লেখা হয় শুধু প্রথম বদলের সময়।

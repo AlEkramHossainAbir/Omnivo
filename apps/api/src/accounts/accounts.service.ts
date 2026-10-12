@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Account, CreateAccountInput, UpdateAccountInput } from '@omnivo/contracts';
-import { ledgerAccounts, stockAccounts } from '@omnivo/db';
+import { ledgerAccounts, stockAccounts, tenantSettings } from '@omnivo/db';
 import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -82,6 +82,30 @@ function usedByStock(): AppError {
     'account_used_by_stock',
     'Stock documents post to this account. Choose another one in Settings → Inventory first.',
   );
+}
+
+function usedBySales(): AppError {
+  return new AppError(
+    409,
+    'account_used_by_sales',
+    'Credit notes post to this account. Choose another one in Settings → Sales first.',
+  );
+}
+
+// The account chosen in Settings → Sales stays usable (step 15d), like a stock account: archived,
+// it would refuse every credit note. The caller holds the chart lock, and so does
+// SalesAccountsService when it saves the choice.
+async function assertNotSalesAccount(tx: Transaction, accountId: string): Promise<void> {
+  const [used] = await tx
+    .select({ tenantId: tenantSettings.tenantId })
+    .from(tenantSettings)
+    .where(
+      and(
+        eq(tenantSettings.tenantId, getTenantId()),
+        eq(tenantSettings.salesReturnsAccountId, accountId),
+      ),
+    );
+  if (used) throw usedBySales();
 }
 
 // An account chosen in Settings → Inventory stays usable (step 14). The caller holds the chart
@@ -216,6 +240,8 @@ export class AccountsService {
       if (before.parentId === null || before.purpose !== null) throw locked();
       // Chosen for a stock use (step 14): archived, it would refuse every stock posting that needs it
       await assertNotStockAccount(tx, id);
+      // Chosen for sales returns (step 15d): archived, it would refuse every credit note
+      await assertNotSalesAccount(tx, id);
       if (before.isGroup) {
         // The chart lock keeps a new or restored child from appearing before we commit
         const [child] = await tx
@@ -308,15 +334,20 @@ export class AccountsService {
         );
       }
       // Journal lines point at it (a draft's too): the history must keep its account
-      // Money receipts name it too (step 15c), though each one's entry already does
+      // Money receipts and refunds name it too (steps 15c, 15d), though each one's entry already does
       if (
         isForeignKeyViolation(error, 'journal_lines_account_fk') ||
-        isForeignKeyViolation(error, 'receipts_account_fk')
+        isForeignKeyViolation(error, 'receipts_account_fk') ||
+        isForeignKeyViolation(error, 'refunds_account_fk')
       ) {
         throw new AppError(409, 'account_in_use', 'Archive this account instead: entries use it.');
       }
       // Chosen for a stock use in Settings → Inventory (step 14)
       if (isForeignKeyViolation(error, 'stock_accounts_account_fk')) throw usedByStock();
+      // Chosen for sales returns in Settings → Sales (step 15d)
+      if (isForeignKeyViolation(error, 'tenant_settings_sales_returns_account_fk')) {
+        throw usedBySales();
+      }
       throw error;
     }
   }

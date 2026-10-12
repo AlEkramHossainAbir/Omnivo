@@ -31,9 +31,11 @@ export function AppShell({
 }: AppShellProps) {
   return (
     // print:block: on paper there is no sidebar column, even when a landscape page is wider than
-    // 860px. print:hidden: the navigation is never printed.
+    // 860px. print:hidden: the navigation is never printed. overflow-y-auto (step 15d): the nav is
+    // taller than a laptop screen, and the sidebar stays put while the page scrolls, so it scrolls
+    // on its own; otherwise the last links (Settings) cannot be reached on a long page.
     <div className="min-h-dvh min-[860px]:grid min-[860px]:grid-cols-[244px_minmax(0,1fr)] print:block">
-      <aside className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 min-[860px]:sticky min-[860px]:top-0 min-[860px]:h-dvh min-[860px]:gap-5 min-[860px]:border-r min-[860px]:border-b-0 min-[860px]:px-3 min-[860px]:py-5 print:hidden">
+      <aside className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 min-[860px]:sticky min-[860px]:top-0 min-[860px]:h-dvh min-[860px]:gap-5 min-[860px]:overflow-y-auto min-[860px]:border-r min-[860px]:border-b-0 min-[860px]:px-3 min-[860px]:py-5 print:hidden">
         <div className="flex items-center justify-between gap-3 px-2">
           {brand}
           <div className="flex items-center gap-1">

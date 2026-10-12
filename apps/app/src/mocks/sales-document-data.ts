@@ -8,6 +8,8 @@ import {
   type DeliveryInput,
   type DeliveryInvoiceFilter,
   type DeliveryInvoiceState,
+  type DeliveryReturnFilter,
+  type DeliveryReturnState,
   documentTotals,
   type DocumentType,
   type ErrorCode,
@@ -67,9 +69,12 @@ export type MockOrder = Omit<SalesOrder, 'partlyDelivered' | 'quotation' | 'deli
 };
 
 // A delivery as stored, with its order's id: the order's number is looked up on read. So are the
-// invoices that bill it and how much of it is billed (step 15c): an invoice posted a second ago
-// shows on its challan at once.
-export type MockDelivery = Omit<Delivery, 'order' | 'invoiceState' | 'invoices'> & {
+// invoices that bill it and how much of it is billed (step 15c), and the returns that brought some
+// of it back (step 15d): an invoice or a return posted a second ago shows on its challan at once.
+export type MockDelivery = Omit<
+  Delivery,
+  'order' | 'invoiceState' | 'invoices' | 'returnState' | 'returns'
+> & {
   orderId: string | null;
 };
 
@@ -638,13 +643,21 @@ export function findDelivery(data: WorkspaceData, id: string): MockDelivery {
   return found;
 }
 
+type DeliveryLine = MockDelivery['lines'][number];
+
+// Still waiting for an invoice: not billed, and not all of it came back before billing (step 15d)
+function waitsForInvoice(line: DeliveryLine): boolean {
+  return !line.invoiced && compareQuantity(line.returnedQuantity, line.baseQuantity) < 0;
+}
+
 // How much of a delivery is billed: a draft never is; a posted one by the `invoiced` flags its
-// lines got from the invoices that billed them (the API's invoiceState)
+// lines got from the invoices that billed them (the API's invoiceState). A line that all came back
+// before it was billed waits for nothing, so it does not count either way.
 function invoiceStateOf(delivery: MockDelivery): DeliveryInvoiceState {
   if (delivery.status !== 'posted' || !delivery.lines.some((line) => line.invoiced)) {
     return 'not_invoiced';
   }
-  return delivery.lines.every((line) => line.invoiced) ? 'invoiced' : 'partly_invoiced';
+  return delivery.lines.some(waitsForInvoice) ? 'partly_invoiced' : 'invoiced';
 }
 
 function matchesInvoiceFilter(
@@ -653,8 +666,30 @@ function matchesInvoiceFilter(
 ): boolean {
   if (filter === undefined) return true;
   if (delivery.status !== 'posted') return false;
-  const toInvoice = delivery.lines.some((line) => !line.invoiced);
-  return filter === 'to_invoice' ? toInvoice : !toInvoice;
+  const waiting = delivery.lines.some(waitsForInvoice);
+  return filter === 'to_invoice' ? waiting : !waiting;
+}
+
+// Can some of this line still come back (step 15d)?
+function returnable(line: DeliveryLine): boolean {
+  return compareQuantity(line.returnedQuantity, line.baseQuantity) < 0;
+}
+
+// How much of a posted delivery came back on posted returns (the API's returnState). Only a posted
+// return moves returnedQuantity, so a draft return changes nothing here.
+function returnStateOf(delivery: MockDelivery): DeliveryReturnState {
+  const back = delivery.lines.some((line) => !isZeroQuantity(line.returnedQuantity));
+  if (delivery.status !== 'posted' || !back) return 'none';
+  return delivery.lines.some(returnable) ? 'partly_returned' : 'returned';
+}
+
+// "returnable": posted, with a line that has not all come back (what the return form offers)
+function matchesReturnFilter(
+  delivery: MockDelivery,
+  filter: DeliveryReturnFilter | undefined,
+): boolean {
+  if (filter === undefined) return true;
+  return delivery.status === 'posted' && delivery.lines.some(returnable);
 }
 
 export function toDelivery(data: WorkspaceData, stored: MockDelivery): Delivery {
@@ -672,11 +707,23 @@ export function toDelivery(data: WorkspaceData, stored: MockDelivery): Delivery 
     )
     .map((invoice) => ({ id: invoice.id, number: invoice.number }))
     .toSorted((a, b) => (a.number ?? '').localeCompare(b.number ?? ''));
+  // The posted returns that brought some of it back (step 15d), read through the WorkspaceData
+  // type like the invoices: return-data.ts imports this file
+  const returns = data.returns.salesReturns
+    .filter(
+      (item) =>
+        item.status === 'posted' &&
+        item.lines.some((line) => line.deliveryLineId !== null && lineIds.has(line.deliveryLineId)),
+    )
+    .map((item) => ({ id: item.id, number: item.number }))
+    .toSorted((a, b) => (a.number ?? '').localeCompare(b.number ?? ''));
   return {
     ...delivery,
     order: order ? { id: order.id, number: order.number } : null,
     invoiceState: invoiceStateOf(stored),
     invoices,
+    returnState: returnStateOf(stored),
+    returns,
   };
 }
 
@@ -687,6 +734,7 @@ export function listDeliveries(
     customerId?: string | undefined;
     warehouseId?: string | undefined;
     invoice?: DeliveryInvoiceFilter | undefined;
+    return?: DeliveryReturnFilter | undefined;
   },
 ): Delivery[] {
   return newestFirst(data.salesDocuments.deliveries)
@@ -695,7 +743,8 @@ export function listDeliveries(
         (query.status === undefined || item.status === query.status) &&
         (query.customerId === undefined || item.customer.id === query.customerId) &&
         (query.warehouseId === undefined || item.warehouseId === query.warehouseId) &&
-        matchesInvoiceFilter(item, query.invoice),
+        matchesInvoiceFilter(item, query.invoice) &&
+        matchesReturnFilter(item, query.return),
     )
     .map((item) => toDelivery(data, item));
 }
@@ -780,6 +829,8 @@ export function saveDelivery(
       value: null,
       // Set by the invoice that bills it, at posting (invoice-data.ts → postInvoice)
       invoiced: false,
+      // Moved by the returns that bring some of it back, at posting (return-data.ts, step 15d)
+      returnedQuantity: '0.0000',
     })),
     entry: null,
   };
@@ -797,8 +848,9 @@ export function removeDelivery(data: WorkspaceData, target: MockDelivery): void 
   );
 }
 
-// The accounts a delivery posts to: Dr cost of goods sold / Cr inventory
-function deliveryAccounts(data: WorkspaceData) {
+// The accounts a delivery posts to: Dr cost of goods sold / Cr inventory. A sales return (step
+// 15d) posts to the same two the other way round.
+export function deliveryAccounts(data: WorkspaceData) {
   const usable = (purpose: string) =>
     data.accounts.find(
       (account) => account.purpose === purpose && !account.isGroup && account.archivedAt === null,

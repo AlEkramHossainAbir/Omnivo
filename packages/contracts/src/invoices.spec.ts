@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { contractErrorMap } from './errors.js';
 import {
+  amountDueOf,
+  creditStateOf,
   dueDateOf,
   invoiceInputSchema,
   isOverdue,
@@ -63,12 +65,35 @@ function errorsOf(result: {
 }
 
 describe('payment status', () => {
+  const amounts = (amountPaid: string, amountCredited = '0.0000') => ({
+    total: '1150.0000',
+    amountPaid,
+    amountCredited,
+  });
+
   it('reads unpaid, partly paid and paid from the total and what was paid', () => {
-    expect(paymentStatusOf({ total: '1150.0000', amountPaid: '0.0000' })).toBe('unpaid');
-    expect(paymentStatusOf({ total: '1150.0000', amountPaid: '1000.0000' })).toBe('partly_paid');
-    expect(paymentStatusOf({ total: '1150.0000', amountPaid: '1150.0000' })).toBe('paid');
+    expect(paymentStatusOf(amounts('0.0000'))).toBe('unpaid');
+    expect(paymentStatusOf(amounts('1000.0000'))).toBe('partly_paid');
+    expect(paymentStatusOf(amounts('1150.0000'))).toBe('paid');
     // A free sample owes nothing
-    expect(paymentStatusOf({ total: '0.0000', amountPaid: '0.0000' })).toBe('paid');
+    expect(
+      paymentStatusOf({ total: '0.0000', amountPaid: '0.0000', amountCredited: '0.0000' }),
+    ).toBe('paid');
+  });
+
+  it('counts what credit notes applied like money paid (step 15d)', () => {
+    expect(paymentStatusOf(amounts('0.0000', '150.0000'))).toBe('partly_paid');
+    expect(paymentStatusOf(amounts('1000.0000', '150.0000'))).toBe('paid');
+    expect(paymentStatusOf(amounts('0.0000', '1150.0000'))).toBe('paid');
+    expect(amountDueOf(amounts('500.0000', '150.0000'))).toBe('500.0000');
+  });
+
+  it('is credited only when the credit notes reach the total', () => {
+    expect(creditStateOf({ total: '1150.0000', creditNoteTotal: '0.0000' })).toBe('none');
+    expect(creditStateOf({ total: '1150.0000', creditNoteTotal: '115.0000' })).toBe(
+      'partly_credited',
+    );
+    expect(creditStateOf({ total: '1150.0000', creditNoteTotal: '1150.0000' })).toBe('credited');
   });
 
   it('is overdue only after the due date, while money is still owed', () => {
@@ -77,10 +102,13 @@ describe('payment status', () => {
       dueDate: '2026-10-08',
       total: '1150.0000',
       amountPaid: '0.0000',
+      amountCredited: '0.0000',
     };
     expect(isOverdue(posted, '2026-10-08')).toBe(false);
     expect(isOverdue(posted, '2026-10-09')).toBe(true);
     expect(isOverdue({ ...posted, amountPaid: '1150.0000' }, '2026-10-09')).toBe(false);
+    // Settled by a credit note: nothing is owed, so nothing is late
+    expect(isOverdue({ ...posted, amountCredited: '1150.0000' }, '2026-10-09')).toBe(false);
     // A draft asks for nothing yet
     expect(isOverdue({ ...posted, status: 'draft' }, '2026-10-09')).toBe(false);
   });

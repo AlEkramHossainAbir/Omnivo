@@ -21,7 +21,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { CustomerPicker } from '../components/customer-picker';
-import { DeliveryStatusPill, InvoiceStatePill } from '../components/sales-parts';
+import { DeliveryStatusPill, InvoiceStatePill, ReturnStatePill } from '../components/sales-pills';
 import { useIsoDate, useTenantId, useWarehouses, warehouseLabel } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
 import { deliveriesQuery } from '../lib/queries';
@@ -110,11 +110,13 @@ export function DeliveriesPage() {
           header: t('deliveries.columns.status'),
           enableSorting: false,
           meta: { card: 'trailing' },
-          // A posted challan also says how much of it is billed; a draft cannot be billed yet
+          // A posted challan also says how much of it is billed, and (step 15d) how much came
+          // back; a draft cannot be billed yet
           cell: ({ row, getValue }) => (
             <span className="inline-flex flex-wrap gap-1.5">
               <DeliveryStatusPill status={getValue()} />
               {getValue() === 'posted' && <InvoiceStatePill state={row.original.invoiceState} />}
+              {getValue() === 'posted' && <ReturnStatePill state={row.original.returnState} />}
             </span>
           ),
         }),

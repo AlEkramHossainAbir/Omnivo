@@ -77,11 +77,12 @@ export const journalEntries = pgTable(
       sql`(${table.source} = 'reversal') = (${table.reversalOfId} IS NOT NULL)`,
     ),
     // A document's entry (a stock document's, a delivery's since step 15b, an invoice's and a
-    // receipt's since 15c) always points at its document, and no other entry does. The list is
-    // contracts' DOCUMENT_JOURNAL_SOURCES.
+    // receipt's since 15c, a sales return's, a credit note's and a refund's since 15d) always
+    // points at its document, and no other entry does. The list is contracts'
+    // DOCUMENT_JOURNAL_SOURCES.
     check(
       'journal_entries_document_check',
-      sql`(${table.source} IN ('stock_adjustment', 'stock_transfer', 'stock_revaluation', 'sales_delivery', 'sales_invoice', 'sales_receipt')) = (${table.documentId} IS NOT NULL AND ${table.documentNumber} IS NOT NULL)`,
+      sql`(${table.source} IN ('stock_adjustment', 'stock_transfer', 'stock_revaluation', 'sales_delivery', 'sales_invoice', 'sales_receipt', 'sales_return', 'sales_credit_note', 'sales_refund')) = (${table.documentId} IS NOT NULL AND ${table.documentNumber} IS NOT NULL)`,
     ),
     // A document's entries (a transfer has up to two; an invoice or a receipt has one, which the
     // invoice page and the receipt page find here)

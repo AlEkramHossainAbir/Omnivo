@@ -7,18 +7,21 @@ import {
   ChartIncreaseIcon,
   Coins01Icon,
   DashboardSquare01Icon,
+  DeliveryReturn01Icon,
   DeliveryTruck01Icon,
   FileDownloadIcon,
   FileImportIcon,
   FolderTreeIcon,
   HourglassIcon,
   Invoice03Icon,
+  Invoice04Icon,
   Layers01Icon,
   LayoutGridIcon,
   LeftToRightListNumberIcon,
   Logout01Icon,
   MoneyExchange01Icon,
   MoneyReceive02Icon,
+  MoneySend02Icon,
   Note01Icon,
   Notebook02Icon,
   PackageIcon,
@@ -303,7 +306,8 @@ export function AppShell() {
               document picks them. Changing them is checked on the pages and by the API. Step 15b:
               the documents come first, in the order they follow each other; everyone reads them
               too (a store keeper looks up an order before loading the truck). Step 15c: the
-              invoice and the money receipt end the chain. */}
+              invoice and the money receipt end the chain. Step 15d: what goes back the other way
+              comes after them, goods first, then money. */}
           <NavGroup label={t('nav.sales')}>
             <NavLink to="/quotations" icon={Note01Icon}>
               {t('nav.quotations')}
@@ -319,6 +323,15 @@ export function AppShell() {
             </NavLink>
             <NavLink to="/receipts" icon={MoneyReceive02Icon}>
               {t('nav.receipts')}
+            </NavLink>
+            <NavLink to="/sales-returns" icon={DeliveryReturn01Icon}>
+              {t('nav.salesReturns')}
+            </NavLink>
+            <NavLink to="/credit-notes" icon={Invoice04Icon}>
+              {t('nav.creditNotes')}
+            </NavLink>
+            <NavLink to="/refunds" icon={MoneySend02Icon}>
+              {t('nav.refunds')}
             </NavLink>
             <NavLink to="/customers" icon={UserMultiple02Icon}>
               {t('nav.customers')}

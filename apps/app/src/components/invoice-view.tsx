@@ -1,58 +1,82 @@
-import { MoneyReceive02Icon } from '@hugeicons/core-free-icons';
+import { Invoice04Icon, InvoiceIcon, MoneyReceive02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { type Invoice, isOverdue, paymentStatusOf } from '@omnivo/contracts';
+import {
+  amountDueOf,
+  canCreditWhole,
+  creditStateOf,
+  type Invoice,
+  isOverdue,
+  isZeroMoney,
+  paymentStatusOf,
+  routes,
+  wholeInvoiceCreditLines,
+} from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { Button, Card, CardHeader, PageHeader } from '@omnivo/ui';
-import { useQuery } from '@tanstack/react-query';
+import { Button, Card, FormAlert, PageHeader, toast } from '@omnivo/ui';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
 
-import { amountDue, daysLate } from '../lib/invoices';
+import { call } from '../lib/api';
+import { daysLate } from '../lib/invoices';
 import { useCan } from '../lib/permissions';
 import { branchesQuery } from '../lib/queries';
 import { Fact } from './adjustment-view';
 import { EntryLinks } from './entry-links';
+import { failureOf } from './journal-parts';
 import { InvoicePrint, PrintButton } from './print-documents';
 import { SalesLinesTable } from './sales-lines-table';
-import { CustomerLink, DocumentNotice, InvoicePills, SalesBackLink } from './sales-parts';
+import {
+  CustomerLink,
+  DocumentNotice,
+  LINK_NUMBER,
+  LINK_ROW,
+  LinkList,
+  SalesBackLink,
+  useSalesRefresh,
+} from './sales-parts';
+import { InvoicePills } from './sales-pills';
 import { useIsoDate, useTenantId, useWarehouses, warehouseLabel } from './stock-parts';
-
-// A list of document links in a card: the challans an invoice bills, its orders, its payments
-function LinkList({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: ReactNode;
-}) {
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader title={title} subtitle={subtitle} />
-      <ul className="mt-3 grid grid-cols-1">{children}</ul>
-    </Card>
-  );
-}
-
-const ROW =
-  'flex flex-wrap items-center gap-3 border-t border-line px-5 py-3 text-body-sm hover:bg-subtle';
-const NUMBER = 'font-mono font-medium text-brand tabular-nums';
 
 // A posted invoice (or a draft for someone who may not write invoices), read only. A posted one
 // never changes: a credit note corrects it (15d). What it was paid with, and "Record payment"
-// while something is still due.
+// while something is still due. Step 15d: what credit notes took back, "Write credit note", and
+// "Credit whole invoice" while no credit note is posted for it.
 export function InvoiceView({ invoice, today }: { invoice: Invoice; today: string }) {
   const { t, format } = useLocale();
   const navigate = useNavigate();
   const isoDate = useIsoDate();
+  const refresh = useSalesRefresh();
   const { byId } = useWarehouses();
   const branches = useQuery(branchesQuery(useTenantId(), 'active')).data;
-  const canPay = useCan()('sales.receipt.manage');
+  const can = useCan();
+  const canPay = can('sales.receipt.manage');
+  const canCredit = can('sales.credit_note.manage');
   const money = (value: string) => format.money(value, { decimals: 2 });
   const posted = invoice.status === 'posted';
   const late = isOverdue(invoice, today) ? daysLate(invoice.dueDate, today) : 0;
   const open = posted && paymentStatusOf(invoice) !== 'paid';
+
+  // "Credit whole invoice" (decision 5): a draft with every line as it was billed, saved in one
+  // click and opened, so the person checks it before posting. No route of its own: the lines come
+  // from the contracts, the same function the API's test uses (15d.4).
+  const creditWhole = useMutation({
+    mutationFn: () =>
+      call(routes.creditNotes.create, {
+        body: {
+          invoiceId: invoice.id,
+          date: today,
+          reason: 'other',
+          note: '',
+          lines: wholeInvoiceCreditLines(invoice),
+          post: false,
+        },
+      }),
+    onSuccess: async (draft) => {
+      await refresh();
+      toast(t('invoices.creditWholeDone'));
+      void navigate({ to: '/credit-notes/$creditNoteId', params: { creditNoteId: draft.id } });
+    },
+  });
 
   return (
     <div className="grid max-w-6xl grid-cols-1 gap-5">
@@ -120,7 +144,11 @@ export function InvoiceView({ invoice, today }: { invoice: Invoice; today: strin
         {posted && (
           <>
             <Fact label={t('invoices.paid')} value={money(invoice.amountPaid)} />
-            <Fact label={t('invoices.due')} value={money(amountDue(invoice))} />
+            {/* What credit notes applied to it: it lowers what is due like a payment */}
+            {!isZeroMoney(invoice.amountCredited) && (
+              <Fact label={t('invoices.credited')} value={money(invoice.amountCredited)} />
+            )}
+            <Fact label={t('invoices.due')} value={money(amountDueOf(invoice))} />
           </>
         )}
         {invoice.note !== null && (
@@ -143,9 +171,9 @@ export function InvoiceView({ invoice, today }: { invoice: Invoice; today: strin
                 <Link
                   to="/deliveries/$deliveryId"
                   params={{ deliveryId: delivery.id }}
-                  className={ROW}
+                  className={LINK_ROW}
                 >
-                  <span className={NUMBER}>{delivery.number}</span>
+                  <span className={LINK_NUMBER}>{delivery.number}</span>
                   <span className="text-ink-3 tabular-nums">{isoDate(delivery.date)}</span>
                 </Link>
               </li>
@@ -156,57 +184,103 @@ export function InvoiceView({ invoice, today }: { invoice: Invoice; today: strin
           <LinkList title={t('invoices.ordersTitle')}>
             {invoice.orders.map((order) => (
               <li key={order.id}>
-                <Link to="/sales-orders/$orderId" params={{ orderId: order.id }} className={ROW}>
-                  <span className={NUMBER}>{order.number ?? ''}</span>
+                <Link
+                  to="/sales-orders/$orderId"
+                  params={{ orderId: order.id }}
+                  className={LINK_ROW}
+                >
+                  <span className={LINK_NUMBER}>{order.number ?? ''}</span>
                 </Link>
               </li>
             ))}
           </LinkList>
         )}
         {posted && (
-          <Card className="overflow-hidden">
-            <CardHeader
-              title={t('invoices.paymentsTitle')}
-              subtitle={t('invoices.paymentsSubtitle')}
-            />
-            {invoice.payments.length === 0 ? (
-              <p className="px-5 pt-3 pb-5 text-body-sm text-ink-2">{t('invoices.noPayments')}</p>
-            ) : (
-              <ul className="mt-3 grid grid-cols-1">
-                {invoice.payments.map((payment) => (
-                  <li key={payment.receiptId}>
-                    <Link
-                      to="/receipts/$receiptId"
-                      params={{ receiptId: payment.receiptId }}
-                      className={ROW}
-                    >
-                      <span className={NUMBER}>{payment.receiptNumber}</span>
-                      <span className="text-ink-3 tabular-nums">{isoDate(payment.date)}</span>
-                      <span className="ml-auto font-medium tabular-nums">
-                        {money(payment.amount)}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          <LinkList
+            title={t('invoices.paymentsTitle')}
+            subtitle={t('invoices.paymentsSubtitle')}
+            empty={invoice.payments.length === 0 ? t('invoices.noPayments') : undefined}
+          >
+            {invoice.payments.map((payment) => (
+              <li key={payment.receiptId}>
+                <Link
+                  to="/receipts/$receiptId"
+                  params={{ receiptId: payment.receiptId }}
+                  className={LINK_ROW}
+                >
+                  <span className={LINK_NUMBER}>{payment.receiptNumber}</span>
+                  <span className="text-ink-3 tabular-nums">{isoDate(payment.date)}</span>
+                  <span className="ml-auto font-medium tabular-nums">{money(payment.amount)}</span>
+                </Link>
+              </li>
+            ))}
+          </LinkList>
+        )}
+        {/* Step 15d: the posted credit notes, with their whole total (where their money went is on
+            each credit note's page) */}
+        {posted && (
+          <LinkList
+            title={t('invoices.creditNotesTitle')}
+            subtitle={t('invoices.creditNotesSubtitle')}
+            empty={invoice.creditNotes.length === 0 ? t('invoices.noCreditNotes') : undefined}
+          >
+            {invoice.creditNotes.map((note) => (
+              <li key={note.id}>
+                <Link
+                  to="/credit-notes/$creditNoteId"
+                  params={{ creditNoteId: note.id }}
+                  className={LINK_ROW}
+                >
+                  <span className={LINK_NUMBER}>{note.number}</span>
+                  <span className="text-ink-3 tabular-nums">{isoDate(note.date)}</span>
+                  <span className="ml-auto font-medium tabular-nums">−{money(note.total)}</span>
+                </Link>
+              </li>
+            ))}
+          </LinkList>
         )}
       </div>
 
-      {open && canPay && (
-        <div className="flex justify-end">
-          <Button
-            onClick={() =>
-              void navigate({
-                to: '/receipts/new',
-                search: { customerId: invoice.customer.id, invoiceId: invoice.id },
-              })
-            }
-          >
-            <HugeiconsIcon icon={MoneyReceive02Icon} size={17} strokeWidth={1.5} />
-            {t('invoices.recordPayment')}
-          </Button>
+      {creditWhole.error && <FormAlert message={failureOf(creditWhole.error) ?? 'unknown_error'} />}
+      {posted && (canPay || canCredit) && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {canCredit && canCreditWhole(invoice) && (
+            <Button
+              variant="secondary"
+              disabled={creditWhole.isPending}
+              onClick={() => {
+                creditWhole.mutate();
+              }}
+            >
+              <HugeiconsIcon icon={InvoiceIcon} size={17} strokeWidth={1.5} />
+              {t('invoices.creditWhole')}
+            </Button>
+          )}
+          {/* Nothing is left to take back once credit notes took the whole total */}
+          {canCredit && creditStateOf(invoice) !== 'credited' && (
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void navigate({ to: '/credit-notes/new', search: { invoiceId: invoice.id } })
+              }
+            >
+              <HugeiconsIcon icon={Invoice04Icon} size={17} strokeWidth={1.5} />
+              {t('invoices.writeCreditNote')}
+            </Button>
+          )}
+          {open && canPay && (
+            <Button
+              onClick={() =>
+                void navigate({
+                  to: '/receipts/new',
+                  search: { customerId: invoice.customer.id, invoiceId: invoice.id },
+                })
+              }
+            >
+              <HugeiconsIcon icon={MoneyReceive02Icon} size={17} strokeWidth={1.5} />
+              {t('invoices.recordPayment')}
+            </Button>
+          )}
         </div>
       )}
       {posted && <InvoicePrint invoice={invoice} />}

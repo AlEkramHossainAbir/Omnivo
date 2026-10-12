@@ -67,8 +67,8 @@ const keyOf = (variantId: string, unitId: string) => `${variantId}:${unitId}`;
 
 // One template for the header and every line on a wide card. @5xl (64rem), not the @3xl of the
 // stock lines: seven columns of controls do not fit in 48rem. Below it, each control shows its
-// label.
-const COLUMNS =
+// label. Exported for the credit note's lines (15d), which line up the same way.
+export const SALES_LINE_COLUMNS =
   '@5xl:grid-cols-[minmax(0,1fr)_6.5rem_6.5rem_8.5rem_8.5rem_8.5rem_7.5rem_2.25rem] @5xl:items-start @5xl:gap-2';
 
 // LineField's look, with the label hidden at @5xl (LineField hides it at @3xl). Exported for the
@@ -97,8 +97,9 @@ export function SalesField({
   );
 }
 
-// A unit or a quantity a line cannot change (a challan line on an invoice): the same cell, as text
-function FixedValue({
+// A unit or a quantity a line cannot change (a challan line on an invoice): the same cell, as text.
+// Exported for the credit note's VAT rate (15d), which is the invoice line's.
+export function FixedValue({
   label,
   value,
   className,
@@ -347,7 +348,7 @@ export function LinesEditor<L extends SalesLineFormValues>({
           aria-hidden="true"
           className={cn(
             'hidden bg-subtle px-5 py-2 text-caption font-medium text-ink-3 @5xl:grid',
-            COLUMNS,
+            SALES_LINE_COLUMNS,
           )}
         >
           <span>{t('salesLines.item')}</span>
@@ -385,7 +386,10 @@ export function LinesEditor<L extends SalesLineFormValues>({
             key={lineMeta.key}
             role="group"
             aria-label={t('salesLines.line', { number })}
-            className={cn('grid grid-cols-2 gap-3 border-t border-line px-5 py-4', COLUMNS)}
+            className={cn(
+              'grid grid-cols-2 gap-3 border-t border-line px-5 py-4',
+              SALES_LINE_COLUMNS,
+            )}
           >
             <div className="col-span-2 grid min-w-0 gap-2 @5xl:col-span-1">
               <div className="flex items-start justify-between gap-3">

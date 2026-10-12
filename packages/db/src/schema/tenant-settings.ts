@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { boolean, check, foreignKey, pgTable, smallint, text, uuid } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
 import { attachments } from './attachments.js';
+import { ledgerAccounts } from './ledger-accounts.js';
 import { tenants } from './tenants.js';
 
 // প্রতি টেন্যান্টে ঠিক একটা রো, তাই tenant_id নিজেই primary key — আলাদা id লাগে না, আর "একটার বেশি
@@ -32,6 +33,9 @@ export const tenantSettings = pgTable(
     // Step 15a: do the prices the workspace types already hold the VAT? Off = before VAT, the way
     // a distributor quotes. Read by step 15b's sales lines.
     pricesIncludeVat: boolean('prices_include_vat').notNull().default(false),
+    // Step 15d: the income account a credit note takes the sale back from ("Sales returns"). NULL =
+    // the Sales account itself. Its own route (/sales-accounts) writes it, never PUT /settings.
+    salesReturnsAccountId: uuid('sales_returns_account_id'),
     createdAt: baseColumns().createdAt,
     updatedAt: baseColumns().updatedAt,
     updatedBy: baseColumns().updatedBy,
@@ -47,6 +51,14 @@ export const tenantSettings = pgTable(
       name: 'tenant_settings_logo_fk',
       columns: [table.tenantId, table.logoAttachmentId],
       foreignColumns: [attachments.tenantId, attachments.id],
+    }),
+    // An account of this workspace. No ON DELETE: the account that is chosen cannot be deleted
+    // (AccountsService: account_in_use). No index: there is one settings row per workspace, and
+    // tenant_id is its key.
+    foreignKey({
+      name: 'tenant_settings_sales_returns_account_fk',
+      columns: [table.tenantId, table.salesReturnsAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
     }),
   ],
 );

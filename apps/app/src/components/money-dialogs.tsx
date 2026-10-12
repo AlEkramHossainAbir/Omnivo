@@ -3,10 +3,10 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import {
   contractErrorMap,
   plainQuantity,
-  type Receipt,
-  receiptAllocationsInputSchema,
+  type ReceiptAllocation,
   type ReceiptAllocationsFormValues,
-  routes,
+  type ReceiptAllocationsInput,
+  type VoidReceiptInput,
   voidReceiptInputSchema,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
@@ -22,9 +22,8 @@ import {
 } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useMemo } from 'react';
-import { Controller, type Path, useForm } from 'react-hook-form';
+import { Controller, type Path, type Resolver, useForm } from 'react-hook-form';
 
-import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { allocationRows } from '../lib/invoices';
 import { rowPath } from '../lib/products';
@@ -33,35 +32,58 @@ import { AllocationTable } from './allocation-table';
 import { useSalesRefresh } from './sales-parts';
 import { useTenantId } from './stock-parts';
 
-// The receipt page's two dialogs (step 15c), a lazy chunk of their own (receipt-view.tsx says why)
+// The dialogs of the money documents, a lazy chunk of their own (receipt-view.tsx says why):
+// "Apply money" on a receipt and (step 15d) on a credit note, and "Void" on a receipt and on a
+// refund. Called receipt-dialogs.tsx in 15c; each document passes what differs (its route, its
+// error codes, its words), so one dialog serves both.
 
 // The void date's picker as a chunk of its own: with the popover inside, the dialogs stood at
 // 106 KB of their 100 KB budget
 const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
-// "Apply money": the receipt's money over the customer's invoices again, the whole list at once
-// (an advance that came before its invoice, or money put on the wrong invoice)
-export function ApplyForm({ receipt, onDone }: { receipt: Receipt; onDone: () => void }) {
+// "Apply money": the document's money over the customer's invoices again, the whole list at once
+// (an advance that came before its invoice, money put on the wrong invoice, or the rest of a credit
+// note kept as an advance)
+export function ApplyForm({
+  title,
+  customerId,
+  amount,
+  version,
+  allocations,
+  resolver,
+  save,
+  onDone,
+}: {
+  title: string;
+  customerId: string;
+  // What the money can cover: the receipt's amount or the credit note's total, less what refunds
+  // paid back (the server's cap; the table's "Left as advance" counts from it)
+  amount: string;
+  version: number;
+  allocations: readonly ReceiptAllocation[];
+  // The document's own schema: the shape is the same, the error codes are its own
+  resolver: Resolver<ReceiptAllocationsFormValues, unknown, ReceiptAllocationsInput>;
+  // Sends the new list; answers the toast's words
+  save: (body: ReceiptAllocationsInput) => Promise<string>;
+  onDone: () => void;
+}) {
   const { t } = useLocale();
   const tenantId = useTenantId();
   const refresh = useSalesRefresh();
-  const { data: open } = useQuery(openInvoicesQuery(tenantId, receipt.customer.id));
+  const { data: open } = useQuery(openInvoicesQuery(tenantId, customerId));
   // Its own invoices too: one it paid in full is not open any more
-  const rows = useMemo(
-    () => allocationRows(open ?? [], receipt.allocations),
-    [open, receipt.allocations],
-  );
+  const rows = useMemo(() => allocationRows(open ?? [], allocations), [open, allocations]);
   const {
     control,
     handleSubmit,
     setError,
     getValues,
     formState: { errors, isSubmitting },
-  } = useForm<ReceiptAllocationsFormValues>({
-    resolver: zodResolver(receiptAllocationsInputSchema, { error: contractErrorMap }),
+  } = useForm<ReceiptAllocationsFormValues, unknown, ReceiptAllocationsInput>({
+    resolver,
     defaultValues: {
-      version: receipt.version,
-      allocations: receipt.allocations.map((allocation) => ({
+      version,
+      allocations: allocations.map((allocation) => ({
         invoiceId: allocation.invoiceId,
         amount: plainQuantity(allocation.amount),
       })),
@@ -70,12 +92,9 @@ export function ApplyForm({ receipt, onDone }: { receipt: Receipt; onDone: () =>
 
   const onSubmit = handleSubmit(async (values) => {
     try {
-      const saved = await call(routes.receipts.allocate, {
-        params: { id: receipt.id },
-        body: values,
-      });
+      const done = await save(values);
       await refresh();
-      toast(t('receipts.allocated', { number: saved.number }));
+      toast(done);
       onDone();
     } catch (error) {
       const count = getValues('allocations').length;
@@ -92,7 +111,7 @@ export function ApplyForm({ receipt, onDone }: { receipt: Receipt; onDone: () =>
 
   return (
     <DialogContent
-      title={t('receipts.applyDialogTitle', { number: receipt.number })}
+      title={title}
       description={t('receipts.applySubtitle')}
       footer={
         <>
@@ -117,7 +136,7 @@ export function ApplyForm({ receipt, onDone }: { receipt: Receipt; onDone: () =>
                 rows={rows}
                 value={field.value}
                 onChange={field.onChange}
-                amount={receipt.amount}
+                amount={amount}
                 errors={errors.allocations}
                 empty={t('receipts.noOpenInvoices')}
               />
@@ -129,14 +148,21 @@ export function ApplyForm({ receipt, onDone }: { receipt: Receipt; onDone: () =>
   );
 }
 
-// "Void receipt": the date the money turned out not to be there, and why
+// "Void": the date the money turned out not to be there (or never reached the customer), and why.
+// `words` picks the document's own texts; both have the same keys, but for the dialog's No button.
 export function VoidForm({
-  receipt,
+  words,
+  number,
+  version,
   today,
+  save,
   onDone,
 }: {
-  receipt: Receipt;
+  words: 'receipts' | 'refunds';
+  number: string;
+  version: number;
   today: string;
+  save: (body: VoidReceiptInput) => Promise<void>;
   onDone: () => void;
 }) {
   const { t } = useLocale();
@@ -149,14 +175,14 @@ export function VoidForm({
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(voidReceiptInputSchema, { error: contractErrorMap }),
-    defaultValues: { version: receipt.version, date: today, reason: '' },
+    defaultValues: { version, date: today, reason: '' },
   });
 
   const onSubmit = handleSubmit(async (values) => {
     try {
-      const saved = await call(routes.receipts.void, { params: { id: receipt.id }, body: values });
+      await save(values);
       await refresh();
-      toast(t('receipts.voided', { number: saved.number }));
+      toast(t(`${words}.voided`, { number }));
       onDone();
     } catch (error) {
       applyApiError(error, ['date', 'reason'], setError);
@@ -165,15 +191,17 @@ export function VoidForm({
 
   return (
     <DialogContent
-      title={t('receipts.voidTitle', { number: receipt.number })}
-      description={t('receipts.voidBody')}
+      title={t(`${words}.voidTitle`, { number })}
+      description={t(`${words}.voidBody`)}
       footer={
         <>
           <DialogClose asChild>
-            <Button variant="secondary">{t('receipts.keepReceipt')}</Button>
+            <Button variant="secondary">
+              {words === 'receipts' ? t('receipts.keepReceipt') : t('refunds.keepRefund')}
+            </Button>
           </DialogClose>
           <Button type="submit" form="void-form" disabled={isSubmitting}>
-            {t('receipts.confirmVoid')}
+            {t(`${words}.confirmVoid`)}
           </Button>
         </>
       }
@@ -188,8 +216,8 @@ export function VoidForm({
         <FormField
           control={control}
           name="date"
-          label={t('receipts.voidDate')}
-          hint={t('receipts.voidDateHint')}
+          label={t(`${words}.voidDate`)}
+          hint={t(`${words}.voidDateHint`)}
         >
           {(field) => (
             <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
@@ -198,8 +226,8 @@ export function VoidForm({
           )}
         </FormField>
         <TextField
-          label={t('receipts.voidReason')}
-          placeholder={t('receipts.voidReasonPlaceholder')}
+          label={t(`${words}.voidReason`)}
+          placeholder={t(`${words}.voidReasonPlaceholder`)}
           {...register('reason')}
           error={errors.reason?.message}
         />

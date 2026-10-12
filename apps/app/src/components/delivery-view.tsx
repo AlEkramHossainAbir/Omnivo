@@ -1,27 +1,32 @@
-import { Invoice03Icon } from '@hugeicons/core-free-icons';
+import { DeliveryReturn01Icon, Invoice03Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import type { Delivery } from '@omnivo/contracts';
+import { type Delivery, isZeroQuantity } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { Button, Card, CardHeader, PageHeader } from '@omnivo/ui';
+import { Button, Card, PageHeader } from '@omnivo/ui';
 import { Link, useNavigate } from '@tanstack/react-router';
 
 import { useCan } from '../lib/permissions';
 import { Fact } from './adjustment-view';
 import { EntryLinks } from './entry-links';
 import { DeliveryPrint, PrintButton } from './print-documents';
-import { CustomerLink, DeliveryStatusPill, InvoiceStatePill, SalesBackLink } from './sales-parts';
+import { CustomerLink, LINK_NUMBER, LINK_ROW, LinkList, SalesBackLink } from './sales-parts';
+import { DeliveryStatusPill, InvoiceStatePill, ReturnStatePill } from './sales-pills';
 import { StockLinesTable } from './stock-lines-table';
-import { useIsoDate, useWarehouses, warehouseLabel } from './stock-parts';
+import { useIsoDate, useQuantity, useWarehouses, warehouseLabel } from './stock-parts';
 
 // A posted delivery (or a draft for someone who may not write deliveries), read only. A posted one
 // never changes: goods that come back are a return (15d). Step 15c: what bills it, "Make invoice"
-// while some of it is not billed, and the printed challan.
+// while some of it is not billed, and the printed challan. Step 15d: what came back, on which
+// returns, and "Take goods back" while something can still come back.
 export function DeliveryView({ delivery }: { delivery: Delivery }) {
   const { t, format } = useLocale();
   const navigate = useNavigate();
   const isoDate = useIsoDate();
+  const quantity = useQuantity();
   const { byId } = useWarehouses();
-  const canBill = useCan()('sales.invoice.manage');
+  const can = useCan();
+  const canBill = can('sales.invoice.manage');
+  const canReturn = can('sales.return.manage');
   const posted = delivery.status === 'posted';
   return (
     <div className="grid max-w-6xl grid-cols-1 gap-5">
@@ -33,6 +38,7 @@ export function DeliveryView({ delivery }: { delivery: Delivery }) {
           <>
             <DeliveryStatusPill status={delivery.status} />
             {posted && <InvoiceStatePill state={delivery.invoiceState} />}
+            {posted && <ReturnStatePill state={delivery.returnState} />}
             {posted && <PrintButton />}
           </>
         }
@@ -96,50 +102,88 @@ export function DeliveryView({ delivery }: { delivery: Delivery }) {
           </div>
         )}
       </Card>
-      <StockLinesTable lines={delivery.lines} />
+      <StockLinesTable
+        lines={delivery.lines}
+        // Step 15d: in the base unit, the unit returns count in
+        detail={(line) =>
+          isZeroQuantity(line.returnedQuantity) ? null : (
+            <span className="mt-1 block text-caption text-ink-3 tabular-nums">
+              {t('deliveries.lineReturned', {
+                quantity: quantity(line.returnedQuantity, line.baseUnitId),
+              })}
+            </span>
+          )
+        }
+      />
       {posted && (
-        <Card className="overflow-hidden">
-          <CardHeader
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <LinkList
             title={t('deliveries.invoicesTitle')}
             subtitle={t('deliveries.invoicesSubtitle')}
-          />
-          {delivery.invoices.length === 0 ? (
-            <p className="px-5 pt-3 pb-5 text-body-sm text-ink-2">
-              {t('deliveries.notInvoicedYet')}
-            </p>
-          ) : (
-            <ul className="mt-3 grid grid-cols-1">
-              {delivery.invoices.map((invoice) => (
-                <li key={invoice.id}>
+            empty={delivery.invoices.length === 0 ? t('deliveries.notInvoicedYet') : undefined}
+          >
+            {delivery.invoices.map((invoice) => (
+              <li key={invoice.id}>
+                <Link
+                  to="/invoices/$invoiceId"
+                  params={{ invoiceId: invoice.id }}
+                  className={LINK_ROW}
+                >
+                  {/* A posted invoice: it has a number */}
+                  <span className={LINK_NUMBER}>{invoice.number ?? ''}</span>
+                </Link>
+              </li>
+            ))}
+          </LinkList>
+          {delivery.returns.length > 0 && (
+            <LinkList
+              title={t('deliveries.returnsTitle')}
+              subtitle={t('deliveries.returnsSubtitle')}
+            >
+              {delivery.returns.map((salesReturn) => (
+                <li key={salesReturn.id}>
                   <Link
-                    to="/invoices/$invoiceId"
-                    params={{ invoiceId: invoice.id }}
-                    className="flex items-center gap-3 border-t border-line px-5 py-3 text-body-sm hover:bg-subtle"
+                    to="/sales-returns/$returnId"
+                    params={{ returnId: salesReturn.id }}
+                    className={LINK_ROW}
                   >
-                    {/* A posted invoice: it has a number */}
-                    <span className="font-mono font-medium text-brand tabular-nums">
-                      {invoice.number ?? ''}
-                    </span>
+                    <span className={LINK_NUMBER}>{salesReturn.number ?? ''}</span>
                   </Link>
                 </li>
               ))}
-            </ul>
+            </LinkList>
           )}
-        </Card>
-      )}
-      {/* The accountant's next step: bill what is left on the challan */}
-      {posted && canBill && delivery.invoiceState !== 'invoiced' && (
-        <div className="flex justify-end">
-          <Button
-            onClick={() =>
-              void navigate({ to: '/invoices/new', search: { deliveryId: delivery.id } })
-            }
-          >
-            <HugeiconsIcon icon={Invoice03Icon} size={17} strokeWidth={1.5} />
-            {t('deliveries.makeInvoice')}
-          </Button>
         </div>
       )}
+      {/* The next steps: the accountant bills what is left on the challan, the store keeper takes
+          back what the customer sent back */}
+      {posted &&
+        ((canReturn && delivery.returnState !== 'returned') ||
+          (canBill && delivery.invoiceState !== 'invoiced')) && (
+          <div className="flex flex-wrap justify-end gap-2">
+            {canReturn && delivery.returnState !== 'returned' && (
+              <Button
+                variant="secondary"
+                onClick={() =>
+                  void navigate({ to: '/sales-returns/new', search: { deliveryId: delivery.id } })
+                }
+              >
+                <HugeiconsIcon icon={DeliveryReturn01Icon} size={17} strokeWidth={1.5} />
+                {t('deliveries.makeReturn')}
+              </Button>
+            )}
+            {canBill && delivery.invoiceState !== 'invoiced' && (
+              <Button
+                onClick={() =>
+                  void navigate({ to: '/invoices/new', search: { deliveryId: delivery.id } })
+                }
+              >
+                <HugeiconsIcon icon={Invoice03Icon} size={17} strokeWidth={1.5} />
+                {t('deliveries.makeInvoice')}
+              </Button>
+            )}
+          </div>
+        )}
       {posted && <DeliveryPrint delivery={delivery} />}
     </div>
   );

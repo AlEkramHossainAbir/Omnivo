@@ -1,4 +1,4 @@
-import { Delete02Icon, Layers01Icon } from '@hugeicons/core-free-icons';
+import { Alert02Icon, Delete02Icon, Layers01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { plainQuantity, type StockItem } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
@@ -76,6 +76,9 @@ export function StockLinesHeader({ costed = false }: { costed?: boolean }) {
 }
 
 export interface LineErrors {
+  // Step 15d: a problem with the line itself (return_cost_unknown, a challan line that is not the
+  // customer's), shown under the item
+  line?: string | undefined;
   unitId?: string | undefined;
   quantity?: string | undefined;
   batchId?: string | undefined;
@@ -103,8 +106,12 @@ export function StockLineRow({
 }: {
   index: number;
   item: LineItem;
-  // in: a lot is typed (it becomes a batch when posted); out: an existing batch is picked
-  mode: 'in' | 'out';
+  // in: a lot is typed (it becomes a batch when posted); out: a batch in this warehouse is picked.
+  // Step 15d, a sales return: `return` picks a batch of the item wherever its stock is now (the
+  // goods come back with the lot printed on them, and the warehouse they come back into may have
+  // none of it), with no FEFO; `fixed` shows no batch at all (a challan line's goods come back in
+  // the challan's own batch, return_batch_not_allowed otherwise).
+  mode: 'in' | 'out' | 'return' | 'fixed';
   warehouseId: string;
   // The line's current unit and quantity, for the "= 72 pcs" under the box
   unitId: string;
@@ -126,9 +133,10 @@ export function StockLineRow({
   note?: ReactNode;
   errors: LineErrors;
   onRemove: () => void;
-  onSplit: (batches: readonly { batchId: string; quantity: string }[]) => void;
+  // FEFO for a line that takes stock out; a return's lines have none (15d)
+  onSplit?: (batches: readonly { batchId: string; quantity: string }[]) => void;
 }) {
-  const { t } = useLocale();
+  const { t, errorText } = useLocale();
   const tenantId = useTenantId();
   const quantityText = useQuantity();
   const isoDate = useIsoDate();
@@ -136,10 +144,13 @@ export function StockLineRow({
   // The variant's stock card: what is here, and in which batches (FEFO order)
   const card = useQuery({
     ...stockCardQuery(tenantId, item.variantId),
-    enabled: warehouseId !== '',
+    enabled: warehouseId !== '' || mode === 'return',
   }).data;
   const here = card?.warehouses.find((place) => place.warehouseId === warehouseId);
   const batchesHere = (card?.batches ?? []).filter((batch) => batch.warehouseId === warehouseId);
+  // A return's batches: each lot once, whichever warehouse holds it (a lot in two warehouses is two
+  // rows on the card)
+  const lots = [...new Map((card?.batches ?? []).map((batch) => [batch.batchId, batch])).values()];
   const preview = basePreview(item, unitId, quantity, units);
   const number = index + 1;
   const id = (field: string) => `lines.${String(index)}.${field}`;
@@ -166,6 +177,17 @@ export function StockLineRow({
             </span>
           )}
           {note}
+          {errors.line && (
+            <span className="flex items-start gap-1.5 text-label text-crit">
+              <HugeiconsIcon
+                icon={Alert02Icon}
+                size={15}
+                strokeWidth={1.5}
+                className="mt-px shrink-0"
+              />
+              {errorText(errors.line)}
+            </span>
+          )}
         </span>
         <span className="@3xl:hidden">{removeButton}</span>
       </div>
@@ -231,7 +253,7 @@ export function StockLineRow({
                 {...fields.batchId}
               />
             </LineField>
-            {batchesHere.length > 0 && (
+            {batchesHere.length > 0 && onSplit && (
               <button
                 type="button"
                 onClick={() => {
@@ -249,6 +271,24 @@ export function StockLineRow({
               </button>
             )}
           </>
+        )}
+        {item.tracking === 'batch' && mode === 'return' && (
+          <LineField id={id('batchId')} label={t('stockLines.batch')} error={errors.batchId}>
+            <Select
+              id={id('batchId')}
+              invalid={errors.batchId !== undefined}
+              options={[
+                { value: '', label: t('stockLines.batchPlaceholder') },
+                ...lots.map((batch) => ({
+                  value: batch.batchId,
+                  label: `${batch.lotNumber} · ${
+                    batch.expiresOn === null ? t('stock.noExpiry') : isoDate(batch.expiresOn)
+                  }`,
+                })),
+              ]}
+              {...fields.batchId}
+            />
+          </LineField>
         )}
         {item.tracking === 'serial' && serials}
       </div>

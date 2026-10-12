@@ -1,6 +1,7 @@
 import {
   type BalanceSheetQuery,
   type BranchStatus,
+  type CreditNoteStatus,
   type CustomerSort,
   type CustomerStatus,
   type DeliveryInvoiceFilter,
@@ -17,6 +18,7 @@ import {
   type ProfitAndLossQuery,
   type QuotationStatus,
   type ReceiptStatus,
+  type RefundStatus,
   routes,
   type StockDocumentStatus,
   type StockFilter,
@@ -939,5 +941,157 @@ export function receiptQuery(tenantId: string, receiptId: string) {
     queryKey: ['sales', tenantId, 'receipt', receiptId],
     queryFn: () => call(routes.receipts.get, { params: { id: receiptId } }),
     retry: false,
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sales returns, credit notes and refunds (step 15d), under ['sales', tenantId] too: posting a
+// return changes its challans (what came back) and its order, posting a credit note its invoice,
+// and a refund its receipt or credit note, so one invalidate refreshes them all.
+
+export function salesReturnsQuery(tenantId: string, filter: SalesListFilter<StockDocumentStatus>) {
+  return infiniteQueryOptions({
+    queryKey: ['sales', tenantId, 'returns', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.salesReturns.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function salesReturnQuery(tenantId: string, returnId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'return', returnId],
+    queryFn: () => call(routes.salesReturns.get, { params: { id: returnId } }),
+    retry: false,
+  });
+}
+
+// The return form's "Add from challans": the customer's posted challans with goods that can still
+// come back (the API's ?return=returnable), newest first. 100 at most, like the invoice's picker.
+export function returnableChallansQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'deliveries', 'returnable', customerId],
+    queryFn: async () =>
+      (
+        await call(routes.deliveries.list, {
+          query: { limit: 100, return: 'returnable', customerId },
+        })
+      ).items,
+  });
+}
+
+export function creditNotesQuery(tenantId: string, filter: SalesListFilter<CreditNoteStatus>) {
+  return infiniteQueryOptions({
+    queryKey: ['sales', tenantId, 'credit-notes', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.creditNotes.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function creditNoteQuery(tenantId: string, creditNoteId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'credit-note', creditNoteId],
+    queryFn: () => call(routes.creditNotes.get, { params: { id: creditNoteId } }),
+    retry: false,
+  });
+}
+
+// The credit note form's invoice select: the customer's posted invoices, newest first. The list has
+// no text search (15c.1); 100 covers a customer's recent bills, and an older one is reached from
+// its own page ("Write credit note").
+export function postedInvoicesQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'invoices', 'posted', customerId],
+    queryFn: async () =>
+      (
+        await call(routes.invoices.list, {
+          query: { limit: 100, status: 'posted', customerId },
+        })
+      ).items,
+  });
+}
+
+// The credit note form's "Add returned goods": the customer's posted returns, newest first. The
+// list cannot say which ones hold goods of the chosen invoice, so the picker opens a return to see.
+export function postedReturnsQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'returns', 'posted', customerId],
+    queryFn: async () =>
+      (
+        await call(routes.salesReturns.list, {
+          query: { limit: 100, status: 'posted', customerId },
+        })
+      ).items,
+  });
+}
+
+export function refundsQuery(tenantId: string, filter: SalesListFilter<RefundStatus>) {
+  return infiniteQueryOptions({
+    queryKey: ['sales', tenantId, 'refunds', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.refunds.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.customerId !== '' && { customerId: filter.customerId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function refundQuery(tenantId: string, refundId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'refund', refundId],
+    queryFn: () => call(routes.refunds.get, { params: { id: refundId } }),
+    retry: false,
+  });
+}
+
+// The refund form's source select: the customer's posted receipts and credit notes. Neither list
+// has a filter for "money left" (15d.5), so both are read (100 each, newest first) and the form
+// keeps the ones with money left (refundSourcesOf); an advance older than the last 100 receipts is
+// paid back from the receipt's page. Filtered there, not here: every list page imports this file,
+// and lib/returns.ts would ride along into each of their chunks.
+export function refundSourcesQuery(tenantId: string, customerId: string) {
+  return queryOptions({
+    queryKey: ['sales', tenantId, 'refund-sources', customerId],
+    queryFn: async () => {
+      const [receipts, creditNotes] = await Promise.all([
+        call(routes.receipts.list, { query: { limit: 100, status: 'posted', customerId } }),
+        call(routes.creditNotes.list, { query: { limit: 100, status: 'posted', customerId } }),
+      ]);
+      return { receipts: receipts.items, creditNotes: creditNotes.items };
+    },
+  });
+}
+
+// The account credit notes take sales back from (Settings → Sales)
+export function salesAccountsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['sales-accounts', tenantId],
+    queryFn: () => call(routes.salesAccounts.get),
   });
 }

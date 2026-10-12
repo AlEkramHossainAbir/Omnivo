@@ -11,9 +11,11 @@ import { describe, expect, it } from 'vitest';
 import {
   allocationRows,
   appliedOf,
+  challanLinesLeft,
   challanLineToInvoice,
   chargesLeft,
   daysLate,
+  type LineOrigin,
   orderPricing,
   savedInvoiceLines,
   suggestAllocations,
@@ -71,6 +73,7 @@ function challanLine(extra: Partial<DeliveryLine> = {}): DeliveryLine {
     orderLineId: 'line-juice',
     value: null,
     invoiced: false,
+    returnedQuantity: '0.0000',
     ...extra,
   };
 }
@@ -116,6 +119,43 @@ describe('challanLineToInvoice', () => {
     });
     expect(line).toMatchObject({ unitPrice: '22.5000', taxRateId: 'vat15', discount: '' });
   });
+
+  // Step 15d: 2 cases left, 6 pieces came back before the invoice
+  it('bills what is left in the base unit when something came back first', () => {
+    const line = challanLineToInvoice(
+      challanLine({
+        unitId: 'case',
+        quantity: '2.0000',
+        baseQuantity: '48.0000',
+        returnedQuantity: '6.0000',
+      }),
+      orderLine({ discountType: 'amount', discount: '96.0000' }),
+      undefined,
+    );
+    expect(line).toMatchObject({
+      unitId: 'pcs',
+      quantity: '42',
+      // ৳504 a case is ৳21 a piece, and the 42 pieces carry 42/48 of the ৳96 off
+      unitPrice: '21.0000',
+      discount: '84',
+    });
+  });
+});
+
+describe('challanLinesLeft', () => {
+  it('leaves out billed lines, lines on the form and lines that all came back', () => {
+    const lines = [
+      challanLine({ id: 'billed', invoiced: true }),
+      challanLine({ id: 'on-form' }),
+      challanLine({ id: 'all-back', returnedQuantity: '12.0000' }),
+      challanLine({ id: 'some-back', returnedQuantity: '5.0000' }),
+      challanLine({ id: 'open' }),
+    ];
+    expect(challanLinesLeft(lines, new Set(['on-form'])).map((line) => line.id)).toEqual([
+      'some-back',
+      'open',
+    ]);
+  });
 });
 
 describe('chargesLeft', () => {
@@ -131,9 +171,20 @@ describe('chargesLeft', () => {
 });
 
 describe('orderPricing', () => {
-  const origins = new Map([
-    ['dl-1', { deliveryNumber: 'DC-1', orderNumber: null, pricesIncludeVat: null }],
-    ['dl-2', { deliveryNumber: 'DC-2', orderNumber: 'SO-1', pricesIncludeVat: true }],
+  const origins = new Map<string, LineOrigin>([
+    [
+      'dl-1',
+      { deliveryNumber: 'DC-1', orderNumber: null, pricesIncludeVat: null, returnedQuantity: '0' },
+    ],
+    [
+      'dl-2',
+      {
+        deliveryNumber: 'DC-2',
+        orderNumber: 'SO-1',
+        pricesIncludeVat: true,
+        returnedQuantity: '0',
+      },
+    ],
   ]);
 
   it('follows the first line an order prices', () => {
@@ -165,6 +216,7 @@ describe('savedInvoiceLines', () => {
       lotNumber: 'MJ2409',
       expiresOn: '2027-03-01',
       serialNumbers: [],
+      credited: '0.0000',
     };
     const invoice = {
       customer: { id: 'c-1', code: 'C-00001', name: 'Rahman Traders' },
@@ -182,11 +234,18 @@ describe('savedInvoiceLines', () => {
       deliveryNumber: 'DC-2026-27-0042',
       orderNumber: 'SO-2026-27-0007',
       pricesIncludeVat: false,
+      returnedQuantity: '0',
     });
   });
 });
 
-function invoice(id: string, dueDate: string, total: string, amountPaid: string): InvoiceSummary {
+function invoice(
+  id: string,
+  dueDate: string,
+  total: string,
+  amountPaid: string,
+  amountCredited = '0.0000',
+): InvoiceSummary {
   return {
     id,
     number: `INV-${id}`,
@@ -200,6 +259,8 @@ function invoice(id: string, dueDate: string, total: string, amountPaid: string)
     vat: '0.0000',
     total,
     amountPaid,
+    amountCredited,
+    creditNoteTotal: amountCredited,
     lineCount: 1,
     postedAt: '2026-09-01T04:00:00.000Z',
     version: 1,
@@ -218,6 +279,12 @@ describe('allocationRows and suggestAllocations', () => {
       ['INV-1', '800.0000'],
       ['INV-2', '800.0000'],
     ]);
+  });
+
+  // Step 15d: a credit note took ৳150 off INV-3, so ৳150 less is due
+  it('leaves out what credit notes took off', () => {
+    const credited = invoice('3', '2026-10-20', '500.0000', '100.0000', '150.0000');
+    expect(allocationRows([credited], [])[0]?.due).toBe('250.0000');
   });
 
   it("counts this receipt's own amount back in, and keeps an invoice it paid in full", () => {

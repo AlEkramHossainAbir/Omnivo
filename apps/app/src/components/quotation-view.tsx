@@ -14,13 +14,8 @@ import { Fact } from './adjustment-view';
 import { failureOf } from './journal-parts';
 import { PrintButton, QuotationPrint } from './print-documents';
 import { SalesLinesTable } from './sales-lines-table';
-import {
-  CustomerLink,
-  DocumentNotice,
-  QuotationStatusPill,
-  SalesBackLink,
-  useSalesRefresh,
-} from './sales-parts';
+import { CustomerLink, DocumentNotice, SalesBackLink, useSalesRefresh } from './sales-parts';
+import { QuotationStatusPill } from './sales-pills';
 import { useIsoDate } from './stock-parts';
 
 // A quotation as the customer got it, with what can be done with it next: make the order, change

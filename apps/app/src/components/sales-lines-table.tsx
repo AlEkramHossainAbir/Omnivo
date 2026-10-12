@@ -8,6 +8,7 @@ import {
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { Card } from '@omnivo/ui';
+import type { ReactNode } from 'react';
 
 import { isServiceLine, leftToDeliver } from '../lib/sales';
 import { variantName } from '../lib/stock';
@@ -18,18 +19,21 @@ import { useQuantity } from './stock-parts';
 // The lines of a quotation or an order that is no longer edited here: a real <table> in a card,
 // scrolling inside its own box on a phone, with the document's totals under it. An order's lines
 // (`delivered`) also say how much went out and how much is left, and (step 15c) how much of it
-// posted invoices bill. An invoice's lines use the table as they are.
-export function SalesLinesTable({
+// posted invoices bill. An invoice's lines use the table as they are. Step 15d: `note` adds the
+// document's own words under an item (the return a credit note line gives the money back for).
+export function SalesLinesTable<L extends SalesLine | SalesOrderLine>({
   lines,
   totals,
   pricesIncludeVat,
   delivered = false,
+  note,
 }: {
-  lines: readonly (SalesLine | SalesOrderLine)[];
+  lines: readonly L[];
   totals: DocumentTotals;
   pricesIncludeVat: boolean;
   // An order past its draft: the Delivered and Invoiced columns
   delivered?: boolean;
+  note?: (line: L) => ReactNode;
 }) {
   const { t, format } = useLocale();
   const quantity = useQuantity();
@@ -84,6 +88,7 @@ export function SalesLinesTable({
                         `${variantName(line)} · `}
                       <span className="font-mono">{line.sku}</span>
                     </span>
+                    {note?.(line)}
                   </span>
                 </td>
                 <td className="px-5 py-3 text-right whitespace-nowrap tabular-nums">

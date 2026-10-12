@@ -1,4 +1,4 @@
-import { Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
+import { Calendar03Icon, Delete02Icon, PlusSignIcon, UserIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -17,21 +17,20 @@ import {
   Button,
   Card,
   cn,
-  DatePicker,
   FormAlert,
   FormField,
   IconButton,
+  Input,
   MoneyInput,
   PageHeader,
   toast,
 } from '@omnivo/ui';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { Controller, type Path, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import type { z } from 'zod';
 
-import { CustomerPicker } from '../components/customer-picker';
 import { LineError, LineField, useIsoDate } from '../components/journal-parts';
 import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
@@ -39,6 +38,15 @@ import { balanceSide, formAmount, linePath, openingAccounts, totalsOf } from '..
 import { useCan } from '../lib/permissions';
 import { accountsQuery, openingBalancesQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
+
+// The customer box and the date picker as chunks of their own (step 15d): both bring the popover,
+// and the 15d contracts took this page over its 100 KB budget (the journal form's fix in 15c)
+const CustomerPicker = lazy(async () => ({
+  default: (await import('../components/customer-picker')).CustomerPicker,
+}));
+const DatePicker = lazy(async () => ({
+  default: (await import('../components/date-input')).DatePicker,
+}));
 
 type FormValues = z.input<typeof openingBalancesInputSchema>;
 type LineValues = FormValues['lines'][number];
@@ -244,19 +252,23 @@ function OpeningForm({
                           label={t('opening.customer')}
                           error={fieldState.error?.message}
                         >
-                          <CustomerPicker
-                            id={field.name}
-                            name={field.name}
-                            ref={field.ref}
-                            value={field.value ?? ''}
-                            saved={savedParties.get(field.value ?? '') ?? null}
-                            onChange={field.onChange}
-                            onBlur={field.onBlur}
-                            disabled={!canPost}
-                            invalid={fieldState.error !== undefined}
-                            aria-label={`${t('opening.customer')}, ${label}`}
-                            aria-describedby={fieldState.error ? `${field.name}-error` : undefined}
-                          />
+                          <Suspense fallback={<Input id={field.name} icon={UserIcon} disabled />}>
+                            <CustomerPicker
+                              id={field.name}
+                              name={field.name}
+                              ref={field.ref}
+                              value={field.value ?? ''}
+                              saved={savedParties.get(field.value ?? '') ?? null}
+                              onChange={field.onChange}
+                              onBlur={field.onBlur}
+                              disabled={!canPost}
+                              invalid={fieldState.error !== undefined}
+                              aria-label={`${t('opening.customer')}, ${label}`}
+                              aria-describedby={
+                                fieldState.error ? `${field.name}-error` : undefined
+                              }
+                            />
+                          </Suspense>
                         </LineField>
                       )}
                     />
@@ -314,7 +326,11 @@ function OpeningForm({
               : t('opening.goLiveHint', { date: showDate(shiftIsoDate(goLiveDate, -1)) })
           }
         >
-          {(field) => <DatePicker {...field} disabled={!canPost} />}
+          {(field) => (
+            <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
+              <DatePicker {...field} disabled={!canPost} />
+            </Suspense>
+          )}
         </FormField>
         {saved.entry && (
           <Link

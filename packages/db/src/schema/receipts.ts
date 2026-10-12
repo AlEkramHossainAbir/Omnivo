@@ -38,6 +38,9 @@ export const receipts = pgTable(
     // The sum of its allocations, kept by their trigger (migration 0030) like invoices.amount_paid.
     // amount − applied is the customer's money not applied to an invoice yet.
     applied: numeric('applied', { precision: 19, scale: 4 }).notNull().default('0'),
+    // Step 15d. What posted refunds paid back out of it, kept by the refunds' trigger (migration
+    // 0032). amount − applied − refunded is what is left (contracts' unappliedOf).
+    refunded: numeric('refunded', { precision: 19, scale: 4 }).notNull().default('0'),
     // The cash, bank or wallet account it went into (a money account: the API checks that)
     accountId: uuid('account_id').notNull(),
     method: text('method', { enum: PAYMENT_METHODS }).notNull(),
@@ -57,10 +60,13 @@ export const receipts = pgTable(
     index('receipts_tenant_date_idx').on(table.tenantId, table.date, table.id),
     index('receipts_customer_idx').on(table.tenantId, table.customerId, table.date, table.id),
     // A customer's money that is not applied yet (advances): what the invoice and receipt pages
-    // offer to apply. Partial: once applied in full, a receipt leaves it.
+    // offer to apply, and the refund form to pay back. Partial: once applied or paid back in full,
+    // a receipt leaves it.
     index('receipts_unapplied_idx')
       .on(table.tenantId, table.customerId, table.date, table.id)
-      .where(sql`${table.status} = 'posted' AND ${table.applied} < ${table.amount}`),
+      .where(
+        sql`${table.status} = 'posted' AND ${table.applied} + ${table.refunded} < ${table.amount}`,
+      ),
     // The account FK's check when an account is deleted (accounts are deleted for real when unused)
     index('receipts_account_idx').on(table.tenantId, table.accountId),
     foreignKey({
@@ -78,16 +84,17 @@ export const receipts = pgTable(
       columns: [table.tenantId, table.branchId],
       foreignColumns: [branches.tenantId, branches.id],
     }),
-    // A receipt of ৳0 moved no money, and its money is never applied twice over
+    // A receipt of ৳0 moved no money, and its money is never used twice over: applied to
+    // invoices and paid back together, never more than came in
     check(
       'receipts_amount_check',
-      sql`${table.amount} > 0 AND ${table.applied} >= 0 AND ${table.applied} <= ${table.amount}`,
+      sql`${table.amount} > 0 AND ${table.applied} >= 0 AND ${table.refunded} >= 0 AND ${table.applied} + ${table.refunded} <= ${table.amount}`,
     ),
-    // Voided ⇔ a void date and a reason. A voided receipt paid nothing: its allocations are
-    // removed before it is voided.
+    // Voided ⇔ a void date and a reason. A voided receipt paid nothing and paid nothing back: its
+    // allocations are removed before it is voided, and its refunds voided (receipt_has_refunds).
     check(
       'receipts_void_check',
-      sql`(${table.status} = 'voided') = (${table.voidDate} IS NOT NULL AND ${table.voidReason} IS NOT NULL) AND (${table.status} = 'posted' OR ${table.applied} = 0) AND (${table.voidDate} IS NULL OR ${table.voidDate} >= ${table.date})`,
+      sql`(${table.status} = 'voided') = (${table.voidDate} IS NOT NULL AND ${table.voidReason} IS NOT NULL) AND (${table.status} = 'posted' OR (${table.applied} = 0 AND ${table.refunded} = 0)) AND (${table.voidDate} IS NULL OR ${table.voidDate} >= ${table.date})`,
     ),
   ],
 );

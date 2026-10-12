@@ -1,7 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  compareMoney,
-  moneyAccountIds,
   overAllocated,
   type PartyRef,
   type Receipt,
@@ -9,31 +7,25 @@ import {
   type ReceiptStatus,
   type ReceiptSummary,
   subtractMoney,
-  sumMoney,
   type VoidReceiptInput,
 } from '@omnivo/contracts';
-import { invoices, ledgerAccounts, parties, receiptAllocations, receipts } from '@omnivo/db';
-import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
+import { invoices, parties, receiptAllocations, receipts, refunds } from '@omnivo/db';
+import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { audit, created, diff } from '../common/audit/audit.js';
+import { audit, created } from '../common/audit/audit.js';
 import { isCheckViolation } from '../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
-import { type LineIssue, linesError } from '../inventory/stock-lines.js';
 import { NumberingService } from '../numbering/numbering.service.js';
+import { type Allocation, allocationChanges, checkAllocations } from './allocations.js';
 import { SalesBooksService } from './sales-books.service.js';
-import { assertBranch, assertCustomer } from './sales-lines.js';
+import { assertBranch, assertCustomer, assertMoneyAccount } from './sales-lines.js';
 
 type ReceiptRow = typeof receipts.$inferSelect;
-
-interface Allocation {
-  invoiceId: string;
-  amount: string;
-}
 
 const cursorSchema = z.tuple([z.iso.date(), z.uuid()]);
 
@@ -45,6 +37,7 @@ function toSummary(row: ReceiptRow, customer: PartyRef): ReceiptSummary {
     customer,
     amount: row.amount,
     applied: row.applied,
+    refunded: row.refunded,
     method: row.method,
     reference: row.reference,
     accountId: row.accountId,
@@ -68,9 +61,14 @@ function overAllocatedError(): AppError {
   );
 }
 
-// An allocation's problem, under its own row of the form: allocations.2.amount
-function allocationPath(index: number, field: string): string {
-  return `allocations.${String(index)}.${field}`;
+// Step 15d: a refund paid some of its money back. Voiding the receipt would leave that money paid
+// out of nowhere, so the refund is voided first (the database's receipts_void_check agrees).
+function hasRefundsError(): AppError {
+  return new AppError(
+    409,
+    'receipt_has_refunds',
+    'Some of this money was paid back to the customer. Void the refund first.',
+  );
 }
 
 // Money receipts (step 15c). Saving one posts it at once: it gets its number (MR-2026-27-0001) and
@@ -120,7 +118,7 @@ export class ReceiptsService {
       return await this.withTenant(async (tx) => {
         const customer = await assertCustomer(tx, input.customerId);
         await assertBranch(tx, input.branchId);
-        await this.assertMoneyAccount(tx, input.accountId);
+        await assertMoneyAccount(tx, input.accountId, 'receipt_account_invalid');
         const number = await this.numbering.next(tx, 'sales.receipt', input.date);
         const [row] = await tx
           .insert(receipts)
@@ -183,7 +181,10 @@ export class ReceiptsService {
     try {
       return await this.withTenant(async (tx) => {
         const row = await this.lock(tx, id, input.version);
-        if (overAllocated(row.amount, input.allocations)) throw overAllocatedError();
+        // What refunds paid back (step 15d) is gone: only the rest can be applied
+        if (overAllocated(subtractMoney(row.amount, row.refunded), input.allocations)) {
+          throw overAllocatedError();
+        }
         const before = await this.allocationsOf(tx, id);
         await this.apply(tx, row, input.allocations);
         await tx
@@ -194,7 +195,7 @@ export class ReceiptsService {
           action: 'receipt.allocated',
           entityType: 'receipt',
           entityId: id,
-          changes: this.allocationChanges(before, await this.allocationsOf(tx, id)),
+          changes: allocationChanges(before, await this.allocationsOf(tx, id)),
         });
         return this.read(tx, id);
       });
@@ -205,10 +206,24 @@ export class ReceiptsService {
 
   // A bounced cheque or a receipt typed by mistake: its money comes off the invoices, and its entry
   // is reversed on the void date. The receipt stays, voided, so its number is never reused or
-  // missing from the series.
+  // missing from the series. Not while a posted refund pays some of it back (step 15d).
   void(id: string, input: VoidReceiptInput): Promise<Receipt> {
     return this.withTenant(async (tx) => {
       const row = await this.lock(tx, id, input.version);
+      // The lock on the receipt makes a new refund of it wait (RefundsService locks it too), so
+      // what this finds is what there is. The database's receipts_void_check is the last word.
+      const [refund] = await tx
+        .select({ id: refunds.id })
+        .from(refunds)
+        .where(
+          and(
+            eq(refunds.tenantId, getTenantId()),
+            eq(refunds.receiptId, id),
+            eq(refunds.status, 'posted'),
+          ),
+        )
+        .limit(1);
+      if (refund) throw hasRefundsError();
       if (input.date < row.date) {
         throw new AppError(
           409,
@@ -246,11 +261,9 @@ export class ReceiptsService {
     });
   }
 
-  // Replaces the receipt's allocations with `wanted`. Each invoice must be a posted invoice of the
-  // receipt's customer, and get no more than it still owes (what this receipt had on it counts as
-  // owed again: it is being replaced). The invoices are locked FOR UPDATE in id order before
-  // anything is written, so two receipts paying one invoice take turns, and the second sees what
-  // the first paid. amount_paid and applied are not written here: the allocations' trigger keeps
+  // Replaces the receipt's allocations with `wanted`, once checkAllocations() has locked every
+  // invoice involved and checked each row (step 15d moved that check to allocations.ts, for the
+  // credit notes too). amount_paid and applied are not written here: the allocations' trigger keeps
   // them (migration 0030).
   private async apply(
     tx: Transaction,
@@ -267,44 +280,12 @@ export class ReceiptsService {
           eq(receiptAllocations.receiptId, receipt.id),
         ),
       );
-    const invoiceIds = [
-      ...new Set([...current, ...wanted].map((allocation) => allocation.invoiceId)),
-    ];
-    const rows =
-      invoiceIds.length === 0
-        ? []
-        : await tx
-            .select({
-              id: invoices.id,
-              customerId: invoices.customerId,
-              status: invoices.status,
-              total: invoices.total,
-              amountPaid: invoices.amountPaid,
-            })
-            .from(invoices)
-            .where(and(eq(invoices.tenantId, tenantId), inArray(invoices.id, invoiceIds)))
-            .orderBy(asc(invoices.id))
-            .for('update');
-    const byId = new Map(rows.map((row) => [row.id, row]));
-    const had = new Map(current.map((allocation) => [allocation.invoiceId, allocation.amount]));
-
-    const issues: LineIssue[] = [];
-    wanted.forEach((allocation, index) => {
-      const invoice = byId.get(allocation.invoiceId);
-      if (invoice?.customerId !== receipt.customerId || invoice.status !== 'posted') {
-        issues.push({ path: allocationPath(index, 'invoiceId'), code: 'receipt_invoice_invalid' });
-        return;
-      }
-      const due = sumMoney([
-        subtractMoney(invoice.total, invoice.amountPaid),
-        had.get(allocation.invoiceId) ?? '0',
-      ]);
-      if (compareMoney(allocation.amount, due) > 0) {
-        issues.push({ path: allocationPath(index, 'amount'), code: 'receipt_over_invoice' });
-      }
+    await checkAllocations(tx, {
+      customerId: receipt.customerId,
+      current,
+      wanted,
+      errors: { invoice: 'receipt_invoice_invalid', over: 'receipt_over_invoice' },
     });
-    if (issues.length > 0) throw linesError(issues);
-
     await tx
       .delete(receiptAllocations)
       .where(
@@ -323,42 +304,6 @@ export class ReceiptsService {
         amount: allocation.amount,
       })),
     );
-  }
-
-  // A money account: active, not a group, and flagged itself or under a flagged group
-  // (contracts' moneyAccountIds — the receipt form offers exactly the same list). The whole chart
-  // is read: it is a few hundred rows at most. FOR SHARE on the chosen one: nobody archives it or
-  // unticks its group's flag before we commit (the journal locks it again when posting).
-  private async assertMoneyAccount(tx: Transaction, accountId: string): Promise<void> {
-    const chart = await tx
-      .select({
-        id: ledgerAccounts.id,
-        parentId: ledgerAccounts.parentId,
-        isGroup: ledgerAccounts.isGroup,
-        holdsMoney: ledgerAccounts.holdsMoney,
-        archivedAt: ledgerAccounts.archivedAt,
-      })
-      .from(ledgerAccounts)
-      .where(eq(ledgerAccounts.tenantId, getTenantId()));
-    const money = moneyAccountIds(
-      chart.map((account) => ({
-        ...account,
-        archivedAt: account.archivedAt?.toISOString() ?? null,
-      })),
-    );
-    if (!money.has(accountId)) {
-      throw new AppError(
-        409,
-        'receipt_account_invalid',
-        'Pick a cash, bank or mobile wallet account.',
-        { fieldErrors: { accountId: ['receipt_account_invalid'] } },
-      );
-    }
-    await tx
-      .select({ id: ledgerAccounts.id })
-      .from(ledgerAccounts)
-      .where(and(eq(ledgerAccounts.tenantId, getTenantId()), eq(ledgerAccounts.id, accountId)))
-      .for('share');
   }
 
   // FOR UPDATE: an allocate and a void of one receipt take turns. A voided receipt is final.
@@ -443,39 +388,18 @@ export class ReceiptsService {
       voidReason: row.voidReason,
     };
   }
-
-  // What the audit log shows of the allocations: one row per invoice number, with the amount
-  // before and after. diff() walks the new list only, so an invoice the money was taken off is
-  // added with null; without that, the log would not show where the money came from.
-  private allocationChanges(
-    before: readonly { invoiceNumber: string | null; amount: string }[],
-    after: readonly { invoiceNumber: string | null; amount: string }[],
-  ) {
-    const from = allocationSnapshot(before);
-    const to: Record<string, string | null> = allocationSnapshot(after);
-    for (const invoiceNumber of Object.keys(from)) to[invoiceNumber] ??= null;
-    return diff(from, to);
-  }
 }
 
-// Invoice number → amount
-function allocationSnapshot(
-  allocations: readonly { invoiceNumber: string | null; amount: string }[],
-): Record<string, string> {
-  return Object.fromEntries(
-    allocations.map((allocation) => [allocation.invoiceNumber ?? '', allocation.amount]),
-  );
-}
-
-// The database's last word, if two writers got past the checks above: an invoice paid past its
-// total (invoices_paid_check), or a receipt applied past its amount (receipts_amount_check). The
-// locks in apply() make this rare; it still answers with the code the form knows.
+// The database's last word, if two writers got past the checks above: an invoice settled past its
+// total by receipts and credit notes together (invoices_paid_check), or a receipt applied and paid
+// back past its amount (receipts_amount_check). The locks in apply() make this rare; it still
+// answers with the code the form knows.
 function overInvoiceRace(error: unknown): unknown {
   if (isCheckViolation(error, 'invoices_paid_check')) {
     return new AppError(
       409,
       'receipt_over_invoice',
-      'Another receipt paid one of these invoices first. Reload and try again.',
+      'Another receipt or a credit note settled one of these invoices first. Reload and try again.',
     );
   }
   if (isCheckViolation(error, 'receipts_amount_check')) return overAllocatedError();

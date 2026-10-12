@@ -23,13 +23,8 @@ import { Fact } from './adjustment-view';
 import { failureOf } from './journal-parts';
 import { PrintButton, SalesOrderPrint } from './print-documents';
 import { SalesLinesTable } from './sales-lines-table';
-import {
-  CustomerLink,
-  DeliveryStatusPill,
-  OrderStatusPills,
-  SalesBackLink,
-  useSalesRefresh,
-} from './sales-parts';
+import { CustomerLink, SalesBackLink, useSalesRefresh } from './sales-parts';
+import { DeliveryStatusPill, OrderStatusPills } from './sales-pills';
 import { useIsoDate, useWarehouses, warehouseLabel } from './stock-parts';
 
 // What the three order actions that cannot be undone are called, and what they say before they run

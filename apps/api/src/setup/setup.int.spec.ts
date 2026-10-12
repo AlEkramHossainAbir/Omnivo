@@ -7,6 +7,7 @@ import {
   notificationPageSchema,
   problemSchema,
   roleListSchema,
+  salesAccountsSchema,
   setupSchema,
   stockAccountsSchema,
   taxRateListSchema,
@@ -141,11 +142,13 @@ describe('starting the setup', () => {
           'core.user.read',
           'inventory.stock.revalue',
           'inventory.stock.value',
+          'sales.credit_note.manage',
           'sales.customer.balance',
           'sales.customer.manage',
           'sales.invoice.manage',
           'sales.price_list.manage',
           'sales.receipt.manage',
+          'sales.refund.manage',
         ],
       ],
       [
@@ -165,6 +168,7 @@ describe('starting the setup', () => {
           'inventory.stock.adjust',
           'inventory.stock.transfer',
           'sales.delivery.manage',
+          'sales.return.manage',
         ],
       ],
     ]);
@@ -181,6 +185,11 @@ describe('starting the setup', () => {
     expect(codeOf(choices.damaged)).toBe('5150');
     expect(codeOf(choices.revaluation)).toBe('5190');
     expect(codeOf(choices.internal_use)).toBe('5290');
+    // Step 15d: no sales returns account. The garments chart's 4120 is "Local sales", and the
+    // setting is filled only from an account with that code AND the name "Sales returns".
+    expect(salesAccountsSchema.parse((await send('GET', '/sales-accounts')).json())).toEqual({
+      returns: null,
+    });
     // Step 15a: the VAT rates, the same for every business type, with 15% as the default
     const rates = taxRateListSchema.parse((await send('GET', '/tax-rates')).json());
     expect(rates.items.map((rate) => [rate.name, rate.kind, rate.rate, rate.isDefault])).toEqual([
@@ -364,6 +373,14 @@ describe('when the setup job fails', () => {
       (await send('GET', '/accounts', undefined, pharmaOwner)).json(),
     );
     expect(chart.items).toHaveLength(pharmaAccounts);
+    // …the sales returns account the chart job chose (step 15d), which the setup left as it was…
+    const sales = salesAccountsSchema.parse(
+      (await send('GET', '/sales-accounts', undefined, pharmaOwner)).json(),
+    );
+    expect(chart.items.find((account) => account.id === sales.returns)).toMatchObject({
+      code: '4120',
+      name: 'Sales returns',
+    });
     // …one set of VAT rates, with one default…
     const rates = taxRateListSchema.parse(
       (await send('GET', '/tax-rates', undefined, pharmaOwner)).json(),

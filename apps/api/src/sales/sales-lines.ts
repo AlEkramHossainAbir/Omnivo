@@ -5,13 +5,21 @@ import {
   isQuantity,
   type LineAmounts,
   lineAmounts,
+  moneyAccountIds,
   type PartyRef,
   type SalesLine,
   type SalesLineInput,
   type TaxRateKind,
   toBaseQuantity,
 } from '@omnivo/contracts';
-import { branches, parties, partyAddresses, taxRates, tenantSettings } from '@omnivo/db';
+import {
+  branches,
+  ledgerAccounts,
+  parties,
+  partyAddresses,
+  taxRates,
+  tenantSettings,
+} from '@omnivo/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 import { AppError } from '../common/http/app-error.js';
@@ -143,6 +151,42 @@ export async function assertBranch(tx: Transaction, branchId: string): Promise<v
     )
     .for('share');
   if (!row) throw fieldError('sales_branch_invalid', 'branchId', 'Pick an active branch.');
+}
+
+// A money account (step 15c): active, not a group, and flagged itself or under a flagged group
+// (contracts' moneyAccountIds — the forms offer exactly the same list). The whole chart is read: it
+// is a few hundred rows at most. FOR SHARE on the chosen one: nobody archives it or unticks its
+// group's flag before we commit (the journal locks it again when posting). `code` is the document's
+// own error: a receipt's money goes into the account, a refund's comes out of it (step 15d).
+export async function assertMoneyAccount(
+  tx: Transaction,
+  accountId: string,
+  code: ErrorCode,
+): Promise<void> {
+  const chart = await tx
+    .select({
+      id: ledgerAccounts.id,
+      parentId: ledgerAccounts.parentId,
+      isGroup: ledgerAccounts.isGroup,
+      holdsMoney: ledgerAccounts.holdsMoney,
+      archivedAt: ledgerAccounts.archivedAt,
+    })
+    .from(ledgerAccounts)
+    .where(eq(ledgerAccounts.tenantId, getTenantId()));
+  const money = moneyAccountIds(
+    chart.map((account) => ({
+      ...account,
+      archivedAt: account.archivedAt?.toISOString() ?? null,
+    })),
+  );
+  if (!money.has(accountId)) {
+    throw fieldError(code, 'accountId', 'Pick a cash, bank or mobile wallet account.');
+  }
+  await tx
+    .select({ id: ledgerAccounts.id })
+    .from(ledgerAccounts)
+    .where(and(eq(ledgerAccounts.tenantId, getTenantId()), eq(ledgerAccounts.id, accountId)))
+    .for('share');
 }
 
 // The workspace setting now (step 15a). A new document copies it and keeps its copy: when the owner

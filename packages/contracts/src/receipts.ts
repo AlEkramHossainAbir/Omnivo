@@ -1,10 +1,17 @@
 import { z } from 'zod';
 
-import { errorCode } from './errors.js';
+import { type ErrorCode, errorCode } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { entryRefSchema, partyRefSchema } from './journal.js';
-import { compareMoney, isMoneyAmount, isZeroMoney, sumMoney } from './money.js';
+import {
+  addMoney,
+  compareMoney,
+  isMoneyAmount,
+  isZeroMoney,
+  subtractMoney,
+  sumMoney,
+} from './money.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 
 // A money receipt (MR-2026-27-0001) is money a customer paid: cash at the counter, a cheque, a
@@ -14,7 +21,8 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 //
 // The money is applied to the customer's invoices (you chose this): the form suggests the oldest
 // first, and the person may change it. What is not applied stays with the receipt — an advance,
-// or money for an opening balance that has no invoice — and can be applied later.
+// or money for an opening balance that has no invoice — and can be applied later, or paid back to
+// the customer by a refund (refunds.ts, step 15d).
 //
 // A saved receipt is not edited. A bounced cheque or a typing mistake is undone by voiding it:
 // its entry is reversed on the void date and its money comes off the invoices again.
@@ -34,21 +42,29 @@ export const PAYMENT_METHODS = [
 ] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+// What is left of a receipt's (or a credit note's) money to apply or to pay back: the amount less
+// what is applied to invoices and what refunds paid back (step 15d)
+export function unappliedOf(money: { amount: string; applied: string; refunded: string }): string {
+  return subtractMoney(money.amount, addMoney(money.applied, money.refunded));
+}
+
 // A distributor's collection from a depot can settle a few hundred small invoices at once
 export const MAX_RECEIPT_ALLOCATIONS = 200;
 
 // An amount that must be there and above zero: a receipt of ৳0 moved no money. One error per box,
 // like requiredPriceSchema: the format check leaves an empty box to the first one, and the zero
-// check leaves a malformed one to the format check.
-const receiptAmountSchema = z
-  .string()
-  .trim()
-  .refine((value) => value !== '', errorCode('receipt_amount_required'))
-  .refine((value) => value === '' || isMoneyAmount(value), errorCode('money_format'))
-  .refine(
-    (value) => !isMoneyAmount(value) || !isZeroMoney(value),
-    errorCode('receipt_amount_required'),
-  );
+// check leaves a malformed one to the format check. `required` names the document's own code, so a
+// refund or a credit note (step 15d) says "how much was paid back", not "how much was paid".
+export function positiveAmountSchema(required: ErrorCode) {
+  return z
+    .string()
+    .trim()
+    .refine((value) => value !== '', errorCode(required))
+    .refine((value) => value === '' || isMoneyAmount(value), errorCode('money_format'))
+    .refine((value) => !isMoneyAmount(value) || !isZeroMoney(value), errorCode(required));
+}
+
+const receiptAmountSchema = positiveAmountSchema('receipt_amount_required');
 
 // ---------------------------------------------------------------------------------------------
 // What the API sends
@@ -59,8 +75,10 @@ export const receiptSummarySchema = z.object({
   date: z.iso.date(),
   customer: partyRefSchema,
   amount: z.string(),
-  // What is applied to invoices; amount − applied is not applied yet
+  // What is applied to invoices, and what refunds paid back to the customer (step 15d).
+  // unappliedOf() is what is left.
   applied: z.string(),
+  refunded: z.string(),
   method: z.enum(PAYMENT_METHODS),
   // The cheque number, the bKash TrxID, the bank's transfer reference
   reference: z.string().nullable(),
@@ -99,12 +117,27 @@ export type Receipt = z.infer<typeof receiptSchema>;
 // ---------------------------------------------------------------------------------------------
 // What the form sends
 
-const allocationInputSchema = z.object({
-  invoiceId: z.uuid(errorCode('receipt_invoice_invalid')),
-  amount: receiptAmountSchema,
-});
+// The invoices some money is applied to: a receipt's here, a credit note's in credit-notes.ts (step
+// 15d). Each document names its own error codes.
+export interface AllocationCodes {
+  // No invoice chosen in a row
+  invoice: ErrorCode;
+  // An empty or zero amount in a row
+  required: ErrorCode;
+  // The same invoice in two rows
+  twice: ErrorCode;
+}
 
-const allocationsSchema = z.array(allocationInputSchema).max(MAX_RECEIPT_ALLOCATIONS);
+export function allocationsSchemaFor(codes: AllocationCodes) {
+  return z
+    .array(
+      z.object({
+        invoiceId: z.uuid(errorCode(codes.invoice)),
+        amount: positiveAmountSchema(codes.required),
+      }),
+    )
+    .max(MAX_RECEIPT_ALLOCATIONS);
+}
 
 interface AllocationFields {
   allocations: readonly { invoiceId: string; amount: string }[];
@@ -112,19 +145,30 @@ interface AllocationFields {
 
 // An invoice once: two rows for one invoice is a slip. Whether each amount fits what the invoice
 // still owes only the server knows (receipt_over_invoice).
-function allocationRules<T extends AllocationFields>(input: T, ctx: z.RefinementCtx<T>): void {
-  const seen = new Set<string>();
-  input.allocations.forEach((allocation, index) => {
-    if (seen.has(allocation.invoiceId)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['allocations', index, 'invoiceId'],
-        message: errorCode('receipt_invoice_twice'),
-      });
-    }
-    seen.add(allocation.invoiceId);
-  });
+export function uniqueInvoiceRules(twice: ErrorCode) {
+  return <T extends AllocationFields>(input: T, ctx: z.RefinementCtx<T>): void => {
+    const seen = new Set<string>();
+    input.allocations.forEach((allocation, index) => {
+      if (seen.has(allocation.invoiceId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['allocations', index, 'invoiceId'],
+          message: errorCode(twice),
+        });
+      }
+      seen.add(allocation.invoiceId);
+    });
+  };
 }
+
+const RECEIPT_ALLOCATION_CODES = {
+  invoice: 'receipt_invoice_invalid',
+  required: 'receipt_amount_required',
+  twice: 'receipt_invoice_twice',
+} as const satisfies AllocationCodes;
+
+const allocationsSchema = allocationsSchemaFor(RECEIPT_ALLOCATION_CODES);
+const allocationRules = uniqueInvoiceRules(RECEIPT_ALLOCATION_CODES.twice);
 
 // What is applied never adds up to more than the receipt
 export function overAllocated(amount: string, allocations: readonly { amount: string }[]): boolean {
@@ -161,7 +205,8 @@ export type ReceiptInput = z.infer<typeof receiptInputSchema>;
 export type ReceiptFormValues = z.input<typeof receiptInputSchema>;
 
 // Apply the money again: the whole list, as the person left it. The amount is not sent, so the
-// server checks the total against the receipt's own (receipt_over_allocated).
+// server checks the total against the receipt's own, less what refunds paid back
+// (receipt_over_allocated).
 export const receiptAllocationsInputSchema = z
   .object({ version: versionSchema, allocations: allocationsSchema })
   .superRefine(allocationRules);

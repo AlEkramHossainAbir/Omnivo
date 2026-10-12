@@ -14,6 +14,7 @@ import { notificationRoutes } from './notifications.js';
 import { numberSeriesRoutes } from './numbering.js';
 import { meRoutes } from './preferences.js';
 import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js';
+import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
 import { deliveryRoutes } from './deliveries.js';
@@ -23,8 +24,11 @@ import { productImportRoutes } from './product-imports.js';
 import { productRoutes } from './products.js';
 import { quotationRoutes } from './quotations.js';
 import { receiptRoutes } from './receipts.js';
+import { refundRoutes } from './refunds.js';
 import { roleRoutes } from './roles.js';
+import { salesAccountRoutes } from './sales-accounts.js';
 import { salesOrderRoutes } from './sales-orders.js';
+import { salesReturnRoutes } from './sales-returns.js';
 import { salesPriceRoutes } from './sales.js';
 import { settingsRoutes } from './settings.js';
 import { setupRoutes } from './setup.js';
@@ -93,4 +97,8 @@ export const routes = {
   deliveries: deliveryRoutes,
   invoices: invoiceRoutes,
   receipts: receiptRoutes,
+  salesReturns: salesReturnRoutes,
+  creditNotes: creditNoteRoutes,
+  refunds: refundRoutes,
+  salesAccounts: salesAccountRoutes,
 };

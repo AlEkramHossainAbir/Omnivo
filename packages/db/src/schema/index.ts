@@ -36,3 +36,6 @@ export * from './parties.js';
 export * from './sales-documents.js';
 export * from './invoices.js';
 export * from './receipts.js';
+export * from './sales-returns.js';
+export * from './credit-notes.js';
+export * from './refunds.js';

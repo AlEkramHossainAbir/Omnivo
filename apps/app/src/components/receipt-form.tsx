@@ -1,6 +1,7 @@
 import { Calendar03Icon, UserIcon } from '@hugeicons/core-free-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
+  amountDueOf,
   contractErrorMap,
   type Invoice,
   moneyAccountIds,
@@ -32,7 +33,7 @@ import { Controller, type Path, useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
-import { allocationRows, amountDue } from '../lib/invoices';
+import { allocationRows } from '../lib/invoices';
 import { rowPath } from '../lib/products';
 import { accountsQuery, branchesQuery, openInvoicesQuery } from '../lib/queries';
 import { AllocationTable } from './allocation-table';
@@ -95,7 +96,7 @@ export function ReceiptForm({
       .toSorted((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   }, [accounts]);
   const savedCustomer = invoice?.customer ?? startCustomer;
-  const due = invoice ? plainQuantity(amountDue(invoice)) : '';
+  const due = invoice ? plainQuantity(amountDueOf(invoice)) : '';
   const {
     register,
     control,

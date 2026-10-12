@@ -1,6 +1,6 @@
 import { Invoice03Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import { INVOICE_PAYMENT_FILTERS, type InvoiceSummary } from '@omnivo/contracts';
+import { amountDueOf, INVOICE_PAYMENT_FILTERS, type InvoiceSummary } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
   Button,
@@ -15,9 +15,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { CustomerPicker } from '../components/customer-picker';
-import { InvoicePills } from '../components/sales-parts';
+import { InvoicePills } from '../components/sales-pills';
 import { useIsoDate, useTenantId, useToday } from '../components/stock-parts';
-import { amountDue } from '../lib/invoices';
 import { useCan } from '../lib/permissions';
 import { type InvoiceListFilter, invoicesQuery } from '../lib/queries';
 
@@ -95,7 +94,7 @@ export function InvoicesPage() {
           // A list shows whole taka; the invoice's page shows paisa
           cell: ({ getValue }) => format.money(getValue()),
         }),
-        column.accessor((invoice) => amountDue(invoice), {
+        column.accessor((invoice) => amountDueOf(invoice), {
           id: 'due',
           header: t('invoices.columns.due'),
           enableSorting: false,

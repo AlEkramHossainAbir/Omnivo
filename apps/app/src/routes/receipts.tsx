@@ -4,7 +4,7 @@ import {
   RECEIPT_STATUSES,
   type ReceiptStatus,
   type ReceiptSummary,
-  subtractMoney,
+  unappliedOf,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
@@ -20,7 +20,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { CustomerPicker } from '../components/customer-picker';
-import { ReceiptStatusPill } from '../components/sales-parts';
+import { ReceiptStatusPill } from '../components/sales-pills';
 import { useIsoDate, useTenantId } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
 import { receiptsQuery } from '../lib/queries';
@@ -92,7 +92,8 @@ export function ReceiptsPage() {
           meta: { align: 'end', card: 'detail' },
           cell: ({ getValue }) => <span className="font-medium">{format.money(getValue())}</span>,
         }),
-        column.accessor((receipt) => subtractMoney(receipt.amount, receipt.applied), {
+        // Step 15d: less what refunds paid back
+        column.accessor((receipt) => unappliedOf(receipt), {
           id: 'unapplied',
           header: t('receipts.columns.unapplied'),
           enableSorting: false,

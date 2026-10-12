@@ -1,48 +1,31 @@
 import {
-  Agreement01Icon,
+  Alert02Icon,
   ArrowLeft01Icon,
-  CancelCircleIcon,
-  CheckmarkCircle02Icon,
-  Clock01Icon,
-  Coins01Icon,
-  DeliveryTruck01Icon,
-  FileEditIcon,
   HourglassIcon,
   InformationCircleIcon,
-  Invoice01Icon,
-  Invoice02Icon,
-  Invoice03Icon,
-  PackageDeliveredIcon,
-  StopCircleIcon,
-  Time04Icon,
+  PlusSignIcon,
+  Tick02Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   type CustomerAddress,
-  type DeliveryInvoiceState,
   type DocumentTotals,
-  type InvoiceStatus,
-  isOverdue,
   isZeroMoney,
-  type OrderStatus,
   type PartyRef,
-  paymentStatusOf,
-  type QuotationStatus,
-  type ReceiptStatus,
-  type StockDocumentStatus,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { Pill } from '@omnivo/ui';
+import { Button, Card, CardHeader } from '@omnivo/ui';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { type ReactNode, useCallback } from 'react';
 
 import { partyLabel } from '../lib/customers';
-import { isExpired, isLate } from '../lib/sales';
 import { useTenantId } from './stock-parts';
 
-// Shared by the quotation, order, delivery, invoice and money receipt pages. Here, not in a route file: a route file is its
-// own lazy chunk, and importing from one would pull that whole page into the others.
+// Shared by the quotation, order, delivery, invoice and money receipt pages, and (step 15d) the
+// return, credit note and refund pages. Here, not in a route file: a route file is its own lazy
+// chunk, and importing from one would pull that whole page into the others. The status pills are
+// in sales-pills.tsx since 15d.
 
 // After a save. Everything under ['sales', tenant] (the lists, the documents), and the stock and
 // the books: confirming an order changes "on order" on the stock page, and posting a delivery
@@ -66,7 +49,15 @@ export function SalesBackLink({
   to,
   label,
 }: {
-  to: '/quotations' | '/sales-orders' | '/deliveries' | '/invoices' | '/receipts';
+  to:
+    | '/quotations'
+    | '/sales-orders'
+    | '/deliveries'
+    | '/invoices'
+    | '/receipts'
+    | '/sales-returns'
+    | '/credit-notes'
+    | '/refunds';
   label: string;
 }) {
   return (
@@ -79,6 +70,38 @@ export function SalesBackLink({
     </Link>
   );
 }
+
+// A list of document links in a card: the challans an invoice bills, its payments, a challan's
+// returns, a return's credit notes. Moved here from invoice-view.tsx in step 15d: the return and
+// credit note pages use it too. Each row is a <li> with a Link in LINK_ROW, its number in
+// LINK_NUMBER; the Link differs by page, so the rows are the caller's.
+export function LinkList({
+  title,
+  subtitle,
+  empty,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  // What the card says instead of the list (the caller passes it when there is no row)
+  empty?: string | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <Card className="overflow-hidden">
+      <CardHeader title={title} subtitle={subtitle} />
+      {empty ? (
+        <p className="px-5 pt-3 pb-5 text-body-sm text-ink-2">{empty}</p>
+      ) : (
+        <ul className="mt-3 grid grid-cols-1">{children}</ul>
+      )}
+    </Card>
+  );
+}
+
+export const LINK_ROW =
+  'flex flex-wrap items-center gap-3 border-t border-line px-5 py-3 text-body-sm hover:bg-subtle';
+export const LINK_NUMBER = 'font-mono font-medium text-brand tabular-nums';
 
 // "C-00042 · Rahman Traders", linking to the customer's page (everyone may read customers)
 export function CustomerLink({ customer }: { customer: PartyRef }) {
@@ -130,95 +153,6 @@ export function DocumentNotice({
   );
 }
 
-// Open, Expired (open, but the offer has ended: attention), Accepted, Declined. Never colour alone.
-export function QuotationStatusPill({
-  quotation,
-  today,
-}: {
-  quotation: { status: QuotationStatus; validUntil: string | null };
-  today: string;
-}) {
-  const { t } = useLocale();
-  if (isExpired(quotation, today)) {
-    return (
-      <Pill tone="warn" icon={HourglassIcon}>
-        {t('quotations.expired')}
-      </Pill>
-    );
-  }
-  if (quotation.status === 'accepted') {
-    return (
-      <Pill tone="good" icon={CheckmarkCircle02Icon}>
-        {t('quotations.statuses.accepted')}
-      </Pill>
-    );
-  }
-  if (quotation.status === 'declined') {
-    return (
-      <Pill tone="neutral" icon={CancelCircleIcon}>
-        {t('quotations.statuses.declined')}
-      </Pill>
-    );
-  }
-  return (
-    <Pill tone="brand" icon={Clock01Icon}>
-      {t('quotations.statuses.open')}
-    </Pill>
-  );
-}
-
-const ORDER_PILLS = {
-  draft: { tone: 'neutral', icon: FileEditIcon },
-  confirmed: { tone: 'brand', icon: Agreement01Icon },
-  delivered: { tone: 'good', icon: PackageDeliveredIcon },
-  closed: { tone: 'neutral', icon: StopCircleIcon },
-  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
-} as const;
-
-// The status, and beside it what a confirmed order is up to: partly delivered (brand: work in
-// progress, not a problem) and late (warn: its delivery date has passed)
-export function OrderStatusPills({
-  order,
-  today,
-}: {
-  order: { status: OrderStatus; partlyDelivered: boolean; deliveryDate: string | null };
-  today: string;
-}) {
-  const { t } = useLocale();
-  const pill = ORDER_PILLS[order.status];
-  return (
-    <span className="inline-flex flex-wrap gap-1.5">
-      {order.partlyDelivered ? (
-        <Pill tone="brand" icon={DeliveryTruck01Icon}>
-          {t('salesOrders.partlyDelivered')}
-        </Pill>
-      ) : (
-        <Pill tone={pill.tone} icon={pill.icon}>
-          {t(`salesOrders.statuses.${order.status}`)}
-        </Pill>
-      )}
-      {isLate(order, today) && (
-        <Pill tone="warn" icon={Time04Icon}>
-          {t('salesOrders.late')}
-        </Pill>
-      )}
-    </span>
-  );
-}
-
-export function DeliveryStatusPill({ status }: { status: StockDocumentStatus }) {
-  const { t } = useLocale();
-  return status === 'draft' ? (
-    <Pill tone="neutral" icon={FileEditIcon}>
-      {t('deliveries.statuses.draft')}
-    </Pill>
-  ) : (
-    <Pill tone="good" icon={CheckmarkCircle02Icon}>
-      {t('deliveries.statuses.posted')}
-    </Pill>
-  );
-}
-
 // The totals under a quotation's or an order's lines, in the form and on the page. Line discounts
 // show only when something was given away. Paisa: an accounting document's totals must visibly
 // add up (CLAUDE.md → Money).
@@ -254,72 +188,35 @@ export function SalesTotals({
   );
 }
 
-// Step 15c: how much of a posted challan is billed. A draft shows nothing: it cannot be billed yet.
-const INVOICE_STATE_PILLS = {
-  not_invoiced: { tone: 'neutral', icon: Invoice01Icon },
-  partly_invoiced: { tone: 'brand', icon: Invoice03Icon },
-  invoiced: { tone: 'good', icon: Invoice02Icon },
-} as const;
+// The pickers' parts (the invoice's challans and charges, and since 15d the return's challans and
+// the credit note's invoice lines and returns). Moved here from invoice-lines.tsx: a return form
+// importing them from there would pull the invoice's whole chunk in.
 
-export function InvoiceStatePill({ state }: { state: DeliveryInvoiceState }) {
-  const { t } = useLocale();
-  const pill = INVOICE_STATE_PILLS[state];
+// Problems stay in the dialog, next to the button that caused them (a toast would hide behind it)
+export function PickProblem({ message }: { message: string | null }) {
+  if (message === null) return null;
   return (
-    <Pill tone={pill.tone} icon={pill.icon}>
-      {t(`deliveries.invoiceStates.${state}`)}
-    </Pill>
+    <p role="status" className="flex items-center gap-1.5 text-label text-crit">
+      <HugeiconsIcon icon={Alert02Icon} size={15} strokeWidth={1.5} className="shrink-0" />
+      {message}
+    </p>
   );
 }
 
-const PAYMENT_PILLS = {
-  unpaid: { tone: 'brand', icon: Clock01Icon },
-  partly_paid: { tone: 'brand', icon: Coins01Icon },
-  paid: { tone: 'good', icon: CheckmarkCircle02Icon },
-} as const;
-
-// A draft says Draft. A posted invoice says what was paid (unpaid and partly paid are brand: money
-// on its way, not a problem), and beside it Overdue (crit, CLAUDE.md: overdue) once its due date
-// has passed. Worked out here from the totals and today: nothing is stored when the date passes.
-export function InvoicePills({
-  invoice,
-  today,
+export function PickButton({
+  added,
+  loading,
+  onClick,
 }: {
-  invoice: { status: InvoiceStatus; dueDate: string; total: string; amountPaid: string };
-  today: string;
+  added: boolean;
+  loading: boolean;
+  onClick: () => void;
 }) {
   const { t } = useLocale();
-  if (invoice.status === 'draft') {
-    return (
-      <Pill tone="neutral" icon={FileEditIcon}>
-        {t('invoices.statuses.draft')}
-      </Pill>
-    );
-  }
-  const payment = paymentStatusOf(invoice);
-  const pill = PAYMENT_PILLS[payment];
   return (
-    <span className="inline-flex flex-wrap gap-1.5">
-      <Pill tone={pill.tone} icon={pill.icon}>
-        {t(`invoices.payment.${payment}`)}
-      </Pill>
-      {isOverdue(invoice, today) && (
-        <Pill tone="crit" icon={Time04Icon}>
-          {t('invoices.overdue')}
-        </Pill>
-      )}
-    </span>
-  );
-}
-
-export function ReceiptStatusPill({ status }: { status: ReceiptStatus }) {
-  const { t } = useLocale();
-  return status === 'voided' ? (
-    <Pill tone="neutral" icon={CancelCircleIcon}>
-      {t('receipts.statuses.voided')}
-    </Pill>
-  ) : (
-    <Pill tone="good" icon={CheckmarkCircle02Icon}>
-      {t('receipts.statuses.posted')}
-    </Pill>
+    <Button variant="secondary" size="sm" disabled={loading || added} onClick={onClick}>
+      <HugeiconsIcon icon={added ? Tick02Icon : PlusSignIcon} size={16} strokeWidth={1.5} />
+      {added ? t('salesLines.added') : t('salesLines.add')}
+    </Button>
   );
 }

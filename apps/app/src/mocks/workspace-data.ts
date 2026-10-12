@@ -15,13 +15,19 @@ import {
   type NumberFormat,
   type NumberSeries,
   periodOf,
+  type SalesAccounts,
   type Settings,
   type Setup,
   type StockAccounts,
   todayIn,
 } from '@omnivo/contracts';
 
-import { noStockAccounts, seedAccounts, seedStockAccounts } from './accounting-data';
+import {
+  noStockAccounts,
+  seedAccounts,
+  seedSalesAccounts,
+  seedStockAccounts,
+} from './accounting-data';
 import { OWNER, type Workspace } from './fixtures';
 import { emptyBilling, type MockBilling } from './invoice-data';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
@@ -29,6 +35,7 @@ import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import type { MockExport } from './report-data';
+import { emptyReturns, type MockReturns } from './return-data';
 import { emptySales, type MockSales, seedSales } from './sales-data';
 import {
   emptySalesDocuments,
@@ -65,6 +72,10 @@ export interface WorkspaceData {
   salesDocuments: MockSalesDocuments;
   // Invoices and money receipts (step 15c)
   billing: MockBilling;
+  // Sales returns, credit notes and refunds (step 15d)
+  returns: MockReturns;
+  // The account credit notes take sales back from (step 15d, Settings → Sales)
+  salesAccounts: SalesAccounts;
 }
 
 function now(): string {
@@ -126,8 +137,11 @@ function seed(workspace: Workspace): WorkspaceData {
     sales: emptySales(),
     salesDocuments: emptySalesDocuments(),
     billing: emptyBilling(),
+    returns: emptyReturns(),
+    salesAccounts: { returns: null },
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
+  data.salesAccounts = seedSalesAccounts(data.accounts);
   // Before the journal: its receivable lines name the customers
   seedSales(data, garments);
   if (garments) seedJournal(data);
@@ -189,6 +203,7 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   // A new workspace has no chart until its setup job runs (settleSetup)
   data.accounts = [];
   data.stockAccounts = noStockAccounts();
+  data.salesAccounts = { returns: null };
   data.journal = emptyJournal();
   data.exports = [];
   // Like the chart: the setup job brings the units and categories (settleSetup)
@@ -204,15 +219,17 @@ export function startFresh(workspace: Workspace, companyName: string): void {
 
 // The API's transaction, for the mock's postings that change many things at once (step 15c: an
 // invoice posts a challan, moves stock, marks lines billed and books the sale, and the credit check
-// comes last). If fn throws, the parts it can change are put back as they were, so a refused
-// posting leaves nothing behind: no number used, no stock moved. Only these parts are copied: the
-// garments catalog alone holds 10,000 products.
+// comes last; step 15d: a return puts stock back and moves its challan and order). If fn throws,
+// the parts it can change are put back as they were, so a refused posting leaves nothing behind:
+// no number used, no stock moved. Only these parts are copied: the garments catalog alone holds
+// 10,000 products.
 export function transaction<T>(data: WorkspaceData, fn: () => T): T {
   const before = structuredClone({
     journal: data.journal,
     stock: data.stock,
     salesDocuments: data.salesDocuments,
     billing: data.billing,
+    returns: data.returns,
     audit: data.audit,
   });
   try {
@@ -292,6 +309,9 @@ function usedNumbers(data: WorkspaceData, documentType: DocumentType, period: st
   if (documentType === 'sales.delivery') return data.salesDocuments.counters.delivery;
   if (documentType === 'sales.invoice') return data.billing.counters.invoice;
   if (documentType === 'sales.receipt') return data.billing.counters.receipt;
+  if (documentType === 'sales.return') return data.returns.counters.salesReturn;
+  if (documentType === 'sales.credit_note') return data.returns.counters.creditNote;
+  if (documentType === 'sales.refund') return data.returns.counters.refund;
   return 0;
 }
 

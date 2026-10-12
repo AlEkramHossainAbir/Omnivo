@@ -77,6 +77,9 @@ export const en = {
     deliveries: 'Deliveries',
     invoices: 'Invoices',
     receipts: 'Money receipts',
+    salesReturns: 'Sales returns',
+    creditNotes: 'Credit notes',
+    refunds: 'Refunds',
   },
   auth: {
     workspace: 'Workspace',
@@ -194,6 +197,15 @@ export const en = {
     pricesIncludeVat: 'Prices include VAT',
     pricesIncludeVatHint:
       'On: the sale prices and price lists you type already hold the VAT, like a printed MRP. Off: VAT is added on top of them.',
+    // The sales returns account (GET/PUT /sales-accounts), a card of its own like the stock accounts
+    salesAccountsTitle: 'Sales accounts',
+    salesAccountsSubtitle: 'Where a credit note takes a sale back in the books',
+    salesReturnsAccount: 'Sales returns account',
+    salesReturnsAccountHint:
+      'An income account, like 4120 Sales returns. The profit and loss then shows what you sold and what came back as two numbers.',
+    salesReturnsAccountNone: 'None: take it off the Sales account itself',
+    salesAccountsSave: 'Save account',
+    salesAccountsSaved: 'Sales returns account saved',
     logoSaved: 'Logo updated',
     logoRemoved: 'Logo removed',
     saved: 'Settings saved',
@@ -217,6 +229,9 @@ export const en = {
         quotation: 'Quotation',
         delivery: 'Delivery challan',
         receipt: 'Money receipt',
+        return: 'Sales return',
+        credit_note: 'Credit note',
+        refund: 'Refund',
       },
       purchase: { order: 'Purchase order', bill: 'Supplier bill' },
       inventory: {
@@ -440,14 +455,20 @@ export const en = {
       sales_delivery: 'Delivery',
       sales_invoice: 'Invoice',
       sales_receipt: 'Money receipt',
+      sales_return: 'Sales return',
+      sales_credit_note: 'Credit note',
+      sales_refund: 'Refund',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
       'A stock document made this entry. To correct it, post another stock document: an adjustment, or a revaluation.',
     invoiceEntryHint:
-      'An invoice made this entry. A posted invoice stays as it is, so the entry is not reversed here.',
+      'An invoice made this entry. A posted invoice stays as it is: to take back part of it, write a credit note on the invoice’s page.',
     receiptEntryHint:
       'A money receipt made this entry. To undo it, void the receipt on its own page.',
+    creditNoteEntryHint:
+      'A credit note made this entry. A posted credit note stays as it is, so the entry is not reversed here.',
+    refundEntryHint: 'A refund made this entry. To undo it, void the refund on its own page.',
     draftSaved: 'Draft saved',
     posted: '{{number}} posted',
     deleted: 'Draft deleted',
@@ -1043,6 +1064,7 @@ export const en = {
       transfer_in: 'Received',
       revaluation: 'Revaluation',
       delivery: 'Delivered',
+      sales_return: 'Came back',
     },
     historyEmpty: 'No movement in these dates.',
   },
@@ -1784,6 +1806,12 @@ export const en = {
     },
     billing: 'Billing',
     invoiceFilters: { to_invoice: 'To invoice', invoiced: 'Invoiced' },
+    // How much of a posted challan came back on posted sales returns (deliveries.ts → returnState)
+    returnStates: {
+      none: 'Nothing came back',
+      partly_returned: 'Partly returned',
+      returned: 'Returned',
+    },
     columns: {
       number: 'Number',
       customer: 'Customer',
@@ -1834,6 +1862,10 @@ export const en = {
     invoicesSubtitle: 'Posted invoices that bill this challan',
     notInvoicedYet: 'Not billed yet.',
     lineInvoiced: 'Invoiced',
+    makeReturn: 'Take goods back',
+    returnsTitle: 'Returns',
+    returnsSubtitle: 'Posted sales returns that brought goods of this challan back',
+    lineReturned: '{{quantity}} came back',
   },
   invoices: {
     title: 'Invoices',
@@ -1849,6 +1881,12 @@ export const en = {
     payment: { unpaid: 'Unpaid', partly_paid: 'Partly paid', paid: 'Paid' },
     overdue: 'Overdue',
     paymentFilters: { open: 'Not paid', overdue: 'Overdue', paid: 'Paid' },
+    // How much posted credit notes took back (invoices.ts → creditStateOf)
+    creditStates: {
+      none: 'Not credited',
+      partly_credited: 'Partly credited',
+      credited: 'Credited',
+    },
     columns: {
       number: 'Number',
       customer: 'Customer',
@@ -1895,6 +1933,7 @@ export const en = {
     fromOrder: 'Service on {{number}}',
     ownLine: 'Delivered by this invoice',
     challanLineHint: 'The item, unit and quantity are the challan’s.',
+    returnedBeforeBilling: '{{quantity}} came back before billing: this bills the rest',
     saveDraft: 'Save draft',
     post: 'Post invoice',
     posting: 'Posting…',
@@ -1922,6 +1961,13 @@ export const en = {
     paymentsSubtitle: 'Money receipts applied to this invoice',
     noPayments: 'Nothing paid yet.',
     recordPayment: 'Record payment',
+    credited: 'Credited',
+    creditNotesTitle: 'Credit notes',
+    creditNotesSubtitle: 'Posted credit notes that take back part of this invoice',
+    noCreditNotes: 'Nothing taken back.',
+    writeCreditNote: 'Write credit note',
+    creditWhole: 'Credit whole invoice',
+    creditWholeDone: 'Draft credit note written for every line. Check it, then post it.',
     notFound: "This invoice doesn't exist, or it was a draft that was deleted.",
     emptyTitle: 'No invoices yet',
     emptyBody:
@@ -1999,7 +2045,9 @@ export const en = {
       'Saving posts it at once: the money goes into the account and comes off what the customer owes.',
     // The receipt's own page
     unappliedNotice:
-      '{{amount}} is not applied to an invoice yet. It counts as an advance until you apply it.',
+      '{{amount}} is not applied to an invoice yet. It counts as an advance until you apply it, or pay it back with a refund.',
+    refunded: 'Paid back',
+    refund: 'Pay back',
     apply: 'Apply money',
     applyDialogTitle: 'Apply {{number}}',
     applySave: 'Save',
@@ -2028,6 +2076,249 @@ export const en = {
       'Record what a customer pays: cash at the counter, a cheque, a bank transfer or a bKash payment.',
     loadFailed: "Couldn't load the money receipts. Refresh the page to try again.",
   },
+  salesReturns: {
+    title: 'Sales returns',
+    description: 'Goods customers sent back, and the warehouse they came back into',
+    new: 'New return',
+    newTitle: 'New sales return',
+    draftTitle: 'Draft return',
+    back: 'Sales returns',
+    show: 'Show',
+    all: 'All',
+    statuses: { draft: 'Draft', posted: 'Posted' },
+    // Why the goods came back (sales-returns.ts → RETURN_REASONS). It decides nothing in the books.
+    reasons: {
+      damaged: 'Damaged',
+      expired: 'Expired',
+      wrong_item: 'Wrong item sent',
+      quality: 'Quality problem',
+      unsold: 'Did not sell',
+      other: 'Other',
+    },
+    columns: {
+      number: 'Number',
+      customer: 'Customer',
+      reason: 'Reason',
+      warehouse: 'Warehouse',
+      lines: 'Items',
+      status: 'Status',
+    },
+    customer: 'Customer',
+    date: 'Date',
+    warehouse: 'Back into warehouse',
+    warehouseHint:
+      'Every item comes back into this warehouse. Pick a damage or expiry store for goods that cannot be sold again.',
+    reason: 'Reason',
+    note: 'Note',
+    notePlaceholder:
+      '10 bottles of cough syrup that expired in September, sent back by the pharmacy.',
+    // Where each line comes from
+    addChallans: 'Add from challans',
+    challanPickerTitle: 'Take back from challans',
+    challanPickerDescription:
+      'Posted challans of this customer with goods that can still come back. Each click adds the challan’s lines; lower each quantity to what came back.',
+    challanPickerEmpty: 'Nothing delivered to this customer can still come back.',
+    pickCustomerFirst: 'Pick the customer first.',
+    fromChallan: 'From {{number}}',
+    leftToReturn: '{{quantity}} can still come back',
+    challanLineHint: 'The item and the batch are the challan’s.',
+    ownLine: 'Not from a challan: it comes back at the average cost',
+    saveDraft: 'Save draft',
+    post: 'Post return',
+    posting: 'Posting…',
+    posted: '{{number}} posted',
+    draftSaved: 'Draft saved',
+    deleteDraft: 'Delete draft',
+    confirmDelete: 'Delete this draft',
+    deleteWarning: 'A deleted draft cannot be brought back.',
+    deleted: 'Draft deleted',
+    postHint:
+      'Posting puts the goods back into stock and takes their cost off the cost of goods sold. It moves no money: to give the customer money back, write a credit note.',
+    cantWrite:
+      'You can view sales returns. Ask a workspace owner for the sales.return.manage permission to write and post them.',
+    postedOn: 'Posted {{date}}',
+    entry: 'Journal entry',
+    noEntry: 'No journal entry: the goods had no cost in the books',
+    // The return's own page
+    challansTitle: 'Challans',
+    challansSubtitle: 'The deliveries these goods left on',
+    lineBilled: 'Billed on {{number}}',
+    lineNotBilled: 'Not billed yet: the invoice bills less',
+    lineCredited: '{{quantity}} credited',
+    creditNotice:
+      'Some of these goods were billed already. Write a credit note to give the customer the money back.',
+    makeCreditNote: 'Write credit note',
+    creditNotesTitle: 'Credit notes',
+    creditNotesSubtitle: 'Credit notes that give the money back for these goods',
+    noCreditNotes: 'No credit note yet.',
+    notFound: "This return doesn't exist, or it was a draft that was deleted.",
+    emptyTitle: 'No sales returns yet',
+    emptyBody:
+      'Take back goods a customer sent back from the challan they left on, like expired strips from a pharmacy or cartons damaged on the way to a depot.',
+    loadFailed: "Couldn't load the sales returns. Refresh the page to try again.",
+  },
+  creditNotes: {
+    title: 'Credit notes',
+    description: 'Sales taken back: goods that came back, price cuts and billing mistakes',
+    new: 'New credit note',
+    newTitle: 'New credit note',
+    draftTitle: 'Draft credit note',
+    back: 'Credit notes',
+    show: 'Show',
+    all: 'All',
+    statuses: { draft: 'Draft', posted: 'Posted' },
+    // Why it was written (credit-notes.ts → CREDIT_NOTE_REASONS)
+    reasons: {
+      goods_returned: 'Goods came back',
+      price_adjustment: 'Price cut',
+      billing_error: 'Billing mistake',
+      other: 'Other',
+    },
+    columns: {
+      number: 'Number',
+      customer: 'Customer',
+      invoice: 'Invoice',
+      total: 'Total',
+      unapplied: 'Not applied',
+      status: 'Status',
+    },
+    customer: 'Customer',
+    invoice: 'Invoice',
+    invoicePlaceholder: 'Pick a posted invoice',
+    invoiceOption: '{{number}} · {{date}} · {{total}}',
+    invoiceHint: 'It takes back lines of this invoice, at the VAT the invoice charged.',
+    invoiceLocked: 'Remove the lines to pick another invoice or customer.',
+    noInvoices: 'This customer has no posted invoice.',
+    pickCustomerFirst: 'Pick the customer first.',
+    customerArchived:
+      'This customer is archived. Restore them on their page, then post the credit note.',
+    date: 'Date',
+    reason: 'Reason',
+    note: 'Note',
+    notePlaceholder: 'Price cut of ৳2 a strip, agreed with the pharmacy for the September order.',
+    lateNotice:
+      '{{number}} is dated {{date}}, more than 6 months before this credit note. VAT law lowers output VAT only within 6 months of the sale: check with your VAT adviser before you post it.',
+    // Where each line comes from
+    addInvoiceLines: 'Add invoice lines',
+    invoiceLinePickerTitle: 'Take back invoice lines',
+    invoiceLinePickerDescription:
+      'Each click adds the line as it was billed; lower it to what is taken back. For a price cut, keep the quantity and type the cut per unit as the price.',
+    invoiceLinePickerEmpty: 'Every line of this invoice is taken back in full.',
+    addReturns: 'Add returned goods',
+    returnPickerTitle: 'Give money back for returns',
+    returnPickerDescription:
+      'Goods of this invoice that came back on a posted return and are not credited yet. Each click adds them at the invoice’s price.',
+    returnPickerEmpty: 'No goods of this invoice came back, or they are all credited.',
+    pickInvoiceFirst: 'Pick the invoice first.',
+    fromInvoiceLine: 'Line {{number}} of the invoice',
+    fromReturn: 'Goods back on {{number}}',
+    leftToCredit: '{{amount}} of this line can still be taken back',
+    saveDraft: 'Save draft',
+    post: 'Post credit note',
+    posting: 'Posting…',
+    posted: '{{number}} posted',
+    draftSaved: 'Draft saved',
+    deleteDraft: 'Delete draft',
+    confirmDelete: 'Delete this draft',
+    deleteWarning: 'A deleted draft cannot be brought back.',
+    deleted: 'Draft deleted',
+    postHint:
+      'Posting gives it a number and takes the sale back in the books: the sale, its VAT and what the customer owes. Its money pays the invoice first; the rest stays as the customer’s advance. A posted credit note never changes.',
+    cantWrite:
+      'You can view credit notes. Ask a workspace owner for the sales.credit_note.manage permission to write and post them.',
+    postedOn: 'Posted {{date}}',
+    entry: 'Journal entry',
+    noEntry: 'No journal entry: nothing is taken back on this credit note',
+    // The credit note's own page
+    applied: 'Applied',
+    refunded: 'Paid back',
+    unappliedNotice:
+      '{{amount}} is not applied to an invoice yet. Apply it to another invoice of the customer, or pay it back with a refund.',
+    apply: 'Apply money',
+    applyDialogTitle: 'Apply {{number}}',
+    allocated: '{{number}} applied',
+    refund: 'Pay back',
+    invoicesTitle: 'Invoices paid',
+    noAllocations: 'Not applied to any invoice.',
+    notFound: "This credit note doesn't exist, or it was a draft that was deleted.",
+    emptyTitle: 'No credit notes yet',
+    emptyBody:
+      'Write one from a posted invoice: for goods a customer sent back, or a price cut agreed after the sale.',
+    loadFailed: "Couldn't load the credit notes. Refresh the page to try again.",
+  },
+  refunds: {
+    title: 'Refunds',
+    description: 'Money paid back to customers',
+    new: 'Pay money back',
+    newTitle: 'Pay money back',
+    back: 'Refunds',
+    show: 'Show',
+    all: 'All',
+    statuses: { posted: 'Posted', voided: 'Voided' },
+    // Where the money it pays back came from (refunds.ts → REFUND_SOURCE_TYPES)
+    sources: { receipt: 'Money receipt', credit_note: 'Credit note' },
+    columns: {
+      number: 'Number',
+      customer: 'Customer',
+      source: 'Paid back from',
+      method: 'Paid by',
+      amount: 'Amount',
+      status: 'Status',
+    },
+    customer: 'Customer',
+    date: 'Date',
+    source: 'Pay back from',
+    sourcePlaceholder: 'Pick a receipt or a credit note',
+    sourceHint: 'A money receipt or a credit note with money that is not applied to an invoice',
+    sourceOption: '{{number}} · {{amount}} left',
+    pickCustomer: 'Pick the customer to see what can be paid back.',
+    noSources: 'This customer has no advance to pay back.',
+    amount: 'Amount',
+    amountHint: 'Up to {{amount}}, what is left of {{number}}',
+    account: 'Paid from',
+    accountHint: 'A cash, bank or mobile wallet account',
+    accountPlaceholder: 'Pick an account',
+    method: 'Paid by',
+    reference: 'Reference',
+    // An example for each method, the way the payment out is written down
+    referencePlaceholders: {
+      cash: 'Handed to the shop owner at the Agrabad counter',
+      bank_transfer: 'DBBL transfer ref 2026101112345',
+      cheque: 'Cheque 0045188, Sonali Bank Motijheel',
+      mobile_wallet: 'bKash TrxID 9JK3L2M8NQ',
+      card: 'Refund to the card ending 4821',
+    },
+    branch: 'Branch',
+    note: 'Note',
+    notePlaceholder: 'Advance paid back: the October order was cancelled.',
+    save: 'Save refund',
+    saving: 'Saving…',
+    saved: '{{number}} saved',
+    saveHint:
+      'Saving posts it at once: the money leaves the account, and the customer’s advance goes down.',
+    // The refund's own page
+    void: 'Void refund',
+    voidTitle: 'Void {{number}}',
+    voidBody:
+      'Its entry is reversed on the void date, and the money is the customer’s advance again. The refund stays in the list with its number.',
+    voidDate: 'Void date',
+    voidDateHint: 'The day it turned out the money never reached the customer.',
+    voidReason: 'Reason',
+    voidReasonPlaceholder: 'The cheque came back uncashed',
+    confirmVoid: 'Void refund',
+    keepRefund: 'Keep the refund',
+    voided: '{{number}} voided',
+    voidedNotice: 'Voided on {{date}}: {{reason}}',
+    entry: 'Journal entry',
+    voidEntry: 'Reversal',
+    cantWrite:
+      'You can view refunds. Ask a workspace owner for the sales.refund.manage permission to pay money back.',
+    notFound: "This refund doesn't exist.",
+    emptyTitle: 'No refunds yet',
+    emptyBody:
+      'Pay back a customer’s advance from its money receipt or credit note, like the money for a cancelled order.',
+    loadFailed: "Couldn't load the refunds. Refresh the page to try again.",
+  },
   // The dialog that asks before an order or an invoice goes over the customer's credit limit
   creditLimit: {
     title: 'Over the credit limit',
@@ -2047,6 +2338,9 @@ export const en = {
       delivery: 'Delivery challan',
       invoice: 'Invoice',
       receipt: 'Money receipt',
+      salesReturn: 'Sales return',
+      creditNote: 'Credit note',
+      refund: 'Refund',
     },
     bin: 'BIN {{bin}}',
     phone: 'Phone {{phone}}',
@@ -2079,6 +2373,13 @@ export const en = {
     reference: 'Reference',
     appliedTo: 'Applied to',
     advance: 'Kept as an advance',
+    originalInvoice: 'Original invoice',
+    invoiceDate: 'Invoice date',
+    reason: 'Reason',
+    challan: 'Challan',
+    paidTo: 'Paid to',
+    amountPaidBack: 'Amount paid back',
+    paidBackFrom: 'Paid back from',
     signatures: {
       customer: 'Customer’s signature',
       receivedBy: 'Received by',
@@ -2262,6 +2563,9 @@ export const en = {
       invoice: { manage: 'Write and post invoices' },
       receipt: { manage: 'Record money receipts, apply them to invoices and void them' },
       credit: { override: 'Confirm orders and post invoices over a customer’s credit limit' },
+      return: { manage: 'Write and post sales returns: goods come back into a warehouse' },
+      credit_note: { manage: 'Write and post credit notes, and apply them to invoices' },
+      refund: { manage: 'Pay money back to customers, and void refunds' },
     },
   },
   invite: {
@@ -2318,6 +2622,9 @@ export const en = {
       delivery: 'Deliveries',
       invoice: 'Invoices',
       receipt: 'Money receipts',
+      sales_return: 'Sales returns',
+      credit_note: 'Credit notes',
+      refund: 'Refunds',
     },
     columns: {
       when: 'When',
@@ -2495,6 +2802,24 @@ export const en = {
         voided: 'Voided a money receipt',
       },
       credit_limit: { overridden: 'Went over a customer’s credit limit' },
+      sales_return: {
+        created: 'Wrote a sales return',
+        updated: 'Edited a draft return',
+        deleted: 'Deleted a draft return',
+        posted: 'Posted a sales return',
+      },
+      credit_note: {
+        created: 'Wrote a credit note',
+        updated: 'Edited a draft credit note',
+        deleted: 'Deleted a draft credit note',
+        posted: 'Posted a credit note',
+        allocated: 'Applied a credit note to invoices',
+      },
+      refund: {
+        created: 'Paid money back to a customer',
+        voided: 'Voided a refund',
+      },
+      sales_accounts: { changed: 'Changed the sales returns account' },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -2596,6 +2921,10 @@ export const en = {
       invoices: 'Invoices',
       limit: 'Credit limit',
       exposure: 'Owed with orders',
+      invoice: 'Invoice',
+      applied: 'Applied',
+      source: 'Paid back from',
+      returns: 'Sales returns account',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -3008,15 +3337,61 @@ export const en = {
       'This is more than the invoice still owes. Another receipt may have paid it: reload and lower the amount.',
     receipt_voided: 'This receipt is voided and can no longer change. Reload the page.',
     receipt_void_reason_required: 'Say why it is voided, like "Cheque bounced".',
-    receipt_void_date: 'The void date cannot be before the receipt’s date.',
+    receipt_void_date: 'The void date cannot be before the day the money was paid.',
     credit_limit_exceeded:
       'This takes the customer to {{exposure}}, over their credit limit of {{limit}}. Record a payment first, or ask someone who may go over the limit.',
     credit_override_forbidden:
       'Going over a credit limit needs the {{permissions}} permission. Ask a workspace owner to grant it.',
     journal_is_sales:
-      'An invoice or a money receipt made this entry, so it is not reversed here. Void a receipt on its own page.',
+      'A sales document made this entry, so it is not reversed here. Void a receipt or a refund on its own page; take back an invoice with a credit note.',
     account_money_type:
       'Only an asset account can hold money. Clear the tick, or move the account under an asset group.',
+    return_delivery_line_invalid:
+      'This challan line is not a posted line of this customer, or its item changed. Remove it and add it again from the challan.',
+    return_line_twice: 'This challan line is on the return twice. Put what came back on one line.',
+    return_batch_not_allowed:
+      'Goods from a challan come back in the challan’s own batch. Clear the batch.',
+    return_serial_invalid:
+      'One of these serial numbers did not leave on this challan line, or it came back already. Enter the numbers on the goods that came back.',
+    return_over_delivered:
+      'This is more than can still come back from this challan line. Another return may have taken some back: reload and lower the quantity.',
+    return_cost_unknown:
+      'This item has no cost in the books yet, so it cannot come back on its own. Take it back from its challan, or enter its opening stock first.',
+    credit_note_invoice_required: 'Pick the invoice this credit note takes back.',
+    credit_note_invoice_invalid: 'Pick a posted invoice. A draft has nothing to take back yet.',
+    credit_note_date: 'A credit note cannot be dated before its invoice.',
+    credit_note_line_invalid:
+      'This line is not a line of the chosen invoice. Remove it and add it again from the invoice.',
+    credit_note_over_quantity: 'This is more than the invoice line billed. Lower the quantity.',
+    credit_note_over_line:
+      'This takes back more than is left on the invoice line. Lower the price or the quantity; if another credit note took some back, reload to see what is left.',
+    credit_note_return_invalid: 'Pick a posted return of goods that this invoice line billed.',
+    credit_note_return_twice:
+      'These returned goods are on the credit note twice. Remove one of the lines.',
+    credit_note_over_return:
+      'This is more than came back on the return, less what is credited already. Lower the quantity.',
+    credit_note_not_posted: 'Post the credit note before you apply its money.',
+    credit_note_amount_required: 'Enter an amount above 0.',
+    credit_note_allocation_invalid: 'Pick a posted invoice of this customer.',
+    credit_note_invoice_twice: 'This invoice is on the list twice. Remove one of them.',
+    credit_note_over_allocated:
+      'This applies more than the credit note has left. Lower the amounts on the invoices.',
+    credit_note_over_invoice:
+      'This is more than the invoice still owes. A receipt or another credit note may have paid it: reload and lower the amount.',
+    refund_amount_required: 'Enter the amount paid back, above 0.',
+    refund_account_invalid:
+      'Pick an active account that holds money, like Cash in hand or a bank account.',
+    refund_source: 'Pick the money receipt or the credit note this money is paid back from.',
+    refund_source_invalid: 'Pick a posted money receipt or credit note of this customer.',
+    refund_over_source:
+      'This is more than is left to pay back from it. Another refund or an invoice may have used some: reload and lower the amount.',
+    refund_voided: 'This refund is voided and can no longer change. Reload the page.',
+    receipt_has_refunds:
+      'Some of this money was paid back to the customer. Void the refund first, then the receipt.',
+    sales_account_invalid:
+      'The sales returns account must be an active income account, not a group. Pick another one in Settings → Sales.',
+    account_used_by_sales:
+      'Credit notes post to this account. Choose another sales returns account in Settings → Sales first.',
     import_options_without_code:
       'Give rows with options a code: rows with the same code are one product.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',

@@ -10,6 +10,9 @@ import {
   customerPageSchema,
   customerCreditSchema,
   customerSchema,
+  type CreditNote,
+  creditNotePageSchema,
+  creditNoteSchema,
   type Delivery,
   deliveryPageSchema,
   deliverySchema,
@@ -29,9 +32,16 @@ import {
   type Receipt,
   receiptPageSchema,
   receiptSchema,
+  type Refund,
+  refundPageSchema,
+  refundSchema,
+  salesAccountsSchema,
   type SalesOrder,
   salesOrderPageSchema,
   salesOrderSchema,
+  type SalesReturn,
+  salesReturnPageSchema,
+  salesReturnSchema,
   setupSchema,
   type TaxRate,
   taxRateListSchema,
@@ -966,5 +976,554 @@ describe('invoice and receipt isolation over HTTP', () => {
     );
     expect(receipt.statusCode, receipt.body).toBe(201);
     expect(receiptSchema.parse(receipt.json()).number).toBe(receiptOfB.number);
+  });
+});
+
+describe('return, credit note and refund isolation over HTTP', () => {
+  let customerOfA: Customer;
+  let goodsOfA: Product;
+  let serviceOfA: Product;
+  let warehouseOfA: Warehouse;
+  let rateOfA: string;
+  let invoiceOfA: Invoice;
+  let invoiceOfB: Invoice;
+  let challanOfB: Delivery;
+  let returnOfB: SalesReturn;
+  let draftReturnOfB: SalesReturn;
+  let noteOfB: CreditNote;
+  let draftNoteOfB: CreditNote;
+  let receiptOfB: Receipt;
+  let refundOfB: Refund;
+  let cashOfB: string;
+  let salesOfB: string;
+
+  function opening(product: Product, warehouseId: string) {
+    return {
+      date: '2026-10-01',
+      warehouseId,
+      direction: 'in',
+      reason: 'opening',
+      note: '',
+      post: true,
+      lines: [
+        {
+          variantId: product.variants[0]?.id,
+          unitId: product.baseUnitId,
+          quantity: '50',
+          batchId: '',
+          lotNumber: '',
+          expiresOn: '',
+          manufacturedOn: '',
+          serialNumbers: [],
+          unitCost: '20',
+        },
+      ],
+    };
+  }
+
+  function returnBody(customerId: string, warehouseId: string, line: object, extra: object = {}) {
+    return {
+      customerId,
+      date: '2026-10-06',
+      warehouseId,
+      reason: 'damaged',
+      note: '',
+      lines: [line],
+      post: true,
+      ...extra,
+    };
+  }
+
+  function returnLine(product: Product, extra: object = {}) {
+    return {
+      variantId: product.variants[0]?.id,
+      unitId: product.baseUnitId,
+      quantity: '1',
+      batchId: '',
+      serialNumbers: [],
+      deliveryLineId: '',
+      ...extra,
+    };
+  }
+
+  function invoiceBody(customerId: string, branchId: string, line: object) {
+    return {
+      customerId,
+      date: '2026-10-06',
+      dueDate: '',
+      customerReference: '',
+      branchId,
+      warehouseId: '',
+      note: '',
+      lines: [line],
+      post: true,
+    };
+  }
+
+  function serviceLine(product: Product, taxRateId: string) {
+    return {
+      variantId: product.variants[0]?.id,
+      unitId: product.baseUnitId,
+      quantity: '1',
+      description: '',
+      unitPrice: '500',
+      discountType: 'percent',
+      discount: '',
+      taxRateId,
+      deliveryLineId: '',
+      orderLineId: '',
+      batchId: '',
+      serialNumbers: [],
+    };
+  }
+
+  function creditBody(invoiceId: string, invoiceLineId: string, extra: object = {}) {
+    return {
+      invoiceId,
+      date: '2026-10-07',
+      reason: 'price_adjustment',
+      note: '',
+      lines: [
+        {
+          invoiceLineId,
+          returnLineId: '',
+          unitId: '',
+          quantity: '1',
+          description: '',
+          unitPrice: '100',
+          discountType: 'percent',
+          discount: '',
+        },
+      ],
+      post: true,
+      ...extra,
+    };
+  }
+
+  function receiptBody(customerId: string, accountId: string, branchId: string) {
+    return {
+      customerId,
+      date: '2026-10-07',
+      amount: '50',
+      accountId,
+      method: 'cash',
+      reference: '',
+      branchId,
+      note: '',
+      allocations: [],
+    };
+  }
+
+  function refundBody(customerId: string, accountId: string, branchId: string, source: object) {
+    return {
+      customerId,
+      date: '2026-10-08',
+      amount: '20',
+      accountId,
+      method: 'cash',
+      reference: '',
+      branchId,
+      note: '',
+      receiptId: '',
+      creditNoteId: '',
+      ...source,
+    };
+  }
+
+  async function made<T>(pending: ReturnType<typeof as>, schema: { parse: (v: unknown) => T }) {
+    const res = await pending;
+    expect(res.statusCode, res.body).toBe(201);
+    return schema.parse(res.json());
+  }
+
+  beforeAll(async () => {
+    // B: stock of its juice, a challan of 10, a posted return of 2 and a draft one; an invoice
+    // for a loading charge with a posted credit note and a draft one; an advance of ৳50 by a
+    // receipt, of which ৳20 is paid back
+    expect(
+      (await as(tenantB, 'POST', '/stock-adjustments', opening(productOfB, warehouseOfB.id)))
+        .statusCode,
+    ).toBe(201);
+    challanOfB = await made(
+      as(tenantB, 'POST', '/deliveries', {
+        customerId: customerOfB.id,
+        orderId: '',
+        date: '2026-10-05',
+        warehouseId: warehouseOfB.id,
+        shippingAddressId: '',
+        vehicle: '',
+        note: '',
+        lines: [
+          {
+            variantId: productOfB.variants[0]?.id,
+            unitId: productOfB.baseUnitId,
+            quantity: '10',
+            batchId: '',
+            serialNumbers: [],
+            orderLineId: '',
+          },
+        ],
+        post: true,
+      }),
+      deliverySchema,
+    );
+    const fromChallan = returnLine(productOfB, { deliveryLineId: challanOfB.lines[0]?.id });
+    returnOfB = await made(
+      as(
+        tenantB,
+        'POST',
+        '/sales-returns',
+        returnBody(customerOfB.id, warehouseOfB.id, { ...fromChallan, quantity: '2' }),
+      ),
+      salesReturnSchema,
+    );
+    draftReturnOfB = await made(
+      as(
+        tenantB,
+        'POST',
+        '/sales-returns',
+        returnBody(customerOfB.id, warehouseOfB.id, fromChallan, { post: false }),
+      ),
+      salesReturnSchema,
+    );
+    const unitsOfB = unitListSchema.parse((await as(tenantB, 'GET', '/units')).json()).items;
+    const loading = await made(
+      as(
+        tenantB,
+        'POST',
+        '/products',
+        productForm('Loading charge', unitsOfB, { type: 'service' }),
+      ),
+      productSchema,
+    );
+    invoiceOfB = await made(
+      as(
+        tenantB,
+        'POST',
+        '/invoices',
+        invoiceBody(customerOfB.id, warehouseOfB.branchId, serviceLine(loading, rateOfB.id)),
+      ),
+      invoiceSchema,
+    );
+    const lineOfB = invoiceOfB.lines[0]?.id ?? '';
+    noteOfB = await made(
+      as(
+        tenantB,
+        'POST',
+        '/credit-notes',
+        creditBody(invoiceOfB.id, lineOfB, {
+          lines: [{ ...creditBody('', lineOfB).lines[0], unitId: loading.baseUnitId }],
+        }),
+      ),
+      creditNoteSchema,
+    );
+    draftNoteOfB = await made(
+      as(
+        tenantB,
+        'POST',
+        '/credit-notes',
+        creditBody(invoiceOfB.id, lineOfB, {
+          lines: [{ ...creditBody('', lineOfB).lines[0], unitId: loading.baseUnitId }],
+          post: false,
+        }),
+      ),
+      creditNoteSchema,
+    );
+    const accountsOfB = accountListSchema.parse(
+      (await as(tenantB, 'GET', '/accounts')).json(),
+    ).items;
+    cashOfB = accountsOfB.find((account) => account.purpose === 'cash')?.id ?? '';
+    salesOfB = accountsOfB.find((account) => account.purpose === 'sales')?.id ?? '';
+    receiptOfB = await made(
+      as(tenantB, 'POST', '/receipts', receiptBody(customerOfB.id, cashOfB, warehouseOfB.branchId)),
+      receiptSchema,
+    );
+    refundOfB = await made(
+      as(
+        tenantB,
+        'POST',
+        '/refunds',
+        refundBody(customerOfB.id, cashOfB, warehouseOfB.branchId, { receiptId: receiptOfB.id }),
+      ),
+      refundSchema,
+    );
+    // Paid back in part: a new version. A's attempts below send B's current ones.
+    receiptOfB = receiptSchema.parse(
+      (await as(tenantB, 'GET', `/receipts/${receiptOfB.id}`)).json(),
+    );
+
+    // A: its own customer, goods in stock, a service, a warehouse, a VAT rate and a posted invoice
+    customerOfA = customerSchema.parse(
+      (await as(tenantA, 'POST', '/customers', customerForm('Nordic Kids Wear AB'))).json(),
+    );
+    goodsOfA = await made(
+      as(tenantA, 'POST', '/products', productForm('Rib knit cardigan', unitsOfA)),
+      productSchema,
+    );
+    serviceOfA = await made(
+      as(
+        tenantA,
+        'POST',
+        '/products',
+        productForm('Lab dip charge', unitsOfA, { type: 'service' }),
+      ),
+      productSchema,
+    );
+    const [own] = warehouseListSchema.parse((await as(tenantA, 'GET', '/warehouses')).json()).items;
+    if (!own) throw new Error('A has no warehouse');
+    warehouseOfA = own;
+    expect(
+      (await as(tenantA, 'POST', '/stock-adjustments', opening(goodsOfA, warehouseOfA.id)))
+        .statusCode,
+    ).toBe(201);
+    const rates = taxRateListSchema.parse((await as(tenantA, 'GET', '/tax-rates')).json()).items;
+    rateOfA = rates.find((rate) => rate.isDefault)?.id ?? '';
+    invoiceOfA = await made(
+      as(
+        tenantA,
+        'POST',
+        '/invoices',
+        invoiceBody(customerOfA.id, warehouseOfA.branchId, serviceLine(serviceOfA, rateOfA)),
+      ),
+      invoiceSchema,
+    );
+  });
+
+  it("never lists or reads B's returns, credit notes, refunds or setting", async () => {
+    for (const url of [
+      '/sales-returns',
+      `/sales-returns?customerId=${customerOfB.id}`,
+      '/credit-notes',
+      `/credit-notes?invoiceId=${invoiceOfB.id}`,
+      '/refunds',
+      `/refunds?customerId=${customerOfB.id}`,
+    ]) {
+      const page: unknown = (await as(tenantA, 'GET', url)).json();
+      const items = url.startsWith('/sales-returns')
+        ? salesReturnPageSchema.parse(page).items
+        : url.startsWith('/credit-notes')
+          ? creditNotePageSchema.parse(page).items
+          : refundPageSchema.parse(page).items;
+      expect(items, url).toEqual([]);
+    }
+    for (const url of [
+      `/sales-returns/${returnOfB.id}`,
+      `/sales-returns/${draftReturnOfB.id}`,
+      `/credit-notes/${noteOfB.id}`,
+      `/credit-notes/${draftNoteOfB.id}`,
+      `/refunds/${refundOfB.id}`,
+    ]) {
+      expect((await as(tenantA, 'GET', url)).statusCode, url).toBe(404);
+    }
+  });
+
+  it('cannot change, post, delete, apply or void any of them', async () => {
+    const attempts = [
+      as(tenantA, 'PUT', `/sales-returns/${draftReturnOfB.id}`, {
+        ...returnBody(customerOfA.id, warehouseOfA.id, returnLine(goodsOfA)),
+        version: draftReturnOfB.version,
+      }),
+      as(tenantA, 'POST', `/sales-returns/${draftReturnOfB.id}/post`, {
+        version: draftReturnOfB.version,
+      }),
+      as(
+        tenantA,
+        'DELETE',
+        `/sales-returns/${draftReturnOfB.id}?version=${String(draftReturnOfB.version)}`,
+      ),
+      // A valid form of A's own: a 400 from the contract would never reach the tenant check
+      as(tenantA, 'PUT', `/credit-notes/${draftNoteOfB.id}`, {
+        ...creditBody(invoiceOfA.id, invoiceOfA.lines[0]?.id ?? '', {
+          lines: [
+            {
+              ...creditBody('', invoiceOfA.lines[0]?.id ?? '').lines[0],
+              unitId: serviceOfA.baseUnitId,
+            },
+          ],
+        }),
+        version: draftNoteOfB.version,
+      }),
+      as(tenantA, 'POST', `/credit-notes/${draftNoteOfB.id}/post`, {
+        version: draftNoteOfB.version,
+      }),
+      as(
+        tenantA,
+        'DELETE',
+        `/credit-notes/${draftNoteOfB.id}?version=${String(draftNoteOfB.version)}`,
+      ),
+      as(tenantA, 'PUT', `/credit-notes/${noteOfB.id}/allocations`, {
+        version: noteOfB.version,
+        allocations: [],
+      }),
+      as(tenantA, 'POST', `/refunds/${refundOfB.id}/void`, {
+        version: refundOfB.version,
+        date: '2026-10-09',
+        reason: 'Taken over',
+      }),
+    ];
+    for (const res of await Promise.all(attempts)) expect(res.statusCode, res.body).toBe(404);
+
+    const returnNow = salesReturnSchema.parse(
+      (await as(tenantB, 'GET', `/sales-returns/${draftReturnOfB.id}`)).json(),
+    );
+    expect(returnNow).toMatchObject({ status: 'draft', version: draftReturnOfB.version });
+    const draftNow = creditNoteSchema.parse(
+      (await as(tenantB, 'GET', `/credit-notes/${draftNoteOfB.id}`)).json(),
+    );
+    expect(draftNow).toMatchObject({ status: 'draft', version: draftNoteOfB.version });
+    const noteNow = creditNoteSchema.parse(
+      (await as(tenantB, 'GET', `/credit-notes/${noteOfB.id}`)).json(),
+    );
+    expect(noteNow).toMatchObject({ applied: noteOfB.applied, version: noteOfB.version });
+    const refundNow = refundSchema.parse(
+      (await as(tenantB, 'GET', `/refunds/${refundOfB.id}`)).json(),
+    );
+    expect(refundNow).toMatchObject({ status: 'posted', version: refundOfB.version });
+  });
+
+  it("cannot take back, credit or pay back with B's customer, challan, invoice, receipt or accounts", async () => {
+    const forB = await as(
+      tenantA,
+      'POST',
+      '/sales-returns',
+      returnBody(customerOfB.id, warehouseOfA.id, returnLine(goodsOfA)),
+    );
+    expect(problemOf(forB).fieldErrors).toEqual({ customerId: ['sales_customer_invalid'] });
+    const intoB = await as(
+      tenantA,
+      'POST',
+      '/sales-returns',
+      returnBody(customerOfA.id, warehouseOfB.id, returnLine(goodsOfA)),
+    );
+    expect(problemOf(intoB).fieldErrors).toEqual({ warehouseId: ['stock_warehouse_invalid'] });
+    const fromChallanOfB = await as(
+      tenantA,
+      'POST',
+      '/sales-returns',
+      returnBody(
+        customerOfA.id,
+        warehouseOfA.id,
+        returnLine(goodsOfA, { deliveryLineId: challanOfB.lines[0]?.id }),
+      ),
+    );
+    expect(problemOf(fromChallanOfB).fieldErrors).toEqual({
+      'lines.0.deliveryLineId': ['return_delivery_line_invalid'],
+    });
+
+    const lineOfA = invoiceOfA.lines[0]?.id ?? '';
+    const withUnit = (body: ReturnType<typeof creditBody>, extra: object) => ({
+      ...body,
+      lines: [{ ...body.lines[0], unitId: serviceOfA.baseUnitId, ...extra }],
+    });
+    const invoiceOfBForA = await as(
+      tenantA,
+      'POST',
+      '/credit-notes',
+      withUnit(creditBody(invoiceOfB.id, lineOfA), {}),
+    );
+    expect(problemOf(invoiceOfBForA).fieldErrors).toEqual({
+      invoiceId: ['credit_note_invoice_invalid'],
+    });
+    const lineOfB = await as(
+      tenantA,
+      'POST',
+      '/credit-notes',
+      withUnit(creditBody(invoiceOfA.id, lineOfA), { invoiceLineId: invoiceOfB.lines[0]?.id }),
+    );
+    expect(problemOf(lineOfB).fieldErrors).toEqual({
+      'lines.0.invoiceLineId': ['credit_note_line_invalid'],
+    });
+    const returnLineOfB = await as(
+      tenantA,
+      'POST',
+      '/credit-notes',
+      withUnit(creditBody(invoiceOfA.id, lineOfA), { returnLineId: returnOfB.lines[0]?.id }),
+    );
+    expect(problemOf(returnLineOfB).fieldErrors).toEqual({
+      'lines.0.returnLineId': ['credit_note_return_invalid'],
+    });
+    // A's own credit note, applied to B's invoice
+    const own = await made(
+      as(tenantA, 'POST', '/credit-notes', withUnit(creditBody(invoiceOfA.id, lineOfA), {})),
+      creditNoteSchema,
+    );
+    const applyToB = await as(tenantA, 'PUT', `/credit-notes/${own.id}/allocations`, {
+      version: own.version,
+      allocations: [{ invoiceId: invoiceOfB.id, amount: '10' }],
+    });
+    expect(problemOf(applyToB).fieldErrors).toEqual({
+      'allocations.0.invoiceId': ['credit_note_allocation_invalid'],
+    });
+
+    const cashOfA = accountOfA('1110');
+    const fromReceiptOfB = await as(
+      tenantA,
+      'POST',
+      '/refunds',
+      refundBody(customerOfA.id, cashOfA, warehouseOfA.branchId, { receiptId: receiptOfB.id }),
+    );
+    expect(problemOf(fromReceiptOfB).fieldErrors).toEqual({ receiptId: ['refund_source_invalid'] });
+    const fromNoteOfB = await as(
+      tenantA,
+      'POST',
+      '/refunds',
+      refundBody(customerOfA.id, cashOfA, warehouseOfA.branchId, { creditNoteId: noteOfB.id }),
+    );
+    expect(problemOf(fromNoteOfB).fieldErrors).toEqual({ creditNoteId: ['refund_source_invalid'] });
+    const outOfCashOfB = await as(
+      tenantA,
+      'POST',
+      '/refunds',
+      refundBody(customerOfA.id, cashOfB, warehouseOfA.branchId, { creditNoteId: own.id }),
+    );
+    expect(problemOf(outOfCashOfB).fieldErrors).toEqual({ accountId: ['refund_account_invalid'] });
+
+    const settingOfB = await as(tenantA, 'PUT', '/sales-accounts', { returns: salesOfB });
+    expect(problemOf(settingOfB).fieldErrors).toEqual({ returns: ['sales_account_invalid'] });
+    for (const who of [tenantA, tenantB]) {
+      const setting = salesAccountsSchema.parse((await as(who, 'GET', '/sales-accounts')).json());
+      expect(setting.returns).toBeNull();
+    }
+    // B's money is as B left it
+    const receiptNow = receiptSchema.parse(
+      (await as(tenantB, 'GET', `/receipts/${receiptOfB.id}`)).json(),
+    );
+    expect(receiptNow).toMatchObject({ refunded: '20.0000', version: receiptOfB.version });
+  });
+
+  it('numbers its returns, credit notes and refunds on its own', async () => {
+    const back = await made(
+      as(
+        tenantA,
+        'POST',
+        '/sales-returns',
+        returnBody(customerOfA.id, warehouseOfA.id, returnLine(goodsOfA)),
+      ),
+      salesReturnSchema,
+    );
+    expect(back.number).toBe(returnOfB.number);
+    const notes = creditNotePageSchema.parse((await as(tenantA, 'GET', '/credit-notes')).json());
+    expect(notes.items.map((item) => item.number)).toEqual([noteOfB.number]);
+    const receipt = await made(
+      as(
+        tenantA,
+        'POST',
+        '/receipts',
+        receiptBody(customerOfA.id, accountOfA('1110'), warehouseOfA.branchId),
+      ),
+      receiptSchema,
+    );
+    const refund = await made(
+      as(
+        tenantA,
+        'POST',
+        '/refunds',
+        refundBody(customerOfA.id, accountOfA('1110'), warehouseOfA.branchId, {
+          receiptId: receipt.id,
+        }),
+      ),
+      refundSchema,
+    );
+    expect(refund.number).toBe(refundOfB.number);
   });
 });

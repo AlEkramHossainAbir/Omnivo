@@ -23,6 +23,10 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // others: it moves stock and its value together.
 // sales_invoice, sales_receipt (step 15c): an invoice's sale (receivable, sales, VAT) and a money
 // receipt (cash or bank, receivable). They point at their document like a stock document's entry.
+// sales_return (step 15d): goods a customer sent back come into stock at what they cost (Dr
+// Inventory / Cr Cost of goods sold). A stock document like a delivery.
+// sales_credit_note, sales_refund (step 15d): a credit note takes a sale back (sales returns, VAT,
+// receivable) and a refund pays a customer's advance back out of a cash or bank account.
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -34,6 +38,9 @@ export const JOURNAL_SOURCES = [
   'sales_delivery',
   'sales_invoice',
   'sales_receipt',
+  'sales_return',
+  'sales_credit_note',
+  'sales_refund',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -47,6 +54,7 @@ export const STOCK_JOURNAL_SOURCES = [
   'stock_transfer',
   'stock_revaluation',
   'sales_delivery',
+  'sales_return',
 ] as const satisfies readonly JournalSource[];
 export type StockJournalSource = (typeof STOCK_JOURNAL_SOURCES)[number];
 
@@ -55,11 +63,13 @@ export function isStockJournalSource(value: string): value is StockJournalSource
 }
 
 // The sources a sales document posts (step 15c). Their entries are not reversed from the journal
-// either: an invoice is corrected by a credit note (15d), a receipt by voiding it on its own page,
-// so the document and the books never disagree.
+// either: an invoice is corrected by a credit note (15d), a receipt or a refund by voiding it on its
+// own page, so the document and the books never disagree. A credit note is never undone.
 export const SALES_JOURNAL_SOURCES = [
   'sales_invoice',
   'sales_receipt',
+  'sales_credit_note',
+  'sales_refund',
 ] as const satisfies readonly JournalSource[];
 export type SalesJournalSource = (typeof SALES_JOURNAL_SOURCES)[number];
 

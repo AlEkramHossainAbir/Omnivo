@@ -5,6 +5,7 @@ import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { entryRefSchema, partyRefSchema } from './journal.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
+import { subtractQuantity } from './quantities.js';
 import { documentRefSchema } from './sales.js';
 import { STOCK_DOCUMENT_STATUSES } from './stock-adjustments.js';
 import {
@@ -20,7 +21,7 @@ import {
 // customer. Like a stock adjustment: a draft can be changed, "Post" gives it its number
 // (DC-2026-27-0001), takes the stock out and books what it cost (you chose this: cost of goods
 // sold at delivery, at the moving average cost of step 14). A posted delivery is not changed;
-// what comes back is a return (15d).
+// what comes back is a sales return (sales-returns.ts, step 15d).
 //
 // It is made from a confirmed order (its lines point at the order's lines, and an order is
 // delivered in as many deliveries as it takes), or on its own, for a customer who collects goods
@@ -28,9 +29,21 @@ import {
 
 // How much of a posted delivery is billed (step 15c). An invoice bills each of its lines whole,
 // so a delivery is partly invoiced only when an invoice left some of its lines out. A draft is
-// not_invoiced.
+// not_invoiced. A line that came back in full before it was billed (step 15d) has nothing left to
+// bill, so it does not count either way.
 export const DELIVERY_INVOICE_STATES = ['not_invoiced', 'partly_invoiced', 'invoiced'] as const;
 export type DeliveryInvoiceState = (typeof DELIVERY_INVOICE_STATES)[number];
+
+// How much of a posted delivery came back on posted sales returns (step 15d): nothing, some of it,
+// or every line in full
+export const DELIVERY_RETURN_STATES = ['none', 'partly_returned', 'returned'] as const;
+export type DeliveryReturnState = (typeof DELIVERY_RETURN_STATES)[number];
+
+// What an invoice bills on a challan line, in the base unit: what left, less what came back before
+// it was billed (step 15d). An invoice line that bills the line must have exactly this quantity.
+export function billableQuantity(line: { baseQuantity: string; returnedQuantity: string }): string {
+  return subtractQuantity(line.baseQuantity, line.returnedQuantity);
+}
 
 // ---------------------------------------------------------------------------------------------
 // What the API sends
@@ -51,6 +64,7 @@ export const deliverySummarySchema = z.object({
   note: z.string().nullable(),
   lineCount: z.number().int(),
   invoiceState: z.enum(DELIVERY_INVOICE_STATES),
+  returnState: z.enum(DELIVERY_RETURN_STATES),
   postedAt: z.iso.datetime().nullable(),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),
@@ -65,6 +79,9 @@ export const deliveryLineSchema = stockLineSchema.extend({
   value: z.string().nullable(),
   // Billed by a posted invoice (step 15c)
   invoiced: z.boolean(),
+  // What came back on posted sales returns, in the base unit (step 15d). baseQuantity −
+  // returnedQuantity can still come back.
+  returnedQuantity: z.string(),
 });
 export type DeliveryLine = z.infer<typeof deliveryLineSchema>;
 
@@ -75,6 +92,8 @@ export const deliverySchema = deliverySummarySchema.extend({
   entry: entryRefSchema.nullable(),
   // The posted invoices that bill its lines (step 15c); a direct invoice's own delivery has one
   invoices: z.array(documentRefSchema),
+  // The posted sales returns that brought some of its goods back (step 15d)
+  returns: z.array(documentRefSchema),
 });
 export type Delivery = z.infer<typeof deliverySchema>;
 
@@ -141,15 +160,22 @@ export const deleteDeliveryQuerySchema = z.object({
   version: z.coerce.number<number>().int().min(1),
 });
 
-// to_invoice: posted, with a line no posted invoice bills yet — what the invoice form offers
+// to_invoice: posted, with a line no posted invoice bills yet and that did not all come back —
+// what the invoice form offers
 export const DELIVERY_INVOICE_FILTERS = ['to_invoice', 'invoiced'] as const;
 export type DeliveryInvoiceFilter = (typeof DELIVERY_INVOICE_FILTERS)[number];
+
+// returnable: posted, with a line that has not all come back yet — what the return form offers
+// (step 15d)
+export const DELIVERY_RETURN_FILTERS = ['returnable'] as const;
+export type DeliveryReturnFilter = (typeof DELIVERY_RETURN_FILTERS)[number];
 
 export const deliveryListQuerySchema = pageQuerySchema.extend({
   status: z.enum(STOCK_DOCUMENT_STATUSES).optional(),
   customerId: z.uuid().optional(),
   warehouseId: z.uuid().optional(),
   invoice: z.enum(DELIVERY_INVOICE_FILTERS).optional(),
+  return: z.enum(DELIVERY_RETURN_FILTERS).optional(),
 });
 export type DeliveryListQuery = z.input<typeof deliveryListQuerySchema>;
 

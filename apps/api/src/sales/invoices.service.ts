@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  billableQuantity,
   compareQuantity,
   documentTotals,
   dueDateOf,
@@ -10,12 +11,15 @@ import {
   type InvoicePaymentFilter,
   type InvoiceStatus,
   type InvoiceSummary,
+  isQuantity,
   type PartyRef,
   sumQuantity,
+  toBaseQuantity,
   todayIn,
   type UpdateInvoiceInput,
 } from '@omnivo/contracts';
 import {
+  creditNotes,
   deliveries,
   deliveryLines,
   invoiceLines,
@@ -26,9 +30,11 @@ import {
   receipts,
   salesOrderLines,
   salesOrders,
+  salesReturnLines,
+  salesReturns,
   tenantSettings,
 } from '@omnivo/db';
-import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -44,7 +50,9 @@ import {
   type LineIssue,
   linePath,
   linesError,
+  loadVariants,
   resolveLines,
+  type VariantInfo,
 } from '../inventory/stock-lines.js';
 import { assertPeriodOpen } from '../journal/period-lock.service.js';
 import { NumberingService } from '../numbering/numbering.service.js';
@@ -75,9 +83,10 @@ const lineCount = sql<number>`(
    WHERE l.tenant_id = invoices.tenant_id AND l.invoice_id = invoices.id
 )`;
 
-// Posted and not paid in full: what a receipt can still be applied to. The same condition as the
-// two partial indexes (invoices_open_customer_idx, invoices_open_due_idx), so they are used.
-const isOpen = sql`${invoices.status} = 'posted' AND ${invoices.amountPaid} < ${invoices.total}`;
+// Posted and not settled in full by receipts and credit notes (step 15d): what a receipt or a
+// credit note can still be applied to. The same condition as the two partial indexes
+// (invoices_open_customer_idx, invoices_open_due_idx), so they are used.
+const isOpen = sql`${invoices.status} = 'posted' AND ${invoices.amountPaid} + ${invoices.amountCredited} < ${invoices.total}`;
 
 // What a line bills, once checked: a challan line (with the order line behind it, if any), an
 // order's service line, or neither (a line of its own)
@@ -128,6 +137,8 @@ function toSummary(row: InvoiceRow, customer: PartyRef, lines: number): InvoiceS
     vat: row.vat,
     total: row.total,
     amountPaid: row.amountPaid,
+    amountCredited: row.amountCredited,
+    creditNoteTotal: row.creditNoteTotal,
     lineCount: lines,
     postedAt: row.postedAt?.toISOString() ?? null,
     version: row.version,
@@ -144,6 +155,21 @@ function stockLineOf(line: InvoiceLineInput | InvoiceLineRow): LineInput {
     batchId: line.batchId,
     serialNumbers: [...line.serialNumbers],
   };
+}
+
+// What a line comes to in its item's base unit (step 15d: a challan line is billed by its base
+// quantity, in any unit of the item). null when the unit is not one of the item's: the line is then
+// refused as not matching its challan line.
+function baseQuantityOf(
+  line: { unitId: string; quantity: string },
+  variant: VariantInfo | undefined,
+): string | null {
+  if (variant === undefined || !isQuantity(line.quantity)) return null;
+  const factor =
+    line.unitId === variant.baseUnitId
+      ? '1'
+      : variant.units.find((pack) => pack.unitId === line.unitId)?.factor;
+  return factor === undefined ? null : toBaseQuantity(line.quantity, factor, variant.baseDecimals);
 }
 
 // The challan an invoice makes for its own goods lines names its lines lines.0, lines.1 …; the
@@ -405,7 +431,8 @@ export class InvoicesService {
   }
 
   // What each line bills, checked against the challans and orders it names: a challan line must be
-  // on a posted challan of this customer, of the same item, pack and quantity, and not billed yet;
+  // on a posted challan of this customer, of the same item, for what left less what came back before
+  // it was billed (step 15d, billableQuantity: in any unit of the item), and not billed yet;
   // an order line must be a service line of a confirmed (or delivered, or closed) order of this
   // customer, billed whole, and not billed yet. All problems come back at once, under each line.
   // lock: 'share' when a draft is saved (a reopen of the order waits for us), 'update' when it is
@@ -431,6 +458,11 @@ export class InvoicesService {
       ]),
     ];
     const orderLines = await this.orderLines(tx, orderLineIds, lock);
+    // The items of the lines that bill a challan line, for their quantities in the base unit
+    const variants = await loadVariants(
+      tx,
+      lines.flatMap((line) => (line.deliveryLineId === null ? [] : [line.variantId])),
+    );
 
     const issues: LineIssue[] = [];
     const sources: LineSource[] = [];
@@ -454,10 +486,13 @@ export class InvoicesService {
       };
       if (line.deliveryLineId !== null) {
         const challan = challanLines.get(line.deliveryLineId);
+        const base = baseQuantityOf(line, variants.get(line.variantId));
         if (
           challan?.customerId !== customerId ||
           challan.status !== 'posted' ||
-          !same(line, challan)
+          line.variantId !== challan.variantId ||
+          base === null ||
+          compareQuantity(base, billableQuantity(challan)) !== 0
         ) {
           at('deliveryLineId', 'invoice_delivery_line_invalid');
         } else if (challan.invoiced) {
@@ -543,6 +578,7 @@ export class InvoicesService {
         baseQuantity: deliveryLines.baseQuantity,
         orderLineId: deliveryLines.orderLineId,
         invoiced: deliveryLines.invoiced,
+        returnedQuantity: deliveryLines.returnedQuantity,
       })
       .from(deliveryLines)
       .where(and(eq(deliveryLines.tenantId, tenantId), inArray(deliveryLines.id, [...ids])));
@@ -853,7 +889,7 @@ export class InvoicesService {
     today: string | null,
   ): SQL | undefined {
     if (payment === 'paid') {
-      return sql`${invoices.status} = 'posted' AND ${invoices.amountPaid} >= ${invoices.total}`;
+      return sql`${invoices.status} = 'posted' AND ${invoices.amountPaid} + ${invoices.amountCredited} >= ${invoices.total}`;
     }
     if (payment === 'open') return isOpen;
     if (payment === 'overdue') return sql`${isOpen} AND ${invoices.dueDate} < ${today}::date`;
@@ -925,18 +961,26 @@ export class InvoicesService {
               and(eq(deliveryLines.tenantId, tenantId), inArray(deliveryLines.id, challanLineIds)),
             );
     const challanLine = new Map(challanLines.map((line) => [line.id, line]));
+    // Step 15d: the serial numbers that came back before the line was billed were never billed, so
+    // the invoice does not print them. Those that came back later were billed (a credit note gives
+    // their money back), so they stay.
+    const unbilledReturns = await this.returnedBeforeBilling(tx, challanLineIds);
     const stockOf = (line: InvoiceLineRow) => {
       const challan =
         line.deliveryLineId === null ? undefined : challanLine.get(line.deliveryLineId);
+      const back =
+        line.deliveryLineId === null ? undefined : unbilledReturns.get(line.deliveryLineId);
       return {
         batchId: challan?.batchId ?? line.batchId,
-        serialNumbers: challan?.serialNumbers ?? line.serialNumbers,
+        serialNumbers: (challan?.serialNumbers ?? line.serialNumbers).filter(
+          (serial) => back?.has(serial) !== true,
+        ),
       };
     };
     const orderLineIds = lines.flatMap(({ row: line }) =>
       line.orderLineId === null ? [] : [line.orderLineId],
     );
-    const [batches, orders, payments, entry] = await Promise.all([
+    const [batches, orders, payments, credits, entry] = await Promise.all([
       batchesOf(
         tx,
         lines.map(({ row: line }) => stockOf(line).batchId),
@@ -981,6 +1025,23 @@ export class InvoicesService {
         )
         .where(and(eq(receiptAllocations.tenantId, tenantId), eq(receiptAllocations.invoiceId, id)))
         .orderBy(asc(receipts.date), asc(receipts.number)),
+      // Step 15d: the posted credit notes written for it, oldest first
+      tx
+        .select({
+          id: creditNotes.id,
+          number: creditNotes.number,
+          date: creditNotes.date,
+          total: creditNotes.total,
+        })
+        .from(creditNotes)
+        .where(
+          and(
+            eq(creditNotes.tenantId, tenantId),
+            eq(creditNotes.invoiceId, id),
+            eq(creditNotes.status, 'posted'),
+          ),
+        )
+        .orderBy(asc(creditNotes.date), asc(creditNotes.number)),
       row.status === 'posted' ? this.books.entryOf(tx, id, 'sales_invoice') : null,
     ]);
     // Each order once, by number; and the number of the order behind each order line
@@ -1026,6 +1087,7 @@ export class InvoicesService {
           lotNumber: batch?.lotNumber ?? null,
           expiresOn: batch?.expiresOn ?? null,
           serialNumbers: stock.serialNumbers,
+          credited: line.credited,
         };
       }),
       deliveries: [...challans.values()].toSorted(
@@ -1033,8 +1095,50 @@ export class InvoicesService {
       ),
       orders: orderRefs,
       payments,
+      // Posted, so each has a number
+      creditNotes: credits.flatMap((credit) =>
+        credit.number === null ? [] : [{ ...credit, number: credit.number }],
+      ),
       entry,
     };
+  }
+
+  // Challan line → the serial numbers posted returns brought back before the line was billed (step
+  // 15d: their return line has no invoice line)
+  private async returnedBeforeBilling(
+    tx: Transaction,
+    deliveryLineIds: readonly string[],
+  ): Promise<Map<string, Set<string>>> {
+    if (deliveryLineIds.length === 0) return new Map();
+    const rows = await tx
+      .select({
+        deliveryLineId: salesReturnLines.deliveryLineId,
+        serialNumbers: salesReturnLines.serialNumbers,
+      })
+      .from(salesReturnLines)
+      .innerJoin(
+        salesReturns,
+        and(
+          eq(salesReturns.tenantId, salesReturnLines.tenantId),
+          eq(salesReturns.id, salesReturnLines.returnId),
+        ),
+      )
+      .where(
+        and(
+          eq(salesReturnLines.tenantId, getTenantId()),
+          inArray(salesReturnLines.deliveryLineId, [...deliveryLineIds]),
+          isNull(salesReturnLines.invoiceLineId),
+          eq(salesReturns.status, 'posted'),
+        ),
+      );
+    const back = new Map<string, Set<string>>();
+    for (const row of rows) {
+      if (row.deliveryLineId === null || row.serialNumbers.length === 0) continue;
+      const set = back.get(row.deliveryLineId) ?? new Set<string>();
+      for (const serial of row.serialNumbers) set.add(serial);
+      back.set(row.deliveryLineId, set);
+    }
+    return back;
   }
 
   private async customerOf(tx: Transaction, customerId: string): Promise<PartyRef> {

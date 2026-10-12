@@ -1429,7 +1429,12 @@ export function seedStock(data: WorkspaceData, garments: boolean): void {
           ),
           warehouse(depot.id, 'CTG', 'Chattogram depot', 'Port Connecting Road, Chattogram 4100'),
         ]
-      : [warehouse(ho.id, 'MAIN', 'Main store', 'Tejgaon Industrial Area, Dhaka 1208')];
+      : [
+          warehouse(ho.id, 'MAIN', 'Main store', 'Tejgaon Industrial Area, Dhaka 1208'),
+          // Step 15d: where pharmacies' expired and damaged strips come back into, until a stock
+          // adjustment writes them off
+          warehouse(ho.id, 'DMG', 'Damage and expiry', 'Tejgaon Industrial Area, Dhaka 1208'),
+        ];
   const [main] = data.stock.warehouses;
   if (!main) return;
 

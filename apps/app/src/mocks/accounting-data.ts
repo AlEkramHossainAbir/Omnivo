@@ -4,6 +4,7 @@ import {
   ACCOUNT_TYPES,
   type AccountType,
   type Industry,
+  type SalesAccounts,
   type StockAccounts,
 } from '@omnivo/contracts';
 
@@ -22,6 +23,7 @@ interface MockNode {
 }
 
 const MAKERS: readonly Industry[] = ['garments', 'pharma', 'manufacturing'];
+const RETURNS_TEMPLATES: readonly Industry[] = ['pharma', 'retail'];
 
 function template(industry: Industry): Record<AccountType, MockNode> {
   const garments = industry === 'garments';
@@ -115,7 +117,14 @@ function template(industry: Industry): Record<AccountType, MockNode> {
         {
           code: '4100',
           name: 'Revenue',
-          children: [{ code: '4110', name: garments ? 'Export sales' : 'Sales', purpose: 'sales' }],
+          children: [
+            { code: '4110', name: garments ? 'Export sales' : 'Sales', purpose: 'sales' },
+            // Step 15d: the account credit notes take sales back from (the API's pharma and retail
+            // templates have it; distribution's 4120 is trade discounts)
+            ...(RETURNS_TEMPLATES.includes(industry)
+              ? [{ code: '4120', name: 'Sales returns' }]
+              : []),
+          ],
         },
         {
           code: '4200',
@@ -265,6 +274,16 @@ export function seedStockAccounts(accounts: readonly Account[], industry: Indust
     transfer_shortage: loss,
     revaluation: id('5190'),
   };
+}
+
+// The sales returns account a new workspace starts with (step 15d), like the API's
+// seedSalesReturnsAccount(): 4120 only when it really is "Sales returns", else none (a credit note
+// then takes the sale back from Sales itself)
+export function seedSalesAccounts(accounts: readonly Account[]): SalesAccounts {
+  const found = accounts.find(
+    (account) => account.code === '4120' && account.name === 'Sales returns',
+  );
+  return { returns: found?.id ?? null };
 }
 
 export function noStockAccounts(): StockAccounts {

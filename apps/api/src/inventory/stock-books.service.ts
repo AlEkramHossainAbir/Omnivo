@@ -192,6 +192,37 @@ export class StockBooksService {
     ]);
   }
 
+  // A sales return (step 15d): the goods come back into the inventory account at what they cost
+  // (Dr Inventory, with the return warehouse's branch), and that cost comes off cost of goods sold
+  // (Cr Cost of goods sold) where it was booked: with the branch of the warehouse each line's
+  // challan took the goods from. A line with no challan takes the return warehouse's branch. So a
+  // return to another branch's Damage/Expiry warehouse moves the stock there and still takes the
+  // cost off the branch that sold it.
+  async salesReturn(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: { warehouseId: string; costs: readonly WarehouseValue[] },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [
+      { warehouseId: input.warehouseId, value: '0' },
+      ...input.costs,
+    ]);
+    const inventoryBranch = branchOf(input.warehouseId);
+    return this.write(tx, document, 'sales_return', `Sales return ${document.number}`, [
+      ...input.costs.map((part) => ({
+        accountId: accounts.inventory,
+        branchId: inventoryBranch,
+        amount: part.value,
+      })),
+      ...input.costs.map((part) => ({
+        accountId: accounts.costOfGoodsSold(),
+        branchId: branchOf(part.warehouseId),
+        amount: negateMoney(part.value),
+      })),
+    ]);
+  }
+
   // The posted entries of a document, oldest first: an adjustment has at most one, a transfer two
   async entriesOf(tx: Transaction, documentId: string): Promise<EntryRef[]> {
     const rows = await tx
@@ -298,7 +329,7 @@ export class StockBooksService {
     return {
       inventory,
       openingEquity,
-      // Asked for only by a delivery: the other stock documents never needed it
+      // Asked for only by a delivery and a sales return: the other stock documents never needed it
       costOfGoodsSold: () => {
         if (costOfGoodsSold === undefined) throw missing('cost_of_goods_sold');
         return costOfGoodsSold;

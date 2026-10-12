@@ -9,6 +9,7 @@ import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { seedChart } from './seed-chart.js';
+import { seedSalesReturnsAccount } from './seed-sales-accounts.js';
 import { seedStockAccounts } from './seed-stock-accounts.js';
 import { INDUSTRY_TEMPLATES } from './templates.js';
 
@@ -39,6 +40,8 @@ export class ChartHandler implements EventHandler<'workspace.chart_requested'> {
       if (accounts === 0) return;
       // Step 14: a chart made here gets its stock accounts at once, like a new workspace's
       await seedStockAccounts(tx, tenantId, INDUSTRY_TEMPLATES[industry]);
+      // Step 15d: and its sales returns account, like a new workspace's
+      await seedSalesReturnsAccount(tx, tenantId, INDUSTRY_TEMPLATES[industry]);
       // No actorUserId: the audit log shows "System"
       await audit(tx, {
         action: 'workspace.chart_created',

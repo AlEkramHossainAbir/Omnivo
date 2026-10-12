@@ -5,6 +5,8 @@ import {
   type DeliveryInput,
   type DeliveryInvoiceFilter,
   type DeliveryInvoiceState,
+  type DeliveryReturnFilter,
+  type DeliveryReturnState,
   type DeliverySummary,
   type PartyRef,
   type StockDocumentStatus,
@@ -22,6 +24,8 @@ import {
   products,
   salesOrderLines,
   salesOrders,
+  salesReturnLines,
+  salesReturns,
   warehouses,
 } from '@omnivo/db';
 import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
@@ -62,10 +66,12 @@ const lineCount = sql<number>`(
    WHERE l.tenant_id = deliveries.tenant_id AND l.delivery_id = deliveries.id
 )`;
 
-// Step 15c: does a line of it still wait for an invoice? (delivery_lines_to_invoice_idx)
+// Step 15c: does a line of it still wait for an invoice? (delivery_lines_to_invoice_idx) Since
+// step 15d, a line that all came back before it was billed waits for nothing.
 const lineToInvoice = sql`EXISTS (
   SELECT 1 FROM delivery_lines l
    WHERE l.tenant_id = deliveries.tenant_id AND l.delivery_id = deliveries.id AND NOT l.invoiced
+     AND l.returned_quantity < l.base_quantity
 )`;
 const lineInvoiced = sql`EXISTS (
   SELECT 1 FROM delivery_lines l
@@ -86,6 +92,32 @@ function invoiceFilter(filter: DeliveryInvoiceFilter | undefined): SQL | undefin
   return and(eq(deliveries.status, 'posted'), lines);
 }
 
+// Step 15d: did some of a line come back, and can some still come back? Only posted returns write
+// returned_quantity, so a draft return changes neither.
+const lineReturned = sql`EXISTS (
+  SELECT 1 FROM delivery_lines l
+   WHERE l.tenant_id = deliveries.tenant_id AND l.delivery_id = deliveries.id
+     AND l.returned_quantity > 0
+)`;
+const lineReturnable = sql`EXISTS (
+  SELECT 1 FROM delivery_lines l
+   WHERE l.tenant_id = deliveries.tenant_id AND l.delivery_id = deliveries.id
+     AND l.returned_quantity < l.base_quantity
+)`;
+
+// A draft took nothing out, so nothing came back from it
+const returnState = sql<DeliveryReturnState>`CASE
+  WHEN deliveries.status <> 'posted' OR NOT ${lineReturned} THEN 'none'
+  WHEN ${lineReturnable} THEN 'partly_returned'
+  ELSE 'returned' END`;
+
+// The list's return filter: posted, with a line that has not all come back (what the return form
+// offers)
+function returnFilter(filter: DeliveryReturnFilter | undefined): SQL | undefined {
+  if (filter === undefined) return undefined;
+  return and(eq(deliveries.status, 'posted'), lineReturnable);
+}
+
 function notDraft(): AppError {
   return new AppError(
     409,
@@ -100,6 +132,7 @@ function toSummary(
   order: { id: string; number: string | null } | null,
   lines: number,
   invoiced: DeliveryInvoiceState,
+  returned: DeliveryReturnState,
 ): DeliverySummary {
   return {
     id: row.id,
@@ -114,6 +147,7 @@ function toSummary(
     note: row.note,
     lineCount: lines,
     invoiceState: invoiced,
+    returnState: returned,
     postedAt: row.postedAt?.toISOString() ?? null,
     version: row.version,
     updatedAt: row.updatedAt.toISOString(),
@@ -154,6 +188,7 @@ export class DeliveriesService {
     customerId?: string | undefined;
     warehouseId?: string | undefined;
     invoice?: DeliveryInvoiceFilter | undefined;
+    return?: DeliveryReturnFilter | undefined;
   }): Promise<{ items: DeliverySummary[]; nextCursor: string | null }> {
     const after = decodeCursor(query.cursor, cursorSchema);
     return this.withTenant(async (tx) => {
@@ -166,6 +201,7 @@ export class DeliveriesService {
             ? undefined
             : eq(deliveries.warehouseId, query.warehouseId),
           invoiceFilter(query.invoice),
+          returnFilter(query.return),
           after === undefined
             ? undefined
             : sql`(${deliveries.date}, ${deliveries.id}) < (${after[0]}::date, ${after[1]}::uuid)`,
@@ -175,7 +211,14 @@ export class DeliveriesService {
       const page = toPage(rows, query.limit, (last) => [last.delivery.date, last.delivery.id]);
       return {
         items: page.items.map((row) =>
-          toSummary(row.delivery, row.customer, row.order, row.lineCount, row.invoiceState),
+          toSummary(
+            row.delivery,
+            row.customer,
+            row.order,
+            row.lineCount,
+            row.invoiceState,
+            row.returnState,
+          ),
         ),
         nextCursor: page.nextCursor,
       };
@@ -616,6 +659,7 @@ export class DeliveriesService {
         order: { id: salesOrders.id, number: salesOrders.number },
         lineCount,
         invoiceState,
+        returnState,
       })
       .from(deliveries)
       .innerJoin(
@@ -636,7 +680,7 @@ export class DeliveriesService {
     if (!found) throw notFound('Delivery');
     const { delivery: row } = found;
     const lines = await this.linesOf(tx, id);
-    const [canSee, entries, variants, batches, billedBy] = await Promise.all([
+    const [canSee, entries, variants, batches, billedBy, returnedBy] = await Promise.all([
       this.access.canSee(),
       this.books.entriesOf(tx, id),
       loadVariants(
@@ -651,9 +695,20 @@ export class DeliveriesService {
         tx,
         lines.map((line) => line.id),
       ),
+      this.returnsOf(
+        tx,
+        lines.map((line) => line.id),
+      ),
     ]);
     return {
-      ...toSummary(row, found.customer, found.order, found.lineCount, found.invoiceState),
+      ...toSummary(
+        row,
+        found.customer,
+        found.order,
+        found.lineCount,
+        found.invoiceState,
+        found.returnState,
+      ),
       shippingAddressId: row.shippingAddressId,
       lines: lines.flatMap((line) => {
         const variant = variants.get(line.variantId);
@@ -670,11 +725,13 @@ export class DeliveriesService {
             // Worked out from the books: needs inventory.stock.value (step 14)
             value: canSee ? line.value : null,
             invoiced: line.invoiced,
+            returnedQuantity: line.returnedQuantity,
           },
         ];
       }),
       entry: entries[0] ?? null,
       invoices: billedBy,
+      returns: returnedBy,
     };
   }
 
@@ -697,6 +754,30 @@ export class DeliveriesService {
         ),
       )
       .orderBy(asc(invoices.number));
+  }
+
+  // The posted sales returns that brought some of these lines back, by number (step 15d). A draft
+  // return brought nothing back yet.
+  private async returnsOf(tx: Transaction, lineIds: readonly string[]) {
+    if (lineIds.length === 0) return [];
+    return tx
+      .selectDistinct({ id: salesReturns.id, number: salesReturns.number })
+      .from(salesReturnLines)
+      .innerJoin(
+        salesReturns,
+        and(
+          eq(salesReturns.tenantId, salesReturnLines.tenantId),
+          eq(salesReturns.id, salesReturnLines.returnId),
+        ),
+      )
+      .where(
+        and(
+          eq(salesReturnLines.tenantId, getTenantId()),
+          inArray(salesReturnLines.deliveryLineId, [...lineIds]),
+          eq(salesReturns.status, 'posted'),
+        ),
+      )
+      .orderBy(asc(salesReturns.number));
   }
 
   private async customerOf(tx: Transaction, customerId: string): Promise<PartyRef> {

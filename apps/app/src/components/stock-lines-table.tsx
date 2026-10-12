@@ -3,6 +3,7 @@ import {
   type AdjustmentLine,
   compareQuantity,
   type DeliveryLine,
+  type SalesReturnLine,
   subtractMoney,
   subtractQuantity,
   sumMoney,
@@ -10,11 +11,13 @@ import {
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { Card, Pill } from '@omnivo/ui';
+import type { ReactNode } from 'react';
 
 import { useIsoDate, useQuantity, useUnitCode, useValue, VariantCell } from './stock-parts';
 
-// A line of any stock document this table shows; a delivery's (step 15b) has a value and no cost
-type DocumentLine = AdjustmentLine | TransferLine | DeliveryLine;
+// A line of any stock document this table shows; a delivery's (step 15b) and a sales return's
+// (15d) have a value and no cost
+type DocumentLine = AdjustmentLine | TransferLine | DeliveryLine | SalesReturnLine;
 
 // Step 14: what a line was worth (null without inventory.stock.value), and on an adjustment the
 // cost a person typed. Read from any kind of line.
@@ -26,16 +29,19 @@ function typedCostOf(line: DocumentLine): string | null {
   return 'unitCost' in line ? line.unitCost : null;
 }
 
-// The lines of a posted adjustment, a sent transfer or a posted delivery: a real <table> in a
-// card, scrolling inside its own box on a phone. What was typed (3 case), the base quantity it was
-// (72 pcs), the batch with its expiry or the serial numbers — and for a received transfer, what
-// arrived.
-export function StockLinesTable({
+// The lines of a posted adjustment, a sent transfer, a posted delivery or (15d) a return: a real
+// <table> in a card, scrolling inside its own box on a phone. What was typed (3 case), the base
+// quantity it was (72 pcs), the batch with its expiry or the serial numbers — and for a received
+// transfer, what arrived. Step 15d: `detail` adds the document's own words under a line (how much
+// of a challan line came back, which challan a returned line left on), typed by the page's line.
+export function StockLinesTable<L extends DocumentLine>({
   lines,
   received = false,
+  detail,
 }: {
-  lines: readonly DocumentLine[];
+  lines: readonly L[];
   received?: boolean;
+  detail?: (line: L) => ReactNode;
 }) {
   const { t } = useLocale();
   const quantity = useQuantity();
@@ -81,6 +87,7 @@ export function StockLinesTable({
               arrived !== null && compareQuantity(arrived, line.baseQuantity) < 0
                 ? subtractQuantity(line.baseQuantity, arrived)
                 : null;
+            const more = detail?.(line);
             return (
               <tr key={line.id} className="border-t border-line align-top">
                 <td className="px-5 py-3">
@@ -115,7 +122,8 @@ export function StockLinesTable({
                   )}
                   {line.lotNumber === null &&
                     line.serialNumbers.length === 0 &&
-                    !('invoiced' in line && line.invoiced) && <span className="text-ink-3">—</span>}
+                    !('invoiced' in line && line.invoiced) &&
+                    (more === undefined || more === null) && <span className="text-ink-3">—</span>}
                   {/* Step 15c: a challan line a posted invoice bills (it is billed whole) */}
                   {'invoiced' in line && line.invoiced && (
                     <span className="mt-1 block">
@@ -124,6 +132,7 @@ export function StockLinesTable({
                       </Pill>
                     </span>
                   )}
+                  {more}
                 </td>
                 {received && (
                   <td className="px-5 py-3 text-right whitespace-nowrap tabular-nums">

@@ -591,24 +591,35 @@ export function refreshPartyRefs(data: WorkspaceData, saved: MockCustomer): void
       if (line.party?.id === saved.id) line.party = ref;
     }
   }
-  const { quotations, orders, deliveries } = data.salesDocuments;
-  const { invoices, receipts } = data.billing;
-  for (const document of [...quotations, ...orders, ...deliveries, ...invoices, ...receipts]) {
+  for (const document of salesDocumentsOf(data)) {
     if (document.customer.id === saved.id) document.customer = ref;
   }
 }
 
-// Only a customer no entry and no sales document names, drafts included (the API's
-// journal_lines_party_fk, step 15b's quotations/sales_orders/deliveries_customer_fk, and step
-// 15c's invoices/receipts_customer_fk)
-export function assertCustomerUnused(data: WorkspaceData, id: string): void {
+// Every document that names a customer: step 15b's, 15c's and 15d's
+function salesDocumentsOf(data: WorkspaceData): { customer: PartyRef }[] {
   const { quotations, orders, deliveries } = data.salesDocuments;
   const { invoices, receipts } = data.billing;
+  const { salesReturns, creditNotes, refunds } = data.returns;
+  return [
+    ...quotations,
+    ...orders,
+    ...deliveries,
+    ...invoices,
+    ...receipts,
+    ...salesReturns,
+    ...creditNotes,
+    ...refunds,
+  ];
+}
+
+// Only a customer no entry and no sales document names, drafts included (the API's
+// journal_lines_party_fk, step 15b's quotations/sales_orders/deliveries_customer_fk, step 15c's
+// invoices/receipts_customer_fk, and step 15d's sales_returns/credit_notes/refunds_customer_fk)
+export function assertCustomerUnused(data: WorkspaceData, id: string): void {
   const used =
     data.journal.entries.some((entry) => entry.lines.some((line) => line.party?.id === id)) ||
-    [...quotations, ...orders, ...deliveries, ...invoices, ...receipts].some(
-      (document) => document.customer.id === id,
-    );
+    salesDocumentsOf(data).some((document) => document.customer.id === id);
   if (used) throw new MockProblem(409, 'customer_in_use');
 }
 

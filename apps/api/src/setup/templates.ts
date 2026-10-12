@@ -94,6 +94,9 @@ export interface IndustryTemplate {
   // Step 14: the account (by its code in `chart`) each stock use starts with. The owner may choose
   // others in Settings → Inventory.
   stockAccounts: Record<StockAccountUse, string>;
+  // Step 15d: the account (by its code in `chart`) credit notes take sales back from, chosen in
+  // Settings → Sales. null = none: a credit note debits the Sales account itself.
+  salesReturnsAccount: string | null;
 }
 
 // Step 15a. The people who sell add and change customers; those who also collect the money see what
@@ -118,6 +121,16 @@ const INVOICING = ['sales.invoice.manage'] as const;
 const COLLECTING = ['sales.receipt.manage'] as const;
 const CREDIT_OVERRIDE = ['sales.credit.override'] as const;
 
+// Step 15d. Goods that come back are taken in by the people who let them out (the challan's
+// people): a return moves stock, not money. A credit note lowers what a customer owes and the VAT
+// on it, so it is the accountant's, never a sales officer's: the person who collects from a shop
+// should not also be able to write down what that shop owes. A refund pays money out: the
+// accountant (and a manager who runs everything), never a cashier or a sales officer, who only
+// take money in.
+const RETURNING = ['sales.return.manage'] as const;
+const CREDITING = ['sales.credit_note.manage'] as const;
+const REFUNDING = ['sales.refund.manage'] as const;
+
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
 const ACCOUNTANT: RoleTemplate = {
@@ -140,6 +153,9 @@ const ACCOUNTANT: RoleTemplate = {
     // Step 15c: invoices and money receipts
     ...INVOICING,
     ...COLLECTING,
+    // Step 15d: credit notes and refunds
+    ...CREDITING,
+    ...REFUNDING,
   ],
 };
 
@@ -149,7 +165,7 @@ const STOCK_WORK = ['inventory.stock.adjust', 'inventory.stock.transfer'] as con
 const STORE_KEEPER: RoleTemplate = {
   name: 'Store keeper',
   description: 'Receives goods and writes GRNs',
-  permissions: ['inventory.product.manage', ...STOCK_WORK, ...DELIVERING],
+  permissions: ['inventory.product.manage', ...STOCK_WORK, ...DELIVERING, ...RETURNING],
 };
 
 function group(
@@ -410,6 +426,7 @@ export const INDUSTRY_TEMPLATES = {
       ],
     },
     stockAccounts: stockAccounts({ loss: '5150' }),
+    salesReturnsAccount: null,
   },
   pharma: {
     roles: [
@@ -423,6 +440,7 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.warehouse.manage',
           ...STOCK_WORK,
           ...DELIVERING,
+          ...RETURNING,
         ],
       },
       {
@@ -480,6 +498,7 @@ export const INDUSTRY_TEMPLATES = {
       ],
     },
     stockAccounts: stockAccounts({ loss: '5350', samples: '5330' }),
+    salesReturnsAccount: '4120',
   },
   distribution: {
     roles: [
@@ -493,6 +512,7 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.warehouse.manage',
           ...STOCK_WORK,
           ...DELIVERING,
+          ...RETURNING,
         ],
       },
       {
@@ -533,6 +553,7 @@ export const INDUSTRY_TEMPLATES = {
       ],
     },
     stockAccounts: stockAccounts({ loss: '5330' }),
+    salesReturnsAccount: null,
   },
   manufacturing: {
     roles: [
@@ -577,6 +598,7 @@ export const INDUSTRY_TEMPLATES = {
       ],
     },
     stockAccounts: stockAccounts({ loss: '5150' }),
+    salesReturnsAccount: null,
   },
   retail: {
     roles: [
@@ -596,6 +618,9 @@ export const INDUSTRY_TEMPLATES = {
           ...INVOICING,
           ...COLLECTING,
           ...CREDIT_OVERRIDE,
+          ...RETURNING,
+          ...CREDITING,
+          ...REFUNDING,
         ],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [...COLLECTING] },
@@ -629,6 +654,7 @@ export const INDUSTRY_TEMPLATES = {
       customFields: [{ key: 'brand', label: 'Brand', type: 'text' }],
     },
     stockAccounts: stockAccounts({ loss: '5340' }),
+    salesReturnsAccount: '4120',
   },
   other: {
     roles: [
@@ -647,6 +673,9 @@ export const INDUSTRY_TEMPLATES = {
           ...INVOICING,
           ...COLLECTING,
           ...CREDIT_OVERRIDE,
+          ...RETURNING,
+          ...CREDITING,
+          ...REFUNDING,
         ],
       },
     ],
@@ -661,5 +690,6 @@ export const INDUSTRY_TEMPLATES = {
       customFields: [],
     },
     stockAccounts: stockAccounts({ loss: '5150' }),
+    salesReturnsAccount: null,
   },
 } satisfies Record<Industry, IndustryTemplate>;

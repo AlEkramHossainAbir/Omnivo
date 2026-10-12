@@ -500,6 +500,81 @@ const receiptRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/receipt'), 'ReceiptPage'),
 });
 
+// Sales returns, credit notes and refunds (step 15d). "Take goods back" on a challan comes with
+// ?deliveryId=; "Write credit note" on an invoice with ?invoiceId=, on a return with ?returnId=;
+// "Pay back" on a receipt with ?receiptId=, on a credit note with ?creditNoteId=.
+const salesReturnsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sales-returns',
+  component: lazyRouteComponent(() => import('./routes/sales-returns'), 'SalesReturnsPage'),
+});
+
+const newSalesReturnRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sales-returns/new',
+  validateSearch: (search: Record<string, unknown>): { deliveryId?: string } => ({
+    ...(typeof search.deliveryId === 'string' &&
+      UUID.test(search.deliveryId) && { deliveryId: search.deliveryId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/sales-return'), 'NewSalesReturnPage'),
+});
+
+const salesReturnRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sales-returns/$returnId',
+  component: lazyRouteComponent(() => import('./routes/sales-return'), 'SalesReturnPage'),
+});
+
+const creditNotesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/credit-notes',
+  component: lazyRouteComponent(() => import('./routes/credit-notes'), 'CreditNotesPage'),
+});
+
+const newCreditNoteRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/credit-notes/new',
+  validateSearch: (search: Record<string, unknown>): { invoiceId?: string; returnId?: string } => ({
+    ...(typeof search.invoiceId === 'string' &&
+      UUID.test(search.invoiceId) && { invoiceId: search.invoiceId }),
+    ...(typeof search.returnId === 'string' &&
+      UUID.test(search.returnId) && { returnId: search.returnId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/credit-note'), 'NewCreditNotePage'),
+});
+
+const creditNoteRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/credit-notes/$creditNoteId',
+  component: lazyRouteComponent(() => import('./routes/credit-note'), 'CreditNotePage'),
+});
+
+const refundsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/refunds',
+  component: lazyRouteComponent(() => import('./routes/refunds'), 'RefundsPage'),
+});
+
+const newRefundRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/refunds/new',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { receiptId?: string; creditNoteId?: string } => ({
+    ...(typeof search.receiptId === 'string' &&
+      UUID.test(search.receiptId) && { receiptId: search.receiptId }),
+    ...(typeof search.creditNoteId === 'string' &&
+      UUID.test(search.creditNoteId) && { creditNoteId: search.creditNoteId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/refund'), 'NewRefundPage'),
+});
+
+const refundRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/refunds/$refundId',
+  component: lazyRouteComponent(() => import('./routes/refund'), 'RefundPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -600,6 +675,15 @@ const routeTree = rootRoute.addChildren([
     receiptsRoute,
     newReceiptRoute,
     receiptRoute,
+    salesReturnsRoute,
+    newSalesReturnRoute,
+    salesReturnRoute,
+    creditNotesRoute,
+    newCreditNoteRoute,
+    creditNoteRoute,
+    refundsRoute,
+    newRefundRoute,
+    refundRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

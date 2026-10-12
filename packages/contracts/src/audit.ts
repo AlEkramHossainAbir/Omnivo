@@ -126,6 +126,20 @@ export const AUDIT_ACTIONS = [
   // An order confirmed or an invoice posted over the customer's credit limit, by someone with
   // sales.credit.override. The entity is that order or invoice.
   'credit_limit.overridden',
+  // step 15d
+  'sales_return.created',
+  'sales_return.updated',
+  'sales_return.deleted',
+  'sales_return.posted',
+  'credit_note.created',
+  'credit_note.updated',
+  'credit_note.deleted',
+  'credit_note.posted',
+  'credit_note.allocated',
+  'refund.created',
+  'refund.voided',
+  // The sales returns account in Settings → Sales. The entity is the workspace, like settings.
+  'sales_accounts.changed',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -164,6 +178,9 @@ export const AUDIT_ENTITY_TYPES = [
   'delivery',
   'invoice',
   'receipt',
+  'sales_return',
+  'credit_note',
+  'refund',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

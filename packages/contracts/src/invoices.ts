@@ -4,7 +4,7 @@ import { errorCode } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { entryRefSchema, partyRefSchema, shiftIsoDate } from './journal.js';
-import { compareMoney, isZeroMoney } from './money.js';
+import { addMoney, compareMoney, isZeroMoney, subtractMoney } from './money.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 import {
   documentRefSchema,
@@ -27,10 +27,13 @@ import {
 // number (INV-2026-27-0001) and books the sale: Dr Accounts receivable (with the customer) /
 // Cr Sales / Cr VAT payable. The cost of the goods was booked by the challan that took them out
 // (step 15b), so the invoice never touches the stock accounts itself. A posted invoice is never
-// changed or deleted: a credit note corrects it (15d).
+// changed or deleted: a credit note corrects it (credit-notes.ts, step 15d), and the invoice keeps
+// its number and its entry.
 //
 // Each line bills one of three things (you chose challan + direct):
-//   a challan line      deliveryLineId: goods that left on a posted challan. Billed whole and once.
+//   a challan line      deliveryLineId: goods that left on a posted challan. Billed whole and once:
+//                       what left, less what came back before it was billed (step 15d,
+//                       billableQuantity in deliveries.ts), in any unit of the item.
 //   an order's service  orderLineId: a delivery charge on the order. A service is never delivered,
 //                       so it is billed straight from the order.
 //   neither             a line of its own. A goods line is delivered by the invoice itself: posting
@@ -46,21 +49,45 @@ export const MAX_INVOICE_LINES = MAX_STOCK_LINES;
 export const INVOICE_STATUSES = ['draft', 'posted'] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
-// What the money receipts (receipts.ts) applied to it so far. Worked out from the total and what
-// was paid, never stored, so the two can never disagree.
+// What the money receipts (receipts.ts) applied to it so far, and since step 15d the credit notes
+// (credit-notes.ts): money a credit note gave back settles an invoice the same way money paid does.
+// Worked out from the amounts, never stored, so they can never disagree.
 export const PAYMENT_STATUSES = ['unpaid', 'partly_paid', 'paid'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
-export function paymentStatusOf(invoice: { total: string; amountPaid: string }): PaymentStatus {
-  // A ৳0 invoice (a free sample) owes nothing: it is paid the moment it exists
-  if (compareMoney(invoice.amountPaid, invoice.total) >= 0) return 'paid';
-  return isZeroMoney(invoice.amountPaid) ? 'unpaid' : 'partly_paid';
+interface SettledAmounts {
+  total: string;
+  amountPaid: string;
+  amountCredited: string;
 }
 
-// Overdue: posted, not paid in full, and its due date is before today (the workspace's today,
+// What the customer still owes on it: the total less what receipts and credit notes applied
+export function amountDueOf(invoice: SettledAmounts): string {
+  return subtractMoney(invoice.total, addMoney(invoice.amountPaid, invoice.amountCredited));
+}
+
+export function paymentStatusOf(invoice: SettledAmounts): PaymentStatus {
+  const settled = addMoney(invoice.amountPaid, invoice.amountCredited);
+  // A ৳0 invoice (a free sample) owes nothing: it is paid the moment it exists
+  if (compareMoney(settled, invoice.total) >= 0) return 'paid';
+  return isZeroMoney(settled) ? 'unpaid' : 'partly_paid';
+}
+
+// How much of it posted credit notes took back (step 15d), whatever their money was applied to: a
+// credit note for an invoice that was already paid still credits it, and its money becomes an
+// advance. credited = every taka of the total; the invoice keeps its number and its entry.
+export const CREDIT_STATES = ['none', 'partly_credited', 'credited'] as const;
+export type CreditState = (typeof CREDIT_STATES)[number];
+
+export function creditStateOf(invoice: { total: string; creditNoteTotal: string }): CreditState {
+  if (isZeroMoney(invoice.creditNoteTotal)) return 'none';
+  return compareMoney(invoice.creditNoteTotal, invoice.total) >= 0 ? 'credited' : 'partly_credited';
+}
+
+// Overdue: posted, not settled in full, and its due date is before today (the workspace's today,
 // todayIn() in numbering.ts). On the due date itself it is still on time.
 export function isOverdue(
-  invoice: { status: string; dueDate: string; total: string; amountPaid: string },
+  invoice: { status: string; dueDate: string } & SettledAmounts,
   today: string,
 ): boolean {
   return (
@@ -74,8 +101,8 @@ export function dueDateOf(date: string, paymentTermsDays: number): string {
   return shiftIsoDate(date, paymentTermsDays);
 }
 
-// The invoice list's payment filter. open: posted and not paid in full (what a receipt can be
-// applied to); overdue: open and past its due date. Both list the oldest due date first, the order
+// The invoice list's payment filter. open: posted and not settled in full (what a receipt or a
+// credit note can be applied to); overdue: open and past its due date. Both list the oldest due date first, the order
 // a receipt pays them in.
 export const INVOICE_PAYMENT_FILTERS = ['open', 'overdue', 'paid'] as const;
 export type InvoicePaymentFilter = (typeof INVOICE_PAYMENT_FILTERS)[number];
@@ -99,8 +126,13 @@ export const invoiceSummarySchema = z.object({
   net: z.string(),
   vat: z.string(),
   total: z.string(),
-  // What money receipts applied to it; total − amountPaid is still due
+  // What money receipts applied to it, and what credit notes applied to it (step 15d).
+  // total − amountPaid − amountCredited is still due (amountDueOf).
   amountPaid: z.string(),
+  amountCredited: z.string(),
+  // The totals of the posted credit notes written for it (step 15d), wherever their money went:
+  // creditStateOf() reads it for the "Credited" pill
+  creditNoteTotal: z.string(),
   lineCount: z.number().int(),
   postedAt: z.iso.datetime().nullable(),
   version: z.number().int(),
@@ -125,6 +157,9 @@ export const invoiceLineSchema = salesLineSchema.extend({
   lotNumber: z.string().nullable(),
   expiresOn: z.iso.date().nullable(),
   serialNumbers: z.array(z.string()),
+  // The totals of the posted credit note lines that credit it (step 15d). A credit note may never
+  // take back more than total − credited.
+  credited: z.string(),
 });
 export type InvoiceLine = z.infer<typeof invoiceLineSchema>;
 
@@ -145,6 +180,15 @@ export const invoicePaymentSchema = z.object({
 });
 export type InvoicePayment = z.infer<typeof invoicePaymentSchema>;
 
+// A posted credit note written for this invoice (step 15d), and its total
+export const invoiceCreditNoteSchema = z.object({
+  id: z.uuid(),
+  number: z.string(),
+  date: z.iso.date(),
+  total: z.string(),
+});
+export type InvoiceCreditNote = z.infer<typeof invoiceCreditNoteSchema>;
+
 export const invoiceSchema = invoiceSummarySchema.extend({
   // The orders' copy of the workspace setting when the invoice bills orders, else the setting's
   pricesIncludeVat: z.boolean(),
@@ -158,6 +202,7 @@ export const invoiceSchema = invoiceSummarySchema.extend({
   deliveries: z.array(invoiceDeliverySchema),
   orders: z.array(documentRefSchema),
   payments: z.array(invoicePaymentSchema),
+  creditNotes: z.array(invoiceCreditNoteSchema),
   // The sale in the books; null for a draft, and for an invoice of ৳0
   entry: entryRefSchema.nullable(),
 });

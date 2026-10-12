@@ -11,12 +11,14 @@ import { levelSchema, quantitySchema } from './quantities.js';
 // offline client.
 // revaluation (step 14): a change of value without a change of quantity — its quantity is zero.
 // delivery (step 15b): goods leaving for a customer on a delivery challan.
+// sales_return (step 15d): goods a customer sent back.
 export const MOVEMENT_KINDS = [
   'adjustment',
   'transfer_out',
   'transfer_in',
   'revaluation',
   'delivery',
+  'sales_return',
 ] as const;
 export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 

@@ -1,13 +1,8 @@
-import {
-  Alert02Icon,
-  DeliveryTruck01Icon,
-  PlusSignIcon,
-  Tick02Icon,
-  Wrench01Icon,
-} from '@hugeicons/core-free-icons';
+import { Alert02Icon, DeliveryTruck01Icon, Wrench01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   type InvoiceLineFormValues,
+  isZeroQuantity,
   MAX_INVOICE_LINES,
   type SalesLineFormValues,
 } from '@omnivo/contracts';
@@ -30,6 +25,7 @@ import { isServiceLine, type LineMeta, type SalesItem } from '../lib/sales';
 import { firstMessage } from '../lib/stock';
 import { failureOf } from './journal-parts';
 import { LinesEditor, SalesField } from './sales-line-editor';
+import { PickButton, PickProblem } from './sales-parts';
 import { SerialNumbersInput } from './serial-numbers-input';
 import { useIsoDate, useQuantity, useTenantId } from './stock-parts';
 
@@ -82,6 +78,7 @@ export function InvoiceLinesEditor({
   onSourced: (lines: readonly SourcedLine[], warehouseId: string | null) => void;
 }) {
   const { t } = useLocale();
+  const quantityText = useQuantity();
   const [picking, setPicking] = useState<'challans' | 'charges' | null>(null);
   const onForm = new Set(lines.flatMap((line) => sourceIdOf(line) ?? []));
 
@@ -101,6 +98,7 @@ export function InvoiceLinesEditor({
     // The billed line's own problem (billed by another invoice since, not this customer's any more)
     const sourceError = lineErrors?.deliveryLineId?.message ?? lineErrors?.orderLineId?.message;
     if (value.deliveryLineId) {
+      const returned = origin?.returnedQuantity ?? '0';
       return (
         <span className="grid gap-0.5 text-caption text-ink-3">
           <span className="font-medium text-ink-2">
@@ -108,6 +106,14 @@ export function InvoiceLinesEditor({
             {origin?.orderNumber && ` · ${origin.orderNumber}`}
           </span>
           <span>{t('invoices.challanLineHint')}</span>
+          {/* Step 15d: why the quantity is less than the challan's, and in the base unit */}
+          {!isZeroQuantity(returned) && (
+            <span className="tabular-nums">
+              {t('invoices.returnedBeforeBilling', {
+                quantity: quantityText(returned, item.baseUnitId),
+              })}
+            </span>
+          )}
           <SourceError message={sourceError} />
         </span>
       );
@@ -377,7 +383,7 @@ function ChallanPicker({
       description={t('invoices.challanPickerDescription')}
     >
       <div className="grid grid-cols-1 gap-4">
-        <Problem message={problem} />
+        <PickProblem message={problem} />
         {challans?.length === 0 ? (
           <EmptyState
             icon={DeliveryTruck01Icon}
@@ -467,7 +473,7 @@ function ChargePicker({
       description={t('invoices.chargePickerDescription')}
     >
       <div className="grid grid-cols-1 gap-4">
-        <Problem message={problem} />
+        <PickProblem message={problem} />
         {orders?.length === 0 ? (
           <EmptyState
             icon={Wrench01Icon}
@@ -502,34 +508,5 @@ function ChargePicker({
         )}
       </div>
     </DialogContent>
-  );
-}
-
-// Problems stay in the dialog, next to the button that caused them (a toast would hide behind it)
-function Problem({ message }: { message: string | null }) {
-  if (message === null) return null;
-  return (
-    <p role="status" className="flex items-center gap-1.5 text-label text-crit">
-      <HugeiconsIcon icon={Alert02Icon} size={15} strokeWidth={1.5} className="shrink-0" />
-      {message}
-    </p>
-  );
-}
-
-function PickButton({
-  added,
-  loading,
-  onClick,
-}: {
-  added: boolean;
-  loading: boolean;
-  onClick: () => void;
-}) {
-  const { t } = useLocale();
-  return (
-    <Button variant="secondary" size="sm" disabled={loading || added} onClick={onClick}>
-      <HugeiconsIcon icon={added ? Tick02Icon : PlusSignIcon} size={16} strokeWidth={1.5} />
-      {added ? t('salesLines.added') : t('salesLines.add')}
-    </Button>
   );
 }

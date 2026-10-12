@@ -200,14 +200,14 @@ export class JournalService {
           );
         }
         if (isSalesJournalSource(entry.source)) {
-          // An invoice's or a receipt's entry (step 15c): reversing it here would leave the
-          // document saying one thing and the books another. A credit note corrects an invoice
-          // (15d); a receipt is voided on its own page, which reverses the entry and takes its
-          // money off the invoices in one step.
+          // A sales document's entry (steps 15c, 15d): reversing it here would leave the document
+          // saying one thing and the books another. A credit note corrects an invoice and is never
+          // undone; a receipt or a refund is voided on its own page, which reverses the entry and
+          // gives its money back in one step.
           throw new AppError(
             409,
             'journal_is_sales',
-            'This entry belongs to an invoice or a money receipt. Correct it from that document.',
+            'This entry belongs to a sales document. Correct it from that document.',
           );
         }
         if (entry.version !== input.version) throw versionConflict();

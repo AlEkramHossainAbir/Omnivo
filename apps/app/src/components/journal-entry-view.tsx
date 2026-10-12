@@ -104,8 +104,8 @@ function ReverseForm({
   );
 }
 
-// The document a stock entry came from (step 14), a delivery's (15b), or an invoice's or a money
-// receipt's (15c): its page, by the source
+// The document a stock entry came from (step 14), a delivery's (15b), an invoice's or a money
+// receipt's (15c), or a return's, a credit note's or a refund's (15d): its page, by the source
 function documentLinkOf(entry: JournalEntry) {
   const id = entry.document?.id;
   if (id === undefined) return null;
@@ -128,6 +128,17 @@ function documentLinkOf(entry: JournalEntry) {
   }
   if (entry.source === 'sales_receipt') {
     return { to: '/receipts/$receiptId', params: { receiptId: id } } as const;
+  }
+  // Step 15d: the cost a return put back, the sale a credit note took back, the money a refund
+  // paid out
+  if (entry.source === 'sales_return') {
+    return { to: '/sales-returns/$returnId', params: { returnId: id } } as const;
+  }
+  if (entry.source === 'sales_credit_note') {
+    return { to: '/credit-notes/$creditNoteId', params: { creditNoteId: id } } as const;
+  }
+  if (entry.source === 'sales_refund') {
+    return { to: '/refunds/$refundId', params: { refundId: id } } as const;
   }
   return null;
 }
@@ -251,6 +262,13 @@ export function EntryView({
       )}
       {entry.source === 'sales_receipt' && (
         <p className="text-label text-ink-3">{t('journal.receiptEntryHint')}</p>
+      )}
+      {/* A return is a stock source: stockEntryHint above already says how to correct it */}
+      {entry.source === 'sales_credit_note' && (
+        <p className="text-label text-ink-3">{t('journal.creditNoteEntryHint')}</p>
+      )}
+      {entry.source === 'sales_refund' && (
+        <p className="text-label text-ink-3">{t('journal.refundEntryHint')}</p>
       )}
       {entry.narration && <p className="text-body text-ink">{entry.narration}</p>}
       {/* A plain table in its own scroll box: four columns, a handful of rows, a totals row */}

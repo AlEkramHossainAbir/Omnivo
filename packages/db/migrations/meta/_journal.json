@@ -218,6 +218,20 @@
       "when": 1791451934858,
       "tag": "0030_invoices-receipts-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791707781991,
+      "tag": "0031_returns-credit-notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791707808167,
+      "tag": "0032_returns-credit-notes-rules",
+      "breakpoints": true
     }
   ]
 }

@@ -1,40 +1,61 @@
-import { isZeroMoney, type Receipt, subtractMoney } from '@omnivo/contracts';
+import { MoneySend02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import {
+  contractErrorMap,
+  isZeroMoney,
+  type Receipt,
+  receiptAllocationsInputSchema,
+  routes,
+  subtractMoney,
+  unappliedOf,
+} from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { Button, Card, CardHeader, Dialog, PageHeader } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { lazy, Suspense, useState } from 'react';
 
+import { call } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { accountsQuery, branchesQuery } from '../lib/queries';
 import { Fact } from './adjustment-view';
 import { EntryLinks } from './entry-links';
 import { PrintButton, ReceiptPrint } from './print-documents';
-import { CustomerLink, DocumentNotice, ReceiptStatusPill, SalesBackLink } from './sales-parts';
+import { CustomerLink, DocumentNotice, SalesBackLink } from './sales-parts';
+import { ReceiptStatusPill } from './sales-pills';
 import { useIsoDate, useTenantId } from './stock-parts';
 
 // The two dialogs as a chunk of their own, loaded when one opens: they bring the form library, the
 // money boxes (decimal.js) and the date picker, and inside this chunk they took it to 113 KB, over
 // its 100 KB budget. Most visits only read the receipt.
-const ApplyForm = lazy(async () => ({
-  default: (await import('./receipt-dialogs')).ApplyForm,
-}));
-const VoidForm = lazy(async () => ({ default: (await import('./receipt-dialogs')).VoidForm }));
+const ApplyForm = lazy(async () => ({ default: (await import('./money-dialogs')).ApplyForm }));
+const VoidForm = lazy(async () => ({ default: (await import('./money-dialogs')).VoidForm }));
+
+// The receipt's own error codes for "Apply money" (the dialog is shared with the credit note)
+const allocationsResolver = zodResolver(receiptAllocationsInputSchema, {
+  error: contractErrorMap,
+});
 
 // A saved money receipt, read only: it is posted the moment it is saved. What can still change is
 // where its money goes ("Apply money"), and a bounced cheque or a typing mistake is undone by
-// "Void receipt". A voided one stays in the list with its number.
+// "Void receipt". A voided one stays in the list with its number. Step 15d: what refunds paid back,
+// and "Pay back" while some of its money is an advance.
 export function ReceiptView({ receipt, today }: { receipt: Receipt; today: string }) {
   const { t, format } = useLocale();
+  const navigate = useNavigate();
   const isoDate = useIsoDate();
   const tenantId = useTenantId();
   const accounts = useQuery(accountsQuery(tenantId)).data;
   const branches = useQuery(branchesQuery(tenantId, 'active')).data;
-  const canWrite = useCan()('sales.receipt.manage');
+  const can = useCan();
+  const canWrite = can('sales.receipt.manage');
+  const canRefund = can('sales.refund.manage');
   const [dialog, setDialog] = useState<'apply' | 'void' | null>(null);
   const money = (value: string) => format.money(value, { decimals: 2 });
   const posted = receipt.status === 'posted';
-  const unapplied = subtractMoney(receipt.amount, receipt.applied);
+  // Step 15d: money a refund paid back is neither applied nor an advance any more
+  const unapplied = unappliedOf(receipt);
   const account = accounts?.find((item) => item.id === receipt.accountId);
 
   return (
@@ -72,6 +93,9 @@ export function ReceiptView({ receipt, today }: { receipt: Receipt; today: strin
         </div>
         <Fact label={t('receipts.date')} value={isoDate(receipt.date)} />
         <Fact label={t('receipts.amount')} value={money(receipt.amount)} />
+        {!isZeroMoney(receipt.refunded) && (
+          <Fact label={t('receipts.refunded')} value={money(receipt.refunded)} />
+        )}
         <Fact label={t('receipts.method')} value={t(`receipts.methods.${receipt.method}`)} />
         {receipt.reference !== null && (
           <Fact label={t('receipts.reference')} value={receipt.reference} />
@@ -124,26 +148,42 @@ export function ReceiptView({ receipt, today }: { receipt: Receipt; today: strin
         )}
       </Card>
 
-      {posted && canWrite && (
+      {posted && (canWrite || canRefund) && (
         <div className="flex flex-wrap items-center justify-end gap-2">
           {/* Away from "Apply money": voiding cannot be undone */}
-          <div className="mr-auto">
+          {canWrite && (
+            <div className="mr-auto">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setDialog('void');
+                }}
+              >
+                {t('receipts.void')}
+              </Button>
+            </div>
+          )}
+          {/* Step 15d: the advance goes back to the customer (paying out is its own permission) */}
+          {canRefund && !isZeroMoney(unapplied) && (
             <Button
               variant="secondary"
+              onClick={() =>
+                void navigate({ to: '/refunds/new', search: { receiptId: receipt.id } })
+              }
+            >
+              <HugeiconsIcon icon={MoneySend02Icon} size={17} strokeWidth={1.5} />
+              {t('receipts.refund')}
+            </Button>
+          )}
+          {canWrite && (
+            <Button
               onClick={() => {
-                setDialog('void');
+                setDialog('apply');
               }}
             >
-              {t('receipts.void')}
+              {t('receipts.apply')}
             </Button>
-          </div>
-          <Button
-            onClick={() => {
-              setDialog('apply');
-            }}
-          >
-            {t('receipts.apply')}
-          </Button>
+          )}
         </div>
       )}
 
@@ -156,7 +196,20 @@ export function ReceiptView({ receipt, today }: { receipt: Receipt; today: strin
         <Suspense fallback={null}>
           {dialog === 'apply' && (
             <ApplyForm
-              receipt={receipt}
+              title={t('receipts.applyDialogTitle', { number: receipt.number })}
+              customerId={receipt.customer.id}
+              // What refunds paid back cannot go on an invoice too (receipt_over_allocated)
+              amount={subtractMoney(receipt.amount, receipt.refunded)}
+              version={receipt.version}
+              allocations={receipt.allocations}
+              resolver={allocationsResolver}
+              save={async (body) => {
+                const saved = await call(routes.receipts.allocate, {
+                  params: { id: receipt.id },
+                  body,
+                });
+                return t('receipts.allocated', { number: saved.number });
+              }}
               onDone={() => {
                 setDialog(null);
               }}
@@ -164,8 +217,13 @@ export function ReceiptView({ receipt, today }: { receipt: Receipt; today: strin
           )}
           {dialog === 'void' && (
             <VoidForm
-              receipt={receipt}
+              words="receipts"
+              number={receipt.number}
+              version={receipt.version}
               today={today}
+              save={async (body) => {
+                await call(routes.receipts.void, { params: { id: receipt.id }, body });
+              }}
               onDone={() => {
                 setDialog(null);
               }}

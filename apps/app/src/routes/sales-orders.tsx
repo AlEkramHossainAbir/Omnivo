@@ -15,7 +15,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { CustomerPicker } from '../components/customer-picker';
-import { OrderStatusPills } from '../components/sales-parts';
+import { OrderStatusPills } from '../components/sales-pills';
 import { useIsoDate, useTenantId, useToday } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
 import { salesOrdersQuery } from '../lib/queries';

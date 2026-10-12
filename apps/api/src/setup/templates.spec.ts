@@ -60,6 +60,16 @@ describe.each(INDUSTRIES)('the %s chart', (industry) => {
     }
   });
 
+  // Step 15d: what setup chooses for Settings → Sales must be something the setting accepts
+  it('chooses an income ledger for sales returns, if any (step 15d)', () => {
+    const code = INDUSTRY_TEMPLATES[industry].salesReturnsAccount;
+    if (code === null) return;
+    const found = flatten(chart.income).find((node) => node.code === code);
+    expect(found, code).toBeDefined();
+    expect(found?.children, code).toBeUndefined();
+    expect(found?.purpose, code).toBeUndefined();
+  });
+
   // Step 15c: a money receipt needs somewhere to put the money from the first day
   it('flags cash and the bank and wallet groups as money, and only assets', () => {
     const money = ACCOUNT_TYPES.flatMap((type) =>

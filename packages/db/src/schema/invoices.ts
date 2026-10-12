@@ -32,13 +32,13 @@ import { warehouses } from './warehouses.js';
 
 // Step 15c: sales invoices. A draft is changed freely; posting numbers it and books the sale, and
 // from then on only what receipts paid (amount_paid) moves. The rules on what may change when live
-// in migration 0030.
+// in migration 0030. Step 15d adds what credit notes write here (rules in migration 0032).
 
 export const invoices = pgTable(
   'invoices',
   {
-    // deleted_at is not used: a draft is deleted for real, a posted invoice never (15d's credit
-    // note corrects it)
+    // deleted_at is not used: a draft is deleted for real, a posted invoice never (a credit note,
+    // step 15d, corrects it)
     ...baseColumns(),
     tenantId: uuid('tenant_id')
       .notNull()
@@ -65,6 +65,15 @@ export const invoices = pgTable(
     // The sum of the receipt allocations that point here. Kept by the allocations' trigger
     // (migration 0030), never written by the API, so it can never disagree with them.
     amountPaid: numeric('amount_paid', { precision: 19, scale: 4 }).notNull().default('0'),
+    // Step 15d. The sum of the credit note allocations that point here, kept by their trigger
+    // (migration 0032) like amount_paid. total − amount_paid − amount_credited is still due.
+    amountCredited: numeric('amount_credited', { precision: 19, scale: 4 }).notNull().default('0'),
+    // Step 15d. The totals of the posted credit notes written for it, wherever their money went:
+    // the "Credited" pill reads it. Written by the credit note's posting, under a lock on the
+    // invoice; it only grows (a credit note is never undone).
+    creditNoteTotal: numeric('credit_note_total', { precision: 19, scale: 4 })
+      .notNull()
+      .default('0'),
     postedAt: timestamp('posted_at', { withTimezone: true }),
     postedBy: uuid('posted_by'),
   },
@@ -78,14 +87,19 @@ export const invoices = pgTable(
     // One customer's invoices, and the customer FK's check on delete
     index('invoices_customer_idx').on(table.tenantId, table.customerId, table.date, table.id),
     // What is still to be paid, oldest due date first: one customer's (the receipt form's list, in
-    // the order it suggests paying them) and everyone's (the overdue list). Partial: a paid
-    // invoice leaves both, so they stay small however many invoices a year brings.
+    // the order it suggests paying them) and everyone's (the overdue list). Partial: an invoice
+    // settled by receipts and credit notes leaves both, so they stay small however many invoices a
+    // year brings.
     index('invoices_open_customer_idx')
       .on(table.tenantId, table.customerId, table.dueDate, table.id)
-      .where(sql`${table.status} = 'posted' AND ${table.amountPaid} < ${table.total}`),
+      .where(
+        sql`${table.status} = 'posted' AND ${table.amountPaid} + ${table.amountCredited} < ${table.total}`,
+      ),
     index('invoices_open_due_idx')
       .on(table.tenantId, table.dueDate, table.id)
-      .where(sql`${table.status} = 'posted' AND ${table.amountPaid} < ${table.total}`),
+      .where(
+        sql`${table.status} = 'posted' AND ${table.amountPaid} + ${table.amountCredited} < ${table.total}`,
+      ),
     // No ON DELETE: a customer with an invoice cannot be deleted (customer_in_use)
     foreignKey({
       name: 'invoices_customer_fk',
@@ -113,11 +127,17 @@ export const invoices = pgTable(
       'invoices_totals_check',
       sql`${table.discount} >= 0 AND ${table.net} >= 0 AND ${table.vat} >= 0 AND ${table.total} = ${table.net} + ${table.vat}`,
     ),
-    // Never paid more than the total, and a draft is never paid: the last word on
-    // receipt_over_invoice, whatever the API checked first
+    // Never settled past the total by receipts and credit notes together, and a draft is never
+    // settled: the last word on receipt_over_invoice and credit_note_over_invoice, whatever the API
+    // checked first
     check(
       'invoices_paid_check',
-      sql`${table.amountPaid} >= 0 AND ${table.amountPaid} <= ${table.total} AND (${table.status} = 'posted' OR ${table.amountPaid} = 0)`,
+      sql`${table.amountPaid} >= 0 AND ${table.amountCredited} >= 0 AND ${table.amountPaid} + ${table.amountCredited} <= ${table.total} AND (${table.status} = 'posted' OR (${table.amountPaid} = 0 AND ${table.amountCredited} = 0))`,
+    ),
+    // Credit notes never take back more than the invoice charged, and a draft has none
+    check(
+      'invoices_credited_check',
+      sql`${table.creditNoteTotal} >= 0 AND ${table.creditNoteTotal} <= ${table.total} AND (${table.status} = 'posted' OR ${table.creditNoteTotal} = 0)`,
     ),
   ],
 );
@@ -137,9 +157,15 @@ export const invoiceLines = pgTable(
     // Only on a goods line of its own: what the posting's challan takes out
     batchId,
     serialNumbers,
+    // Step 15d. The totals of the posted credit note lines that credit it, in money. Written by the
+    // credit note's posting, under a lock on the invoice; it only grows (migration 0032).
+    credited: numeric('credited', { precision: 19, scale: 4 }).notNull().default('0'),
   },
   (table) => [
     uniqueIndex('invoice_lines_line_idx').on(table.tenantId, table.invoiceId, table.lineNo),
+    // The target of the credit note line's FK and the return line's (step 15d): a line of THIS
+    // invoice
+    uniqueIndex('invoice_lines_invoice_id_idx').on(table.tenantId, table.invoiceId, table.id),
     index('invoice_lines_variant_idx').on(table.tenantId, table.productId, table.variantId),
     // Which invoice billed a challan line (the delivery page), and the FK's check
     index('invoice_lines_delivery_line_idx')
@@ -196,5 +222,7 @@ export const invoiceLines = pgTable(
       sql`${table.unitPrice} >= 0 AND ${table.discount} >= 0 AND (${table.discountType} = 'amount' OR ${table.discount} <= 100) AND ${table.net} >= 0 AND ${table.vat} >= 0 AND ${table.total} = ${table.net} + ${table.vat}`,
     ),
     check('invoice_lines_tax_rate_check', sql`${table.taxRate} >= 0 AND ${table.taxRate} < 100`),
+    // Never more money back than the line charged: the last word on credit_note_over_line
+    check('invoice_lines_credited_check', sql`${table.credited} BETWEEN 0 AND ${table.total}`),
   ],
 );

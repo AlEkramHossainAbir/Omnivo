@@ -101,7 +101,21 @@ describe('number series endpoints', () => {
   it('lists every document type with its next number, without using it up', async () => {
     const today = periodOf(todayIn('Asia/Dhaka'), 'fiscal', 7);
     const { items } = numberSeriesListSchema.parse((await send('GET', '/number-series')).json());
-    expect(items.map((series) => series.documentType)).toHaveLength(14);
+    expect(items.map((series) => series.documentType)).toHaveLength(17);
+    // Returns, credit notes and refunds (step 15d): numbered by fiscal year. A return and a credit
+    // note take their number when posted, a refund when saved (it has no draft).
+    expect(items.find((series) => series.documentType === 'sales.return')).toMatchObject({
+      prefix: 'SR',
+      nextNumber: `SR-${today}-0001`,
+    });
+    expect(items.find((series) => series.documentType === 'sales.credit_note')).toMatchObject({
+      prefix: 'CN',
+      nextNumber: `CN-${today}-0001`,
+    });
+    expect(items.find((series) => series.documentType === 'sales.refund')).toMatchObject({
+      prefix: 'RF',
+      nextNumber: `RF-${today}-0001`,
+    });
     // Money receipts (step 15c): numbered by fiscal year, when saved (a receipt has no draft)
     expect(items.find((series) => series.documentType === 'sales.receipt')).toMatchObject({
       prefix: 'MR',

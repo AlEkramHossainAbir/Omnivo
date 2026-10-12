@@ -15,7 +15,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { CustomerPicker } from '../components/customer-picker';
-import { QuotationStatusPill } from '../components/sales-parts';
+import { QuotationStatusPill } from '../components/sales-pills';
 import { useIsoDate, useTenantId, useToday } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
 import { quotationsQuery } from '../lib/queries';

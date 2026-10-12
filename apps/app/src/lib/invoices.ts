@@ -1,5 +1,8 @@
 import {
+  amountDueOf,
+  billableQuantity,
   compareMoney,
+  compareQuantity,
   defaultLineDescription,
   type DeliveryLine,
   type Invoice,
@@ -42,6 +45,9 @@ export interface LineOrigin {
   orderNumber: string | null;
   // The order's "prices include VAT"; null when no order is behind the line
   pricesIncludeVat: boolean | null;
+  // Step 15d: what came back on a return before this challan line was billed, in the base unit
+  // ('0' when nothing did, and for a saved draft, whose lines do not say)
+  returnedQuantity: string;
 }
 
 // The challan line or order line a line bills; null for a line of its own. The form's ids are ''
@@ -98,20 +104,33 @@ function factorOf(
   return pack.factor;
 }
 
+// The unit an invoice line bills a challan line in (step 15d). Nothing came back: the challan's own
+// unit, "2 case" as it left. Something came back before billing: the base unit, because what is
+// left (42 pcs of 2 cases of 24) is seldom a whole number of the challan's unit.
+export function billedUnitOf(
+  line: Pick<DeliveryLine, 'unitId' | 'baseUnitId' | 'returnedQuantity'>,
+): string {
+  return isZeroQuantity(line.returnedQuantity) ? line.unitId : line.baseUnitId;
+}
+
 // A challan line as an invoice line. It bills the line whole: the item, unit and quantity are the
 // challan's. With an order behind it, the price, discount, VAT rate and description are the
 // order's, moved to the challan's unit (an order of cases delivered by the piece bills ৳21 a
 // piece, not ৳504), and an amount discount goes with the share of the order this challan line
 // carries. Without an order, the price lookup's price for this customer, as on a new order line.
+// Step 15d: "whole" is what left less what came back before billing (billableQuantity), in
+// billedUnitOf()'s unit; the API refuses any other quantity.
 export function challanLineToInvoice(
   line: DeliveryLine,
   orderLine: SalesOrderLine | undefined,
   price: PriceLookupItem | undefined,
 ): InvoiceLineFormValues {
+  const unitId = billedUnitOf(line);
+  const billable = billableQuantity(line);
   const fixed = {
     variantId: line.variantId,
-    unitId: line.unitId,
-    quantity: plainQuantity(line.quantity),
+    unitId,
+    quantity: plainQuantity(unitId === line.unitId ? line.quantity : billable),
     deliveryLineId: line.id,
     // The API reads the order line from the challan line; the contract refuses both on one line
     orderLineId: '',
@@ -132,7 +151,7 @@ export function challanLineToInvoice(
   const discount =
     orderLine.discountType === 'percent'
       ? orderLine.discount
-      : prorateMoney(orderLine.discount, line.baseQuantity, orderLine.baseQuantity);
+      : prorateMoney(orderLine.discount, billable, orderLine.baseQuantity);
   return {
     ...fixed,
     description:
@@ -140,7 +159,7 @@ export function challanLineToInvoice(
     unitPrice: priceInUnit(
       orderLine.unitPrice,
       factorOf(line, orderLine.unitId),
-      factorOf(line, line.unitId),
+      factorOf(line, unitId),
     ),
     discountType: orderLine.discountType,
     discount: formDiscount(discount),
@@ -159,13 +178,18 @@ export function orderChargeToInvoice(line: SalesOrderLine): InvoiceLineFormValue
   };
 }
 
-// The lines of a challan an invoice may still bill: not billed by a posted invoice, and not on
-// this form already
+// The lines of a challan an invoice may still bill: not billed by a posted invoice, not on this
+// form already, and (step 15d) not all back on a return before it was billed
 export function challanLinesLeft(
   lines: readonly DeliveryLine[],
   onForm: ReadonlySet<string>,
 ): DeliveryLine[] {
-  return lines.filter((line) => !line.invoiced && !onForm.has(line.id));
+  return lines.filter(
+    (line) =>
+      !line.invoiced &&
+      compareQuantity(line.returnedQuantity, line.baseQuantity) < 0 &&
+      !onForm.has(line.id),
+  );
 }
 
 // The service lines of an order an invoice may still bill. A goods line is billed through its
@@ -199,6 +223,7 @@ export function savedInvoiceLines(
         orderNumber: line.orderNumber,
         // A draft is priced the way its orders write prices (the API checked that)
         pricesIncludeVat: line.orderNumber === null ? null : invoice.pricesIncludeVat,
+        returnedQuantity: '0',
       });
     }
     return {
@@ -214,11 +239,6 @@ export function savedInvoiceLines(
 
 // ---------------------------------------------------------------------------------------------
 // What is owed
-
-// What an invoice still asks for
-export function amountDue(invoice: { total: string; amountPaid: string }): string {
-  return subtractMoney(invoice.total, invoice.amountPaid);
-}
 
 // How many days past its due date an invoice is (0 on the due date itself)
 export function daysLate(dueDate: string, today: string): number {
@@ -256,7 +276,8 @@ export function allocationRows(
       date: invoice.date,
       dueDate: invoice.dueDate,
       total: invoice.total,
-      due: sumMoney([amountDue(invoice), own.get(invoice.id) ?? '0']),
+      // Step 15d: what credit notes took off is not due either (amountDueOf)
+      due: sumMoney([amountDueOf(invoice), own.get(invoice.id) ?? '0']),
     });
   }
   for (const allocation of mine) {
