@@ -311,6 +311,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Group labels are 11.5px/500 `ink-3`. Counts are right-aligned (`crit` when they need
   action). The active state comes from `aria-current="page"`, not a separate prop. On
   phones the nav is one horizontally scrolling row and group labels are hidden.
+  The desktop sidebar scrolls inside itself (`overflow-y-auto`) when the navigation is
+  taller than the screen.
 - **Icon button:** 18px `ink-3` icon, radius 8px, 8px padding, hover `subtle` with an
   `ink` icon. It always has an accessible label.
 - **Notification bell:** an icon button (`Notification03Icon`) next to the logo on every screen size, with an
@@ -365,8 +367,14 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   zone). Money receipt Posted (`good`, `CheckmarkCircle02`), Voided (neutral, `CancelCircle`). A challan's billing:
   Not invoiced (neutral, `Invoice01`), Partly invoiced (`brand`, `Invoice03`), Invoiced (`good`, `Invoice02`), also
   per line. An overdue invoice has a `warn` document notice (`Hourglass`) that says how many days.
+- **Return, credit note and refund statuses:** sales return and credit note Draft (neutral, `FileEdit`), Posted
+  (`good`, `CheckmarkCircle02`); refund Posted (`good`, `CheckmarkCircle02`), Voided (neutral, `CancelCircle`). An
+  invoice that credit notes took money off: Credited (neutral, `Invoice04`) in place of its payment pill when the
+  whole total is credited, else Partly credited (neutral, `Invoice04`) beside it. A challan's returns: Partly
+  returned (neutral, `DeliveryReturn01`), Returned (neutral, `PackageReceive`); nothing came back = no pill.
 - **Document notice:** a line above a document that says what its state means and what to do next: radius
-  10px, 13.5px text, a 17px icon, `warn-bg` with `warn` text and an `Hourglass` icon for an offer that has ended,
+  10px, 13.5px text, a 17px icon, `warn-bg` with `warn` text and an `Hourglass` icon for an offer that has ended
+  or a credit note more than 6 months after its invoice,
   `subtle` with `ink-2` text and an `InformationCircle` icon otherwise.
 - **Credit line and credit dialog:** under the customer box on an order or invoice form, a 13px line: "Credit
   left: ৳35,000 of ৳2,00,000 · ৳40,000 on confirmed orders" in `ink-3`, whole taka, `tabular-nums`; over the limit

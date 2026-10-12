@@ -248,7 +248,14 @@ account / Cr AR), পুরনো invoice আগে (FIFO) ধরা হয়, 
 Credit limit order confirm ও invoice post-এ চেক, `sales.credit.override` থাকলে এগিয়ে যাওয়া যায় (audit log)।
 Chart of accounts-এ "Holds money"। কোটেশন, order, challan, invoice, receipt — এক A4 প্রিন্ট লেআউট (ব্রাউজারের
 Print / Save as PDF, offline)। Mushak 6.3 পরে।
-**১৫d** return ও credit note।
+**১৫d (return → credit note → refund):** sales return (post করলে SR নম্বর; posted challan-এর লাইন থেকে — একই batch
+ও serial, challan যে cost-এ বেরিয়েছিল সেই cost-এ — অথবা Omnivo-র আগের বিক্রির জন্য আলাদা লাইন, সেদিনের average
+cost-এ; সব মাল এক warehouse-এ ফেরে, যেমন "Damage and expiry")। Post করলে Dr Inventory / Cr COGS। Bill হওয়ার
+আগে ফেরত এলে order-এর delivered কমে, invoice বাকিটুকু bill করে। Credit note (CN, সবসময় একটা posted invoice-এর;
+সেই invoice-এর VAT rate-এ): Dr Sales returns (setting; না থাকলে Sales) / Dr VAT payable / Cr AR (কাস্টমার);
+আগে নিজের invoice-এ বসে, বাকিটা advance। "Credit whole invoice" এক ক্লিকে draft। Invoice-এ Credited / Partly
+credited। ৬ মাসের পুরনো invoice-এ শুধু সতর্কবার্তা। Refund (RF, receipt বা credit note-এর বাকি টাকা থেকে; Dr AR /
+Cr টাকার account; ভুল হলে void)। Settings → Sales accounts। Return, credit note, refund প্রিন্ট। Mushak 6.7 পরে।
 
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 
