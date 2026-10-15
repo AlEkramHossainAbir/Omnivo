@@ -16,6 +16,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { lazy, Suspense, useState } from 'react';
 
 import { call } from '../lib/api';
+import type { OutputTarget } from '../lib/document-output';
 import { useCan } from '../lib/permissions';
 import { creditReasonKey } from '../lib/returns';
 import { Fact } from './adjustment-view';
@@ -32,6 +33,12 @@ import {
 } from './sales-parts';
 import { DocumentStatusPill } from './sales-pills';
 import { useIsoDate } from './stock-parts';
+
+// Step 16: the Send menu and the history cards, each a chunk of its own (send-menu.tsx says why)
+const SendMenu = lazy(async () => ({ default: (await import('./send-menu')).SendMenu }));
+const DocumentHistory = lazy(async () => ({
+  default: (await import('./document-history')).DocumentHistory,
+}));
 
 // "Apply money" is the receipt's dialog (money-dialogs.tsx), loaded when it opens
 const ApplyForm = lazy(async () => ({ default: (await import('./money-dialogs')).ApplyForm }));
@@ -56,6 +63,16 @@ export function CreditNoteView({ creditNote }: { creditNote: CreditNote }) {
   const [applying, setApplying] = useState(false);
   const money = (value: string) => format.money(value, { decimals: 2 });
   const posted = creditNote.status === 'posted';
+  // Step 16: only a posted credit note has a number and goes out (decision 11)
+  const target: OutputTarget | null =
+    posted && creditNote.number !== null
+      ? {
+          kind: 'credit_note',
+          id: creditNote.id,
+          number: creditNote.number,
+          customerId: creditNote.customer.id,
+        }
+      : null;
   const unapplied = unappliedOf({
     amount: creditNote.total,
     applied: creditNote.applied,
@@ -75,6 +92,11 @@ export function CreditNoteView({ creditNote }: { creditNote: CreditNote }) {
               label={t(`creditNotes.statuses.${creditNote.status}`)}
             />
             {posted && <PrintButton />}
+            {target && (
+              <Suspense fallback={null}>
+                <SendMenu target={target} />
+              </Suspense>
+            )}
           </>
         }
       />
@@ -219,6 +241,11 @@ export function CreditNoteView({ creditNote }: { creditNote: CreditNote }) {
           )}
         </Suspense>
       </Dialog>
+      {target && (
+        <Suspense fallback={null}>
+          <DocumentHistory target={target} />
+        </Suspense>
+      )}
       {posted && <CreditNotePrint creditNote={creditNote} />}
     </div>
   );

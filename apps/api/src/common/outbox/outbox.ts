@@ -34,6 +34,11 @@ export const outboxPayloadSchemas = {
   'workspace.stock_accounts_requested': z.object({}),
   // Like the chart's: the rates are the same for every workspace (step 15a)
   'workspace.tax_rates_requested': z.object({}),
+  // Step 16: the document_files row holds the look to draw (its model)
+  'document.file_requested': z.object({ fileId: z.uuid() }),
+  // The document_emails row says what to send; the file is the PDF to attach, drawn by the email
+  // job itself when it is not ready yet (the customer should not wait on a second queue)
+  'document.email_requested': z.object({ emailId: z.uuid(), fileId: z.uuid() }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

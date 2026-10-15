@@ -2,6 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type { OutboxEventType } from '@omnivo/db';
 
 import type { EventHandler } from '../common/outbox/outbox.js';
+import { DocumentEmailHandler } from '../documents/email.handler.js';
+import { DocumentFileHandler } from '../documents/file.handler.js';
 import { LowStockHandler } from '../inventory/low-stock.handler.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
@@ -36,6 +38,8 @@ export class EventHandlers {
     lowStock: LowStockHandler,
     stockAccounts: StockAccountsHandler,
     taxRates: TaxRatesHandler,
+    documentFile: DocumentFileHandler,
+    documentEmail: DocumentEmailHandler,
   ) {
     this.byType = {
       'workspace.created': welcome,
@@ -49,6 +53,8 @@ export class EventHandlers {
       'stock.below_reorder': lowStock,
       'workspace.stock_accounts_requested': stockAccounts,
       'workspace.tax_rates_requested': taxRates,
+      'document.file_requested': documentFile,
+      'document.email_requested': documentEmail,
     };
   }
 

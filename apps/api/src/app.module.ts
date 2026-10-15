@@ -14,6 +14,7 @@ import { AuthMiddleware } from './auth/auth.middleware.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module.js';
+import { DocumentsModule } from './documents/documents.module.js';
 import { ContractInterceptor } from './common/http/contract.interceptor.js';
 import { ProblemFilter } from './common/http/problem.filter.js';
 import { RequestContextMiddleware } from './common/request/request-context.js';
@@ -65,6 +66,7 @@ export class AppModule implements NestModule {
         InventoryModule,
         TaxModule,
         SalesModule,
+        DocumentsModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

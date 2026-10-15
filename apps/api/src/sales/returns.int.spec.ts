@@ -221,6 +221,7 @@ async function addCustomer(name: string, extra: object = {}) {
     contactPerson: '',
     phone: '',
     email: '',
+    documentLanguage: 'en',
     bin: '',
     paymentTermsDays: 30,
     creditLimit: '',

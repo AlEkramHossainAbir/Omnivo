@@ -328,6 +328,13 @@ export const ERROR_CODES = [
   'receipt_has_refunds',
   'sales_account_invalid',
   'account_used_by_sales',
+  // Step 16: documents sent to customers. A draft (no number yet) or a voided receipt is not sent.
+  'document_not_issued',
+  'email_to_required',
+  'email_too_many',
+  'email_subject_required',
+  // The public page behind a share link: an unknown, expired or turned-off link all look the same
+  'share_link_not_found',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

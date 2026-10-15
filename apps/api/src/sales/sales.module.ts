@@ -79,5 +79,8 @@ import { SalesReturnsService } from './sales-returns.service.js';
     RefundsService,
     SalesAccountsService,
   ],
+  // Step 16: the PDF of a quotation, an invoice, a receipt or a credit note is built from what
+  // their get() returns (documents/models.service.ts)
+  exports: [QuotationsService, InvoicesService, ReceiptsService, CreditNotesService],
 })
 export class SalesModule {}

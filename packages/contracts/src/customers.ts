@@ -6,6 +6,7 @@ import { defineRoute } from './http.js';
 import { ledgerPageSchema, ledgerQuerySchema } from './journal.js';
 import { priceSchema } from './money.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
+import { LANGUAGE_CODES } from './preferences.js';
 import { optionalCode } from './products.js';
 import { binSchema, optionalEmailSchema } from './settings.js';
 
@@ -45,6 +46,9 @@ export const customerSchema = z.object({
   contactPerson: z.string().nullable(),
   phone: z.string().nullable(),
   email: z.string().nullable(),
+  // The language of the PDFs, emails and share links the customer gets (step 16). The person can
+  // still pick the other one when sending.
+  documentLanguage: z.enum(LANGUAGE_CODES),
   // The customer's VAT registration number: printed on the VAT invoice (Mushak 6.3)
   bin: z.string().nullable(),
   // Days from the invoice date to its due date. 0 = due on receipt.
@@ -112,6 +116,7 @@ export const customerInputSchema = z
     contactPerson: optionalText(80),
     phone: optionalText(30),
     email: optionalEmailSchema,
+    documentLanguage: z.enum(LANGUAGE_CODES),
     bin: binSchema,
     paymentTermsDays: z.number().int().min(0).max(MAX_PAYMENT_TERMS_DAYS),
     // '' = no limit, like a product's empty sale price: "0" is a real limit (cash only)

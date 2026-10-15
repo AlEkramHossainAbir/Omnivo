@@ -2,6 +2,7 @@ import { PrinterIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   amountDueOf,
+  amountInWords,
   type CreditNote,
   type Delivery,
   type DocumentTotals,
@@ -101,6 +102,20 @@ function Sheet({
   );
 }
 
+// Step 16: "In words: Eighteen lakh … taka and fifty paisa only" under a money document's total,
+// in the language of the screen (the PDF has the same words in the customer's language). The
+// currency is the books' own; null until the settings arrive, like the sheet itself.
+function InWords({ amount }: { amount: string }) {
+  const { t, language } = useLocale();
+  const currency = useQuery(settingsQuery(useTenantId())).data?.baseCurrency;
+  if (currency === undefined) return null;
+  return (
+    <p className="break-inside-avoid text-ink-2">
+      {t('print.inWords', { words: amountInWords(amount, language, currency) })}
+    </p>
+  );
+}
+
 // The customer: name and code, then an address as it was saved, one part per line
 function PartyBlock({
   label,
@@ -143,12 +158,15 @@ function PricedLines({
   totals,
   pricesIncludeVat,
   after,
+  words = false,
 }: {
   lines: readonly PricedLine[];
   totals: DocumentTotals;
   pricesIncludeVat: boolean;
   // Rows under the total: what an invoice was paid and still asks for
   after?: { label: string; value: string }[];
+  // Step 16: the total in words, on the money documents only (decision 7)
+  words?: boolean;
 }) {
   const { t, format } = useLocale();
   const quantity = useQuantity();
@@ -272,6 +290,7 @@ function PricedLines({
           ))}
         </dl>
       </div>
+      {words && <InWords amount={totals.total} />}
     </>
   );
 }
@@ -493,6 +512,7 @@ export function InvoicePrint({ invoice }: { invoice: Invoice }) {
         lines={invoice.lines}
         totals={invoice}
         pricesIncludeVat={invoice.pricesIncludeVat}
+        words
         // What is paid by the day it is printed, what credit notes took off (15d), and what is
         // still due
         after={
@@ -548,6 +568,7 @@ export function ReceiptPrint({ receipt }: { receipt: Receipt }) {
           </PrintBlock>
         )}
       </div>
+      <InWords amount={receipt.amount} />
       {receipt.allocations.length > 0 && (
         <PrintBlock label={t('print.appliedTo')}>
           <table className="w-full border-collapse text-caption">
@@ -662,6 +683,7 @@ export function CreditNotePrint({ creditNote }: { creditNote: CreditNote }) {
         lines={creditNote.lines}
         totals={creditNote}
         pricesIncludeVat={creditNote.pricesIncludeVat}
+        words
       />
       <Note note={creditNote.note} />
     </Sheet>
@@ -706,6 +728,7 @@ export function RefundPrint({ refund }: { refund: Refund }) {
           </p>
         </PrintBlock>
       </div>
+      <InWords amount={refund.amount} />
       <Note note={refund.note} />
     </Sheet>
   );

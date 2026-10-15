@@ -1448,6 +1448,9 @@ export const en = {
       creditLimitHint: 'The most they may owe. Leave it empty for no limit; 0 means cash only.',
       priceList: 'Price list',
       noPriceList: "The products' own prices",
+      documentLanguage: 'Document language',
+      documentLanguageHint:
+        'PDFs, emails and share links for this customer start in this language. You can pick the other one each time you send.',
       notes: 'Notes',
       notesPlaceholder: 'Takes deliveries before 11 am only. Pays by cheque on the 10th.',
     },
@@ -2329,6 +2332,123 @@ export const en = {
     postInvoice: 'Post anyway',
     back: 'Go back',
   },
+  // Download PDF, email and share link on a quotation, invoice, money receipt and credit note.
+  // Only the app's own words: what the customer reads (the PDF, the email, the WhatsApp text) is
+  // written by the server, in the customer's language (apps/api/src/documents/copy.ts)
+  documentOutput: {
+    // OutputDocument → name: the bell and the public page get the kind, not its words
+    kinds: {
+      quotation: 'Quotation',
+      invoice: 'Invoice',
+      receipt: 'Money receipt',
+      credit_note: 'Credit note',
+    },
+    send: 'Send',
+    downloadPdf: 'Download PDF',
+    // The other language; {{language}} is its own name (English, বাংলা)
+    downloadPdfIn: 'Download PDF in {{language}}',
+    email: 'Email',
+    share: 'Share on WhatsApp',
+    preparing: 'Making the PDF…',
+    pdfFailed: "Couldn't make the PDF. Try again.",
+    pdfSlow: 'The PDF is taking longer than usual. Try again in a minute.',
+    copyFailed: "Couldn't copy. Select the text and copy it yourself.",
+    emailDialog: {
+      title: 'Email {{number}}',
+      replyTo: 'The PDF goes as an attachment. Replies go to {{email}}.',
+      noReplyTo:
+        'The PDF goes as an attachment. Add your company’s email in Settings, so that replies reach you.',
+      language: 'Language',
+      languageHint: 'Of the PDF and the email. Changing it writes the subject and message again.',
+      to: 'To',
+      cc: 'CC',
+      recipientsHint: 'Up to {{max}} addresses, separated by commas',
+      toPlaceholder: 'accounts@rahmantraders.com.bd',
+      noCustomerEmail:
+        'This customer has no email address. Type one here, or add it to the customer.',
+      subject: 'Subject',
+      message: 'Message',
+      messageHint: 'Under your message, the email says what is attached and how to reply.',
+      attachment: 'Attached: {{file}}',
+      send: 'Send email',
+      sending: 'Sending…',
+      sent: 'Sending to {{to}}',
+      loadFailed: "Couldn't load the email. Close it and try again.",
+    },
+    emails: {
+      title: 'Emails',
+      subtitle: 'Who this document was emailed to',
+      empty: 'Not emailed yet.',
+      statuses: { pending: 'Sending', sent: 'Sent', failed: 'Failed' },
+      cc: 'CC {{list}}',
+      sentBy: '{{name}}, {{date}}',
+      failedHint: "The mail server didn't take it. Check the address and send it again.",
+      loadFailed: "Couldn't load the emails. Refresh the page to try again.",
+    },
+    shareDialog: {
+      title: 'Share {{number}}',
+      description:
+        'Anyone with the link can see this document and download its PDF for {{days}} days, without signing in. You can turn the link off sooner.',
+      language: 'Language',
+      languageHint: 'Of the page, the PDF and the message.',
+      create: 'Make link',
+      creating: 'Making the link…',
+      link: 'Link',
+      copyLink: 'Copy link',
+      linkCopied: 'Link copied',
+      message: 'Message',
+      copyMessage: 'Copy message',
+      messageCopied: 'Message copied',
+      openWhatsApp: 'Open WhatsApp',
+      noNumber:
+        'The customer’s phone is not a mobile number, so WhatsApp will ask you to pick the contact.',
+      shownOnce: 'The link is shown only now. To send it again later, make a new one.',
+    },
+    shares: {
+      title: 'Share links',
+      subtitle: 'Each link works for {{days}} days, or until it is turned off',
+      empty: 'No link made yet.',
+      // Worked out by the page from expiresAt and revokedAt
+      states: { active: 'Active', ended: 'Ended', revoked: 'Turned off' },
+      madeBy: 'Made by {{name}}, {{date}}',
+      until: 'Works until {{date}}',
+      endedOn: 'Ended {{date}}',
+      revokedOn: 'Turned off {{date}}',
+      firstOpened: 'First opened {{date}}',
+      lastOpened: 'Last opened {{date}}',
+      notOpened: 'Not opened yet',
+      revoke: 'Turn off',
+      revokeLabel: 'Turn off the link made {{date}}',
+      confirmTitle: 'Turn off this link?',
+      confirmBody:
+        'Whoever opens it will see that it no longer works. A link cannot be turned on again; make a new one instead.',
+      confirm: 'Turn off link',
+      revoked: 'Link turned off',
+      loadFailed: "Couldn't load the share links. Refresh the page to try again.",
+    },
+  },
+  // The page behind a share link (/d/:token): no login, no app shell, in the link's language
+  publicDocument: {
+    // A kind this version of the app does not know (a newer server)
+    document: 'Document',
+    pageTitle: '{{document}} {{number}} from {{company}}',
+    from: 'From {{company}}',
+    to: 'For {{customer}}',
+    number: 'Number',
+    date: 'Date',
+    total: 'Total',
+    dueDate: 'Due date',
+    amountDue: 'Still due',
+    download: 'Download PDF',
+    preparing: 'Getting the PDF ready…',
+    failed: "The PDF couldn't be made. Try again in a minute.",
+    private: 'Only people with this link can see this page.',
+    goneTitle: 'This link no longer works',
+    goneBody:
+      'A link works for {{days}} days, and the sender can turn it off sooner. Ask whoever sent it for a new one.',
+    loadFailed: "Couldn't open this document. Check your connection and try again.",
+    poweredBy: 'Sent with Omnivo',
+  },
   // The printed quotation, order, challan, invoice and receipt (A4, the browser's Print)
   print: {
     print: 'Print',
@@ -2386,6 +2506,8 @@ export const en = {
       preparedBy: 'Prepared by',
       authorised: 'Authorised signature',
     },
+    // Under the total of a money document; {{words}} is amountInWords() from @omnivo/contracts
+    inWords: 'In words: {{words}}',
     printedAt: 'Printed {{date}}',
   },
   yearEnd: {
@@ -3007,6 +3129,11 @@ export const en = {
       stock: {
         low: '{{warehouse}}: {{count}} items fell to their reorder level. Time to order more.',
       },
+      // {{document}} arrives as a kind (invoice); the bell puts its name in
+      document: {
+        email_failed:
+          "{{document}} {{number}} couldn't be emailed. Check the address and send it again.",
+      },
     },
   },
   // API-র error code → লেখা। satisfies: contracts-এর ERROR_CODES-এ নতুন code এলে এখানে না লেখা
@@ -3392,6 +3519,13 @@ export const en = {
       'The sales returns account must be an active income account, not a group. Pick another one in Settings → Sales.',
     account_used_by_sales:
       'Credit notes post to this account. Choose another sales returns account in Settings → Sales first.',
+    document_not_issued:
+      "This document has no number yet, or it was voided, so it can't be downloaded or sent. Post it first.",
+    email_to_required: 'Type at least one address to send it to.',
+    // 5 = MAX_EMAIL_RECIPIENTS; the schema's issue carries no number to put in
+    email_too_many: 'Up to 5 addresses in a box. Send a second email to the rest.',
+    email_subject_required: 'Type a subject.',
+    share_link_not_found: 'This link no longer works. Ask whoever sent it for a new one.',
     import_options_without_code:
       'Give rows with options a code: rows with the same code are one product.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',

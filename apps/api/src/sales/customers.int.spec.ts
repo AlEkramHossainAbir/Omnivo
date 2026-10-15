@@ -82,6 +82,7 @@ function customerForm(name: string, extra: Partial<CustomerFormValues> = {}): Cu
     contactPerson: '',
     phone: '',
     email: '',
+    documentLanguage: 'en',
     bin: '',
     paymentTermsDays: 30,
     creditLimit: '',
@@ -101,6 +102,7 @@ function formOf(customer: Customer, extra: Partial<CustomerFormValues> = {}) {
     contactPerson: customer.contactPerson ?? '',
     phone: customer.phone ?? '',
     email: customer.email ?? '',
+    documentLanguage: customer.documentLanguage,
     bin: customer.bin ?? '',
     paymentTermsDays: customer.paymentTermsDays,
     creditLimit: customer.creditLimit ?? '',
@@ -487,6 +489,25 @@ describe('customers', () => {
     );
     expect(old.items.map((item) => item.id)).toEqual([shop.id]);
     expect((await customer(shop.id)).name).toBe('Bongshal Tailors');
+  });
+
+  it('keep the language their documents are sent in', async () => {
+    const shop = await addCustomer('Kaliganj Bazar Store', { documentLanguage: 'bn' });
+    expect(shop.documentLanguage).toBe('bn');
+    const changed = await send(
+      'PUT',
+      `/customers/${shop.id}`,
+      formOf(shop, { documentLanguage: 'en' }),
+    );
+    expect(customerSchema.parse(changed.json()).documentLanguage).toBe('en');
+
+    // Only a language the PDFs are written in
+    const unknown = await send('POST', '/customers', {
+      ...customerForm('Hindi Traders'),
+      documentLanguage: 'hi',
+    });
+    expect(unknown.statusCode).toBe(400);
+    expect(Object.keys(problemOf(unknown).fieldErrors ?? {})).toEqual(['documentLanguage']);
   });
 });
 

@@ -31,6 +31,19 @@ import {
   toReceipt,
   voidReceipt,
 } from './invoice-data';
+import {
+  createShare,
+  emailDraft,
+  findFile,
+  publicDocument,
+  requestFile,
+  revokeShare,
+  sendEmail,
+  settleDocumentOutput,
+  toDocumentEmail,
+  toDocumentFile,
+  toDocumentShare,
+} from './document-output-data';
 import { mock, MockProblem, problem, readBody, readQuery, reply } from './mock';
 import {
   allocateCreditNote,
@@ -211,6 +224,7 @@ function current() {
   const data = dataOf(workspace);
   settleSetup(data);
   settleExports(data);
+  settleDocumentOutput(data);
   settleImports(data.catalog, (type, params) => {
     data.notifications.unshift({
       id: crypto.randomUUID(),
@@ -3217,6 +3231,105 @@ export const handlers = [
         ),
       );
       return reply(routes.salesAccounts.update, data.salesAccounts);
+    }),
+  ),
+  // --- Step 16: PDFs, emails and share links (document-output-data.ts) ---------------------------
+  // The API asks for the send permission on the four routes that send; the mock signs in as the
+  // owner, who has it, so it checks nothing.
+
+  mock(
+    routes.documentOutput.file,
+    guarded(async ({ request, params }) => {
+      const { kind, id } = routes.documentOutput.file.params.parse(params);
+      const { language } = await readBody(routes.documentOutput.file.body, request);
+      return reply(
+        routes.documentOutput.file,
+        toDocumentFile(requestFile(current(), kind, id, language)),
+      );
+    }),
+  ),
+
+  mock(
+    routes.documentOutput.getFile,
+    guarded(({ params }) => {
+      const { kind, id, fileId } = routes.documentOutput.getFile.params.parse(params);
+      return reply(
+        routes.documentOutput.getFile,
+        toDocumentFile(findFile(current(), kind, id, fileId)),
+      );
+    }),
+  ),
+
+  mock(
+    routes.documentOutput.emailDraft,
+    guarded(({ request, params }) => {
+      const { kind, id } = routes.documentOutput.emailDraft.params.parse(params);
+      const { language } = readQuery(routes.documentOutput.emailDraft.query, request);
+      return reply(routes.documentOutput.emailDraft, emailDraft(current(), kind, id, language));
+    }),
+  ),
+
+  mock(
+    routes.documentOutput.emails,
+    guarded(({ params }) => {
+      const { kind, id } = routes.documentOutput.emails.params.parse(params);
+      const items = current().documentOutput.emails.filter(
+        (email) => email.kind === kind && email.documentId === id,
+      );
+      return reply(routes.documentOutput.emails, { items: items.map(toDocumentEmail) });
+    }),
+  ),
+
+  mock(
+    routes.documentOutput.sendEmail,
+    guarded(async ({ request, params }) => {
+      const { kind, id } = routes.documentOutput.sendEmail.params.parse(params);
+      const body = await readBody(routes.documentOutput.sendEmail.body, request);
+      return reply(
+        routes.documentOutput.sendEmail,
+        toDocumentEmail(sendEmail(current(), kind, id, body)),
+      );
+    }),
+  ),
+
+  mock(
+    routes.documentOutput.shares,
+    guarded(({ params }) => {
+      const { kind, id } = routes.documentOutput.shares.params.parse(params);
+      const items = current().documentOutput.shares.filter(
+        (share) => share.kind === kind && share.documentId === id,
+      );
+      return reply(routes.documentOutput.shares, { items: items.map(toDocumentShare) });
+    }),
+  ),
+
+  mock(
+    routes.documentOutput.createShare,
+    guarded(async ({ request, params }) => {
+      const { kind, id } = routes.documentOutput.createShare.params.parse(params);
+      const { language } = await readBody(routes.documentOutput.createShare.body, request);
+      return reply(routes.documentOutput.createShare, createShare(current(), kind, id, language));
+    }),
+  ),
+
+  mock(
+    routes.documentOutput.revokeShare,
+    guarded(({ params }) => {
+      const { kind, id, shareId } = routes.documentOutput.revokeShare.params.parse(params);
+      revokeShare(current(), kind, id, shareId);
+      return reply(routes.documentOutput.revokeShare, undefined);
+    }),
+  ),
+
+  // No login: the customer opens the link. The mock answers its demo links in the first
+  // workspace (document-output-data.ts says why it cannot answer a link made in the dialog).
+  mock(
+    routes.publicDocuments.get,
+    guarded(async ({ params }) => {
+      const { token } = routes.publicDocuments.get.params.parse(params);
+      const shared = publicDocument(dataOf(WORKSPACES[0]), token);
+      await delay();
+      return reply(routes.publicDocuments.get, shared);
     }),
   ),
 ];

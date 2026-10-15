@@ -2,6 +2,9 @@ import { type DynamicModule, Inject, Module, type OnApplicationShutdown } from '
 import { createDb, type Db } from '@omnivo/db';
 
 import { createWithTenant } from '../common/tenant/with-tenant.js';
+import { DocumentEmailHandler } from '../documents/email.handler.js';
+import { DocumentFileHandler } from '../documents/file.handler.js';
+import { DocumentFileMaker } from '../documents/file-maker.js';
 import type { WorkerConfig } from '../config.js';
 import { CONFIG, DB, RELAY_DB, STORAGE_CONFIG, WITH_TENANT } from '../infra/tokens.js';
 import { LowStockHandler } from '../inventory/low-stock.handler.js';
@@ -64,6 +67,10 @@ export class WorkerModule implements OnApplicationShutdown {
         LowStockHandler,
         StockAccountsHandler,
         TaxRatesHandler,
+        // Step 16: the PDF (drawn from the model the API stored) and the email it goes out with
+        DocumentFileMaker,
+        DocumentFileHandler,
+        DocumentEmailHandler,
       ],
     };
   }

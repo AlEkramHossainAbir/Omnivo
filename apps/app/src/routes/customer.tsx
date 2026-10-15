@@ -16,7 +16,7 @@ import {
   routes,
   todayIn,
 } from '@omnivo/contracts';
-import { useLocale } from '@omnivo/i18n';
+import { LANGUAGES, useLocale } from '@omnivo/i18n';
 import {
   Button,
   Card,
@@ -389,6 +389,13 @@ function CustomerView({ customer }: { customer: Customer }) {
             <Detail label={t('customers.fields.contactPerson')} value={customer.contactPerson} />
             <Detail label={t('customers.fields.phone')} value={customer.phone} />
             <Detail label={t('customers.fields.email')} value={customer.email} />
+            <Detail
+              label={t('customers.fields.documentLanguage')}
+              value={
+                LANGUAGES.find((language) => language.code === customer.documentLanguage)?.label ??
+                null
+              }
+            />
             <Detail label={t('customers.fields.bin')} value={customer.bin} />
             <Detail label={t('customers.fields.group')} value={group?.name ?? null} />
             <Detail

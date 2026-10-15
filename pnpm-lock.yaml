@@ -199,7 +199,7 @@ importers:
       '@fontsource/geist':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource/noto-sans-bengali':
+      '@fontsource/hind-siliguri':
         specifier: ^5.3.0
         version: 5.3.0
       '@nestjs/common':
@@ -1407,6 +1407,9 @@ packages:
 
   '@fontsource/geist@5.3.0':
     resolution: {integrity: sha512-u03ftlfVwb05uijq2jGDJ03/HKGqMKaNFk7KOhkpBUex8+BhrAOfMs/XciJ2UUNUX9fEsZbZQld/RWMA2oFU7g==}
+
+  '@fontsource/hind-siliguri@5.3.0':
+    resolution: {integrity: sha512-jTxXVXLTUYpiCqQ8zGzX9gK4pHkJ6nOn05nKqFjPEpqf3VY6gGREKAIvHfHprE/6N4ittSudnHsMPT10QQfgtw==}
 
   '@fontsource/noto-sans-bengali@5.3.0':
     resolution: {integrity: sha512-EFBMU0UvzyFSc1ERK369zfqEu6DMRuWmCQ2+2ahhQTQAIDPEyN1UYlQdQeFkheu2DWG2hfdwrhiLlGFl2sSr/A==}
@@ -6043,6 +6046,8 @@ snapshots:
   '@fontsource-variable/geist@5.3.0': {}
 
   '@fontsource/geist@5.3.0': {}
+
+  '@fontsource/hind-siliguri@5.3.0': {}
 
   '@fontsource/noto-sans-bengali@5.3.0': {}
 

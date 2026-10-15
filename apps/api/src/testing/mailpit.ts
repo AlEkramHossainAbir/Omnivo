@@ -10,12 +10,33 @@ const mailboxSchema = z.object({
     }),
   ),
 });
-const messageSchema = z.object({ Text: z.string(), HTML: z.string() });
+// Mailpit writes an empty address list as null or [], depending on the header
+const addressesSchema = z
+  .array(z.object({ Address: z.string() }))
+  .nullable()
+  .transform((list) => (list ?? []).map((item) => item.Address));
+const messageSchema = z.object({
+  // SMTP ends lines with \r\n; the tests write \n
+  Text: z.string().transform((text) => text.replaceAll('\r\n', '\n')),
+  HTML: z.string(),
+  From: z.object({ Name: z.string(), Address: z.string() }),
+  Cc: addressesSchema,
+  ReplyTo: addressesSchema,
+  Attachments: z
+    .array(z.object({ PartID: z.string(), FileName: z.string(), ContentType: z.string() }))
+    .nullable()
+    .transform((list) => list ?? []),
+});
 
 export interface Mail {
+  id: string;
   subject: string;
   text: string;
   html: string;
+  from: { name: string; address: string };
+  cc: string[];
+  replyTo: string[];
+  attachments: { partId: string; fileName: string; contentType: string }[];
 }
 
 // The newest email to this address (Mailpit lists newest first). Throws when there is none yet —
@@ -27,7 +48,31 @@ export async function lastMailTo(apiUrl: string, address: string): Promise<Mail>
   const message = messageSchema.parse(
     await (await fetch(`${apiUrl}/api/v1/message/${found.ID}`)).json(),
   );
-  return { subject: found.Subject, text: message.Text, html: message.HTML };
+  return {
+    id: found.ID,
+    subject: found.Subject,
+    text: message.Text,
+    html: message.HTML,
+    from: { name: message.From.Name, address: message.From.Address },
+    cc: message.Cc,
+    replyTo: message.ReplyTo,
+    attachments: message.Attachments.map((item) => ({
+      partId: item.PartID,
+      fileName: item.FileName,
+      contentType: item.ContentType,
+    })),
+  };
+}
+
+// The bytes of one attachment, as the customer's mail program would save it
+export async function attachmentOf(
+  apiUrl: string,
+  mail: Mail,
+  partId: string,
+): Promise<Uint8Array> {
+  const res = await fetch(`${apiUrl}/api/v1/message/${mail.id}/part/${partId}`);
+  if (!res.ok) throw new Error(`no part ${partId} in mail ${mail.id}`);
+  return new Uint8Array(await res.arrayBuffer());
 }
 
 export function invitationTokenOf(mail: Mail): string {

@@ -19,7 +19,7 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
-import { CustomerPicker } from '../components/customer-picker';
+import { CustomerFilter } from '../components/customer-filter';
 import { ReceiptStatusPill } from '../components/sales-pills';
 import { useIsoDate, useTenantId } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
@@ -132,7 +132,7 @@ export function ReceiptsPage() {
       />
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="min-w-0 basis-72">
-          <CustomerPicker
+          <CustomerFilter
             id="receipts-customer"
             aria-label={t('receipts.customer')}
             value={customerId}

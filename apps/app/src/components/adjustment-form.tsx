@@ -1,4 +1,4 @@
-import { Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
+import { Calendar03Icon, Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -22,7 +22,6 @@ import { useLocale } from '@omnivo/i18n';
 import {
   Button,
   Card,
-  DatePicker,
   Dialog,
   FormAlert,
   FormField,
@@ -58,6 +57,10 @@ import {
 
 // Loaded the first time a "Stock in" line shows its cost box (cost-input.tsx says why)
 const MoneyInput = lazy(async () => ({ default: (await import('./cost-input')).MoneyInput }));
+// Step 16: the date picker too (date-input.tsx says why). The form stood at its 100 KB budget, and
+// step 16's Send menu made the bundler share the popover's Radix code in a new way, which took
+// it 0.5 KB over.
+const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
 // The adjustment form: its own chunk (loaded by routes/stock-adjustment.tsx), because the form
 // library, the date picker and the picker are only needed to write — a posted adjustment is read
@@ -272,7 +275,11 @@ export function AdjustmentForm({
         {failure && <FormAlert message={failure} />}
         <Card className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-2 sm:gap-x-4 lg:grid-cols-[13rem_minmax(0,1fr)_minmax(0,1fr)]">
           <FormField control={control} name="date" label={t('adjustments.date')}>
-            {(field) => <DatePicker {...field} />}
+            {(field) => (
+              <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
+                <DatePicker {...field} />
+              </Suspense>
+            )}
           </FormField>
           <SelectField
             label={t('adjustments.warehouse')}
@@ -381,15 +388,19 @@ export function AdjustmentForm({
                           label={t(`stockLines.${date}`)}
                           error={fieldState.error?.message}
                         >
-                          <DatePicker
-                            id={dateField.name}
-                            name={dateField.name}
-                            ref={dateField.ref}
-                            value={dateField.value ?? ''}
-                            onChange={dateField.onChange}
-                            onBlur={dateField.onBlur}
-                            invalid={fieldState.error !== undefined}
-                          />
+                          <Suspense
+                            fallback={<Input id={dateField.name} icon={Calendar03Icon} disabled />}
+                          >
+                            <DatePicker
+                              id={dateField.name}
+                              name={dateField.name}
+                              ref={dateField.ref}
+                              value={dateField.value ?? ''}
+                              onChange={dateField.onChange}
+                              onBlur={dateField.onBlur}
+                              invalid={fieldState.error !== undefined}
+                            />
+                          </Suspense>
                         </LineField>
                       )}
                     />

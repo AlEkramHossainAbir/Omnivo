@@ -232,6 +232,20 @@
       "when": 1791707808167,
       "tag": "0032_returns-credit-notes-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791959910148,
+      "tag": "0033_document-output",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791959911065,
+      "tag": "0034_document-output-rules",
+      "breakpoints": true
     }
   ]
 }

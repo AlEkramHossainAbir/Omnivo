@@ -18,6 +18,8 @@ export const OUTBOX_EVENT_TYPES = [
   'stock.below_reorder',
   'workspace.stock_accounts_requested',
   'workspace.tax_rates_requested',
+  'document.file_requested',
+  'document.email_requested',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

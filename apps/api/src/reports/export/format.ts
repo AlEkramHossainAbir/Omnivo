@@ -32,6 +32,16 @@ export function formatAmount(value: string, language: LanguageCode): string {
   return isDecimal(value) ? MONEY[language].format(value) : value;
 }
 
+// Step 16: a quantity on a document, with its unit's decimals ("72", "2.74"), grouped like money
+// and in Bangla digits on a Bangla document
+export function formatNumber(value: string, decimals: number, language: LanguageCode): string {
+  if (!isDecimal(value)) return value;
+  return new Intl.NumberFormat(language === 'bn' ? 'bn-BD' : 'en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(value);
+}
+
 const DAY = {
   en: new Intl.DateTimeFormat('en-US', {
     day: 'numeric',

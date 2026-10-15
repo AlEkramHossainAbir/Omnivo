@@ -1,4 +1,4 @@
-import { ADDRESS_KINDS } from '@omnivo/contracts';
+import { ADDRESS_KINDS, LANGUAGE_CODES } from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -63,6 +63,9 @@ export const parties = pgTable(
     creditLimit: numeric('credit_limit', { precision: 19, scale: 4 }),
     // NULL = the products' own sale prices
     priceListId: uuid('price_list_id'),
+    // Step 16: the language of the PDFs, emails and links this party gets. The default fills the
+    // parties that already exist.
+    documentLanguage: text('document_language', { enum: LANGUAGE_CODES }).notNull().default('en'),
     notes: text('notes'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
   },

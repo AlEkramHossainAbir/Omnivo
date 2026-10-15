@@ -8,6 +8,7 @@ import {
   defaultNumberFormat,
   type ErrorCode,
   formatDocumentNumber,
+  type LanguageCode,
   type PartyRef,
   periodOf,
   type PriceList,
@@ -125,6 +126,8 @@ interface CustomerParts {
   billing?: string;
   shipping?: [label: string, address: string][];
   archived?: boolean;
+  // English unless the customer reads its documents in Bangla (step 16)
+  documentLanguage?: LanguageCode;
 }
 
 function customer(sales: MockSales, parts: CustomerParts): MockCustomer {
@@ -141,6 +144,7 @@ function customer(sales: MockSales, parts: CustomerParts): MockCustomer {
     paymentTermsDays: parts.paymentTermsDays,
     creditLimit: parts.creditLimit === null ? null : money(parts.creditLimit),
     priceListId: parts.priceList?.id ?? null,
+    documentLanguage: parts.documentLanguage ?? 'en',
     notes: null,
     addresses: [
       ...(parts.billing === undefined
@@ -238,6 +242,7 @@ export function seedSales(data: WorkspaceData, garments: boolean): void {
         name: 'Aarong',
         group: local,
         contactPerson: 'Mahmudul Hasan',
+        documentLanguage: 'bn',
         phone: '+880 1713-045678',
         bin: '0003456780202',
         paymentTermsDays: 30,
@@ -304,6 +309,7 @@ export function seedSales(data: WorkspaceData, garments: boolean): void {
     customer(sales, {
       name: 'Tamanna Pharmacy',
       group: pharmacies,
+      documentLanguage: 'bn',
       phone: '+880 1913-778899',
       paymentTermsDays: 0,
       creditLimit: '0',
@@ -570,6 +576,7 @@ export function saveCustomer(
     paymentTermsDays: input.paymentTermsDays,
     creditLimit: input.creditLimit === null ? null : money(input.creditLimit),
     priceListId: input.priceListId,
+    documentLanguage: input.documentLanguage,
     notes: input.notes,
     addresses: [
       ...addresses.filter((address) => address.kind === 'billing'),

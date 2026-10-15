@@ -15,8 +15,10 @@ import { useLocale } from '@omnivo/i18n';
 import { Button, Card, FormAlert, PageHeader, toast } from '@omnivo/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
+import { lazy, Suspense } from 'react';
 
 import { call } from '../lib/api';
+import type { OutputTarget } from '../lib/document-output';
 import { daysLate } from '../lib/invoices';
 import { useCan } from '../lib/permissions';
 import { branchesQuery } from '../lib/queries';
@@ -37,6 +39,12 @@ import {
 import { InvoicePills } from './sales-pills';
 import { useIsoDate, useTenantId, useWarehouses, warehouseLabel } from './stock-parts';
 
+// Step 16: the Send menu and the history cards, each a chunk of its own (send-menu.tsx says why)
+const SendMenu = lazy(async () => ({ default: (await import('./send-menu')).SendMenu }));
+const DocumentHistory = lazy(async () => ({
+  default: (await import('./document-history')).DocumentHistory,
+}));
+
 // A posted invoice (or a draft for someone who may not write invoices), read only. A posted one
 // never changes: a credit note corrects it (15d). What it was paid with, and "Record payment"
 // while something is still due. Step 15d: what credit notes took back, "Write credit note", and
@@ -55,6 +63,11 @@ export function InvoiceView({ invoice, today }: { invoice: Invoice; today: strin
   const posted = invoice.status === 'posted';
   const late = isOverdue(invoice, today) ? daysLate(invoice.dueDate, today) : 0;
   const open = posted && paymentStatusOf(invoice) !== 'paid';
+  // Step 16: only a numbered invoice goes out (decision 11); a draft has no number yet
+  const target: OutputTarget | null =
+    posted && invoice.number !== null
+      ? { kind: 'invoice', id: invoice.id, number: invoice.number, customerId: invoice.customer.id }
+      : null;
 
   // "Credit whole invoice" (decision 5): a draft with every line as it was billed, saved in one
   // click and opened, so the person checks it before posting. No route of its own: the lines come
@@ -88,6 +101,11 @@ export function InvoiceView({ invoice, today }: { invoice: Invoice; today: strin
           <>
             <InvoicePills invoice={invoice} today={today} />
             {posted && <PrintButton />}
+            {target && (
+              <Suspense fallback={null}>
+                <SendMenu target={target} />
+              </Suspense>
+            )}
           </>
         }
       />
@@ -282,6 +300,11 @@ export function InvoiceView({ invoice, today }: { invoice: Invoice; today: strin
             </Button>
           )}
         </div>
+      )}
+      {target && (
+        <Suspense fallback={null}>
+          <DocumentHistory target={target} />
+        </Suspense>
       )}
       {posted && <InvoicePrint invoice={invoice} />}
     </div>

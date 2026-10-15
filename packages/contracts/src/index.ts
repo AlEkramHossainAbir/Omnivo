@@ -1,4 +1,5 @@
 export * from './accounts.js';
+export * from './amount-words.js';
 export * from './attachments.js';
 export * from './audit.js';
 export * from './auth.js';
@@ -7,6 +8,7 @@ export * from './credit-notes.js';
 export * from './custom-fields.js';
 export * from './customers.js';
 export * from './deliveries.js';
+export * from './document-output.js';
 export * from './errors.js';
 export * from './fields.js';
 export * from './http.js';

@@ -18,6 +18,7 @@ import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
 import { deliveryRoutes } from './deliveries.js';
+import { documentOutputRoutes, publicDocumentRoutes } from './document-output.js';
 import { priceListRoutes } from './price-lists.js';
 import { productCategoryRoutes } from './product-categories.js';
 import { productImportRoutes } from './product-imports.js';
@@ -101,4 +102,6 @@ export const routes = {
   creditNotes: creditNoteRoutes,
   refunds: refundRoutes,
   salesAccounts: salesAccountRoutes,
+  documentOutput: documentOutputRoutes,
+  publicDocuments: publicDocumentRoutes,
 };

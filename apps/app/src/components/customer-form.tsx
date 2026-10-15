@@ -19,7 +19,7 @@ import {
   routes,
   updateCustomerInputSchema,
 } from '@omnivo/contracts';
-import { useLocale } from '@omnivo/i18n';
+import { LANGUAGES, useLocale } from '@omnivo/i18n';
 import {
   Button,
   Card,
@@ -64,6 +64,8 @@ function valuesOf(customer: Customer | null): FormValues {
     contactPerson: customer?.contactPerson ?? '',
     phone: customer?.phone ?? '',
     email: customer?.email ?? '',
+    // Step 16: English until someone picks Bangla (decision 4)
+    documentLanguage: customer?.documentLanguage ?? 'en',
     bin: customer?.bin ?? '',
     paymentTermsDays: customer?.paymentTermsDays ?? 0,
     // "0.0000" stays: a limit of nothing is cash only, not "no limit"
@@ -93,6 +95,7 @@ function fieldNames(addressCount: number): Path<FormValues>[] {
     'contactPerson',
     'phone',
     'email',
+    'documentLanguage',
     'bin',
     'paymentTermsDays',
     'creditLimit',
@@ -290,6 +293,17 @@ export function CustomerForm({
                 placeholder="000123456-0101"
                 {...register('bin')}
                 error={errors.bin?.message}
+              />
+              {/* Step 16: each language by its own name, like the language switch (decision 32) */}
+              <SelectField
+                label={t('customers.fields.documentLanguage')}
+                hint={t('customers.fields.documentLanguageHint')}
+                options={LANGUAGES.map((language) => ({
+                  value: language.code,
+                  label: language.label,
+                }))}
+                {...register('documentLanguage')}
+                error={errors.documentLanguage?.message}
               />
             </div>
             <TextAreaField

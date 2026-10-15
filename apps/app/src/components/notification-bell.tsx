@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   isExportFormat,
   isNotificationType,
+  isOutputDocument,
   isReportKind,
   type Notification,
   type NotificationParams,
@@ -22,6 +23,7 @@ import { useSession } from '../lib/session-store';
 
 // Where a click on each kind of notification takes you. satisfies: a new type without a page does
 // not compile, and the values are checked against the router's real paths by navigate() below.
+// Step 16: a failed email opens its own document, so that type is not here (useOpen below).
 const TARGET = {
   'workspace.ready': '/roles',
   'member.joined': '/team',
@@ -31,7 +33,45 @@ const TARGET = {
   'import.done': '/products/imports',
   'import.failed': '/products/imports',
   'stock.low': '/stock/reorder',
-} as const satisfies Record<NotificationType, string>;
+} as const satisfies Record<Exclude<NotificationType, 'document.email_failed'>, string>;
+
+// A document's page from the notification's kind and id. The list of that kind when the id is
+// missing or not a document's (an older notification); the dashboard for a kind this app does
+// not know. One navigate() per kind: each path has its own parameter name, and TanStack checks
+// each pair against the router.
+function useOpenDocument(): (params: NotificationParams) => Promise<void> {
+  const navigate = useNavigate();
+  return async (params) => {
+    const { document: kind, id } = params;
+    if (typeof kind !== 'string' || !isOutputDocument(kind)) {
+      await navigate({ to: '/' });
+      return;
+    }
+    const known = typeof id === 'string' && id !== '';
+    switch (kind) {
+      case 'quotation':
+        await (known
+          ? navigate({ to: '/quotations/$quotationId', params: { quotationId: id } })
+          : navigate({ to: '/quotations' }));
+        return;
+      case 'invoice':
+        await (known
+          ? navigate({ to: '/invoices/$invoiceId', params: { invoiceId: id } })
+          : navigate({ to: '/invoices' }));
+        return;
+      case 'receipt':
+        await (known
+          ? navigate({ to: '/receipts/$receiptId', params: { receiptId: id } })
+          : navigate({ to: '/receipts' }));
+        return;
+      case 'credit_note':
+        await (known
+          ? navigate({ to: '/credit-notes/$creditNoteId', params: { creditNoteId: id } })
+          : navigate({ to: '/credit-notes' }));
+        return;
+    }
+  };
+}
 
 // The badge stops at 9+: a two-digit count would not fit the 18px circle, and past nine the exact
 // number no longer changes what you do
@@ -44,9 +84,12 @@ function badgeText(count: number): string {
 function useWords() {
   const { t } = useLocale();
   return (params: NotificationParams): NotificationParams => {
-    const { report, format } = params;
+    const { report, format, document: kind } = params;
     return {
       ...params,
+      // Step 16: a document's kind (invoice) becomes its name
+      ...(typeof kind === 'string' &&
+        isOutputDocument(kind) && { document: t(`documentOutput.kinds.${kind}`) }),
       ...(typeof report === 'string' &&
         isReportKind(report) && { report: t(`reports.kinds.${report}`) }),
       ...(typeof format === 'string' &&
@@ -100,6 +143,7 @@ function Item({
 export function NotificationBell() {
   const { t } = useLocale();
   const navigate = useNavigate();
+  const openDocument = useOpenDocument();
   const queryClient = useQueryClient();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const [open, setOpen] = useState(false);
@@ -184,7 +228,11 @@ export function NotificationBell() {
                 onOpen={() => {
                   if (notification.readAt === null) markRead.mutate(notification.id);
                   setOpen(false);
-                  void navigate({ to: TARGET[notification.type] });
+                  if (notification.type === 'document.email_failed') {
+                    void openDocument(notification.params);
+                  } else {
+                    void navigate({ to: TARGET[notification.type] });
+                  }
                 }}
               />
             ))}

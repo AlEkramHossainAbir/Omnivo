@@ -319,6 +319,7 @@ describe('price lists', () => {
       contactPerson: '',
       phone: '',
       email: '',
+      documentLanguage: 'en',
       bin: '',
       paymentTermsDays: 15,
       creditLimit: '200000',

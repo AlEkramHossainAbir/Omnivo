@@ -5,9 +5,10 @@ import { useLocale } from '@omnivo/i18n';
 import { Button, Card, FormAlert, PageHeader, toast } from '@omnivo/ui';
 import { useMutation } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 
 import { call } from '../lib/api';
+import type { OutputTarget } from '../lib/document-output';
 import { useCan } from '../lib/permissions';
 import { isExpired } from '../lib/sales';
 import { Fact } from './adjustment-view';
@@ -17,6 +18,12 @@ import { SalesLinesTable } from './sales-lines-table';
 import { CustomerLink, DocumentNotice, SalesBackLink, useSalesRefresh } from './sales-parts';
 import { QuotationStatusPill } from './sales-pills';
 import { useIsoDate } from './stock-parts';
+
+// Step 16: the Send menu and the history cards, each a chunk of its own (send-menu.tsx says why)
+const SendMenu = lazy(async () => ({ default: (await import('./send-menu')).SendMenu }));
+const DocumentHistory = lazy(async () => ({
+  default: (await import('./document-history')).DocumentHistory,
+}));
 
 // A quotation as the customer got it, with what can be done with it next: make the order, change
 // it, mark it declined or delete it while it is open; open it again once declined.
@@ -39,6 +46,13 @@ export function QuotationView({
   const [confirming, setConfirming] = useState(false);
   const open = quotation.status === 'open';
   const { version } = quotation;
+  // Step 16: a quotation has its number from the moment it is saved, so it can always go out
+  const target: OutputTarget = {
+    kind: 'quotation',
+    id: quotation.id,
+    number: quotation.number,
+    customerId: quotation.customer.id,
+  };
 
   const decline = useMutation({
     mutationFn: () =>
@@ -78,6 +92,9 @@ export function QuotationView({
           <>
             <QuotationStatusPill quotation={quotation} today={today} />
             <PrintButton />
+            <Suspense fallback={null}>
+              <SendMenu target={target} />
+            </Suspense>
           </>
         }
       />
@@ -197,6 +214,9 @@ export function QuotationView({
           </Button>
         </div>
       )}
+      <Suspense fallback={null}>
+        <DocumentHistory target={target} />
+      </Suspense>
       <QuotationPrint quotation={quotation} />
     </div>
   );

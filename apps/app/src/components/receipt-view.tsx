@@ -17,6 +17,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { lazy, Suspense, useState } from 'react';
 
 import { call } from '../lib/api';
+import type { OutputTarget } from '../lib/document-output';
 import { useCan } from '../lib/permissions';
 import { accountsQuery, branchesQuery } from '../lib/queries';
 import { Fact } from './adjustment-view';
@@ -25,6 +26,12 @@ import { PrintButton, ReceiptPrint } from './print-documents';
 import { CustomerLink, DocumentNotice, SalesBackLink } from './sales-parts';
 import { ReceiptStatusPill } from './sales-pills';
 import { useIsoDate, useTenantId } from './stock-parts';
+
+// Step 16: the Send menu and the history cards, each a chunk of its own (send-menu.tsx says why)
+const SendMenu = lazy(async () => ({ default: (await import('./send-menu')).SendMenu }));
+const DocumentHistory = lazy(async () => ({
+  default: (await import('./document-history')).DocumentHistory,
+}));
 
 // The two dialogs as a chunk of their own, loaded when one opens: they bring the form library, the
 // money boxes (decimal.js) and the date picker, and inside this chunk they took it to 113 KB, over
@@ -57,6 +64,10 @@ export function ReceiptView({ receipt, today }: { receipt: Receipt; today: strin
   // Step 15d: money a refund paid back is neither applied nor an advance any more
   const unapplied = unappliedOf(receipt);
   const account = accounts?.find((item) => item.id === receipt.accountId);
+  // Step 16: a voided receipt does not go out (decision 11), the same rule as Print
+  const target: OutputTarget | null = posted
+    ? { kind: 'receipt', id: receipt.id, number: receipt.number, customerId: receipt.customer.id }
+    : null;
 
   return (
     <div className="grid max-w-6xl grid-cols-1 gap-5">
@@ -68,6 +79,11 @@ export function ReceiptView({ receipt, today }: { receipt: Receipt; today: strin
           <>
             <ReceiptStatusPill status={receipt.status} />
             {posted && <PrintButton />}
+            {target && (
+              <Suspense fallback={null}>
+                <SendMenu target={target} />
+              </Suspense>
+            )}
           </>
         }
       />
@@ -231,6 +247,11 @@ export function ReceiptView({ receipt, today }: { receipt: Receipt; today: strin
           )}
         </Suspense>
       </Dialog>
+      {target && (
+        <Suspense fallback={null}>
+          <DocumentHistory target={target} />
+        </Suspense>
+      )}
       {posted && <ReceiptPrint receipt={receipt} />}
     </div>
   );

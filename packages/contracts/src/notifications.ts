@@ -9,6 +9,8 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // import.done: params { file, count } — count = products made; import.failed: { file, count } —
 // count = problems found
 // stock.low: params { warehouse, count } — count = variants that fell to their reorder level
+// document.email_failed: params { document, id, number } — document = an OutputDocument kind, id =
+// the document's id (the bell opens its page)
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
@@ -18,6 +20,7 @@ export const NOTIFICATION_TYPES = [
   'import.done',
   'import.failed',
   'stock.low',
+  'document.email_failed',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

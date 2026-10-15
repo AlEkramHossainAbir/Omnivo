@@ -10,7 +10,7 @@ import { customerSearchQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { useDebounced } from '../lib/use-debounced';
 
-interface CustomerPickerProps {
+export interface CustomerPickerProps {
   id: string;
   name?: string;
   // The chosen customer's id, or '' for none

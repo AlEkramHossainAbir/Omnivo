@@ -69,9 +69,15 @@ function syncDocumentLanguage(language: string): void {
 syncDocumentLanguage(i18n.language);
 i18n.on('languageChanged', syncDocumentLanguage);
 
-export async function setLanguage(language: Language): Promise<void> {
+// remember: false changes this tab only. Step 16's public page shows a document in the language
+// its sender chose; a reader who opens a Bangla link keeps their own language for the app.
+export async function setLanguage(
+  language: Language,
+  { remember = true }: { remember?: boolean } = {},
+): Promise<void> {
   await loadLanguage(language);
   await i18n.changeLanguage(language);
+  if (!remember) return;
   try {
     localStorage.setItem(STORAGE_KEY, language);
   } catch {

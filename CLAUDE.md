@@ -168,6 +168,9 @@ Rules:
 - **Font-family names:** the variable fontsource packages register the families as
   `"Geist Variable"` and `"Geist Mono Variable"`, not `"Geist"`. Writing `"Geist"` in a
   stack silently falls back to the system font, with no error.
+- **Server PDFs** (pdfkit, `apps/api/src/pdf/text.ts`) draw Bangla with Hind Siliguri
+  (`@fontsource/hind-siliguri`), not Noto Sans Bengali: pdfkit's shaper (fontkit) breaks Noto's ন্দ্র
+  (কেন্দ্র, চন্দ্র). The app's screens keep Noto Sans Bengali.
 - **No other families.** No serif display faces. Hierarchy comes from size and weight
   only.
 - Headings use weight 600, `letter-spacing: -0.02em` and `text-wrap: balance`. Large
@@ -420,6 +423,31 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   name, address lines, BIN, phone) on the left, the document's title (24px) and its details on the right. Lines
   are a real `<table>` whose `<thead>` repeats on every page; rows, blocks, totals and the signature lines use
   `break-inside-avoid`. Only a numbered document prints (a draft on paper looks real); a voided receipt does not.
+- **Send menu (document output):** a secondary button "Send" (`Sent` icon, `ArrowDown01` on the right) next to
+  Print on a quotation, invoice, money receipt and credit note: Download PDF (the customer's language), Download
+  PDF in the other language (named in its own script, "বাংলা"), Email, Share on WhatsApp. Without the send
+  permission it is a single secondary "Download PDF" button (`Pdf01`). While the PDF is being made the button says
+  "Making the PDF…"; after about 20 seconds it gives up with a message, never a spinner forever.
+- **Email dialog:** the dialog with Language (a select), To and CC (one text box each, up to 5 addresses), Subject
+  and Message (a text area). A line under the title says the PDF is attached and where replies go. "Send email"
+  (`Mail01`) is the primary button. Changing the language writes the subject and the message again, and its hint
+  says so.
+- **Share dialog:** first the language and "Make link"; then the link in a read-only input (selected on focus,
+  "shown once" as its hint), the WhatsApp message in a read-only text area, "Copy link" and "Copy message"
+  (secondary `sm`, `Copy01`), and "Open WhatsApp" as a real link (`LinkSquare02`) in the footer. When the
+  customer's phone is not a mobile number, a 13px `ink-3` line says WhatsApp will ask for the contact.
+- **Document history cards:** "Emails" and "Share links" under the document, each a card with rows. An email:
+  Sending (`brand`, `Clock01`), Sent (`good`, `CheckmarkCircle02`), Failed (`crit`, `Alert02`) with a `crit`
+  hint, the addresses, CC, who and when. A link: Active (`good`, `Link01`), Ended (neutral, `Hourglass`), Turned
+  off (neutral, `CancelCircle`), its language, who made it, until when, first and last opened; "Turn off"
+  (secondary `sm`, `Unlink01`, asks first) on an active link for people with the send permission.
+- **Public document page (`/d/<token>`):** no app shell and no login. The `bg` page with one centered card (at
+  most 480px; padding 32px, 22px on phones): the company's logo and name, the document's name and number
+  (`Geist Mono`, never broken), the customer, then number, date, total (and for an invoice the due date and what
+  is still due) in a two-column list, a full-width primary "Download PDF" (a `crit` line with `Alert02` instead
+  when the PDF could not be made), and a 13px `ink-3` line that the link is private. A caption footer "Sent with
+  Omnivo". It speaks the link's language and does not save it. An ended or unknown link shows the same "This link
+  no longer works" state.
 
 ### Content and formatting
 

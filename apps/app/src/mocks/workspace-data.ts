@@ -28,6 +28,11 @@ import {
   seedSalesAccounts,
   seedStockAccounts,
 } from './accounting-data';
+import {
+  emptyDocumentOutput,
+  type MockDocumentOutput,
+  seedDocumentOutput,
+} from './document-output-data';
 import { OWNER, type Workspace } from './fixtures';
 import { emptyBilling, type MockBilling } from './invoice-data';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
@@ -76,6 +81,8 @@ export interface WorkspaceData {
   returns: MockReturns;
   // The account credit notes take sales back from (step 15d, Settings → Sales)
   salesAccounts: SalesAccounts;
+  // The PDFs, emails and share links of the documents a customer receives (step 16)
+  documentOutput: MockDocumentOutput;
 }
 
 function now(): string {
@@ -139,6 +146,7 @@ function seed(workspace: Workspace): WorkspaceData {
     billing: emptyBilling(),
     returns: emptyReturns(),
     salesAccounts: { returns: null },
+    documentOutput: emptyDocumentOutput(),
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   data.salesAccounts = seedSalesAccounts(data.accounts);
@@ -148,6 +156,8 @@ function seed(workspace: Workspace): WorkspaceData {
   seedStock(data, garments);
   // After the stock: an order is sent from a warehouse
   seedSalesDocuments(data, garments);
+  // After the quotations: the history belongs to one of them
+  seedDocumentOutput(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });

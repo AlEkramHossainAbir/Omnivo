@@ -148,6 +148,14 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d om
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, count(*) AS lines, sum(l.debit - l.credit) AS amount FROM journal_lines l JOIN journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id JOIN ledger_accounts a ON a.tenant_id = l.tenant_id AND a.id = l.account_id JOIN tenants t ON t.id = l.tenant_id WHERE a.purpose = 'accounts_receivable' AND e.status = 'posted' AND l.party_id IS NULL GROUP BY t.slug"
 # the 20 customers who owe the most (posted lines only)
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, p.code, p.name, sum(l.debit - l.credit) AS balance FROM journal_lines l JOIN journal_entries e ON e.tenant_id = l.tenant_id AND e.id = l.entry_id JOIN parties p ON p.tenant_id = l.tenant_id AND p.id = l.party_id JOIN tenants t ON t.id = l.tenant_id WHERE e.status = 'posted' GROUP BY t.slug, p.code, p.name ORDER BY balance DESC LIMIT 20"
+# PDFs per workspace, document kind, language and status (a 'pending' one older than a minute means the worker is not running)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, f.kind, f.language, f.status, count(*) AS files, max(f.created_at) AS last FROM document_files f JOIN tenants t ON t.id = f.tenant_id GROUP BY t.slug, f.kind, f.language, f.status ORDER BY t.slug, f.kind, f.language, f.status"
+# the last 20 document emails ('failed' rang the sender's bell)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, e.kind, array_to_string(e.\"to\", ', ') AS \"to\", e.subject, e.status, u.email AS sent_by, e.created_at, e.sent_at FROM document_emails e JOIN tenants t ON t.id = e.tenant_id JOIN users u ON u.id = e.sent_by ORDER BY e.created_at DESC LIMIT 20"
+# share links that still work, newest first, with when the customer opened them
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, s.kind, s.language, s.created_at, s.expires_at, s.first_opened_at, s.last_opened_at FROM document_shares s JOIN tenants t ON t.id = s.tenant_id WHERE s.revoked_at IS NULL AND s.expires_at > now() ORDER BY s.created_at DESC"
+# customers per document language
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, p.document_language, count(*) AS customers FROM parties p JOIN tenants t ON t.id = p.tenant_id WHERE p.is_customer GROUP BY t.slug, p.document_language ORDER BY t.slug, p.document_language"
 ```
 
 ## Permission cache (Valkey)

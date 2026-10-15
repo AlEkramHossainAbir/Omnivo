@@ -1,22 +1,7 @@
-import { createRequire } from 'node:module';
-import PDFDocument from 'pdfkit';
-
+import { draw, newPdf } from '../../pdf/text.js';
 import { COPY } from './copy.js';
 import type { DocCell, DocRow, ReportDocument } from './document.js';
 import { formatAmount } from './format.js';
-
-// The fonts of the app (CLAUDE.md → Typography): Geist for Latin text and digits, Noto Sans
-// Bengali for Bangla and the ৳ sign. A PDF must carry its fonts inside it; these files come from
-// the same @fontsource packages the app uses, resolved through node_modules at run time.
-const require = createRequire(import.meta.url);
-const FONT_FILES = {
-  latin: require.resolve('@fontsource/geist/files/geist-latin-400-normal.woff'),
-  'latin-bold': require.resolve('@fontsource/geist/files/geist-latin-600-normal.woff'),
-  bengali:
-    require.resolve('@fontsource/noto-sans-bengali/files/noto-sans-bengali-bengali-400-normal.woff'),
-  'bengali-bold':
-    require.resolve('@fontsource/noto-sans-bengali/files/noto-sans-bengali-bengali-600-normal.woff'),
-} as const;
 
 // The design system's colors (CLAUDE.md → Color tokens, light): the PDF is printed on white
 const INK = '#0F1728';
@@ -31,77 +16,6 @@ const ROW_HEIGHT = 18;
 const FONT_SIZE = 8.5;
 const INDENT = 10;
 
-type Doc = InstanceType<typeof PDFDocument>;
-
-// pdfkit draws a string with one font, and neither font has every character: Geist has no
-// Bangla, the Bangla subset has no Latin letters. So a string is cut into runs, each drawn with
-// its own font. U+0980–U+09FF is the Bengali block (৳ is U+09F3); the zero-width joiners stay with
-// the Bangla run they shape.
-const BENGALI = /[ঀ-৿‌‍]/;
-
-function runs(text: string): { bengali: boolean; text: string }[] {
-  const out: { bengali: boolean; text: string }[] = [];
-  for (const char of text) {
-    const bengali = BENGALI.test(char);
-    const last = out.at(-1);
-    if (last?.bengali === bengali) last.text += char;
-    else out.push({ bengali, text: char });
-  }
-  return out;
-}
-
-function fontOf(bengali: boolean, bold: boolean): keyof typeof FONT_FILES {
-  if (bengali) return bold ? 'bengali-bold' : 'bengali';
-  return bold ? 'latin-bold' : 'latin';
-}
-
-// tnum: Geist's tabular figures, so the digits of a column of amounts line up (CLAUDE.md:
-// tabular-nums on every number that lines up)
-const NUMBERS: PDFKit.Mixins.OpenTypeFeatures[] = ['tnum'];
-
-function widthOf(doc: Doc, text: string, size: number, bold: boolean): number {
-  return runs(text).reduce((sum, run) => {
-    doc.font(fontOf(run.bengali, bold)).fontSize(size);
-    return sum + doc.widthOfString(run.text, { features: NUMBERS });
-  }, 0);
-}
-
-// Whole letters as a reader sees them: a Bangla conjunct (ক্ষ) or a vowel sign is one grapheme
-// of several code points, and cutting between them would leave a broken shape
-const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
-
-// Cut with "…" until it fits: a long account name never runs into the amount next to it
-function fit(doc: Doc, text: string, max: number, size: number, bold: boolean): string {
-  if (widthOf(doc, text, size, bold) <= max) return text;
-  let cut = Array.from(graphemes.segment(text), (part) => part.segment);
-  while (cut.length > 0 && widthOf(doc, `${cut.join('')}…`, size, bold) > max) {
-    cut = cut.slice(0, -1);
-  }
-  return `${cut.join('').trimEnd()}…`;
-}
-
-// y is the baseline: the two fonts have different heights above it, and lining both up on the
-// baseline (not on the top of the line) keeps "৳" level with the digits next to it
-function draw(
-  doc: Doc,
-  text: string,
-  x: number,
-  y: number,
-  options: { size: number; bold: boolean; color: string; align: 'left' | 'right'; width: number },
-): void {
-  const shown = fit(doc, text, options.width, options.size, options.bold);
-  let cursor =
-    options.align === 'right'
-      ? x + options.width - widthOf(doc, shown, options.size, options.bold)
-      : x;
-  doc.fillColor(options.color);
-  for (const run of runs(shown)) {
-    doc.font(fontOf(run.bengali, options.bold)).fontSize(options.size);
-    doc.text(run.text, cursor, y, { lineBreak: false, baseline: 'alphabetic', features: NUMBERS });
-    cursor += doc.widthOfString(run.text, { features: NUMBERS });
-  }
-}
-
 function cellText(cell: DocCell, language: ReportDocument['language']): string {
   if (cell.kind === 'money') return formatAmount(cell.amount, language);
   return cell.kind === 'text' ? cell.text : '';
@@ -110,23 +24,12 @@ function cellText(cell: DocCell, language: ReportDocument['language']): string {
 const BOLD = new Set<DocRow['style']>(['group', 'heading', 'total', 'grand']);
 
 export function writePdf(doc: ReportDocument): Promise<Buffer> {
-  const pdf = new PDFDocument({
-    size: 'A4',
+  const { pdf, done } = newPdf({
     layout: doc.landscape ? 'landscape' : 'portrait',
     margin: MARGIN,
     // Every page stays in memory until the end, so the footer can say "Page 1 of 3"
     bufferPages: true,
     info: { Title: `${doc.title} — ${doc.company}`, Creator: 'Omnivo' },
-  });
-  for (const [name, file] of Object.entries(FONT_FILES)) pdf.registerFont(name, file);
-
-  const chunks: Buffer[] = [];
-  pdf.on('data', (chunk: Buffer) => chunks.push(chunk));
-  const done = new Promise<Buffer>((resolve, reject) => {
-    pdf.on('end', () => {
-      resolve(Buffer.concat(chunks));
-    });
-    pdf.on('error', reject);
   });
 
   const left = MARGIN;

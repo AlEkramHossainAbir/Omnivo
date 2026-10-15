@@ -15,6 +15,7 @@ export type QueueName = (typeof QUEUE_NAMES)[number];
 const QUEUE_OF = {
   'workspace.created': 'email',
   'invitation.issued': 'email',
+  'document.email_requested': 'email',
   'workspace.setup_requested': 'jobs',
   'member.joined': 'jobs',
   'workspace.chart_requested': 'jobs',
@@ -24,6 +25,7 @@ const QUEUE_OF = {
   'stock.below_reorder': 'jobs',
   'workspace.stock_accounts_requested': 'jobs',
   'workspace.tax_rates_requested': 'jobs',
+  'document.file_requested': 'jobs',
 } satisfies Record<OutboxEventType, QueueName>;
 
 // The hourly maintenance job. Not an outbox event: no request asks for it, a scheduler adds it.

@@ -11,6 +11,7 @@ function customer(extra: Partial<CustomerFormValues> = {}): CustomerFormValues {
     contactPerson: '',
     phone: '01711-000000',
     email: '',
+    documentLanguage: 'en',
     bin: '',
     paymentTermsDays: 30,
     creditLimit: '',

@@ -39,6 +39,15 @@ const inviteRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/invite'), 'InvitePage'),
 });
 
+// Step 16: a share link (/d/<token>, sent on WhatsApp). No login, and no redirect for someone who
+// is signed in: the sender may open it to check what the customer sees. Outside the AppShell:
+// the customer is not a user of the app.
+const publicDocumentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/d/$token',
+  component: lazyRouteComponent(() => import('./routes/public-document'), 'PublicDocumentPage'),
+});
+
 const signUpRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/sign-up',
@@ -615,6 +624,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   signUpRoute,
   inviteRoute,
+  publicDocumentRoute,
   onboardingRoute,
   appRoute.addChildren([
     dashboardRoute,

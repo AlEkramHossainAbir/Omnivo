@@ -257,6 +257,18 @@ cost-এ; সব মাল এক warehouse-এ ফেরে, যেমন "Dama
 credited। ৬ মাসের পুরনো invoice-এ শুধু সতর্কবার্তা। Refund (RF, receipt বা credit note-এর বাকি টাকা থেকে; Dr AR /
 Cr টাকার account; ভুল হলে void)। Settings → Sales accounts। Return, credit note, refund প্রিন্ট। Mushak 6.7 পরে।
 
+#### ধাপ ১৬: ডকুমেন্ট আউটপুট
+
+চারটা ডকুমেন্ট বাইরে যায় — quotation, invoice, money receipt, credit note (order, challan, return, refund শুধু
+browser print)। **PDF:** worker-এ pdfkit; API পেজের model (সব শব্দ ও সংখ্যা, ভাষাসহ) বানায়, worker শুধু আঁকে।
+বাংলা ফন্ট Hind Siliguri (fontkit Noto-র ন্দ্র ভাঙে)। প্রথম দরকারে বানায়, MinIO/R2-তে রাখে; ডকুমেন্ট বদলালে
+(যেমন invoice paid হলে) নতুন fingerprint, নতুন ফাইল। **ইমেইল:** dialog (To, CC ≤৫, subject, message), PDF
+attachment, From "Company via Omnivo", reply-to কোম্পানির ইমেইল; ডকুমেন্টে ইমেইলের ইতিহাস; ব্যর্থ হলে bell।
+**WhatsApp:** token লিংক `/d/<token>` (login ছাড়া, ৩০ দিন, বন্ধ করা যায়, DB-তে শুধু hash), `wa.me` মেসেজ
+সহ; public পেজে নম্বর, তারিখ, মোট, বাকি, PDF ডাউনলোড। **কাস্টমারের document language** (English/বাংলা),
+পাঠানোর সময় বদলানো যায়। **কথায় টাকা** (লাখ/কোটি, বাংলা ও ইংরেজি) invoice, receipt, credit note, refund-এ — PDF
+ও প্রিন্টে। পাঠাতে ডকুমেন্টের manage permission, ডাউনলোডে কিছু লাগে না। Mushak 6.3/6.7 পরে।
+
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 
 ---
