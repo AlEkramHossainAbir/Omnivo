@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { accountRoutes } from './accounts.js';
+import { approvalRoutes, approvalRuleRoutes } from './approvals.js';
 import { attachmentRoutes } from './attachments.js';
 import { auditRoutes } from './audit.js';
 import { authRoutes } from './auth.js';
@@ -23,9 +24,11 @@ import { priceListRoutes } from './price-lists.js';
 import { productCategoryRoutes } from './product-categories.js';
 import { productImportRoutes } from './product-imports.js';
 import { productRoutes } from './products.js';
+import { purchaseCostRoutes } from './purchase.js';
 import { quotationRoutes } from './quotations.js';
 import { receiptRoutes } from './receipts.js';
 import { refundRoutes } from './refunds.js';
+import { requisitionRoutes } from './requisitions.js';
 import { roleRoutes } from './roles.js';
 import { salesAccountRoutes } from './sales-accounts.js';
 import { salesOrderRoutes } from './sales-orders.js';
@@ -38,6 +41,7 @@ import { stockAdjustmentRoutes } from './stock-adjustments.js';
 import { stockRevaluationRoutes } from './stock-revaluations.js';
 import { stockTransferRoutes } from './stock-transfers.js';
 import { stockRoutes } from './stock.js';
+import { supplierGroupRoutes, supplierRoutes } from './suppliers.js';
 import { taxRateRoutes } from './tax-rates.js';
 import { unitRoutes } from './units.js';
 import { warehouseRoutes } from './warehouses.js';
@@ -104,4 +108,10 @@ export const routes = {
   salesAccounts: salesAccountRoutes,
   documentOutput: documentOutputRoutes,
   publicDocuments: publicDocumentRoutes,
+  suppliers: supplierRoutes,
+  supplierGroups: supplierGroupRoutes,
+  approvalRules: approvalRuleRoutes,
+  approvals: approvalRoutes,
+  purchaseCosts: purchaseCostRoutes,
+  requisitions: requisitionRoutes,
 };

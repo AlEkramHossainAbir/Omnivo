@@ -40,3 +40,5 @@ export * from './sales-returns.js';
 export * from './credit-notes.js';
 export * from './refunds.js';
 export * from './document-output.js';
+export * from './approvals.js';
+export * from './requisitions.js';

@@ -10,6 +10,7 @@ import {
   formatDocumentNumber,
   type LanguageCode,
   type PartyRef,
+  type PartyRole,
   periodOf,
   type PriceList,
   type PriceListItem,
@@ -552,10 +553,12 @@ export function saveCustomer(
     }
   }
   const code = input.code ?? existing?.code ?? newCode(data);
-  const taken = sales.customers.some(
-    (item) => item.id !== existing?.id && item.code.toLowerCase() === code.toLowerCase(),
-  );
-  if (taken) throw fieldProblem(409, 'customer_code_taken', 'code');
+  // One code per party (step 17a): a supplier's code is taken too, except this party's own
+  const same = (item: { id: string; code: string }) =>
+    item.id !== existing?.id && item.code.toLowerCase() === code.toLowerCase();
+  if (sales.customers.some(same) || data.suppliers.suppliers.some(same)) {
+    throw fieldProblem(409, 'customer_code_taken', 'code');
+  }
   const own = new Set(existing?.addresses.map((address) => address.id));
   const addresses = input.addresses.map((address) => ({
     id: address.id !== null && own.has(address.id) ? address.id : crypto.randomUUID(),
@@ -590,8 +593,10 @@ export function saveCustomer(
 }
 
 // The journal keeps a party's code and name on each line, and so does each sales document (step
-// 15b); the API joins them on read. After a rename they show the new name, like the API's.
-export function refreshPartyRefs(data: WorkspaceData, saved: MockCustomer): void {
+// 15b); the API joins them on read. After a rename they show the new name, like the API's. A
+// supplier is renamed the same way (step 17a): its payable lines, and its sales documents when it
+// is a customer too.
+export function refreshPartyRefs(data: WorkspaceData, saved: PartyRef): void {
   const ref = { id: saved.id, code: saved.code, name: saved.name };
   for (const entry of data.journal.entries) {
     for (const line of entry.lines) {
@@ -620,24 +625,29 @@ function salesDocumentsOf(data: WorkspaceData): { customer: PartyRef }[] {
   ];
 }
 
-// Only a customer no entry and no sales document names, drafts included (the API's
+// Only a customer no receivable line and no sales document names, drafts included (the API's
 // journal_lines_party_fk, step 15b's quotations/sales_orders/deliveries_customer_fk, step 15c's
-// invoices/receipts_customer_fk, and step 15d's sales_returns/credit_notes/refunds_customer_fk)
+// invoices/receipts_customer_fk, and step 15d's sales_returns/credit_notes/refunds_customer_fk).
+// Receivable lines only: a party that is also a supplier keeps its payable lines (step 17a).
 export function assertCustomerUnused(data: WorkspaceData, id: string): void {
   const used =
-    data.journal.entries.some((entry) => entry.lines.some((line) => line.party?.id === id)) ||
-    salesDocumentsOf(data).some((document) => document.customer.id === id);
+    data.journal.entries.some((entry) =>
+      entry.lines.some((line) => line.party?.id === id && isReceivable(data, line.accountId)),
+    ) || salesDocumentsOf(data).some((document) => document.customer.id === id);
   if (used) throw new MockProblem(409, 'customer_in_use');
 }
 
-// A line's customer as the journal shows it. Unknown, archived (unless allowArchived) or not a
-// customer: undefined, and checkParties() answers journal_party_invalid.
+// A line's party as the journal shows it: a customer on the receivable, a supplier on the payable
+// (step 17a). Unknown, archived (unless allowArchived) or not on that side: undefined, and
+// checkParties() answers journal_party_invalid.
 export function partyRefOf(
-  sales: MockSales,
+  data: WorkspaceData,
+  role: PartyRole,
   partyId: string,
   allowArchived = false,
 ): PartyRef | undefined {
-  const found = sales.customers.find((item) => item.id === partyId);
+  const side = role === 'customer' ? data.sales.customers : data.suppliers.suppliers;
+  const found = side.find((item) => item.id === partyId);
   if (!found || (found.archivedAt !== null && !allowArchived)) return undefined;
   return { id: found.id, code: found.code, name: found.name };
 }

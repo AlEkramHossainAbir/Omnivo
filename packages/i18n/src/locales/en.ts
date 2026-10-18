@@ -42,6 +42,7 @@ export const en = {
     auditLog: 'Audit log',
     team: 'Team',
     roles: 'Roles',
+    approvalRules: 'Approval levels',
     accounting: 'Accounting',
     chartOfAccounts: 'Chart of accounts',
     journal: 'Journal',
@@ -80,6 +81,11 @@ export const en = {
     salesReturns: 'Sales returns',
     creditNotes: 'Credit notes',
     refunds: 'Refunds',
+    purchase: 'Purchase',
+    suppliers: 'Suppliers',
+    supplierGroups: 'Supplier groups',
+    requisitions: 'Requisitions',
+    approvals: 'Approvals',
   },
   auth: {
     workspace: 'Workspace',
@@ -233,7 +239,12 @@ export const en = {
         credit_note: 'Credit note',
         refund: 'Refund',
       },
-      purchase: { order: 'Purchase order', bill: 'Supplier bill' },
+      purchase: {
+        order: 'Purchase order',
+        bill: 'Supplier bill',
+        supplier: 'Supplier code',
+        requisition: 'Purchase requisition',
+      },
       inventory: {
         receipt: 'Goods receipt (GRN)',
         product: 'Product code',
@@ -419,6 +430,9 @@ export const en = {
     customer: 'Customer',
     customerPlaceholder: 'Pick a customer',
     noCustomer: 'No customer',
+    supplier: 'Supplier',
+    supplierPlaceholder: 'Pick a supplier',
+    noSupplier: 'No supplier',
     branch: 'Branch',
     noBranch: 'No branch',
     debit: 'Debit',
@@ -508,6 +522,9 @@ export const en = {
     noCustomer: 'No customer',
     noCustomerHint:
       'Posted before customers were kept. Reverse the entry and post it again with a customer.',
+    noSupplier: 'No supplier',
+    noSupplierHint:
+      'Posted before suppliers were kept. Reverse the entry and post it again with a supplier.',
     pickTitle: 'Pick an account',
     pickBody: 'Choose an account above to see its entries, like Cash in hand or Office rent.',
     emptyTitle: 'No entries in these dates',
@@ -533,6 +550,12 @@ export const en = {
     receivableHint: 'Enter what each customer owed, one line each. The account holds their total.',
     noCustomerHint:
       'Saved before customers were kept. Pick the customer, or split the amount over several lines.',
+    supplier: 'Supplier',
+    supplierPlaceholder: 'Pick a supplier',
+    addSupplier: 'Add a supplier',
+    payableHint: 'Enter what you owed each supplier, one line each. The account holds their total.',
+    noSupplierHint:
+      'Saved before suppliers were kept. Pick the supplier, or split the amount over several lines.',
     differenceHint: 'What the balances are out by goes here. It reads zero once everything is in.',
     save: 'Post opening balances',
     saved: 'Opening balances posted as {{number}}',
@@ -1480,10 +1503,17 @@ export const en = {
     confirmDelete: 'Delete {{code}}',
     deleteWarning:
       'This cannot be undone. A customer with entries or documents can only be archived.',
+    // A party that is both: the delete removes only the customer side (step 17a, decision 10)
+    deleteSideWarning:
+      '{{name}} is also a supplier. Only the customer side is removed, with its shipping addresses and sales terms. The supplier and its entries stay.',
     deleted: '{{name}} deleted',
+    sideDeleted: '{{name}} is no longer a customer',
     archivedNotice:
       'This customer is archived: it is hidden from new documents. Its history and balance stay.',
     alsoSupplier: 'Also a supplier',
+    makeSupplier: 'Make supplier too',
+    madeSupplier: '{{name}} is a supplier too',
+    supplierPage: 'Open as supplier',
     kpis: {
       balance: 'Balance',
       creditLimit: 'Credit limit',
@@ -2335,6 +2365,368 @@ export const en = {
   // Download PDF, email and share link on a quotation, invoice, money receipt and credit note.
   // Only the app's own words: what the customer reads (the PDF, the email, the WhatsApp text) is
   // written by the server, in the customer's language (apps/api/src/documents/copy.ts)
+  suppliers: {
+    title: 'Suppliers',
+    description: 'Mills, importers and vendors you buy from, and what you owe them',
+    add: 'Add supplier',
+    searchLabel: 'Search suppliers',
+    searchPlaceholder: 'Name, code, contact person or phone',
+    group: 'Group',
+    allGroups: 'All groups',
+    allSuppliers: 'All suppliers',
+    show: 'Show',
+    statuses: { active: 'Active', archived: 'Archived' },
+    columns: {
+      supplier: 'Supplier',
+      phone: 'Phone',
+      group: 'Group',
+      terms: 'Terms',
+      balance: 'Balance',
+    },
+    termsDays_one: '{{count}} day',
+    termsDays_other: '{{count}} days',
+    onReceipt: 'On receipt',
+    emptyTitle: 'No suppliers yet',
+    emptyBody:
+      'Add your first supplier, like a yarn mill in Narayanganj or a carton maker in Gazipur. What you owe them shows here once their entries are posted.',
+    noMatchTitle: 'No supplier matches "{{query}}"',
+    noMatchBody: 'Check the spelling, or search by code or phone number.',
+    archivedEmptyTitle: 'No archived suppliers',
+    archivedEmptyBody:
+      'A supplier you archive shows up here. Their history and what you owe them stay.',
+    loadFailed: "Couldn't load the suppliers. Refresh the page to try again.",
+    readOnly:
+      'You can see the suppliers. To change them, ask for the purchase.supplier.manage permission.',
+    back: 'Suppliers',
+    newTitle: 'New supplier',
+    editTitle: 'Edit {{code}}',
+    notFound: "This supplier doesn't exist, or it was deleted.",
+    sections: {
+      basics: 'Basics',
+      terms: 'Purchase terms',
+      termsHint: 'Used on every bill from this supplier.',
+      bankAccounts: 'Bank accounts',
+      bankAccountsHint:
+        'Where you pay this supplier, up to {{max}}. The payment screen shows them.',
+    },
+    fields: {
+      code: 'Code',
+      codeHint: 'Leave empty for the next number, like S-00042.',
+      name: 'Name',
+      namePlaceholder: 'Meghna Spinning Mills',
+      group: 'Group',
+      noGroup: 'No group',
+      contactPerson: 'Contact person',
+      contactPersonPlaceholder: 'Md. Rafiqul Islam',
+      phone: 'Phone',
+      email: 'Email',
+      bin: 'BIN',
+      binHint: "The supplier's 13-digit VAT registration number, printed on its Mushak 6.3",
+      paymentTerms: 'Payment terms',
+      paymentTermsHint: 'Days from the bill to its due date. 0 = due on receipt.',
+      days: 'days',
+      documentLanguage: 'Document language',
+      documentLanguageHint: 'Purchase orders and emails to this supplier start in this language.',
+      address: 'Address',
+      addressHint:
+        'Printed on purchase orders. If this supplier is also a customer, it is their billing address too.',
+      addressPlaceholder: 'Plot 12, BSCIC Industrial Area, Fatullah, Narayanganj',
+      notes: 'Notes',
+      notesPlaceholder: 'Delivers on Saturdays only. Sends the bill with the challan.',
+    },
+    bankAccounts: {
+      number: 'Bank account {{number}}',
+      bankName: 'Bank',
+      bankNamePlaceholder: 'Dutch-Bangla Bank',
+      branchName: 'Branch',
+      branchNamePlaceholder: 'Narayanganj',
+      accountName: 'Account name',
+      accountNamePlaceholder: 'Meghna Spinning Mills Ltd.',
+      accountNumber: 'Account number',
+      accountNumberHint: 'Spaces and dashes are taken out.',
+      routingNumber: 'Routing number',
+      routingNumberHint: '9 digits, printed on the cheque leaf',
+      add: 'Add a bank account',
+      remove: 'Remove bank account {{number}}',
+      empty: 'No bank account yet. Add the one you pay this supplier into.',
+      // On the supplier page: "Dutch-Bangla Bank, Narayanganj"
+      bankAndBranch: '{{bank}}, {{branch}}',
+      routing: 'Routing {{number}}',
+    },
+    create: 'Add supplier',
+    save: 'Save supplier',
+    created: '{{name}} added',
+    updated: '{{name}} saved',
+    edit: 'Edit',
+    archive: 'Archive',
+    restore: 'Restore',
+    archivedToast: '{{name}} archived',
+    restoredToast: '{{name}} restored',
+    delete: 'Delete',
+    confirmDelete: 'Delete {{code}}',
+    deleteWarning:
+      'This cannot be undone. A supplier with entries or documents can only be archived.',
+    // A party that is both: the delete removes only the supplier side (decision 10)
+    deleteSideWarning:
+      '{{name}} is also a customer. Only the supplier side is removed, with its bank accounts and purchase terms. The customer and its entries stay.',
+    deleted: '{{name}} deleted',
+    sideDeleted: '{{name}} is no longer a supplier',
+    archivedNotice:
+      'This supplier is archived: it is hidden from new documents. Its history and balance stay.',
+    alsoCustomer: 'Also a customer',
+    makeCustomer: 'Make customer too',
+    madeCustomer: '{{name}} is a customer too',
+    customerPage: 'Open as customer',
+    kpis: {
+      balance: 'Balance',
+      terms: 'Payment terms',
+      bankAccounts: 'Bank accounts',
+    },
+    // What the company owes the supplier, or what the supplier owes back (an advance paid)
+    owe: 'You owe {{amount}}',
+    inAdvance: '{{amount}} paid in advance',
+    settled: 'Nothing owed',
+    details: 'Details',
+    noAddress: 'No address',
+    noBankAccounts: 'No bank accounts',
+    statementTitle: 'Statement',
+    statementSubtitle: 'Posted entries for this supplier, with what you owe after each one',
+    statementEmptyTitle: 'No entries in these dates',
+    statementEmptyBody:
+      'Pick other dates. Their opening balance, bills and payments show up here once they are posted.',
+    statementLoadFailed: "Couldn't load the statement. Refresh the page to try again.",
+    // The supplier picker on journal lines and opening balances
+    pickerSearch: 'Search suppliers',
+    pickerEmpty: 'No active supplier matches',
+  },
+  supplierGroups: {
+    title: 'Supplier groups',
+    description:
+      'Groups like Yarn and fabric, Accessories and Packaging, to sort and filter your suppliers',
+    add: 'Add group',
+    columns: {
+      name: 'Group',
+      suppliers: 'Suppliers',
+    },
+    supplierCount_one: '{{formatted}} supplier',
+    supplierCount_other: '{{formatted}} suppliers',
+    newTitle: 'Add group',
+    editTitle: 'Edit {{name}}',
+    name: 'Name',
+    namePlaceholder: 'Yarn and fabric',
+    created: '{{name}} added',
+    updated: '{{name}} saved',
+    delete: 'Delete',
+    confirmDelete: 'Delete {{name}}',
+    deleteWarning: 'Only a group with no suppliers can be deleted.',
+    deleted: '{{name}} deleted',
+    emptyTitle: 'No supplier groups yet',
+    emptyBody:
+      'Add groups like Yarn and fabric, Accessories and Packaging, then put each supplier in one.',
+    loadFailed: "Couldn't load the supplier groups. Refresh the page to try again.",
+    readOnly: 'To change the groups, ask for the purchase.supplier.manage permission.',
+  },
+  // The lines of a purchase document. A requisition uses the estimated cost; 17b's purchase order
+  // adds its price, discount and VAT here
+  purchaseLines: {
+    items: 'Items',
+    addItems: 'Add items',
+    pickerTitle: 'Add items',
+    pickerDescription: 'Search products and services. Each click adds a line in its buying unit.',
+    pickerSearch: 'Search products and services',
+    pickerEmpty: 'No active product matches. Check the spelling, or search by code or SKU.',
+    add: 'Add',
+    added: 'Added',
+    service: 'Service',
+    line: 'Line {{number}}',
+    remove: 'Remove line {{number}}',
+    item: 'Item',
+    description: 'Description',
+    quantity: 'Quantity',
+    unit: 'Unit',
+    estimatedCost: 'Estimated cost',
+    costPer: 'Cost per {{unit}}',
+    amount: 'Amount',
+    // Where a new line's cost came from (the cost lookup)
+    fromAverage: 'From the average cost',
+    noCost: 'No cost known: type one',
+    noLines: 'No items yet. Add what needs to be bought.',
+    tooMany: 'A document holds up to {{max}} lines. Write a second one for the rest.',
+    lineCount_one: '{{count}} item',
+    lineCount_other: '{{count}} items',
+    total: 'Estimated total',
+  },
+  requisitions: {
+    title: 'Purchase requisitions',
+    description: 'Requests to buy goods or services, approved before anyone orders',
+    new: 'New requisition',
+    newTitle: 'New purchase requisition',
+    back: 'Requisitions',
+    show: 'Show',
+    all: 'All',
+    allWarehouses: 'All warehouses',
+    statuses: {
+      draft: 'Draft',
+      pending: 'Waiting for approval',
+      approved: 'Approved',
+      cancelled: 'Cancelled',
+    },
+    columns: {
+      number: 'Number',
+      date: 'Date',
+      warehouse: 'Warehouse',
+      neededBy: 'Needed by',
+      requestedBy: 'Requested by',
+      amount: 'Estimated amount',
+      status: 'Status',
+    },
+    date: 'Date',
+    warehouse: 'Warehouse',
+    warehouseHint: 'Where the goods are needed. Its branch is the requisition’s branch.',
+    neededBy: 'Needed by',
+    neededByHint: 'Leave it empty if there is no date.',
+    noDate: 'No date',
+    note: 'Note',
+    notePlaceholder:
+      'For buyer PO-HM-2026-1187: 2,000 polo shirts in navy. Cutting starts on 10 November.',
+    requestedBy: 'Requested by',
+    save: 'Save requisition',
+    saved: '{{number}} saved',
+    edit: 'Edit',
+    submit: 'Submit for approval',
+    submitHint:
+      'Its estimated amount chooses who approves it. Nobody can change it while it waits.',
+    submitted: '{{number}} sent for approval',
+    // No level applies, or an Owner submitted it: approved in the same step
+    submittedApproved: '{{number}} approved',
+    reopen: 'Reopen',
+    reopenTitle: 'Reopen {{number}}',
+    reopenBody:
+      'It goes back to draft so it can be changed. When it is submitted again, it is approved again from the first level. This round stays in its history.',
+    reopened: '{{number}} is a draft again',
+    cancel: 'Cancel requisition',
+    cancelTitle: 'Cancel {{number}}',
+    cancelBody:
+      'Nobody can order from it any more. It stays in the list as cancelled, with its history.',
+    keep: 'Keep it',
+    cancelled: '{{number}} cancelled',
+    delete: 'Delete requisition',
+    confirmDelete: 'Delete {{number}}',
+    deleteWarning:
+      'This cannot be undone. Its number is not used again. A requisition that was ever submitted can only be cancelled.',
+    deleted: '{{number}} deleted',
+    // The document notice above the requisition
+    notices: {
+      pending: 'Waiting for approval. Reopen it to change it.',
+      approved: 'Approved and locked. Reopen it to change it; it is then approved again.',
+      cancelled: 'Cancelled. It stays here for the record.',
+      rejected: '{{name}} sent it back: "{{comment}}" Change it and submit it again.',
+    },
+    cantWrite:
+      'You can view requisitions. Ask a workspace owner for the purchase.requisition.manage permission to write them.',
+    notFound: "This requisition doesn't exist, or it was deleted.",
+    emptyTitle: 'No requisitions yet',
+    emptyBody:
+      'Write one when the store or the floor needs something, like 2,000 cones of 30s yarn or a motor for a sewing machine. It is approved before anyone orders.',
+    loadFailed: "Couldn't load the requisitions. Refresh the page to try again.",
+  },
+  // The approval of any document that needs one: the "Waiting for me" page, the approval card on the
+  // document's page, and its two dialogs
+  approvals: {
+    title: 'Approvals',
+    description: 'Documents waiting for your decision, oldest first',
+    // An ApprovalDocument kind → its name; the bell and the list put it before the number
+    kinds: { requisition: 'Requisition' },
+    columns: {
+      document: 'Document',
+      date: 'Date',
+      subject: 'For',
+      submittedBy: 'Submitted by',
+      amount: 'Amount',
+      step: 'Step',
+    },
+    stepOf: '{{position}} of {{count}}',
+    emptyTitle: 'Nothing waits for you',
+    emptyBody:
+      'When someone submits a requisition that needs your role, it shows up here and the bell tells you.',
+    loadFailed: "Couldn't load the documents waiting for you. Refresh the page to try again.",
+    cardTitle: 'Approval',
+    cardSubtitle: 'Every level it reaches approves it, one after another',
+    rounds: {
+      pending: 'Waiting',
+      approved: 'Approved',
+      rejected: 'Rejected',
+      reopened: 'Reopened',
+    },
+    round: 'Round {{number}}',
+    earlierRounds: 'Earlier rounds',
+    submitted: 'Submitted by {{name}} on {{date}} for {{amount}}',
+    levelLine: '{{role}} · from {{amount}}',
+    deletedRole: '{{name}} (a deleted role)',
+    steps: {
+      approved: 'Approved',
+      rejected: 'Rejected',
+      waiting: 'Waiting',
+      notYet: 'Not yet',
+      // A step after a rejection or a reopen: the round ended before it
+      notDecided: 'Not decided',
+    },
+    decided: '{{name}}, {{date}}',
+    noLevels: 'No level applied, so it was approved when it was submitted.',
+    ownerSubmitted: 'An Owner submitted it, so it was approved at once.',
+    notSubmitted:
+      'Not submitted yet. Every level its amount reaches approves it, one after another.',
+    waitingForYou: 'Step {{position}} waits for you.',
+    waitingFor: 'Waiting for {{role}}',
+    ownDocument: 'You submitted it, so someone else approves it.',
+    approve: 'Approve',
+    reject: 'Reject',
+    approveTitle: 'Approve {{number}}',
+    approveBody: 'You approve step {{position}} of {{count}}, as {{role}}.',
+    approveLast: 'This is the last step: {{number}} is approved when you do.',
+    approveNext: 'The next level is told when you do.',
+    comment: 'Comment',
+    approveCommentPlaceholder: 'Fine for the November production plan',
+    rejectTitle: 'Reject {{number}}',
+    rejectBody:
+      'It goes back to draft. {{name}} sees your comment, can change it and submit it again.',
+    rejectComment: 'What should change',
+    rejectCommentPlaceholder: 'Order 1,500 cones, not 2,000: the October plan changed.',
+    confirmApprove: 'Approve',
+    confirmReject: 'Send back to draft',
+    approvedToast: 'Your approval of {{number}} is saved',
+    rejectedToast: '{{number}} sent back to draft',
+  },
+  // Settings → Approval levels (GET /approval-rules, PUT /approval-rules/:document)
+  approvalRules: {
+    title: 'Approval levels',
+    description:
+      'Who approves which documents, by amount. A document passes every level it reaches, one after another.',
+    // One card per ApprovalDocument kind
+    documents: {
+      requisition: {
+        title: 'Purchase requisitions',
+        subtitle: 'By the estimated amount of the requisition',
+      },
+    },
+    level: 'Level {{number}}',
+    from: 'From amount',
+    fromHint: 'From this amount up. 0 = every document.',
+    role: 'Role',
+    rolePlaceholder: 'Pick a role',
+    add: 'Add a level',
+    remove: 'Remove level {{number}}',
+    none: 'No levels: these documents are approved as soon as they are submitted.',
+    tooMany: 'Up to {{max}} levels.',
+    rules:
+      'Each level starts at the amount of the level above it, or higher, and each role is used once. An Owner may approve any level, and an Owner’s own documents are approved when submitted.',
+    applies: 'Documents already waiting keep the levels they were submitted with.',
+    save: 'Save levels',
+    saved: '{{document}}: levels saved',
+    readOnly:
+      'You can see the levels. To change them, ask for the core.settings.manage permission.',
+    loadFailed: "Couldn't load the approval levels. Refresh the page to try again.",
+  },
   documentOutput: {
     // OutputDocument → name: the bell and the public page get the kind, not its words
     kinds: {
@@ -2610,6 +3002,7 @@ export const en = {
       accounting: 'Accounting',
       inventory: 'Inventory',
       sales: 'Sales',
+      purchase: 'Purchase',
     },
     members_one: '{{count}} person',
     members_other: '{{count}} people',
@@ -2689,6 +3082,15 @@ export const en = {
       credit_note: { manage: 'Write and post credit notes, and apply them to invoices' },
       refund: { manage: 'Pay money back to customers, and void refunds' },
     },
+    purchase: {
+      supplier: {
+        manage: 'Add, edit and archive suppliers and their groups',
+        balance: 'See what the company owes suppliers, and their statements',
+      },
+      requisition: {
+        manage: 'Write requisitions, submit them for approval, reopen and cancel them',
+      },
+    },
   },
   invite: {
     checking: 'Checking your invitation…',
@@ -2747,6 +3149,9 @@ export const en = {
       sales_return: 'Sales returns',
       credit_note: 'Credit notes',
       refund: 'Refunds',
+      supplier: 'Suppliers',
+      supplier_group: 'Supplier groups',
+      requisition: 'Purchase requisitions',
     },
     columns: {
       when: 'When',
@@ -2942,6 +3347,31 @@ export const en = {
         voided: 'Voided a refund',
       },
       sales_accounts: { changed: 'Changed the sales returns account' },
+      supplier: {
+        created: 'Added a supplier',
+        updated: 'Edited a supplier',
+        archived: 'Archived a supplier',
+        restored: 'Restored a supplier',
+        deleted: 'Deleted a supplier',
+      },
+      supplier_group: {
+        created: 'Added a supplier group',
+        updated: 'Renamed a supplier group',
+        deleted: 'Deleted a supplier group',
+      },
+      approval_rules: { changed: 'Changed the approval levels' },
+      requisition: {
+        created: 'Wrote a requisition',
+        updated: 'Edited a draft requisition',
+        deleted: 'Deleted a draft requisition',
+        cancelled: 'Cancelled a requisition',
+      },
+      approval: {
+        submitted: 'Submitted for approval',
+        approved: 'Approved a step',
+        rejected: 'Rejected: sent back to draft',
+        reopened: 'Reopened: back to draft',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -3022,7 +3452,7 @@ export const en = {
       rates: 'VAT rates',
       taxRate: 'VAT rate',
       pricesIncludeVat: 'Prices include VAT',
-      group: 'Customer group',
+      group: 'Group',
       paymentTermsDays: 'Payment terms (days)',
       creditLimit: 'Credit limit',
       priceList: 'Price list',
@@ -3047,6 +3477,14 @@ export const en = {
       applied: 'Applied',
       source: 'Paid back from',
       returns: 'Sales returns account',
+      bankAccounts: 'Bank accounts',
+      neededBy: 'Needed by',
+      status: 'Status',
+      steps: 'Levels',
+      step: 'Step',
+      role: 'Role',
+      comment: 'Comment',
+      requisition: 'Purchase requisitions',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -3104,7 +3542,7 @@ export const en = {
     unread: 'Unread',
     emptyTitle: 'No notifications yet',
     emptyBody:
-      'You hear here when someone joins from your invitation, or when an email could not be sent.',
+      'You hear here when someone joins from your invitation, when a document waits for your approval, or when an email could not be sent.',
     loadFailed: "Couldn't load your notifications. Try again in a moment.",
     // type → text. The type's dot nests in i18next, so t(`notifications.types.${type}`) lands here;
     // a type without text here does not type-check
@@ -3133,6 +3571,12 @@ export const en = {
       document: {
         email_failed:
           "{{document}} {{number}} couldn't be emailed. Check the address and send it again.",
+      },
+      // {{document}} arrives as an approval kind (requisition); the bell puts its name in
+      approval: {
+        requested: '{{document}} {{number}} is waiting for your approval.',
+        approved: '{{document}} {{number}} is approved.',
+        rejected: '{{document}} {{number}} was sent back to draft. Open it to see why.',
       },
     },
   },
@@ -3191,7 +3635,7 @@ export const en = {
     last_owner: 'Keep at least one owner. Make someone else an owner first.',
     own_membership: "You can't change your own roles or remove yourself. Ask another admin.",
     role_in_use:
-      'Someone has this role or an open invitation gives it. Change their roles or cancel the invitation first.',
+      'Someone has this role, an open invitation gives it, an approval level uses it, or a document waits for its approval. Change that first: their roles, the invitation, Settings → Approval levels, or the document.',
     setup_started: 'The setup has already started. Reload the page to see how far it is.',
     setup_not_failed: "The setup hasn't failed. Reload the page to see how far it is.",
     account_code_format: 'Use digits, like 1121. Dots or hyphens may split them, like 1-1-21.',
@@ -3396,12 +3840,14 @@ export const en = {
     price_list_item_twice: 'This item and unit are here twice. Keep one.',
     price_list_unit_invalid:
       "This unit is not one of the product's units any more. Remove the row.",
-    journal_party_required: 'Pick the customer this amount belongs to.',
+    journal_party_required:
+      'Pick who this amount belongs to: the customer on the receivable, the supplier on the payable.',
     journal_party_not_allowed:
-      'Only lines on the receivable account take a customer. Remove the customer.',
-    journal_party_invalid: 'Pick an active customer. This one is archived or was deleted.',
+      'Only lines on the receivable or the payable account take a customer or a supplier. Remove it.',
+    journal_party_invalid:
+      'Pick an active customer on the receivable, or an active supplier on the payable.',
     opening_balance_twice:
-      'This account is here twice. Put the amount on one line, or pick another customer.',
+      'This account is here twice. Put the amount on one line, or pick another customer or supplier.',
     sales_customer_required: 'Pick the customer.',
     sales_customer_invalid:
       'Pick an active customer. An order that has a number, or comes from a quotation, keeps its customer.',
@@ -3526,6 +3972,44 @@ export const en = {
     email_too_many: 'Up to 5 addresses in a box. Send a second email to the rest.',
     email_subject_required: 'Type a subject.',
     share_link_not_found: 'This link no longer works. Ask whoever sent it for a new one.',
+    supplier_code_format: 'Use letters and digits without spaces, like S-00042.',
+    supplier_code_taken:
+      'Another customer or supplier has this code. Pick another, or leave it empty for the next number.',
+    supplier_name_required: "Enter the supplier's name, at least 2 characters.",
+    supplier_group_invalid: 'Pick a group from the list. This one was deleted.',
+    supplier_in_use:
+      'Entries or purchase documents use this supplier, so it cannot be deleted. Archive it instead.',
+    supplier_group_name_required: 'Enter a name, at least 2 characters.',
+    supplier_group_name_taken: 'Another group has this name.',
+    supplier_group_in_use: 'Suppliers are in this group. Move them to another group first.',
+    supplier_bank_name_required: 'Enter the bank, at least 2 characters.',
+    supplier_account_name_required: 'Enter the name the account is in, at least 2 characters.',
+    bank_account_number_format: 'Enter the account number: 6 to 20 digits.',
+    routing_number_format: 'Enter the 9-digit routing number, or leave it empty.',
+    party_role_exists: 'It is already a customer and a supplier. Reload the page.',
+    approval_level_order: 'Start this level at the amount of the level above it, or higher.',
+    approval_role_twice: 'This role is on another level. Use each role once.',
+    approval_role_invalid: 'Pick a role from the list. This one was deleted.',
+    approval_not_pending:
+      'This document is no longer waiting for this approval. Reload it to see where it is now.',
+    approval_not_allowed:
+      'This step needs another role. Someone with that role, or an Owner, decides it.',
+    approval_own_document: 'You submitted this document, so someone else approves it.',
+    approval_comment_required: 'Say what should change, at least 2 characters.',
+    purchase_warehouse_required: 'Pick the warehouse.',
+    purchase_warehouse_invalid: 'Pick an active warehouse. This one is archived or was deleted.',
+    purchase_date_required: 'Enter the date.',
+    purchase_lines_required: 'Add at least one item.',
+    purchase_item_invalid: 'Pick an active product. This one is archived or was deleted.',
+    purchase_not_draft: 'This was submitted, so it cannot change. Reopen it first.',
+    purchase_was_submitted:
+      'This was submitted once, so its approval history stays. Cancel it instead.',
+    purchase_cannot_reopen:
+      'Only a document that waits or is approved can be reopened, and only before a later document uses it.',
+    purchase_cannot_cancel:
+      'Only a draft or an approved document can be cancelled. Reopen a waiting one first.',
+    requisition_needed_by: 'Pick a day on or after the requisition date.',
+    requisition_cost_required: 'Enter the estimated cost. 0 is fine for a free item.',
     import_options_without_code:
       'Give rows with options a code: rows with the same code are one product.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',

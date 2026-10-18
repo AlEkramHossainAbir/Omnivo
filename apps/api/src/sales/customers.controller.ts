@@ -54,6 +54,15 @@ export class CustomersController {
     return this.customers.setArchived(params.id, body.version, false);
   }
 
+  // Step 17a: "Make customer too" on a supplier's page
+  @Endpoint(routes.customers.fromSupplier)
+  fromSupplier({
+    params,
+    body,
+  }: RouteInput<Routes['fromSupplier']>): Promise<RouteResponse<Routes['fromSupplier']>> {
+    return this.customers.fromSupplier(params.id, body.version);
+  }
+
   @Endpoint(routes.customers.remove)
   remove({ params, query }: RouteInput<Routes['remove']>): Promise<void> {
     return this.customers.remove(params.id, query.version);

@@ -5,6 +5,7 @@ import {
   type OpeningBalances,
   type OpeningBalancesInput,
   absMoney,
+  partyRoleOf,
   shiftIsoDate,
   subtractMoney,
   sumMoney,
@@ -68,7 +69,7 @@ export class OpeningBalancesService {
       if ((current?.id ?? null) !== input.replaces) throw versionConflict();
 
       // Keep each line's index in the request, so an error lands under the right row of the page
-      // The same account (and customer) twice is refused by the contract (opening_balance_twice)
+      // The same account (and party) twice is refused by the contract (opening_balance_twice)
       const filled = input.lines.flatMap((line, index) =>
         isZeroMoney(line.debit) && isZeroMoney(line.credit) ? [] : [{ ...line, index }],
       );
@@ -104,14 +105,12 @@ export class OpeningBalancesService {
       const stock = await stockAccountIds(tx);
       const onStock = filled.flatMap((line) => (stock.has(line.accountId) ? [line.index] : []));
       if (onStock.length > 0) throw invalidLines('journal_account_stock', onStock);
-      // Step 15a: the receivable is split by customer, and only the receivable names one. Checked
-      // here and not only when the entry is posted below: the posted entry has no zero lines and an
-      // extra equity line, so its line numbers are not the page's rows.
-      const partyIssues = await checkParties(
-        tx,
-        filled,
-        new Map(accounts.map((account) => [account.id, account.purpose])),
-      );
+      // The receivable is split by customer (step 15a) and the payable by supplier (step 17a), and
+      // no other account names a party. Checked here and not only when the entry is posted below:
+      // the posted entry has no zero lines and an extra equity line, so its line numbers are not
+      // the page's rows.
+      const purposeOf = new Map(accounts.map((account) => [account.id, account.purpose]));
+      const partyIssues = await checkParties(tx, filled, purposeOf);
       if (partyIssues.length > 0) {
         // An issue's index is its place in `filled`; the page needs the row it came from
         throw partyError(
@@ -177,8 +176,13 @@ export class OpeningBalancesService {
         changes: created({
           goLiveDate: filled.length > 0 ? input.goLiveDate : null,
           accounts: new Set(filled.map((line) => line.accountId)).size,
-          // How many customers' dues came in with it (step 15a)
-          customers: filled.filter((line) => line.partyId !== null).length,
+          // How many customers' dues (step 15a) and suppliers' bills (step 17a) came in with it
+          customers: filled.filter(
+            (line) => partyRoleOf(purposeOf.get(line.accountId) ?? null) === 'customer',
+          ).length,
+          suppliers: filled.filter(
+            (line) => partyRoleOf(purposeOf.get(line.accountId) ?? null) === 'supplier',
+          ).length,
           entry: number,
         }),
       });

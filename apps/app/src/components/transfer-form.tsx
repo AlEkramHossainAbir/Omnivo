@@ -1,4 +1,4 @@
-import { Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
+import { Calendar03Icon, Delete02Icon, PlusSignIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -14,10 +14,10 @@ import { useLocale } from '@omnivo/i18n';
 import {
   Button,
   Card,
-  DatePicker,
   Dialog,
   FormAlert,
   FormField,
+  Input,
   PageHeader,
   SelectField,
   TextField,
@@ -25,7 +25,7 @@ import {
 } from '@omnivo/ui';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { Controller, type Path, useFieldArray, useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
@@ -44,6 +44,11 @@ import {
   useWarehouses,
   warehouseLabel,
 } from './stock-parts';
+
+// Step 17a: the date picker as a chunk of its own (date-input.tsx says why), like the adjustment
+// form's since step 16. The contracts of 17a (the purchase routes every page's API client
+// carries) took this form 1.9 KB over its 100 KB budget.
+const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
 // The transfer form: writing a new transfer or changing a draft. "Send transfer" saves and sends
 // in one request: the stock leaves the first warehouse and is in transit. Its own chunk, like the
@@ -223,7 +228,11 @@ export function TransferForm({
             error={errors.toWarehouseId?.message}
           />
           <FormField control={control} name="date" label={t('transfers.date')}>
-            {(field) => <DatePicker {...field} />}
+            {(field) => (
+              <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
+                <DatePicker {...field} />
+              </Suspense>
+            )}
           </FormField>
           <div className="sm:col-span-2 lg:col-span-3">
             <TextField

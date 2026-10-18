@@ -103,9 +103,9 @@ export const MAX_OPENING_BALANCE_LINES = 5000;
 export const entryRefSchema = z.object({ id: z.uuid(), number: z.string() });
 export type EntryRef = z.infer<typeof entryRefSchema>;
 
-// The customer (later also the supplier) a line belongs to, as a page shows it. Sent with its code
-// and name because a workspace has too many customers for the app to load them all, the way it
-// loads the chart of accounts.
+// The customer or supplier a line belongs to, as a page shows it. Sent with its code and name
+// because a workspace has too many parties for the app to load them all, the way it loads the
+// chart of accounts.
 export const partyRefSchema = z.object({ id: z.uuid(), code: z.string(), name: z.string() });
 export type PartyRef = z.infer<typeof partyRefSchema>;
 
@@ -113,7 +113,8 @@ export const journalLineSchema = z.object({
   id: z.uuid(),
   accountId: z.uuid(),
   branchId: z.uuid().nullable(),
-  // Set on every line of the receivable account (step 15a), and on no other line
+  // A customer on every line of the receivable account (step 15a), a supplier on every line of the
+  // payable (step 17a), and nobody on any other line
   party: partyRefSchema.nullable(),
   description: z.string().nullable(),
   // Decimal strings with 4 places, as Postgres sends NUMERIC(19,4): "18500.0000". One side is
@@ -349,7 +350,8 @@ export const ledgerRoutes = {
 // purpose is 'opening_balance_equity'.
 
 // The receivable account's opening balance is split by customer (step 15a): one line per customer
-// who owed money on the go-live date. Every other account has one line, without a party.
+// who owed money on the go-live date. The payable is split by supplier the same way (step 17a): one
+// line per supplier the company owed. Every other account has one line, without a party.
 export const openingBalanceLineSchema = z.object({
   accountId: z.uuid(),
   party: partyRefSchema.nullable(),
@@ -389,10 +391,10 @@ export const openingBalancesInputSchema = z.object({
         }),
     )
     .max(MAX_OPENING_BALANCE_LINES)
-    // One line per account, and per customer on the receivable: two lines for the same customer
-    // would be added up silently, and the person would not see the number they typed. Empty lines
-    // do not count: the server drops them, and the page may hold a few customer rows not filled in
-    // yet (step 15a.6).
+    // One line per account, and per party on the receivable and the payable: two lines for the same
+    // customer would be added up silently, and the person would not see the number they typed.
+    // Empty lines do not count: the server drops them, and the page may hold a few party rows not
+    // filled in yet (step 15a.6).
     .superRefine((lines, ctx) => {
       const seen = new Set<string>();
       lines.forEach((line, index) => {

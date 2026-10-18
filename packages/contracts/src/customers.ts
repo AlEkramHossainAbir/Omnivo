@@ -10,7 +10,7 @@ import { LANGUAGE_CODES } from './preferences.js';
 import { optionalCode } from './products.js';
 import { binSchema, optionalEmailSchema } from './settings.js';
 
-// A customer is a party: one row in the parties table, which step 17 also uses for suppliers. A
+// A customer is a party: one row in the parties table, which step 17a also uses for suppliers. A
 // distributor that both buys from a company and sells to it is one party with one statement, not
 // two records that have to be netted by hand.
 
@@ -61,7 +61,7 @@ export const customerSchema = z.object({
   // The billing address first (if there is one), then the shipping addresses in the order the
   // person put them. The first shipping address is the default on a delivery.
   addresses: z.array(customerAddressSchema),
-  // The same party is also a supplier (step 17)
+  // The same party is also a supplier (step 17a)
   isSupplier: z.boolean(),
   // What the customer owes now: debit minus credit of the receivable lines that carry this party.
   // null when the person may not see balances (sales.customer.balance).
@@ -262,6 +262,20 @@ export const customerRoutes = {
     body: customerVersionInputSchema,
     response: customerSchema,
   }),
+  // A supplier the company starts selling to (step 17a): the same party, now also a customer, with
+  // the customer's own fields at their defaults (no group, terms 0, no limit, no price list)
+  fromSupplier: defineRoute({
+    method: 'POST',
+    path: '/suppliers/:id/make-customer',
+    summary: 'Make a supplier a customer too',
+    auth: 'bearer',
+    permission: 'sales.customer.manage',
+    status: 200,
+    params: customerParamsSchema,
+    body: customerVersionInputSchema,
+    response: customerSchema,
+  }),
+  // A customer that is also a supplier (step 17a) stays as a supplier: only the customer side goes
   remove: defineRoute({
     method: 'DELETE',
     path: '/customers/:id',

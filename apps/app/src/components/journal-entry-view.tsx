@@ -6,10 +6,10 @@ import {
   type Branch,
   contractErrorMap,
   isJournalSource,
-  isPartyAccountPurpose,
   isSalesJournalSource,
   isStockJournalSource,
   type JournalEntry,
+  partyRoleOf,
   reverseJournalEntryInputSchema,
   routes,
 } from '@omnivo/contracts';
@@ -43,6 +43,9 @@ import {
   useIsoDate,
   useJournalRefresh,
 } from './journal-parts';
+
+// The look of a line's customer or supplier under its account
+const PARTY_LINK = 'block w-fit text-caption text-brand underline-offset-3 hover:underline';
 
 // A posted entry, read only, with Reverse — or a draft for someone who may post but not edit.
 // A chunk of its own, like the form (routes/journal-entry.tsx).
@@ -294,6 +297,8 @@ export function EntryView({
             {entry.lines.map((line) => {
               const account = accountOf.get(line.accountId);
               const branch = line.branchId === null ? undefined : branchOf.get(line.branchId);
+              // A receivable line names a customer, a payable line (step 17a) a supplier
+              const partyRole = partyRoleOf(account?.purpose ?? null);
               return (
                 <tr key={line.id} className="border-t border-line">
                   <td className="px-5 py-3">
@@ -309,21 +314,30 @@ export function EntryView({
                     ) : (
                       '—'
                     )}
-                    {/* The receivable's customer (step 15a), linked to their page. A line posted
-                        before customers were kept says so. */}
-                    {line.party ? (
+                    {/* The receivable's customer (step 15a) or the payable's supplier (step 17a),
+                        linked to their page. A line posted before they were kept says so. */}
+                    {line.party && partyRole === 'supplier' ? (
+                      <Link
+                        to="/suppliers/$supplierId"
+                        params={{ supplierId: line.party.id }}
+                        className={PARTY_LINK}
+                      >
+                        {partyLabel(line.party)}
+                      </Link>
+                    ) : line.party ? (
                       <Link
                         to="/customers/$customerId"
                         params={{ customerId: line.party.id }}
-                        className="block w-fit text-caption text-brand underline-offset-3 hover:underline"
+                        className={PARTY_LINK}
                       >
                         {partyLabel(line.party)}
                       </Link>
                     ) : (
-                      account &&
-                      isPartyAccountPurpose(account.purpose) && (
+                      partyRole !== null && (
                         <span className="block text-caption text-ink-3">
-                          {t('journal.noCustomer')}
+                          {t(
+                            partyRole === 'customer' ? 'journal.noCustomer' : 'journal.noSupplier',
+                          )}
                         </span>
                       )
                     )}

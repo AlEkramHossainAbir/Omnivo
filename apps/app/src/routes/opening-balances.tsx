@@ -5,10 +5,11 @@ import {
   type Account,
   ACCOUNT_TYPES,
   contractErrorMap,
-  isPartyAccountPurpose,
   type OpeningBalances,
   openingBalancesInputSchema,
   type PartyRef,
+  type PartyRole,
+  partyRoleOf,
   routes,
   shiftIsoDate,
 } from '@omnivo/contracts';
@@ -39,10 +40,10 @@ import { useCan } from '../lib/permissions';
 import { accountsQuery, openingBalancesQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 
-// The customer box and the date picker as chunks of their own (step 15d): both bring the popover,
+// The party box and the date picker as chunks of their own (step 15d): both bring the popover,
 // and the 15d contracts took this page over its 100 KB budget (the journal form's fix in 15c)
-const CustomerPicker = lazy(async () => ({
-  default: (await import('../components/customer-picker')).CustomerPicker,
+const PartyPicker = lazy(async () => ({
+  default: (await import('../components/party-picker')).PartyPicker,
 }));
 const DatePicker = lazy(async () => ({
   default: (await import('../components/date-input')).DatePicker,
@@ -70,12 +71,30 @@ function emptyLine(accountId: string): LineValues {
   return { accountId, partyId: '', debit: '', credit: '' };
 }
 
-// The form's lines: one per account, and on the receivable one per customer (step 15a). A
-// receivable with nothing saved starts with one empty customer row, ready to fill.
+// The words of a party account's rows: the receivable's customers (step 15a), the payable's
+// suppliers (step 17a)
+const PARTY_WORDS = {
+  customer: {
+    party: 'opening.customer',
+    hint: 'opening.receivableHint',
+    unassigned: 'opening.noCustomerHint',
+    add: 'opening.addCustomer',
+  },
+  supplier: {
+    party: 'opening.supplier',
+    hint: 'opening.payableHint',
+    unassigned: 'opening.noSupplierHint',
+    add: 'opening.addSupplier',
+  },
+} as const satisfies Record<PartyRole, Record<string, string>>;
+
+// The form's lines: one per account, and on the receivable one per customer (step 15a), on the
+// payable one per supplier (step 17a). A party account with nothing saved starts with one empty
+// row, ready to fill.
 function linesOf(
   saved: OpeningBalances,
   rows: readonly Account[],
-  partyAccounts: ReadonlySet<string>,
+  partyAccounts: ReadonlyMap<string, PartyRole>,
 ): LineValues[] {
   return rows.flatMap((account) => {
     const own = saved.lines.filter((line) => line.accountId === account.id);
@@ -91,8 +110,8 @@ function linesOf(
       ];
     }
     if (own.length === 0) return [emptyLine(account.id)];
-    // A line saved before step 15a has no customer: it stays, with its amount, until the person
-    // picks one or splits it
+    // A line saved before step 15a (step 17a for the payable) has no party: it stays, with its
+    // amount, until the person picks one or splits it
     return own.map((line) => ({
       accountId: account.id,
       partyId: line.party?.id ?? '',
@@ -117,14 +136,18 @@ function OpeningForm({
   const queryClient = useQueryClient();
   const showDate = useIsoDate();
   const canPost = useCan()('accounting.journal.post');
+  // Which party each party account takes, by account id
   const partyAccounts = useMemo(
     () =>
-      new Set(
-        rows.filter((account) => isPartyAccountPurpose(account.purpose)).map((item) => item.id),
+      new Map(
+        rows.flatMap((account): [string, PartyRole][] => {
+          const role = partyRoleOf(account.purpose);
+          return role === null ? [] : [[account.id, role]];
+        }),
       ),
     [rows],
   );
-  // The customers saved before, so each box names its customer before any search ran
+  // The parties saved before, so each box names its party before any search ran
   const savedParties = useMemo(
     () =>
       new Map<string, PartyRef>(
@@ -152,8 +175,8 @@ function OpeningForm({
   const totals = totalsOf(lines);
   // Opening balance equity takes the other side of the difference, so the entry balances
   const gap = balanceSide(totals.difference);
-  // Where each account's lines are in the form. "Add a customer" appends at the end, so a
-  // receivable's rows are not next to each other in the array; the page shows them together.
+  // Where each account's lines are in the form. "Add a customer" appends at the end, so a party
+  // account's rows are not next to each other in the array; the page shows them together.
   const indexesOf = useMemo(() => {
     const map = new Map<string, number[]>();
     lines.forEach((line, index) => {
@@ -167,8 +190,9 @@ function OpeningForm({
       const result = await call(routes.openingBalances.save, { body: values });
       queryClient.setQueryData(openingBalancesQuery(tenantId).queryKey, result);
       await queryClient.invalidateQueries({ queryKey: ['journal', tenantId] });
-      // The customers' balances come from these lines too
+      // The customers' and the suppliers' balances come from these lines too
       await queryClient.invalidateQueries({ queryKey: ['customers', tenantId] });
+      await queryClient.invalidateQueries({ queryKey: ['suppliers', tenantId] });
       toast(
         result.entry ? t('opening.saved', { number: result.entry.number }) : t('opening.cleared'),
       );
@@ -214,20 +238,22 @@ function OpeningForm({
     </span>
   );
 
-  // The receivable: a row per customer, each with its picker, and "Add a customer"
-  const partyRows = (account: Account) => {
+  // The receivable and the payable: a row per party, each with its picker, and "Add a customer"
+  // (or "Add a supplier")
+  const partyRows = (account: Account, role: PartyRole) => {
     const indexes = indexesOf.get(account.id) ?? [];
+    const words = PARTY_WORDS[role];
     return (
       <div key={account.id} role="group" aria-label={`${account.code} ${account.name}`}>
         <div className="grid gap-0.5 px-5 pt-2">
           {accountName(account)}
-          <span className="text-caption text-ink-3">{t('opening.receivableHint')}</span>
+          <span className="text-caption text-ink-3">{t(words.hint)}</span>
         </div>
         {indexes.map((index, position) => {
           const number = position + 1;
           const label = t('opening.customerLine', { account: account.code, number });
           const start = fields[index];
-          // Saved with an amount and no customer: from before customers were kept
+          // Saved with an amount and no party: from before customers (or suppliers) were kept
           const unassigned =
             start !== undefined &&
             (start.partyId ?? '') === '' &&
@@ -249,11 +275,12 @@ function OpeningForm({
                       render={({ field, fieldState }) => (
                         <LineField
                           id={field.name}
-                          label={t('opening.customer')}
+                          label={t(words.party)}
                           error={fieldState.error?.message}
                         >
                           <Suspense fallback={<Input id={field.name} icon={UserIcon} disabled />}>
-                            <CustomerPicker
+                            <PartyPicker
+                              role={role}
                               id={field.name}
                               name={field.name}
                               ref={field.ref}
@@ -263,7 +290,7 @@ function OpeningForm({
                               onBlur={field.onBlur}
                               disabled={!canPost}
                               invalid={fieldState.error !== undefined}
-                              aria-label={`${t('opening.customer')}, ${label}`}
+                              aria-label={`${t(words.party)}, ${label}`}
                               aria-describedby={
                                 fieldState.error ? `${field.name}-error` : undefined
                               }
@@ -286,7 +313,7 @@ function OpeningForm({
                   )}
                 </div>
                 {unassigned && (
-                  <span className="text-caption text-ink-3">{t('opening.noCustomerHint')}</span>
+                  <span className="text-caption text-ink-3">{t(words.unassigned)}</span>
                 )}
               </div>
               {amounts(index, label)}
@@ -303,7 +330,7 @@ function OpeningForm({
               }}
             >
               <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={1.5} />
-              {t('opening.addCustomer')}
+              {t(words.add)}
             </Button>
           </div>
         )}
@@ -363,7 +390,8 @@ function OpeningForm({
               </h2>
               {rows.map((account) => {
                 if (account.type !== type) return null;
-                if (partyAccounts.has(account.id)) return partyRows(account);
+                const role = partyAccounts.get(account.id);
+                if (role !== undefined) return partyRows(account, role);
                 const index = indexesOf.get(account.id)?.[0];
                 if (index === undefined) return null;
                 return (
@@ -452,7 +480,7 @@ export function OpeningBalancesPage() {
     const extra = new Set<Account>();
     for (const line of saved.lines) {
       const account = accounts.find((item) => item.id === line.accountId);
-      // A Set: the receivable has a line per customer (step 15a), but one row block
+      // A Set: a party account has a line per party (steps 15a, 17a), but one row block
       if (account && !list.includes(account)) extra.add(account);
     }
     return [...list, ...extra];

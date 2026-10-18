@@ -5,10 +5,12 @@ import {
   BookOpen02Icon,
   CalendarLock01Icon,
   ChartIncreaseIcon,
+  CheckmarkBadge01Icon,
   Coins01Icon,
   DashboardSquare01Icon,
   DeliveryReturn01Icon,
   DeliveryTruck01Icon,
+  Factory01Icon,
   FileDownloadIcon,
   FileImportIcon,
   FolderTreeIcon,
@@ -34,10 +36,13 @@ import {
   Store01Icon,
   TableIcon,
   Tag01Icon,
+  TaskAdd01Icon,
   TaskEdit01Icon,
   TextIcon,
   UnfoldMoreIcon,
+  UserCheck01Icon,
   UserCircleIcon,
+  UserGroup02Icon,
   UserGroup03Icon,
   UserGroupIcon,
   UserMultiple02Icon,
@@ -64,6 +69,7 @@ import {
   SidebarNav,
   toast,
 } from '@omnivo/ui';
+import { useQuery } from '@tanstack/react-query';
 import { createLink, Outlet, useNavigate } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
@@ -71,6 +77,7 @@ import { NotificationBell } from '../components/notification-bell';
 import { savePreference } from '../lib/preferences';
 import { logout, switchTenant } from '../lib/session';
 import { useCan } from '../lib/permissions';
+import { waitingCountQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { isTheme } from '../lib/theme';
 
@@ -230,6 +237,8 @@ export function AppShell() {
   const me = useSession((state) => state.me);
   // লুকানো শুধু সুবিধা — আসল পাহারা API-র PermissionGuard। যেটা খুললেই 403, সেটা মেনুতে না দেখানো
   const can = useCan();
+  // Step 17a: how many documents wait for this person's decision, polled like the bell's badge
+  const { data: waiting = 0 } = useQuery(waitingCountQuery(me?.tenant.id ?? ''));
 
   // refresh ব্যর্থ হলে (session শেষ, অন্য ট্যাবে লগআউট) api.ts store-এ signed-out বসায়
   useEffect(() => {
@@ -343,6 +352,28 @@ export function AppShell() {
               {t('nav.priceLists')}
             </NavLink>
           </NavGroup>
+          {/* Purchase (step 17a): everyone reads the requisitions and the suppliers, like the sales
+              side. Approvals is "waiting for me": anyone may hold a level's role, so it is there
+              for everyone, with a crit count while something waits (CLAUDE.md → Sidebar nav). */}
+          <NavGroup label={t('nav.purchase')}>
+            <NavLink to="/requisitions" icon={TaskAdd01Icon}>
+              {t('nav.requisitions')}
+            </NavLink>
+            <NavLink
+              to="/approvals"
+              icon={CheckmarkBadge01Icon}
+              count={waiting > 0 ? waiting : undefined}
+              countTone="crit"
+            >
+              {t('nav.approvals')}
+            </NavLink>
+            <NavLink to="/suppliers" icon={Factory01Icon}>
+              {t('nav.suppliers')}
+            </NavLink>
+            <NavLink to="/supplier-groups" icon={UserGroup02Icon}>
+              {t('nav.supplierGroups')}
+            </NavLink>
+          </NavGroup>
           {/* Every member reads products (every sales and stock line picks one); imports change
               them, so only managers see that page */}
           <NavGroup label={t('nav.inventory')}>
@@ -403,6 +434,13 @@ export function AppShell() {
             {(can('core.user.read') || can('core.role.manage')) && (
               <NavLink to="/roles" icon={SecurityCheckIcon}>
                 {t('nav.roles')}
+              </NavLink>
+            )}
+            {/* Step 17a: a workspace setting, next to the roles its levels name; shown to the
+                people who may change it, like Numbering */}
+            {can('core.settings.manage') && (
+              <NavLink to="/approval-rules" icon={UserCheck01Icon}>
+                {t('nav.approvalRules')}
               </NavLink>
             )}
             <NavLink to="/custom-fields" icon={TextIcon}>

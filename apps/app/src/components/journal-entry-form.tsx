@@ -13,9 +13,10 @@ import {
   type Account,
   type Branch,
   contractErrorMap,
-  isPartyAccountPurpose,
   type JournalEntry,
   type PartyRef,
+  type PartyRole,
+  partyRoleOf,
   routes,
   updateJournalEntryInputSchema,
 } from '@omnivo/contracts';
@@ -47,10 +48,10 @@ import { balanceSide, formAmount, ledgerOptions, linePath, totalsOf } from '../l
 import { useCan } from '../lib/permissions';
 import { BackLink, failureOf, LineField, useJournalRefresh } from './journal-parts';
 
-// The date picker and the customer box as chunks of their own (step 15c): both bring the popover,
+// The date picker and the party box as chunks of their own (step 15c): both bring the popover,
 // and the 15c contracts took this chunk over its 100 KB budget (the delivery form's fix)
-const CustomerPicker = lazy(async () => ({
-  default: (await import('./customer-picker')).CustomerPicker,
+const PartyPicker = lazy(async () => ({
+  default: (await import('./party-picker')).PartyPicker,
 }));
 const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
@@ -113,7 +114,6 @@ export function EntryForm({
     handleSubmit,
     setError,
     setValue,
-    getValues,
     formState: { errors, isSubmitting },
   } = useForm({
     resolver: zodResolver(updateJournalEntryInputSchema, { error: contractErrorMap }),
@@ -152,17 +152,19 @@ export function EntryForm({
     [branches, t],
   );
   const showBranch = branches.length > 0;
-  // The receivable (step 15a): a line on it names its customer. The server checks it too.
+  // The receivable (step 15a) and the payable (step 17a): a line on either names its party, a
+  // customer or a supplier. The server checks it too.
   const partyAccounts = useMemo(
     () =>
-      new Set(
-        accounts
-          .filter((account) => isPartyAccountPurpose(account.purpose))
-          .map((account) => account.id),
+      new Map(
+        accounts.flatMap((account): [string, PartyRole][] => {
+          const role = partyRoleOf(account.purpose);
+          return role === null ? [] : [[account.id, role]];
+        }),
       ),
     [accounts],
   );
-  // The customers the draft was saved with, so each box names its customer before any search
+  // The parties the draft was saved with, so each box names its party before any search
   const savedParties = useMemo(
     () =>
       new Map<string, PartyRef>(
@@ -260,6 +262,8 @@ export function EntryForm({
           {fields.map((line, index) => {
             const number = index + 1;
             const lineErrors = errors.lines?.[index];
+            // Which party the line's account takes: undefined = none
+            const partyRole = partyAccounts.get(lines[index]?.accountId ?? '');
             const removeButton = (
               <IconButton
                 icon={Delete02Icon}
@@ -300,31 +304,36 @@ export function EntryForm({
                         lineErrors?.accountId ? `${linePath(index, 'accountId')}-error` : undefined
                       }
                       {...register(linePath(index, 'accountId'), {
-                        // Another account takes no customer: the server would refuse the line
-                        // (journal_party_not_allowed), and the box is gone, so it could not be
-                        // seen to clear it
+                        // A new account starts without a party. Another account takes none (the
+                        // server would refuse the line, journal_party_not_allowed, and the box is
+                        // gone, so it could not be seen to clear it); and a customer picked on the
+                        // receivable is not a supplier on the payable (journal_party_invalid).
                         onChange: () => {
-                          if (!partyAccounts.has(getValues(linePath(index, 'accountId')))) {
-                            setValue(linePath(index, 'partyId'), '');
-                          }
+                          setValue(linePath(index, 'partyId'), '');
                         },
                       })}
                     />
                   </LineField>
-                  {/* Under the account, not in a column of its own: only receivable lines have
-                      it, and a column empty on most lines would squeeze the others */}
-                  {partyAccounts.has(lines[index]?.accountId ?? '') && (
+                  {/* Under the account, not in a column of its own: only receivable and payable
+                      lines have it, and a column empty on most lines would squeeze the others.
+                      key: a line moved from the receivable to the payable gets a fresh box, without
+                      the customer search it had typed. */}
+                  {partyRole !== undefined && (
                     <Controller
+                      key={partyRole}
                       control={control}
                       name={linePath(index, 'partyId')}
                       render={({ field, fieldState }) => (
                         <LineField
                           id={field.name}
-                          label={t('journal.customer')}
+                          label={t(
+                            partyRole === 'customer' ? 'journal.customer' : 'journal.supplier',
+                          )}
                           error={fieldState.error?.message}
                         >
                           <Suspense fallback={<Input id={field.name} icon={UserIcon} disabled />}>
-                            <CustomerPicker
+                            <PartyPicker
+                              role={partyRole}
                               id={field.name}
                               name={field.name}
                               ref={field.ref}

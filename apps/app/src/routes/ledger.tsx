@@ -1,10 +1,5 @@
 import { Book02Icon, Notebook02Icon } from '@hugeicons/core-free-icons';
-import {
-  DEFAULT_SETTINGS,
-  isPartyAccountPurpose,
-  type LedgerLine,
-  todayIn,
-} from '@omnivo/contracts';
+import { DEFAULT_SETTINGS, type LedgerLine, partyRoleOf, todayIn } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
   Card,
@@ -53,15 +48,17 @@ export function LedgerPage() {
     to: today,
   };
   const account = accounts?.find((item) => item.id === accountId);
-  // The receivable's ledger (step 15a) shows whose each line is
-  const byParty = account !== undefined && isPartyAccountPurpose(account.purpose);
+  // The receivable's ledger (step 15a) and the payable's (step 17a) show whose each line is
+  const partyRole = partyRoleOf(account?.purpose ?? null);
+  const byParty = partyRole !== null;
 
   const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery({
     ...ledgerQuery(tenantId, accountId, from, to),
     enabled: canRead && account !== undefined,
   });
   const lines = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
-  // A line posted before customers were kept has none: say once, above the table, how to fix it
+  // A line posted before customers (or suppliers) were kept has none: say once, above the table,
+  // how to fix it
   const unassigned = byParty && lines?.some((line) => line.party === null) === true;
   const first = data?.pages[0];
 
@@ -104,7 +101,9 @@ export function LedgerPage() {
               <span className="truncate">{getValue() || '—'}</span>
               {byParty && (
                 <span className="truncate text-caption text-ink-3">
-                  {party ? `${party.code} · ${party.name}` : t('ledger.noCustomer')}
+                  {party
+                    ? `${party.code} · ${party.name}`
+                    : t(partyRole === 'supplier' ? 'ledger.noSupplier' : 'ledger.noCustomer')}
                 </span>
               )}
             </span>
@@ -130,7 +129,7 @@ export function LedgerPage() {
         cell: ({ getValue }) => <span className="font-medium">{balanceText(getValue())}</span>,
       }),
     ]);
-  }, [t, format, showDate, balanceText, byParty]);
+  }, [t, format, showDate, balanceText, byParty, partyRole]);
 
   if (!canRead) {
     return (
@@ -199,7 +198,11 @@ export function LedgerPage() {
             ))}
           </Card>
           {isError && <p className="text-body-sm text-crit">{t('ledger.loadFailed')}</p>}
-          {unassigned && <p className="text-body-sm text-ink-2">{t('ledger.noCustomerHint')}</p>}
+          {unassigned && (
+            <p className="text-body-sm text-ink-2">
+              {t(partyRole === 'supplier' ? 'ledger.noSupplierHint' : 'ledger.noCustomerHint')}
+            </p>
+          )}
           {lines && (
             <DataTable
               label={t('ledger.title')}

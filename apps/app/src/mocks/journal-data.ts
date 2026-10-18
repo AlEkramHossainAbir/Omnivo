@@ -7,7 +7,6 @@ import {
   fiscalYearOf,
   formatDocumentNumber,
   isNegativeMoney,
-  isPartyAccountPurpose,
   isSalesJournalSource,
   isStockJournalSource,
   isZeroMoney,
@@ -20,6 +19,8 @@ import {
   negateMoney,
   type OpeningBalances,
   type OpeningBalancesInput,
+  partyRoleOf,
+  type PartyRole,
   periodOf,
   shiftIsoDate,
   type StockJournalSource,
@@ -82,24 +83,29 @@ export function stockAccountIds(data: WorkspaceData): Set<string> {
 type PartyCode = 'journal_party_required' | 'journal_party_not_allowed' | 'journal_party_invalid';
 
 // The party rule (step 15a, the API's checkParties()): a line on the receivable names a customer,
-// and no other line names anyone. Each wrong line gets its own code under lines.N.partyId, so the
-// form marks every row at once. allowMissing: a draft, or a reversal of an entry from before 15a.
+// a line on the payable a supplier (step 17a), and no other line names anyone. Each wrong line gets
+// its own code under lines.N.partyId, so the form marks every row at once. allowMissing: a draft,
+// or a reversal of an entry from before 15a.
 export function partyIssues(
   data: WorkspaceData,
   lines: readonly { accountId: string; partyId: string | null }[],
   { allowMissing = false, allowArchived = false } = {},
 ): { index: number; code: PartyCode }[] {
   return lines.flatMap((line, index): { index: number; code: PartyCode }[] => {
-    const account = data.accounts.find((item) => item.id === line.accountId);
-    const perParty = isPartyAccountPurpose(account?.purpose ?? null);
+    const role = roleOf(data, line.accountId);
     if (line.partyId === null) {
-      return perParty && !allowMissing ? [{ index, code: 'journal_party_required' }] : [];
+      return role !== null && !allowMissing ? [{ index, code: 'journal_party_required' }] : [];
     }
-    if (!perParty) return [{ index, code: 'journal_party_not_allowed' }];
-    return partyRefOf(data.sales, line.partyId, allowArchived)
+    if (role === null) return [{ index, code: 'journal_party_not_allowed' }];
+    return partyRefOf(data, role, line.partyId, allowArchived)
       ? []
       : [{ index, code: 'journal_party_invalid' }];
   });
+}
+
+// The side of the parties an account is kept by: customer, supplier, or none (null)
+function roleOf(data: WorkspaceData, accountId: string): PartyRole | null {
+  return partyRoleOf(data.accounts.find((item) => item.id === accountId)?.purpose ?? null);
 }
 
 export function partyProblem(issues: readonly { index: number; code: PartyCode }[]): MockProblem {
@@ -144,18 +150,24 @@ export function checkLines(
   if (parties.length > 0) throw partyProblem(parties);
 }
 
-// The stored lines: the customer's code and name kept with its id (refreshPartyRefs() keeps them
+// The stored lines: the party's code and name kept with its id (refreshPartyRefs() keeps them
 // current after a rename). Checked before this, so an id that finds nothing is not expected.
 function toLines(data: WorkspaceData, lines: readonly LineIn[]): JournalLine[] {
-  return lines.map((line) => ({
-    id: crypto.randomUUID(),
-    accountId: line.accountId,
-    branchId: line.branchId,
-    party: line.partyId === null ? null : (partyRefOf(data.sales, line.partyId, true) ?? null),
-    description: line.description,
-    debit: fixed(line.debit),
-    credit: fixed(line.credit),
-  }));
+  return lines.map((line) => {
+    const role = roleOf(data, line.accountId);
+    return {
+      id: crypto.randomUUID(),
+      accountId: line.accountId,
+      branchId: line.branchId,
+      party:
+        line.partyId === null || role === null
+          ? null
+          : (partyRefOf(data, role, line.partyId, true) ?? null),
+      description: line.description,
+      debit: fixed(line.debit),
+      credit: fixed(line.credit),
+    };
+  });
 }
 
 // A stored line back as input: what a reversal or a post re-checks
@@ -357,21 +369,22 @@ export function ledgerOf(data: WorkspaceData, accountId: string, query: LedgerQu
   return pageOf(data, (line) => line.accountId === accountId, query);
 }
 
-// A customer's statement (step 15a): the same page over the receivable lines that name it
-export function statementOf(data: WorkspaceData, partyId: string, query: LedgerQuery): LedgerPage {
-  if (!data.sales.customers.some((item) => item.id === partyId)) {
-    throw new MockProblem(404, 'not_found');
-  }
-  const receivable = new Set(
+// A customer's statement (step 15a), or a supplier's (step 17a): the same page over the lines of
+// that side's account that name the party. A party that is both has two statements, one per side.
+export function statementOf(
+  data: WorkspaceData,
+  partyId: string,
+  query: LedgerQuery,
+  role: PartyRole = 'customer',
+): LedgerPage {
+  const side = role === 'customer' ? data.sales.customers : data.suppliers.suppliers;
+  if (!side.some((item) => item.id === partyId)) throw new MockProblem(404, 'not_found');
+  const accounts = new Set(
     data.accounts
-      .filter((account) => account.purpose === 'accounts_receivable')
+      .filter((account) => partyRoleOf(account.purpose) === role)
       .map((account) => account.id),
   );
-  return pageOf(
-    data,
-    (line) => line.party?.id === partyId && receivable.has(line.accountId),
-    query,
-  );
+  return pageOf(data, (line) => line.party?.id === partyId && accounts.has(line.accountId), query);
 }
 
 // The posted lines that match, in date order, with the running balance and the balances around
@@ -629,6 +642,12 @@ export function seedJournal(data: WorkspaceData): void {
     if (!found) throw new Error(`The mock has no customer ${name}`);
     return found.id;
   };
+  // Step 17a: a payable line names its supplier (seedSuppliers() made them)
+  const supplier = (name: string) => {
+    const found = data.suppliers.suppliers.find((item) => item.name.startsWith(name));
+    if (!found) throw new Error(`The mock has no supplier ${name}`);
+    return found.id;
+  };
   const line = (
     code: string,
     debit: string,
@@ -659,7 +678,7 @@ export function seedJournal(data: WorkspaceData): void {
   postNew(data, {
     date: lastYearDay(150),
     narration: 'Fabrics and yarn used for the H&M order',
-    lines: [line('5110', '2100000', '0'), line('2110', '0', '2100000')],
+    lines: [line('5110', '2100000', '0'), line('2110', '0', '2100000', null, supplier('Meghna'))],
   });
   postNew(data, {
     date: lastYearDay(300),

@@ -45,7 +45,18 @@ export function DecimalInput({
       onFocus={(event) => {
         // সার্ভারের "1842600.5000" (৪ ঘর) এলেও সম্পাদনা শুরু হয় scale-এর রূপে, নইলে
         // isMoneyDraft প্রতিটা কী চাপ আটকে দিত
-        setDraft(value === '' ? '' : toCanonicalMoney(value, scale));
+        const plain = value === '' ? '' : toCanonicalMoney(value, scale);
+        const input = event.currentTarget;
+        // Swap the text now, in the focus event, and select all of it. Left to React's next render,
+        // the new text would replace the old one after the browser selected it (Tab selects the whole
+        // box), the caret would jump to the end, and typing would add to the old amount instead of
+        // replacing it. React then finds the text it wants already there and leaves it. A click selects
+        // it all too; a second click puts the caret where it lands, as the box already has the focus.
+        if (input.value !== plain) {
+          input.value = plain;
+          input.select();
+        }
+        setDraft(plain);
         onFocus?.(event);
       }}
       onChange={(event) => {

@@ -140,6 +140,28 @@ export const AUDIT_ACTIONS = [
   'refund.voided',
   // The sales returns account in Settings → Sales. The entity is the workspace, like settings.
   'sales_accounts.changed',
+  // step 17a
+  'supplier.created',
+  'supplier.updated',
+  'supplier.archived',
+  'supplier.restored',
+  'supplier.deleted',
+  'supplier_group.created',
+  'supplier_group.updated',
+  'supplier_group.deleted',
+  // The approval levels of one kind of document, in Settings → Approvals. The entity is the
+  // workspace, like settings.
+  'approval_rules.changed',
+  'requisition.created',
+  'requisition.updated',
+  'requisition.deleted',
+  'requisition.cancelled',
+  // The approval steps of any document that needs one. The entity is that document (a requisition
+  // now; an order, a bill and a payment from 17b and 17c), so its history reads in one place.
+  'approval.submitted',
+  'approval.approved',
+  'approval.rejected',
+  'approval.reopened',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -181,6 +203,9 @@ export const AUDIT_ENTITY_TYPES = [
   'sales_return',
   'credit_note',
   'refund',
+  'supplier',
+  'supplier_group',
+  'requisition',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

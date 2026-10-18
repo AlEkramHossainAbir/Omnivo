@@ -40,6 +40,7 @@ import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import type { MockExport } from './report-data';
+import { emptyPurchase, type MockPurchase, seedPurchase } from './requisition-data';
 import { emptyReturns, type MockReturns } from './return-data';
 import { emptySales, type MockSales, seedSales } from './sales-data';
 import {
@@ -48,6 +49,7 @@ import {
   seedSalesDocuments,
 } from './sales-document-data';
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
+import { emptySuppliers, type MockSuppliers, seedSuppliers } from './supplier-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
 // নিয়মগুলো আসল API-র মতো (version, অনন্য কোড, শেষ চালু ব্রাঞ্চ) — UI-র error-পথ mock দিয়েও দেখা যায়
@@ -83,6 +85,10 @@ export interface WorkspaceData {
   salesAccounts: SalesAccounts;
   // The PDFs, emails and share links of the documents a customer receives (step 16)
   documentOutput: MockDocumentOutput;
+  // Suppliers and their groups (step 17a)
+  suppliers: MockSuppliers;
+  // Approval levels and rounds, and requisitions (step 17a)
+  purchase: MockPurchase;
 }
 
 function now(): string {
@@ -147,17 +153,22 @@ function seed(workspace: Workspace): WorkspaceData {
     returns: emptyReturns(),
     salesAccounts: { returns: null },
     documentOutput: emptyDocumentOutput(),
+    suppliers: emptySuppliers(),
+    purchase: emptyPurchase(),
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   data.salesAccounts = seedSalesAccounts(data.accounts);
-  // Before the journal: its receivable lines name the customers
+  // Before the journal: its receivable lines name the customers, its payable lines the suppliers
   seedSales(data, garments);
+  seedSuppliers(data, garments);
   if (garments) seedJournal(data);
   seedStock(data, garments);
   // After the stock: an order is sent from a warehouse
   seedSalesDocuments(data, garments);
   // After the quotations: the history belongs to one of them
   seedDocumentOutput(data, garments);
+  // After the stock and the team: the lines' costs are its averages, the rounds name members
+  seedPurchase(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -220,6 +231,8 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.catalog = emptyCatalog();
   // The VAT rates come with the setup job too (settleSetup); customers are the company's own
   data.sales = emptySales();
+  data.suppliers = emptySuppliers();
+  data.purchase = emptyPurchase();
   // Sign-up gives a new workspace its Main store, in its one branch (like auth.service.ts)
   data.stock = emptyStock();
   const [first] = data.branches;
@@ -322,6 +335,8 @@ function usedNumbers(data: WorkspaceData, documentType: DocumentType, period: st
   if (documentType === 'sales.return') return data.returns.counters.salesReturn;
   if (documentType === 'sales.credit_note') return data.returns.counters.creditNote;
   if (documentType === 'sales.refund') return data.returns.counters.refund;
+  if (documentType === 'purchase.supplier') return data.suppliers.lastCode;
+  if (documentType === 'purchase.requisition') return data.purchase.counters.requisition;
   return 0;
 }
 

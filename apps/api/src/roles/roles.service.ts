@@ -7,6 +7,8 @@ import type {
   RoleInput,
 } from '@omnivo/contracts';
 import {
+  approvalRounds,
+  approvalSteps,
   invitationRoles,
   invitations,
   membershipRoles,
@@ -47,7 +49,7 @@ function roleInUse(): AppError {
   return new AppError(
     409,
     'role_in_use',
-    'Someone has this role or an open invitation gives it. Change that first.',
+    'Someone has this role, an open invitation gives it, an approval level uses it, or an approval waits for it. Change that first.',
   );
 }
 
@@ -165,7 +167,31 @@ export class RolesService {
               isNull(invitations.revokedAt),
             ),
           );
-        if ((members?.total ?? 0) + (open?.total ?? 0) > 0) throw roleInUse();
+        // Step 17a: a document waiting for this role's approval would wait for nobody (only an
+        // Owner could still decide it). A step that was already decided keeps the role's name, so
+        // old history does not stop a delete. A new step can only be copied from a level, and a
+        // level's own foreign key stops the delete below (approval_levels_role_fk).
+        const [waiting] = await tx
+          .select({ total: count() })
+          .from(approvalSteps)
+          .innerJoin(
+            approvalRounds,
+            and(
+              eq(approvalRounds.tenantId, approvalSteps.tenantId),
+              eq(approvalRounds.id, approvalSteps.roundId),
+            ),
+          )
+          .where(
+            and(
+              eq(approvalSteps.tenantId, tenantId),
+              eq(approvalSteps.roleId, id),
+              isNull(approvalSteps.decision),
+              eq(approvalRounds.status, 'pending'),
+            ),
+          );
+        if ((members?.total ?? 0) + (open?.total ?? 0) + (waiting?.total ?? 0) > 0) {
+          throw roleInUse();
+        }
 
         await tx
           .delete(rolePermissions)
@@ -183,6 +209,9 @@ export class RolesService {
       // গোনার পরে, মোছার আগে আরেকজন কাউকে এই রোল দিয়ে ফেলল — তার insert এই রোলের রো-তে FK-র lock
       // নেয়, তাই আমাদের DELETE তার commit পর্যন্ত অপেক্ষা করে তারপর FK-তে ভাঙে। শেষ পাহারা DB নিজে
       if (isForeignKeyViolation(error, 'membership_roles_role_fk')) throw roleInUse();
+      // Step 17a: an approval level names the role (Settings → Approvals). No count first: the FK
+      // is the check.
+      if (isForeignKeyViolation(error, 'approval_levels_role_fk')) throw roleInUse();
       throw error;
     }
   }

@@ -2,6 +2,7 @@ import { Notification03Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   DEFAULT_SETTINGS,
+  isApprovalDocument,
   isExportFormat,
   isNotificationType,
   isOutputDocument,
@@ -21,9 +22,22 @@ import { call } from '../lib/api';
 import { notificationsQuery, settingsQuery, unreadCountQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 
-// Where a click on each kind of notification takes you. satisfies: a new type without a page does
-// not compile, and the values are checked against the router's real paths by navigate() below.
-// Step 16: a failed email opens its own document, so that type is not here (useOpen below).
+// The notifications that open their own document (useOpenDocument below): step 16's failed email,
+// and step 17a's approvals (a requisition waiting for you, yours approved or sent back)
+const DOCUMENT_TYPES = [
+  'document.email_failed',
+  'approval.requested',
+  'approval.approved',
+  'approval.rejected',
+] as const satisfies readonly NotificationType[];
+type DocumentNotificationType = (typeof DOCUMENT_TYPES)[number];
+
+function opensDocument(type: NotificationType): type is DocumentNotificationType {
+  return DOCUMENT_TYPES.some((documentType) => documentType === type);
+}
+
+// Where a click on each other kind of notification takes you. satisfies: a new type without a page
+// does not compile, and the values are checked against the router's real paths by navigate() below.
 const TARGET = {
   'workspace.ready': '/roles',
   'member.joined': '/team',
@@ -33,21 +47,30 @@ const TARGET = {
   'import.done': '/products/imports',
   'import.failed': '/products/imports',
   'stock.low': '/stock/reorder',
-} as const satisfies Record<Exclude<NotificationType, 'document.email_failed'>, string>;
+} as const satisfies Record<Exclude<NotificationType, DocumentNotificationType>, string>;
 
 // A document's page from the notification's kind and id. The list of that kind when the id is
 // missing or not a document's (an older notification); the dashboard for a kind this app does
 // not know. One navigate() per kind: each path has its own parameter name, and TanStack checks
-// each pair against the router.
+// each pair against the router. Step 17a: the kinds that need an approval too (17b adds the
+// purchase order).
 function useOpenDocument(): (params: NotificationParams) => Promise<void> {
   const navigate = useNavigate();
   return async (params) => {
     const { document: kind, id } = params;
+    const known = typeof id === 'string' && id !== '';
+    // A requisition is the only kind now; 17b's purchase order makes this a switch like the one
+    // below (a one-case switch fails the lint rule against conditions that are always true)
+    if (typeof kind === 'string' && isApprovalDocument(kind)) {
+      await (known
+        ? navigate({ to: '/requisitions/$requisitionId', params: { requisitionId: id } })
+        : navigate({ to: '/requisitions' }));
+      return;
+    }
     if (typeof kind !== 'string' || !isOutputDocument(kind)) {
       await navigate({ to: '/' });
       return;
     }
-    const known = typeof id === 'string' && id !== '';
     switch (kind) {
       case 'quotation':
         await (known
@@ -87,9 +110,11 @@ function useWords() {
     const { report, format, document: kind } = params;
     return {
       ...params,
-      // Step 16: a document's kind (invoice) becomes its name
+      // Step 16: a document's kind (invoice) becomes its name; step 17a: a requisition's too
       ...(typeof kind === 'string' &&
         isOutputDocument(kind) && { document: t(`documentOutput.kinds.${kind}`) }),
+      ...(typeof kind === 'string' &&
+        isApprovalDocument(kind) && { document: t(`approvals.kinds.${kind}`) }),
       ...(typeof report === 'string' &&
         isReportKind(report) && { report: t(`reports.kinds.${report}`) }),
       ...(typeof format === 'string' &&
@@ -228,7 +253,7 @@ export function NotificationBell() {
                 onOpen={() => {
                   if (notification.readAt === null) markRead.mutate(notification.id);
                   setOpen(false);
-                  if (notification.type === 'document.email_failed') {
+                  if (opensDocument(notification.type)) {
                     void openDocument(notification.params);
                   } else {
                     void navigate({ to: TARGET[notification.type] });

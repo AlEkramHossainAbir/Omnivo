@@ -1,56 +1,40 @@
 import {
   Archive02Icon,
+  Factory01Icon,
   Invoice03Icon,
   Location01Icon,
   MoneyReceive02Icon,
-  Notebook02Icon,
   PencilEdit02Icon,
   TruckDeliveryIcon,
   UserSwitchIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import {
-  type Customer,
-  DEFAULT_SETTINGS,
-  type LedgerLine,
-  routes,
-  todayIn,
-} from '@omnivo/contracts';
+import { type Customer, routes } from '@omnivo/contracts';
 import { LANGUAGES, useLocale } from '@omnivo/i18n';
-import {
-  Button,
-  Card,
-  CardHeader,
-  DataTable,
-  dataTableColumns,
-  DatePicker,
-  EmptyState,
-  Field,
-  FormAlert,
-  KpiStrip,
-  PageHeader,
-  Pill,
-  SectionHeader,
-  toast,
-} from '@omnivo/ui';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useParams } from '@tanstack/react-router';
-import { useCallback, useMemo, useState } from 'react';
+import { Button, Card, CardHeader, FormAlert, KpiStrip, PageHeader, Pill, toast } from '@omnivo/ui';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate, useParams } from '@tanstack/react-router';
+import { lazy, Suspense, useState } from 'react';
 
 import { BackLink, CustomerNotFound, useTenantId } from '../components/customer-parts';
-import { failureOf, useBalanceText, useIsoDate } from '../components/journal-parts';
+import { failureOf } from '../components/journal-parts';
 import { call } from '../lib/api';
 import { useCustomerText } from '../lib/customers';
-import { fiscalYearStart } from '../lib/journal';
 import { useCan } from '../lib/permissions';
 import {
   customerCreditQuery,
   customerGroupsQuery,
   customerQuery,
-  customerStatementQuery,
   priceListsQuery,
-  settingsQuery,
+  supplierQuery,
 } from '../lib/queries';
+
+// The statement as a chunk of its own (step 17a): it brings the data table and the two date
+// pickers, and sits at the bottom of the page for the people with the balance permission only.
+// Inside, this page went over its 100 KB budget.
+const PartyStatement = lazy(async () => ({
+  default: (await import('../components/party-statement')).PartyStatement,
+}));
 
 // One label and its value in the details card; an empty value is a dash, so the rows line up
 function Detail({ label, value }: { label: string; value: string | null }) {
@@ -59,157 +43,6 @@ function Detail({ label, value }: { label: string; value: string | null }) {
       <dt className="text-label text-ink-3">{label}</dt>
       <dd className="text-body-sm break-words text-ink">{value ?? '—'}</dd>
     </div>
-  );
-}
-
-const column = dataTableColumns<LedgerLine>();
-
-// The customer's receivable lines with a running balance: the ledger of one account, cut down
-// to one customer. Dates as on the ledger: this fiscal year to today until the person picks.
-function Statement({ customerId }: { customerId: string }) {
-  const { t, format } = useLocale();
-  const navigate = useNavigate();
-  const tenantId = useTenantId();
-  const canReadJournal = useCan()('accounting.journal.read');
-  const showDate = useIsoDate();
-  const balanceText = useBalanceText();
-  const settings = useQuery(settingsQuery(tenantId)).data;
-  const [range, setRange] = useState<{ from: string; to: string } | null>(null);
-  const today = todayIn(settings?.timezone ?? DEFAULT_SETTINGS.timezone);
-  const { from, to } = range ?? {
-    from: fiscalYearStart(
-      today,
-      settings?.fiscalYearStartMonth ?? DEFAULT_SETTINGS.fiscalYearStartMonth,
-    ),
-    to: today,
-  };
-  const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
-    customerStatementQuery(tenantId, customerId, from, to),
-  );
-  const lines = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
-  const first = data?.pages[0];
-
-  const loadMore = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
-
-  const columns = useMemo(() => {
-    const amount = (value: string) =>
-      value === '0.0000' ? '' : format.money(value, { decimals: 2 });
-    return column.columns([
-      column.accessor('number', {
-        header: t('ledger.columns.entry'),
-        enableSorting: false,
-        meta: { card: 'title' },
-        cell: ({ row }) => (
-          <span className="grid">
-            <span className="font-mono font-medium tabular-nums">{row.original.number}</span>
-            <span className="text-caption text-ink-3 tabular-nums">
-              {showDate(row.original.date)}
-            </span>
-          </span>
-        ),
-      }),
-      column.accessor((line) => line.description ?? line.narration ?? '', {
-        id: 'narration',
-        header: t('journal.columns.narration'),
-        enableSorting: false,
-        meta: { card: 'subtitle' },
-        cell: ({ getValue }) => <span className="block truncate">{getValue() || '—'}</span>,
-      }),
-      column.accessor('debit', {
-        header: t('ledger.columns.debit'),
-        enableSorting: false,
-        meta: { align: 'end', card: 'detail' },
-        cell: ({ getValue }) => amount(getValue()),
-      }),
-      column.accessor('credit', {
-        header: t('ledger.columns.credit'),
-        enableSorting: false,
-        meta: { align: 'end', card: 'detail' },
-        cell: ({ getValue }) => amount(getValue()),
-      }),
-      column.accessor('balance', {
-        header: t('ledger.columns.balance'),
-        enableSorting: false,
-        meta: { align: 'end', card: 'trailing' },
-        cell: ({ getValue }) => <span className="font-medium">{balanceText(getValue())}</span>,
-      }),
-    ]);
-  }, [t, format, showDate, balanceText]);
-
-  return (
-    <section className="grid grid-cols-1 gap-4" aria-label={t('customers.statementTitle')}>
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <SectionHeader
-          title={t('customers.statementTitle')}
-          subtitle={t('customers.statementSubtitle')}
-        />
-        <div className="grid w-full grid-cols-2 gap-4 sm:w-auto sm:grid-cols-[12rem_12rem]">
-          <Field id="statement-from" label={t('ledger.from')}>
-            <DatePicker
-              id="statement-from"
-              value={from}
-              onChange={(value) => {
-                setRange({ from: value, to });
-              }}
-            />
-          </Field>
-          <Field id="statement-to" label={t('ledger.to')}>
-            <DatePicker
-              id="statement-to"
-              value={to}
-              onChange={(value) => {
-                setRange({ from, to: value });
-              }}
-            />
-          </Field>
-        </div>
-      </div>
-      {/* One card split by a rule, like the ledger's */}
-      <Card className="grid grid-cols-2 divide-x divide-line">
-        {[
-          { label: t('ledger.opening'), value: first?.openingBalance },
-          { label: t('ledger.closing'), value: first?.closingBalance },
-        ].map((cell) => (
-          <div key={cell.label} className="grid gap-1 px-5 py-4">
-            <span className="text-caption text-ink-3">{cell.label}</span>
-            <span className="text-h3 tabular-nums">
-              {cell.value === undefined ? '—' : balanceText(cell.value)}
-            </span>
-          </div>
-        ))}
-      </Card>
-      {isError && <p className="text-body-sm text-crit">{t('customers.statementLoadFailed')}</p>}
-      {lines && (
-        <DataTable
-          label={t('customers.statementTitle')}
-          data={lines}
-          columns={columns}
-          getRowId={(line) => line.lineId}
-          // The entry behind a line, for those who may read the journal
-          onRowClick={
-            canReadJournal
-              ? (line) =>
-                  void navigate({ to: '/journal/$entryId', params: { entryId: line.entryId } })
-              : undefined
-          }
-          onEndReached={loadMore}
-          empty={
-            <EmptyState
-              icon={Notebook02Icon}
-              title={t('customers.statementEmptyTitle')}
-              description={t('customers.statementEmptyBody')}
-            />
-          }
-          footer={
-            isFetchingNextPage && (
-              <p className="text-caption text-ink-3">{t('common.loadingMore')}</p>
-            )
-          }
-        />
-      )}
-    </section>
   );
 }
 
@@ -223,6 +56,10 @@ function CustomerView({ customer }: { customer: Customer }) {
   // Step 15c: bill the customer, take their money. An archived customer is not sold to any more.
   const canBill = can('sales.invoice.manage') && customer.archivedAt === null;
   const canPay = can('sales.receipt.manage');
+  // Step 17a: the same business may sell to the company too (decision 10). Not for an archived
+  // one: it is hidden from new documents on both sides.
+  const canMakeSupplier =
+    can('purchase.supplier.manage') && !customer.isSupplier && customer.archivedAt === null;
   // What counts against the credit limit, with the numbers the order and invoice forms check
   const credit = useQuery({
     ...customerCreditQuery(tenantId, customer.id),
@@ -262,12 +99,37 @@ function CustomerView({ customer }: { customer: Customer }) {
       await navigate({ to: '/customers' });
       queryClient.removeQueries({ queryKey: customerQuery(tenantId, customer.id).queryKey });
       await queryClient.invalidateQueries({ queryKey: ['customers', tenantId] });
-      toast(t('customers.deleted', { name: customer.name }));
+      // Step 17a: a party that is also a supplier stays one; the delete took only this side
+      if (customer.isSupplier) {
+        await queryClient.invalidateQueries({ queryKey: ['suppliers', tenantId] });
+        toast(t('customers.sideDeleted', { name: customer.name }));
+      } else {
+        toast(t('customers.deleted', { name: customer.name }));
+      }
     },
   });
-  // customer_in_use, version_conflict: they belong to no field
-  const failure = failureOf(toggle.error) ?? failureOf(remove.error);
-  const busy = toggle.isPending || remove.isPending;
+  // "Make supplier too": the supplier side starts with its defaults (no group, terms on receipt, no
+  // bank account), so the person goes to the supplier's page to fill them in
+  const makeSupplier = useMutation({
+    mutationFn: () =>
+      call(routes.suppliers.fromCustomer, {
+        params: { id: customer.id },
+        body: { version: customer.version },
+      }),
+    onSuccess: async (supplier) => {
+      queryClient.setQueryData(supplierQuery(tenantId, supplier.id).queryKey, supplier);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['customers', tenantId] }),
+        queryClient.invalidateQueries({ queryKey: ['suppliers', tenantId] }),
+      ]);
+      toast(t('customers.madeSupplier', { name: supplier.name }));
+      void navigate({ to: '/suppliers/$supplierId', params: { supplierId: supplier.id } });
+    },
+  });
+  // customer_in_use, party_role_exists, version_conflict: they belong to no field
+  const failure =
+    failureOf(toggle.error) ?? failureOf(remove.error) ?? failureOf(makeSupplier.error);
+  const busy = toggle.isPending || remove.isPending || makeSupplier.isPending;
 
   return (
     <div className="grid max-w-5xl grid-cols-1 gap-5">
@@ -297,6 +159,18 @@ function CustomerView({ customer }: { customer: Customer }) {
               >
                 <HugeiconsIcon icon={MoneyReceive02Icon} size={17} strokeWidth={1.5} />
                 {t('customers.recordPayment')}
+              </Button>
+            )}
+            {canMakeSupplier && (
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => {
+                  makeSupplier.mutate();
+                }}
+              >
+                <HugeiconsIcon icon={Factory01Icon} size={17} strokeWidth={1.5} />
+                {t('customers.makeSupplier')}
               </Button>
             )}
             {canManage && (
@@ -339,7 +213,14 @@ function CustomerView({ customer }: { customer: Customer }) {
           </>
         }
       />
-      {confirming && <p className="text-body-sm text-ink-2">{t('customers.deleteWarning')}</p>}
+      {confirming && (
+        <p className="text-body-sm text-ink-2">
+          {/* A party that is both loses only its customer side (step 17a, decision 10) */}
+          {customer.isSupplier
+            ? t('customers.deleteSideWarning', { name: customer.name })
+            : t('customers.deleteWarning')}
+        </p>
+      )}
       {failure && <FormAlert message={failure} />}
       {(customer.archivedAt !== null || customer.isSupplier) && (
         <div className="flex flex-wrap items-center gap-2 text-body-sm text-ink-2">
@@ -352,9 +233,19 @@ function CustomerView({ customer }: { customer: Customer }) {
             </>
           )}
           {customer.isSupplier && (
-            <Pill tone="brand" icon={UserSwitchIcon}>
-              {t('customers.alsoSupplier')}
-            </Pill>
+            <>
+              <Pill tone="brand" icon={UserSwitchIcon}>
+                {t('customers.alsoSupplier')}
+              </Pill>
+              {/* Step 17a: the same party's supplier page (everyone may read suppliers) */}
+              <Link
+                to="/suppliers/$supplierId"
+                params={{ supplierId: customer.id }}
+                className="font-medium text-brand underline-offset-3 hover:underline"
+              >
+                {t('customers.supplierPage')}
+              </Link>
+            </>
           )}
         </div>
       )}
@@ -458,7 +349,11 @@ function CustomerView({ customer }: { customer: Customer }) {
         </Card>
       </div>
       {/* The same rule as the balance: what a customer owes is not every cashier's business */}
-      {can('sales.customer.balance') && <Statement customerId={customer.id} />}
+      {can('sales.customer.balance') && (
+        <Suspense fallback={null}>
+          <PartyStatement role="customer" partyId={customer.id} />
+        </Suspense>
+      )}
     </div>
   );
 }

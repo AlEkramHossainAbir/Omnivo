@@ -175,6 +175,25 @@ import {
   toQuotation,
   updateOrder,
 } from './sales-document-data';
+import {
+  approvalsNeedRole,
+  cancelRequisition,
+  decide,
+  describeLevels,
+  findRequisition,
+  forgetRole,
+  listRequisitions,
+  lookupCosts,
+  removeRequisition,
+  reopenRequisition,
+  requisitionSummaryOf,
+  saveRequisition,
+  saveRule,
+  submitRequisition,
+  toRequisition,
+  toRule,
+  waitingList,
+} from './requisition-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
   batchReport,
@@ -196,6 +215,21 @@ import {
   valuationSummary,
   warehouse as newWarehouse,
 } from './stock-data';
+import {
+  assertSupplierGroupNameFree,
+  copyToCustomer,
+  copyToSupplier,
+  findSupplier,
+  findSupplierGroup,
+  listSuppliers,
+  makeCustomer,
+  makeSupplier,
+  removeSupplier,
+  saveSupplier,
+  supplierSummaryOf,
+  toSupplier,
+  toSupplierGroup,
+} from './supplier-data';
 import {
   assertCodeFree,
   checkVersion,
@@ -523,7 +557,9 @@ export const handlers = [
         data.people.invitations.some(
           (invitation) => isOpen(invitation) && invitation.roles.some((held) => held.id === id),
         );
-      if (inUse) throw new MockProblem(409, 'role_in_use');
+      // Step 17a: an approval level names it, or a waiting round still needs it
+      if (inUse || approvalsNeedRole(data, id)) throw new MockProblem(409, 'role_in_use');
+      forgetRole(data, id);
       data.people.roles = data.people.roles.filter((other) => other.id !== id);
       record(data, 'role.deleted', 'role', id, { name: { from: target.name, to: null } });
       return reply(routes.roles.remove, undefined);
@@ -2272,6 +2308,8 @@ export const handlers = [
       const saved = saveCustomer(data, body, target);
       data.sales.customers = data.sales.customers.map((item) => (item.id === id ? saved : item));
       refreshPartyRefs(data, saved);
+      // A party that is also a supplier is one row: the supplier page shows the same name
+      copyToSupplier(data, saved);
       record(
         data,
         'customer.updated',
@@ -2309,6 +2347,8 @@ export const handlers = [
             'customer',
             id,
           );
+          // Archived is the party's (decision 10): hidden from purchase documents too
+          copyToSupplier(data, target);
         }
         return reply(routes.customers[action], toCustomer(data, target));
       }),
@@ -2325,6 +2365,15 @@ export const handlers = [
       checkVersion(target.version, version);
       assertCustomerUnused(data, id);
       data.sales.customers = data.sales.customers.filter((item) => item.id !== id);
+      // A party that is also a supplier stays, as a supplier: only its customer side goes
+      const supplier = data.suppliers.suppliers.find((item) => item.id === id);
+      if (supplier) {
+        Object.assign(supplier, {
+          isCustomer: false,
+          version: supplier.version + 1,
+          updatedAt: new Date().toISOString(),
+        });
+      }
       record(
         data,
         'customer.deleted',
@@ -2351,6 +2400,27 @@ export const handlers = [
     guarded(({ params }) => {
       const { id } = routes.customers.credit.params.parse(params);
       return reply(routes.customers.credit, creditOf(current(), id));
+    }),
+  ),
+
+  // "Make customer too" on a supplier's page (step 17a)
+  mock(
+    routes.customers.fromSupplier,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.customers.fromSupplier.params.parse(params);
+      const { version } = await readBody(routes.customers.fromSupplier.body, request);
+      const data = current();
+      const target = findSupplier(data, id);
+      checkVersion(target.version, version);
+      const created = makeCustomer(data, target);
+      record(
+        data,
+        'customer.created',
+        'customer',
+        id,
+        diff({}, { code: created.code, name: created.name }),
+      );
+      return reply(routes.customers.fromSupplier, toCustomer(data, created));
     }),
   ),
 
@@ -3330,6 +3400,433 @@ export const handlers = [
       const shared = publicDocument(dataOf(WORKSPACES[0]), token);
       await delay();
       return reply(routes.publicDocuments.get, shared);
+    }),
+  ),
+
+  // ---------------------------------------------------------------------------------------------
+  // Suppliers, approvals and requisitions (step 17a)
+
+  mock(routes.suppliers.list, async ({ request }) => {
+    const query = readQuery(routes.suppliers.list.query, request);
+    const data = current();
+    const page = pageOf(listSuppliers(data, query), query);
+    if (query.cursor !== undefined) await delay(300);
+    return reply(routes.suppliers.list, {
+      items: page.items.map((item) => supplierSummaryOf(data, item)),
+      nextCursor: page.nextCursor,
+    });
+  }),
+
+  mock(
+    routes.suppliers.get,
+    guarded(({ params }) => {
+      const { id } = routes.suppliers.get.params.parse(params);
+      const data = current();
+      return reply(routes.suppliers.get, toSupplier(data, findSupplier(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.suppliers.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.suppliers.create.body, request);
+      const data = current();
+      const saved = saveSupplier(data, body);
+      data.suppliers.suppliers.push(saved);
+      record(
+        data,
+        'supplier.created',
+        'supplier',
+        saved.id,
+        diff({}, { code: saved.code, name: saved.name }),
+      );
+      await delay();
+      return reply(routes.suppliers.create, toSupplier(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.suppliers.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.suppliers.update.params.parse(params);
+      const { version, ...body } = await readBody(routes.suppliers.update.body, request);
+      const data = current();
+      const target = findSupplier(data, id);
+      checkVersion(target.version, version);
+      const saved = saveSupplier(data, body, target);
+      data.suppliers.suppliers = data.suppliers.suppliers.map((item) =>
+        item.id === id ? saved : item,
+      );
+      // The journal's lines and the customer side show the new name
+      refreshPartyRefs(data, saved);
+      copyToCustomer(data, saved);
+      record(
+        data,
+        'supplier.updated',
+        'supplier',
+        id,
+        diff(
+          { code: target.code, name: target.name, paymentTermsDays: target.paymentTermsDays },
+          { code: saved.code, name: saved.name, paymentTermsDays: saved.paymentTermsDays },
+        ),
+      );
+      await delay();
+      return reply(routes.suppliers.update, toSupplier(data, saved));
+    }),
+  ),
+
+  // "Make supplier too" on a customer's page
+  mock(
+    routes.suppliers.fromCustomer,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.suppliers.fromCustomer.params.parse(params);
+      const { version } = await readBody(routes.suppliers.fromCustomer.body, request);
+      const data = current();
+      const target = findCustomer(data.sales, id);
+      checkVersion(target.version, version);
+      const created = makeSupplier(data, target);
+      record(
+        data,
+        'supplier.created',
+        'supplier',
+        id,
+        diff({}, { code: created.code, name: created.name }),
+      );
+      return reply(routes.suppliers.fromCustomer, toSupplier(data, created));
+    }),
+  ),
+
+  ...(['archive', 'restore'] as const).map((action) =>
+    mock(
+      routes.suppliers[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.suppliers[action].params.parse(params);
+        const { version } = await readBody(routes.suppliers[action].body, request);
+        const data = current();
+        const target = findSupplier(data, id);
+        checkVersion(target.version, version);
+        if ((target.archivedAt !== null) !== (action === 'archive')) {
+          Object.assign(target, {
+            archivedAt: action === 'archive' ? new Date().toISOString() : null,
+            version: version + 1,
+            updatedAt: new Date().toISOString(),
+          });
+          copyToCustomer(data, target);
+          record(
+            data,
+            action === 'archive' ? 'supplier.archived' : 'supplier.restored',
+            'supplier',
+            id,
+          );
+        }
+        return reply(routes.suppliers[action], toSupplier(data, target));
+      }),
+    ),
+  ),
+
+  mock(
+    routes.suppliers.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.suppliers.remove.params.parse(params);
+      const { version } = readQuery(routes.suppliers.remove.query, request);
+      const data = current();
+      const target = findSupplier(data, id);
+      checkVersion(target.version, version);
+      removeSupplier(data, target);
+      record(
+        data,
+        'supplier.deleted',
+        'supplier',
+        id,
+        diff({ code: target.code, name: target.name }, { code: null, name: null }),
+      );
+      return reply(routes.suppliers.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.suppliers.statement,
+    guarded(({ request, params }) => {
+      const { id } = routes.suppliers.statement.params.parse(params);
+      const query = readQuery(routes.suppliers.statement.query, request);
+      return reply(routes.suppliers.statement, statementOf(current(), id, query, 'supplier'));
+    }),
+  ),
+
+  mock(routes.supplierGroups.list, () => {
+    const data = current();
+    return reply(routes.supplierGroups.list, {
+      items: data.suppliers.groups
+        .toSorted((a, b) => a.name.localeCompare(b.name))
+        .map((item) => toSupplierGroup(data, item)),
+    });
+  }),
+
+  mock(
+    routes.supplierGroups.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.supplierGroups.create.body, request);
+      const data = current();
+      assertSupplierGroupNameFree(data, body.name);
+      const created = {
+        id: crypto.randomUUID(),
+        name: body.name,
+        version: 1,
+        updatedAt: new Date().toISOString(),
+      };
+      data.suppliers.groups.push(created);
+      record(data, 'supplier_group.created', 'supplier_group', created.id, {
+        name: { from: null, to: created.name },
+      });
+      return reply(routes.supplierGroups.create, toSupplierGroup(data, created));
+    }),
+  ),
+
+  mock(
+    routes.supplierGroups.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.supplierGroups.update.params.parse(params);
+      const { version, name } = await readBody(routes.supplierGroups.update.body, request);
+      const data = current();
+      const target = findSupplierGroup(data, id);
+      checkVersion(target.version, version);
+      assertSupplierGroupNameFree(data, name, id);
+      const before = target.name;
+      Object.assign(target, { name, version: version + 1, updatedAt: new Date().toISOString() });
+      record(
+        data,
+        'supplier_group.updated',
+        'supplier_group',
+        id,
+        diff({ name: before }, { name }),
+      );
+      return reply(routes.supplierGroups.update, toSupplierGroup(data, target));
+    }),
+  ),
+
+  mock(
+    routes.supplierGroups.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.supplierGroups.remove.params.parse(params);
+      const { version } = readQuery(routes.supplierGroups.remove.query, request);
+      const data = current();
+      const target = findSupplierGroup(data, id);
+      checkVersion(target.version, version);
+      // Archived suppliers count too (the API's parties_supplier_group_fk)
+      if (data.suppliers.suppliers.some((item) => item.groupId === id)) {
+        throw new MockProblem(409, 'supplier_group_in_use');
+      }
+      data.suppliers.groups = data.suppliers.groups.filter((item) => item.id !== id);
+      record(data, 'supplier_group.deleted', 'supplier_group', id, {
+        name: { from: target.name, to: null },
+      });
+      return reply(routes.supplierGroups.remove, undefined);
+    }),
+  ),
+
+  mock(routes.approvalRules.list, () =>
+    reply(routes.approvalRules.list, { items: [toRule(current(), 'requisition')] }),
+  ),
+
+  mock(
+    routes.approvalRules.update,
+    guarded(async ({ request, params }) => {
+      const { document } = routes.approvalRules.update.params.parse(params);
+      const body = await readBody(routes.approvalRules.update.body, request);
+      const data = current();
+      const before = describeLevels(toRule(data, document));
+      const saved = saveRule(data, document, body);
+      record(data, 'approval_rules.changed', 'workspace', workspace.tenantId, {
+        [document]: { from: before, to: describeLevels(saved) },
+      });
+      return reply(routes.approvalRules.update, saved);
+    }),
+  ),
+
+  mock(routes.approvals.waiting, ({ request }) => {
+    const query = readQuery(routes.approvals.waiting.query, request);
+    return reply(routes.approvals.waiting, pageOf(waitingList(current()), query));
+  }),
+
+  mock(routes.approvals.waitingCount, () =>
+    reply(routes.approvals.waitingCount, { count: waitingList(current()).length }),
+  ),
+
+  ...(['approve', 'reject'] as const).map((action) =>
+    mock(
+      routes.approvals[action],
+      guarded(async ({ request, params }) => {
+        const { document, id } = routes.approvals[action].params.parse(params);
+        const body = await readBody(routes.approvals[action].body, request);
+        const data = current();
+        const decision = action === 'approve' ? 'approved' : 'rejected';
+        const { step, count } = decide(data, document, id, decision, body);
+        record(
+          data,
+          action === 'approve' ? 'approval.approved' : 'approval.rejected',
+          'requisition',
+          id,
+          diff(
+            {},
+            {
+              step: `${String(step.position)} of ${String(count)}`,
+              role: step.role.name,
+              comment: body.comment,
+            },
+          ),
+        );
+        await delay();
+        return reply(routes.approvals[action], undefined);
+      }),
+    ),
+  ),
+
+  mock(routes.requisitions.list, ({ request }) => {
+    const query = readQuery(routes.requisitions.list.query, request);
+    const page = pageOf(listRequisitions(current(), query), query);
+    return reply(routes.requisitions.list, {
+      items: page.items.map(requisitionSummaryOf),
+      nextCursor: page.nextCursor,
+    });
+  }),
+
+  mock(
+    routes.requisitions.get,
+    guarded(({ params }) => {
+      const { id } = routes.requisitions.get.params.parse(params);
+      const data = current();
+      return reply(routes.requisitions.get, toRequisition(data, findRequisition(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.requisitions.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.requisitions.create.body, request);
+      const data = current();
+      const created = saveRequisition(data, body);
+      record(
+        data,
+        'requisition.created',
+        'requisition',
+        created.id,
+        diff({}, { number: created.number, amount: created.amount }),
+      );
+      await delay();
+      return reply(routes.requisitions.create, toRequisition(data, created));
+    }),
+  ),
+
+  mock(
+    routes.requisitions.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.requisitions.update.params.parse(params);
+      const { version, ...body } = await readBody(routes.requisitions.update.body, request);
+      const data = current();
+      const target = findRequisition(data, id);
+      checkVersion(target.version, version);
+      const before = target.amount;
+      saveRequisition(data, body, target);
+      record(
+        data,
+        'requisition.updated',
+        'requisition',
+        id,
+        diff({ amount: before }, { amount: target.amount }),
+      );
+      await delay();
+      return reply(routes.requisitions.update, toRequisition(data, target));
+    }),
+  ),
+
+  mock(
+    routes.requisitions.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.requisitions.remove.params.parse(params);
+      const { version } = readQuery(routes.requisitions.remove.query, request);
+      const data = current();
+      const target = findRequisition(data, id);
+      checkVersion(target.version, version);
+      removeRequisition(data, target);
+      record(
+        data,
+        'requisition.deleted',
+        'requisition',
+        id,
+        diff({ number: target.number }, { number: null }),
+      );
+      return reply(routes.requisitions.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.requisitions.submit,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.requisitions.submit.params.parse(params);
+      const { version } = await readBody(routes.requisitions.submit.body, request);
+      const data = current();
+      const target = findRequisition(data, id);
+      checkVersion(target.version, version);
+      const steps = submitRequisition(data, target);
+      record(
+        data,
+        'approval.submitted',
+        'requisition',
+        id,
+        diff({}, { amount: target.amount, steps, status: target.status }),
+      );
+      await delay();
+      return reply(routes.requisitions.submit, toRequisition(data, target));
+    }),
+  ),
+
+  mock(
+    routes.requisitions.reopen,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.requisitions.reopen.params.parse(params);
+      const { version } = await readBody(routes.requisitions.reopen.body, request);
+      const data = current();
+      const target = findRequisition(data, id);
+      checkVersion(target.version, version);
+      const before = target.status;
+      reopenRequisition(data, target);
+      record(
+        data,
+        'approval.reopened',
+        'requisition',
+        id,
+        diff({ status: before }, { status: target.status }),
+      );
+      return reply(routes.requisitions.reopen, toRequisition(data, target));
+    }),
+  ),
+
+  mock(
+    routes.requisitions.cancel,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.requisitions.cancel.params.parse(params);
+      const { version } = await readBody(routes.requisitions.cancel.body, request);
+      const data = current();
+      const target = findRequisition(data, id);
+      checkVersion(target.version, version);
+      const before = target.status;
+      cancelRequisition(target);
+      record(
+        data,
+        'requisition.cancelled',
+        'requisition',
+        id,
+        diff({ status: before }, { status: target.status }),
+      );
+      return reply(routes.requisitions.cancel, toRequisition(data, target));
+    }),
+  ),
+
+  mock(
+    routes.purchaseCosts.lookup,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.purchaseCosts.lookup.body, request);
+      return reply(routes.purchaseCosts.lookup, lookupCosts(current(), body));
     }),
   ),
 ];

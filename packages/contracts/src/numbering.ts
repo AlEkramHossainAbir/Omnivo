@@ -23,6 +23,8 @@ export const DOCUMENT_TYPES = [
   'sales.return',
   'sales.credit_note',
   'sales.refund',
+  'purchase.supplier',
+  'purchase.requisition',
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -57,14 +59,25 @@ const DEFAULT_PREFIXES = {
   'sales.return': 'SR',
   'sales.credit_note': 'CN',
   'sales.refund': 'RF',
+  // A supplier's code (step 17a): S-00042, a code for good like a customer's
+  'purchase.supplier': 'S',
+  // A purchase requisition: a request to buy, before any supplier is asked (step 17a)
+  'purchase.requisition': 'PR',
 } satisfies Record<DocumentType, string>;
 
 // টেন্যান্ট কিছু না বদলালে এই ছাঁচ — DB-তে রো লেখা হয় শুধু প্রথম বদলের সময়।
 // A product code is not a yearly document: P-00042 stays P-00042 for the product's whole life, so
 // its series never restarts (no year) and has room for 99,999 products before it grows a digit.
-// A customer code (step 15a) is the same kind of code: C-00042 for good.
+// A customer code (step 15a) and a supplier code (step 17a) are the same kind of code: C-00042 and
+// S-00042 for good.
+const CODE_SERIES: readonly DocumentType[] = [
+  'inventory.product',
+  'sales.customer',
+  'purchase.supplier',
+];
+
 export function defaultNumberFormat(documentType: DocumentType): NumberFormat {
-  if (documentType === 'inventory.product' || documentType === 'sales.customer') {
+  if (CODE_SERIES.includes(documentType)) {
     return { prefix: DEFAULT_PREFIXES[documentType], yearStyle: 'none', padding: 5 };
   }
   return { prefix: DEFAULT_PREFIXES[documentType], yearStyle: 'fiscal', padding: 4 };

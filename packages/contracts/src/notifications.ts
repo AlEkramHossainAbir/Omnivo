@@ -11,6 +11,10 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // stock.low: params { warehouse, count } — count = variants that fell to their reorder level
 // document.email_failed: params { document, id, number } — document = an OutputDocument kind, id =
 // the document's id (the bell opens its page)
+// approval.requested: params { document, id, number } — sent to everyone who may approve the step
+// that is now waiting (document = an ApprovalDocument kind)
+// approval.approved / approval.rejected: params { document, id, number } — sent to the person who
+// submitted the document, when the last step approves it or any step rejects it
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
@@ -21,6 +25,9 @@ export const NOTIFICATION_TYPES = [
   'import.failed',
   'stock.low',
   'document.email_failed',
+  'approval.requested',
+  'approval.approved',
+  'approval.rejected',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

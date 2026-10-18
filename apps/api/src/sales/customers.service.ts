@@ -9,13 +9,21 @@ import {
   type UpdateCustomerInput,
 } from '@omnivo/contracts';
 import {
+  creditNotes,
   customerGroups,
+  deliveries,
+  invoices,
   journalEntries,
   journalLines,
   ledgerAccounts,
   parties,
   partyAddresses,
   priceLists,
+  quotations,
+  receipts,
+  refunds,
+  salesOrders,
+  salesReturns,
   tenantSettings,
 } from '@omnivo/db';
 import { and, asc, eq, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
@@ -97,6 +105,14 @@ function codeTaken(): AppError {
   return new AppError(409, 'customer_code_taken', 'Another customer uses this code.', {
     fieldErrors: { code: ['customer_code_taken'] },
   });
+}
+
+function customerInUse(): AppError {
+  return new AppError(
+    409,
+    'customer_in_use',
+    'Entries or sales documents use this customer. Archive it instead.',
+  );
 }
 
 function fieldError(code: ErrorCode, field: string): AppError {
@@ -287,17 +303,62 @@ export class CustomersService {
     });
   }
 
-  // Only a customer nothing uses yet: one added by mistake. Step 17 will keep a party that is also
-  // a supplier, as a supplier.
+  // A supplier the company starts selling to (step 17a): the same party, now also a customer. Its
+  // customer fields start at their defaults (the database keeps them so while it was not a
+  // customer): no group, terms 0, no credit limit, no price list. The person fills them in next.
+  async fromSupplier(id: string, version: number): Promise<Customer> {
+    const canSeeBalance = await this.access.canSee();
+    return this.withTenant(async (tx) => {
+      const [before] = await tx
+        .select()
+        .from(parties)
+        .where(
+          and(
+            eq(parties.tenantId, getTenantId()),
+            eq(parties.id, id),
+            eq(parties.isSupplier, true),
+          ),
+        )
+        .for('update');
+      if (!before) throw notFound('Supplier');
+      if (before.version !== version) throw versionConflict();
+      if (before.isCustomer) {
+        throw new AppError(409, 'party_role_exists', 'This supplier is already a customer.');
+      }
+      await tx
+        .update(parties)
+        .set({
+          isCustomer: true,
+          version: sql`${parties.version} + 1`,
+          updatedBy: currentPrincipal().userId,
+        })
+        .where(and(eq(parties.tenantId, getTenantId()), eq(parties.id, id)));
+      const customer = await this.read(tx, id, canSeeBalance);
+      await audit(tx, {
+        action: 'customer.created',
+        entityType: 'customer',
+        entityId: id,
+        changes: created(await this.snapshot(tx, customer)),
+      });
+      return customer;
+    });
+  }
+
+  // Only a customer nothing uses yet: one added by mistake. A party that is also a supplier (step
+  // 17a) stays, as a supplier: only its customer side goes.
   async remove(id: string, version: number): Promise<void> {
     try {
       await this.withTenant(async (tx) => {
         const before = await this.lock(tx, id);
         if (before.version !== version) throw versionConflict();
-        // Its addresses go with it (ON DELETE CASCADE)
-        await tx
-          .delete(parties)
-          .where(and(eq(parties.tenantId, getTenantId()), eq(parties.id, id)));
+        if (before.isSupplier) {
+          await this.dropCustomerSide(tx, before);
+        } else {
+          // Its addresses go with it (ON DELETE CASCADE)
+          await tx
+            .delete(parties)
+            .where(and(eq(parties.tenantId, getTenantId()), eq(parties.id, id)));
+        }
         await audit(tx, {
           action: 'customer.deleted',
           entityType: 'customer',
@@ -308,14 +369,65 @@ export class CustomersService {
     } catch (error) {
       // No "is it used?" query first: the FK is the check, here and on every sales document
       if (CUSTOMER_IN_USE.some((constraint) => isForeignKeyViolation(error, constraint))) {
-        throw new AppError(
-          409,
-          'customer_in_use',
-          'Entries or sales documents use this customer. Archive it instead.',
-        );
+        throw customerInUse();
       }
       throw error;
     }
+  }
+
+  // The party stays, so no foreign key speaks up: the documents and receivable lines that name it
+  // are looked for here. The party row is locked FOR UPDATE (lock() above), and every sales
+  // document and every posting locks it FOR SHARE first (assertCustomer, checkParties): one that
+  // started before us has committed when this runs, and one that starts after finds no customer.
+  // The customer's own columns go back to their defaults in the same UPDATE, as the database
+  // demands (parties_customer_side_check), and so do its shipping addresses: they are where the
+  // customer's goods went. The billing address is the party's, and the supplier keeps it.
+  private async dropCustomerSide(tx: Transaction, party: PartyRow): Promise<void> {
+    const tenantId = getTenantId();
+    // The tables of CUSTOMER_IN_USE: the same list the delete's foreign keys check
+    const documents = [
+      quotations,
+      salesOrders,
+      deliveries,
+      invoices,
+      receipts,
+      salesReturns,
+      creditNotes,
+      refunds,
+    ].map(
+      (table) =>
+        sql`SELECT 1 FROM ${table} WHERE tenant_id = ${tenantId}::uuid AND customer_id = ${party.id}::uuid`,
+    );
+    const used = await tx.execute(sql`
+      ${sql.join(documents, sql` UNION ALL `)}
+      UNION ALL
+      SELECT 1 FROM ${journalLines} l
+        JOIN ${ledgerAccounts} a ON a.tenant_id = l.tenant_id AND a.id = l.account_id
+       WHERE l.tenant_id = ${tenantId}::uuid AND l.party_id = ${party.id}::uuid
+         AND a.purpose = 'accounts_receivable'
+      LIMIT 1`);
+    if (used.length > 0) throw customerInUse();
+    await tx
+      .update(parties)
+      .set({
+        isCustomer: false,
+        customerGroupId: null,
+        paymentTermsDays: 0,
+        creditLimit: null,
+        priceListId: null,
+        version: sql`${parties.version} + 1`,
+        updatedBy: currentPrincipal().userId,
+      })
+      .where(and(eq(parties.tenantId, tenantId), eq(parties.id, party.id)));
+    await tx
+      .delete(partyAddresses)
+      .where(
+        and(
+          eq(partyAddresses.tenantId, tenantId),
+          eq(partyAddresses.partyId, party.id),
+          eq(partyAddresses.kind, 'shipping'),
+        ),
+      );
   }
 
   // The columns the form sets, the same on create and update

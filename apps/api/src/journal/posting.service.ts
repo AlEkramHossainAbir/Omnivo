@@ -1,9 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import {
   type ErrorCode,
-  isPartyAccountPurpose,
   isStockJournalSource,
   type JournalSource,
+  partyRoleOf,
   sumMoney,
 } from '@omnivo/contracts';
 import {
@@ -29,7 +29,8 @@ export type EntryRow = typeof journalEntries.$inferSelect;
 export interface LineInput {
   accountId: string;
   branchId: string | null;
-  // Step 15a: the customer on a receivable line; null on every other line
+  // The customer on a receivable line (step 15a), the supplier on a payable line (step 17a); null
+  // on every other line
   partyId: string | null;
   description: string | null;
   debit: string;
@@ -68,21 +69,23 @@ export interface PartyIssue {
 // marks every wrong row at once
 export function partyError(issues: readonly PartyIssue[]): AppError {
   const first = issues[0]?.code ?? 'journal_party_invalid';
-  return new AppError(409, first, 'Some lines have a wrong customer, or need one.', {
+  return new AppError(409, first, 'Some lines have a wrong customer or supplier, or need one.', {
     fieldErrors: Object.fromEntries(
       issues.map((issue) => [`lines.${String(issue.index)}.partyId`, [issue.code]]),
     ),
   });
 }
 
-// The party rule (step 15a): a line on an account kept per party (the receivable) names a
-// customer, and no other line names anyone. Migration 0026 checks the same at posting, as a safety
-// net; here a person gets an answer per line instead of one database error.
+// The party rule: a line on an account kept per party names a party of the right kind, a customer
+// on the receivable (step 15a) and a supplier on the payable (step 17a), and no other line names
+// anyone. Migration 0036 checks the same at posting, as a safety net; here a person gets an answer
+// per line instead of one database error.
 // purposeOf: each line's account → its purpose, from a query the caller already made.
-// allowMissing: the receivable line may have no customer yet — a draft (the person picks the
-// customer before posting), or a reversal of an entry posted before step 15a, which had none.
-// allowArchived: a reversal undoes old work, even for a customer archived since.
-// FOR SHARE on the parties, like the accounts: nobody archives one until we commit.
+// allowMissing: the party line may have no party yet — a draft (the person picks the party before
+// posting), or a reversal of an entry posted before the rule, which had none.
+// allowArchived: a reversal undoes old work, even for a party archived since.
+// FOR SHARE on the parties, like the accounts: nobody archives one, or removes the side the line
+// needs, until we commit.
 export async function checkParties(
   tx: Transaction,
   lines: readonly { accountId: string; partyId: string | null }[],
@@ -96,27 +99,32 @@ export async function checkParties(
     partyIds.length === 0
       ? []
       : await tx
-          .select({ id: parties.id })
+          .select({
+            id: parties.id,
+            isCustomer: parties.isCustomer,
+            isSupplier: parties.isSupplier,
+          })
           .from(parties)
           .where(
             and(
               eq(parties.tenantId, getTenantId()),
               inArray(parties.id, partyIds),
-              // Step 17 adds suppliers: a payable line will need is_supplier instead
-              eq(parties.isCustomer, true),
               allowArchived ? undefined : isNull(parties.archivedAt),
             ),
           )
           .for('share');
-  const usable = new Set(found.map((party) => party.id));
+  const sides = new Map(found.map((party) => [party.id, party]));
   return lines.flatMap((line, index): PartyIssue[] => {
-    const perParty = isPartyAccountPurpose(purposeOf.get(line.accountId) ?? null);
+    const role = partyRoleOf(purposeOf.get(line.accountId) ?? null);
     if (line.partyId === null) {
-      return perParty && !allowMissing ? [{ index, code: 'journal_party_required' }] : [];
+      return role !== null && !allowMissing ? [{ index, code: 'journal_party_required' }] : [];
     }
-    if (!perParty) return [{ index, code: 'journal_party_not_allowed' }];
-    // Unknown, archived, not a customer, another tenant's: one answer, like the accounts
-    return usable.has(line.partyId) ? [] : [{ index, code: 'journal_party_invalid' }];
+    if (role === null) return [{ index, code: 'journal_party_not_allowed' }];
+    // Unknown, archived, another tenant's, or not on this side (a customer on the payable): one
+    // answer, like the accounts
+    const party = sides.get(line.partyId);
+    const onSide = role === 'customer' ? party?.isCustomer : party?.isSupplier;
+    return onSide === true ? [] : [{ index, code: 'journal_party_invalid' }];
   });
 }
 

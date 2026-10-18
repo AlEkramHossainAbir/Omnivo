@@ -246,6 +246,20 @@
       "when": 1791959911065,
       "tag": "0034_document-output-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792040730145,
+      "tag": "0035_suppliers-requisitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792040807658,
+      "tag": "0036_suppliers-requisitions-rules",
+      "breakpoints": true
     }
   ]
 }

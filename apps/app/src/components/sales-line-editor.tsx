@@ -1,12 +1,4 @@
-import {
-  Alert02Icon,
-  Delete02Icon,
-  PackageSearchIcon,
-  PlusSignIcon,
-  Search01Icon,
-  Tick02Icon,
-  Wrench01Icon,
-} from '@hugeicons/core-free-icons';
+import { Alert02Icon, Delete02Icon, PlusSignIcon, Wrench01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   defaultLineDescription,
@@ -14,7 +6,6 @@ import {
   plainQuantity,
   type PriceLookupItem,
   type Product,
-  type ProductSummary,
   routes,
   type SalesLineFormValues,
 } from '@omnivo/contracts';
@@ -24,9 +15,7 @@ import {
   Card,
   cn,
   Dialog,
-  DialogContent,
   DiscountInput,
-  EmptyState,
   IconButton,
   Input,
   MoneyInput,
@@ -34,7 +23,7 @@ import {
   Select,
   toast,
 } from '@omnivo/ui';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldErrors } from 'react-hook-form';
 
@@ -42,9 +31,9 @@ import { call } from '../lib/api';
 import { formTotals, isServiceLine, type LineMeta, type SalesItem } from '../lib/sales';
 import { basePreview, unitChoices } from '../lib/stock';
 import { taxRateOptions, useRateText } from '../lib/tax-rates';
-import { productQuery, productSearchQuery, taxRatesQuery, unitsQuery } from '../lib/queries';
-import { useDebounced } from '../lib/use-debounced';
+import { taxRatesQuery, unitsQuery } from '../lib/queries';
 import { failureOf, LineError } from './journal-parts';
+import { ProductPicker } from './product-picker';
 import { SalesTotals } from './sales-parts';
 import { useQuantity, useTenantId, useUnitCode, VariantCell } from './stock-parts';
 
@@ -577,113 +566,8 @@ export function LinesEditor<L extends SalesLineFormValues>({
       {lines.length > 0 && <SalesTotals totals={totals} pricesIncludeVat={pricesIncludeVat} />}
 
       <Dialog open={picking} onOpenChange={setPicking}>
-        {picking && <SalesItemPicker onAdd={addProduct} maxLines={maxLines} />}
+        {picking && <ProductPicker words="salesLines" onAdd={addProduct} maxLines={maxLines} />}
       </Dialog>
     </Card>
-  );
-}
-
-// "Add items": search the products and services, then add one. The dialog stays open, so a long
-// order is put together without closing it; each click adds the product's lines at once.
-function SalesItemPicker({
-  onAdd,
-  maxLines,
-}: {
-  onAdd: (product: Product) => Promise<boolean>;
-  maxLines: number;
-}) {
-  const { t, errorText } = useLocale();
-  const tenantId = useTenantId();
-  const queryClient = useQueryClient();
-  const [search, setSearch] = useState('');
-  const settled = useDebounced(search.trim(), 250);
-  const [added, setAdded] = useState<ReadonlySet<string>>(new Set());
-  const [loading, setLoading] = useState<string | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const { data: products } = useQuery(productSearchQuery(tenantId, settled));
-
-  // The list sends a summary; the variants, the packs and the selling unit come with the product
-  const add = async (summary: ProductSummary) => {
-    setLoading(summary.id);
-    setProblem(null);
-    try {
-      const fits = await onAdd(await queryClient.query(productQuery(tenantId, summary.id)));
-      if (fits) setAdded((before) => new Set(before).add(summary.id));
-      else setProblem(t('salesLines.tooMany', { max: maxLines }));
-    } catch (error) {
-      setProblem(errorText(failureOf(error instanceof Error ? error : null) ?? 'unknown_error'));
-    } finally {
-      setLoading(null);
-    }
-  };
-
-  return (
-    <DialogContent
-      title={t('salesLines.pickerTitle')}
-      description={t('salesLines.pickerDescription')}
-    >
-      <div className="grid grid-cols-1 gap-4">
-        <Input
-          type="search"
-          icon={Search01Icon}
-          aria-label={t('salesLines.pickerSearch')}
-          placeholder={t('products.searchPlaceholder')}
-          autoFocus
-          value={search}
-          onChange={(event) => {
-            setSearch(event.target.value);
-          }}
-        />
-        {problem !== null && (
-          <p role="status" className="flex items-center gap-1.5 text-label text-crit">
-            <HugeiconsIcon icon={Alert02Icon} size={15} strokeWidth={1.5} className="shrink-0" />
-            {problem}
-          </p>
-        )}
-        {products?.length === 0 ? (
-          <EmptyState
-            icon={PackageSearchIcon}
-            title={t('salesLines.pickerEmpty')}
-            description={t('salesLines.pickerDescription')}
-          />
-        ) : (
-          <ul className="grid max-h-[min(420px,55dvh)] grid-cols-1 gap-px overflow-y-auto">
-            {products?.map((product) => (
-              <li
-                key={product.id}
-                className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-subtle"
-              >
-                <span className="grid min-w-0 flex-1">
-                  <span className="truncate text-body-sm font-medium">{product.name}</span>
-                  <span className="truncate text-caption text-ink-3">
-                    <span className="font-mono tabular-nums">{product.code}</span>
-                    {product.hasVariants &&
-                      ` · ${t('products.variantCount', { count: product.variantCount })}`}
-                  </span>
-                </span>
-                {isServiceLine({ productType: product.type }) && (
-                  <Pill tone="neutral" icon={Wrench01Icon}>
-                    {t('salesLines.service')}
-                  </Pill>
-                )}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={loading === product.id}
-                  onClick={() => void add(product)}
-                >
-                  <HugeiconsIcon
-                    icon={added.has(product.id) ? Tick02Icon : PlusSignIcon}
-                    size={16}
-                    strokeWidth={1.5}
-                  />
-                  {added.has(product.id) ? t('salesLines.added') : t('salesLines.add')}
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </DialogContent>
   );
 }

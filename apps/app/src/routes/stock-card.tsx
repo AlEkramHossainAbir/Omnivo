@@ -1,4 +1,9 @@
-import { AlertCircleIcon, Edit02Icon, TransactionHistoryIcon } from '@hugeicons/core-free-icons';
+import {
+  AlertCircleIcon,
+  Calendar03Icon,
+  Edit02Icon,
+  TransactionHistoryIcon,
+} from '@hugeicons/core-free-icons';
 import {
   compareQuantity,
   isMovementKind,
@@ -12,11 +17,11 @@ import {
   CardHeader,
   DataTable,
   dataTableColumns,
-  DatePicker,
   Dialog,
   EmptyState,
   Field,
   IconButton,
+  Input,
   KpiStrip,
   PageHeader,
   Select,
@@ -45,6 +50,11 @@ const column = dataTableColumns<StockMovement>();
 // opens it, and with it this page was over its 100 KB budget
 const ReorderLevelForm = lazy(async () => ({
   default: (await import('../components/reorder-level-form')).ReorderLevelForm,
+}));
+// Step 17a: the history's two date pickers too (date-input.tsx says why). The contracts of 17a
+// took this page 0.3 KB over its budget. Until the chunk arrives, a disabled box holds each place.
+const DatePicker = lazy(async () => ({
+  default: (await import('../components/date-input')).DatePicker,
 }));
 
 export function StockCardPage() {
@@ -365,22 +375,26 @@ export function StockCardPage() {
             />
           </Field>
           <Field id="history-from" label={t('stock.from')}>
-            <DatePicker
-              id="history-from"
-              value={range.from}
-              onChange={(value) => {
-                setRange((before) => ({ ...before, from: value }));
-              }}
-            />
+            <Suspense fallback={<Input id="history-from" icon={Calendar03Icon} disabled />}>
+              <DatePicker
+                id="history-from"
+                value={range.from}
+                onChange={(value) => {
+                  setRange((before) => ({ ...before, from: value }));
+                }}
+              />
+            </Suspense>
           </Field>
           <Field id="history-to" label={t('stock.to')}>
-            <DatePicker
-              id="history-to"
-              value={range.to}
-              onChange={(value) => {
-                setRange((before) => ({ ...before, to: value }));
-              }}
-            />
+            <Suspense fallback={<Input id="history-to" icon={Calendar03Icon} disabled />}>
+              <DatePicker
+                id="history-to"
+                value={range.to}
+                onChange={(value) => {
+                  setRange((before) => ({ ...before, to: value }));
+                }}
+              />
+            </Suspense>
           </Field>
         </div>
         {first && range.from !== '' && (

@@ -15,6 +15,7 @@ import {
   roleSchema,
   settingsSchema,
   setupSchema,
+  supplierSchema,
   shiftIsoDate,
   todayIn,
 } from '@omnivo/contracts';
@@ -469,17 +470,38 @@ describe('opening balances', () => {
       entry: null,
       lines: [],
     });
+    // Step 17a: the payable is kept per supplier, so its line names the yarn mill owed
+    const mill = await send('POST', '/suppliers', {
+      code: '',
+      name: 'Square Yarns Ltd.',
+      groupId: '',
+      contactPerson: '',
+      phone: '',
+      email: '',
+      documentLanguage: 'en',
+      bin: '',
+      paymentTermsDays: 30,
+      address: '',
+      bankAccounts: [],
+      notes: '',
+    });
+    expect(mill.statusCode, mill.body).toBe(201);
     const res = await send('PUT', '/opening-balances', {
       goLiveDate: '2026-07-01',
       replaces: null,
       lines: [
         { accountId: id('1121'), debit: '1842600.50', credit: '' },
         { accountId: id('1151'), debit: '650000', credit: '' },
-        { accountId: id('2110'), debit: '', credit: '412000' },
+        {
+          accountId: id('2110'),
+          partyId: supplierSchema.parse(mill.json()).id,
+          debit: '',
+          credit: '412000',
+        },
         { accountId: id('1290'), debit: '', credit: '' },
       ],
     });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode, res.body).toBe(200);
     const saved = openingBalancesSchema.parse(res.json());
     expect(saved.goLiveDate).toBe('2026-07-01');
     expect(saved.lines).toHaveLength(3);

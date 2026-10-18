@@ -13,15 +13,19 @@ import {
   MAX_RECEIPT_ALLOCATIONS,
   type MemberSort,
   type OrderStatus,
+  type PartyRole,
   type ProductSort,
   type ProductStatus,
   type ProfitAndLossQuery,
   type QuotationStatus,
   type ReceiptStatus,
   type RefundStatus,
+  type RequisitionStatus,
   routes,
   type StockDocumentStatus,
   type StockFilter,
+  type SupplierSort,
+  type SupplierStatus,
   type TransferStatus,
   type TrialBalanceQuery,
   type WarehouseStatus,
@@ -645,29 +649,99 @@ export function customerCreditQuery(tenantId: string, customerId: string) {
   });
 }
 
-// The statement reads posted journal lines, so it lives under ['journal', tenantId] like the
-// ledger: posting or reversing an entry refreshes it
-export function customerStatementQuery(
+// A customer's or (step 17a) a supplier's statement. It reads posted journal lines, so it lives
+// under ['journal', tenantId] like the ledger: posting or reversing an entry refreshes it. The role
+// is in the key: a party that is both has one id and two statements (its receivable lines, its
+// payable lines).
+export function partyStatementQuery(
   tenantId: string,
-  customerId: string,
+  role: PartyRole,
+  partyId: string,
   from: string,
   to: string,
 ) {
   return infiniteQueryOptions({
-    queryKey: ['journal', tenantId, 'statement', customerId, from, to],
-    queryFn: ({ pageParam }: { pageParam: string | null }) =>
-      call(routes.customers.statement, {
-        params: { id: customerId },
+    queryKey: ['journal', tenantId, 'statement', role, partyId, from, to],
+    queryFn: ({ pageParam }: { pageParam: string | null }) => {
+      const args = {
+        params: { id: partyId },
         query: {
           limit: 100,
           ...(from !== '' && { from }),
           ...(to !== '' && { to }),
           ...(pageParam !== null && { cursor: pageParam }),
         },
+      };
+      // Two calls, not one call of a chosen route: each route is its own type, and both answer
+      // with the same ledger page
+      return role === 'customer'
+        ? call(routes.customers.statement, args)
+        : call(routes.suppliers.statement, args);
+    },
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Suppliers (step 17a): everything under ['suppliers', tenantId], like the customers. A party that
+// is both is one row, so a save on either side refreshes both prefixes (usePartyRefresh in
+// supplier-parts.tsx). The statement is partyStatementQuery, above.
+
+export function supplierGroupsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['suppliers', tenantId, 'groups'],
+    queryFn: async () => (await call(routes.supplierGroups.list)).items,
+  });
+}
+
+export interface SupplierFilter {
+  search: string;
+  groupId: string;
+  status: SupplierStatus;
+  sort: SupplierSort;
+}
+
+export function supplierListQuery(tenantId: string, filter: SupplierFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['suppliers', tenantId, 'list', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.suppliers.list, {
+        query: {
+          limit: 50,
+          status: filter.status,
+          sort: filter.sort,
+          ...(filter.search !== '' && { search: filter.search }),
+          ...(filter.groupId !== '' && { groupId: filter.groupId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
       }),
     initialPageParam: null,
     getNextPageParam: (page) => page.nextCursor,
     placeholderData: keepPreviousData,
+  });
+}
+
+// The supplier box on a payable line: the first 20 active suppliers that match
+export function supplierSearchQuery(tenantId: string, search: string) {
+  return queryOptions({
+    queryKey: ['suppliers', tenantId, 'search', search],
+    queryFn: async () =>
+      (
+        await call(routes.suppliers.list, {
+          query: { limit: 20, status: 'active', ...(search !== '' && { search }) },
+        })
+      ).items,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function supplierQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['suppliers', tenantId, 'supplier', supplierId],
+    queryFn: () => call(routes.suppliers.get, { params: { id: supplierId } }),
+    retry: false,
   });
 }
 
@@ -1093,5 +1167,73 @@ export function salesAccountsQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['sales-accounts', tenantId],
     queryFn: () => call(routes.salesAccounts.get),
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Requisitions and approvals (step 17a). Everything starts with ['purchase', tenantId]: approving a
+// requisition changes the requisition, its list, the "waiting for me" list and the navigation's
+// count, and one invalidate refreshes them all. 17b's purchase orders join the prefix.
+
+// The approval levels of every kind of document (Settings → Approval levels, and a draft's card)
+export function approvalRulesQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['approval-rules', tenantId],
+    queryFn: async () => (await call(routes.approvalRules.list)).items,
+  });
+}
+
+export interface RequisitionListFilter {
+  status: RequisitionStatus | '';
+  warehouseId: string;
+}
+
+export function requisitionsQuery(tenantId: string, filter: RequisitionListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'requisitions', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.requisitions.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function requisitionQuery(tenantId: string, requisitionId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'requisition', requisitionId],
+    queryFn: () => call(routes.requisitions.get, { params: { id: requisitionId } }),
+    retry: false,
+  });
+}
+
+// "Waiting for me", oldest first
+export function waitingApprovalsQuery(tenantId: string) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'waiting'],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.approvals.waiting, {
+        query: { limit: 50, ...(pageParam !== null && { cursor: pageParam }) },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+  });
+}
+
+// The navigation's count. Polled like the bell's badge (unreadCountQuery): every 30 seconds while
+// the tab is visible, so a requisition submitted in another office shows up without a reload.
+export function waitingCountQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'waiting-count'],
+    queryFn: async () => (await call(routes.approvals.waitingCount)).count,
+    refetchInterval: 30_000,
+    staleTime: 0,
   });
 }

@@ -111,7 +111,11 @@ test('posts the opening balances, with the difference in opening balance equity'
   await page.getByRole('button', { name: 'First day on Omnivo' }).click();
   await page.locator('td[data-today] button').click();
   await page.getByLabel('Debit, 1121').fill('1842600.50');
-  await page.getByLabel('Credit, 2110').fill('412000');
+  // The payable is split by supplier (step 17a), like the receivable by customer
+  await page.getByLabel('Credit, 2110: line 1').fill('412000');
+  await page.getByLabel('Supplier, 2110: line 1').click();
+  await page.getByRole('combobox', { name: 'Search suppliers' }).fill('meghna');
+  await page.getByRole('option', { name: /Meghna Spinning Mills/ }).click();
   // What the books are out by, on the side that closes the gap
   await expect(page.getByText('৳14,30,600.50')).toBeVisible();
   // …and with it both totals are the larger side
@@ -154,7 +158,7 @@ test('asks for the customer on a receivable line, and the customer then owes it'
   await line(page, 2).getByLabel('Account').selectOption({ label: '4110 · Export sales' });
   await line(page, 2).getByLabel('Credit').fill('42000');
   await page.getByRole('button', { name: 'Post entry' }).click();
-  await expect(line(page, 1).getByText('Pick the customer this amount belongs to.')).toBeVisible();
+  await expect(line(page, 1).getByText(/^Pick who this amount belongs to/)).toBeVisible();
 
   await line(page, 1).getByLabel('Customer').click();
   await page.getByRole('combobox', { name: 'Search customers' }).fill('aarong');
@@ -176,9 +180,7 @@ test('splits the opening receivable by customer', async ({ page }) => {
   await page.getByRole('button', { name: 'Post opening balances' }).click();
   // Without a customer the amount belongs to nobody: the row says so
   await expect(
-    page
-      .getByRole('group', { name: '1140: line 1' })
-      .getByText('Pick the customer this amount belongs to.'),
+    page.getByRole('group', { name: '1140: line 1' }).getByText(/^Pick who this amount belongs to/),
   ).toBeVisible();
 
   await page.getByLabel('Customer, 1140: line 1').click();

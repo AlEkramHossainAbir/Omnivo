@@ -584,6 +584,63 @@ const refundRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/refund'), 'RefundPage'),
 });
 
+// Purchase (step 17a): suppliers and their groups, like the customers ('/suppliers/new' beats
+// '/suppliers/$supplierId'; the form pages have a file of their own, routes/supplier-edit.tsx, for
+// the same reason as the customer's), then the requisitions and the "waiting for me" list.
+const suppliersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/suppliers',
+  component: lazyRouteComponent(() => import('./routes/suppliers'), 'SuppliersPage'),
+});
+
+const newSupplierRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/suppliers/new',
+  component: lazyRouteComponent(() => import('./routes/supplier-edit'), 'NewSupplierPage'),
+});
+
+const supplierRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/suppliers/$supplierId',
+  component: lazyRouteComponent(() => import('./routes/supplier'), 'SupplierPage'),
+});
+
+const editSupplierRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/suppliers/$supplierId/edit',
+  component: lazyRouteComponent(() => import('./routes/supplier-edit'), 'EditSupplierPage'),
+});
+
+const supplierGroupsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/supplier-groups',
+  component: lazyRouteComponent(() => import('./routes/supplier-groups'), 'SupplierGroupsPage'),
+});
+
+const requisitionsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/requisitions',
+  component: lazyRouteComponent(() => import('./routes/requisitions'), 'RequisitionsPage'),
+});
+
+const newRequisitionRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/requisitions/new',
+  component: lazyRouteComponent(() => import('./routes/requisition'), 'NewRequisitionPage'),
+});
+
+const requisitionRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/requisitions/$requisitionId',
+  component: lazyRouteComponent(() => import('./routes/requisition'), 'RequisitionPage'),
+});
+
+const approvalsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/approvals',
+  component: lazyRouteComponent(() => import('./routes/approvals'), 'ApprovalsPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -600,6 +657,13 @@ const rolesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/roles',
   component: lazyRouteComponent(() => import('./routes/roles'), 'RolesPage'),
+});
+
+// Step 17a: the approval levels, a workspace setting next to the roles they name
+const approvalRulesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/approval-rules',
+  component: lazyRouteComponent(() => import('./routes/approval-rules'), 'ApprovalRulesPage'),
 });
 
 const auditLogRoute = createRoute({
@@ -694,9 +758,19 @@ const routeTree = rootRoute.addChildren([
     refundsRoute,
     newRefundRoute,
     refundRoute,
+    suppliersRoute,
+    newSupplierRoute,
+    supplierRoute,
+    editSupplierRoute,
+    supplierGroupsRoute,
+    requisitionsRoute,
+    newRequisitionRoute,
+    requisitionRoute,
+    approvalsRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,
+    approvalRulesRoute,
     auditLogRoute,
     ...devRoutes,
   ]),

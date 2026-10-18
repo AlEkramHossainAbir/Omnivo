@@ -38,15 +38,32 @@ export const ACCOUNT_PURPOSES = [
 ] as const;
 export type AccountPurpose = (typeof ACCOUNT_PURPOSES)[number];
 
-// The accounts kept per party (step 15a): the receivable is one account in the chart, and every line
-// on it names the customer, so the customers' balances add up to the account's balance. Step 17
-// adds 'accounts_payable' for suppliers.
+// The accounts kept per party: the receivable (step 15a) and the payable (step 17a) are each one
+// account in the chart, and every line on them names the party, so the customers' balances add up
+// to the receivable and the suppliers' balances to the payable.
 export const PARTY_ACCOUNT_PURPOSES = [
   'accounts_receivable',
+  'accounts_payable',
 ] as const satisfies readonly AccountPurpose[];
+export type PartyAccountPurpose = (typeof PARTY_ACCOUNT_PURPOSES)[number];
 
-export function isPartyAccountPurpose(value: string | null): boolean {
+export function isPartyAccountPurpose(value: string | null): value is PartyAccountPurpose {
   return PARTY_ACCOUNT_PURPOSES.some((purpose) => purpose === value);
+}
+
+// Which kind of party a line on that account names: a customer owes on the receivable, the company
+// owes a supplier on the payable. A party that is both has lines on both accounts.
+export const PARTY_ROLES = ['customer', 'supplier'] as const;
+export type PartyRole = (typeof PARTY_ROLES)[number];
+
+export const PARTY_ROLE_OF = {
+  accounts_receivable: 'customer',
+  accounts_payable: 'supplier',
+} as const satisfies Record<PartyAccountPurpose, PartyRole>;
+
+// null for an account that is not kept per party: its lines name nobody
+export function partyRoleOf(purpose: string | null): PartyRole | null {
+  return isPartyAccountPurpose(purpose) ? PARTY_ROLE_OF[purpose] : null;
 }
 
 export function isAccountPurpose(value: string): value is AccountPurpose {

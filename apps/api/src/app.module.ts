@@ -30,6 +30,7 @@ import { NotificationsModule } from './notifications/notifications.module.js';
 import { NumberingModule } from './numbering/numbering.module.js';
 import { PermissionGuard } from './rbac/permission.guard.js';
 import { ProductsModule } from './products/products.module.js';
+import { PurchaseModule } from './purchase/purchase.module.js';
 import { RbacModule } from './rbac/rbac.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { RolesModule } from './roles/roles.module.js';
@@ -67,6 +68,7 @@ export class AppModule implements NestModule {
         TaxModule,
         SalesModule,
         DocumentsModule,
+        PurchaseModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

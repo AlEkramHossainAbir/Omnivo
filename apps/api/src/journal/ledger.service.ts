@@ -1,5 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { addMoney, type LedgerPage, subtractMoney } from '@omnivo/contracts';
+import {
+  addMoney,
+  type LedgerPage,
+  type PartyAccountPurpose,
+  type PartyRole,
+  subtractMoney,
+} from '@omnivo/contracts';
 import { journalEntries, journalLines, ledgerAccounts, parties } from '@omnivo/db';
 import { and, asc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
@@ -19,6 +25,12 @@ function balanceWhere(condition: SQL | undefined): SQL<string> {
   const filter = condition ?? sql`true`;
   return sql<string>`round(coalesce(sum(${journalLines.debit} - ${journalLines.credit}) FILTER (WHERE ${filter}), 0), 4)`;
 }
+
+// The account a party's lines are on: contracts' PARTY_ROLE_OF the other way round
+const PARTY_ACCOUNT = {
+  customer: 'accounts_receivable',
+  supplier: 'accounts_payable',
+} as const satisfies Record<PartyRole, PartyAccountPurpose>;
 
 interface LedgerQuery {
   limit: number;
@@ -43,10 +55,17 @@ export class LedgerService {
     });
   }
 
-  // A customer's statement (step 15a): the same page as a ledger, over the lines of the receivable
-  // that carry this customer. The account filter matters from step 17 on: a party that is also a
-  // supplier has payable lines too, and those are not what the customer owes.
-  statement(partyId: string, query: LedgerQuery): Promise<LedgerPage> {
+  // A party's statement: the same page as a ledger, over the lines that carry this party on the
+  // account of its side: the receivable for a customer (step 15a), the payable for a supplier (step
+  // 17a). A party that is both has lines on both accounts, and each page shows only its own: what
+  // the customer owes is not netted with what the company owes the supplier. The balance is
+  // debit − credit like every ledger, so a supplier's is negative while the company owes it; the
+  // app turns the sign round.
+  statement(
+    partyId: string,
+    query: LedgerQuery,
+    role: PartyRole = 'customer',
+  ): Promise<LedgerPage> {
     const tenantId = getTenantId();
     return this.withTenant(async (tx) => {
       const [party] = await tx
@@ -56,22 +75,22 @@ export class LedgerService {
           and(
             eq(parties.tenantId, tenantId),
             eq(parties.id, partyId),
-            eq(parties.isCustomer, true),
+            role === 'customer' ? eq(parties.isCustomer, true) : eq(parties.isSupplier, true),
           ),
         );
-      if (!party) throw notFound('Customer');
-      const receivable = tx
+      if (!party) throw notFound(role === 'customer' ? 'Customer' : 'Supplier');
+      const accounts = tx
         .select({ id: ledgerAccounts.id })
         .from(ledgerAccounts)
         .where(
           and(
             eq(ledgerAccounts.tenantId, tenantId),
-            eq(ledgerAccounts.purpose, 'accounts_receivable'),
+            eq(ledgerAccounts.purpose, PARTY_ACCOUNT[role]),
           ),
         );
       return this.page(
         tx,
-        and(eq(journalLines.partyId, partyId), inArray(journalLines.accountId, receivable)),
+        and(eq(journalLines.partyId, partyId), inArray(journalLines.accountId, accounts)),
         query,
       );
     });

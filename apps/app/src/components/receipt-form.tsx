@@ -37,7 +37,6 @@ import { allocationRows } from '../lib/invoices';
 import { rowPath } from '../lib/products';
 import { accountsQuery, branchesQuery, openInvoicesQuery } from '../lib/queries';
 import { AllocationTable } from './allocation-table';
-import { CreditLine } from './credit-parts';
 import { SalesBackLink, useSalesRefresh } from './sales-parts';
 import { useTenantId } from './stock-parts';
 
@@ -49,6 +48,10 @@ const CustomerPicker = lazy(async () => ({
   default: (await import('./customer-picker')).CustomerPicker,
 }));
 const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
+// Step 17a: the credit line too. Its module also holds the credit limit dialog, which brought the
+// whole dialog code into this form, though a receipt never shows it; with the contracts of 17a
+// the form was 1.1 KB over its 100 KB budget.
+const CreditLine = lazy(async () => ({ default: (await import('./credit-parts')).CreditLine }));
 
 type FormValues = ReceiptFormValues;
 
@@ -175,7 +178,9 @@ export function ReceiptForm({
                 </Suspense>
               )}
             </FormField>
-            <CreditLine customerId={customerId} />
+            <Suspense fallback={null}>
+              <CreditLine customerId={customerId} />
+            </Suspense>
           </div>
           <FormField control={control} name="date" label={t('receipts.date')}>
             {(field) => (

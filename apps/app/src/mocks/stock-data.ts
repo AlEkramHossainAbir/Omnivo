@@ -144,6 +144,12 @@ function valueOf(stock: MockStock, variantId: string): ValueState {
   return stock.values.get(variantId) ?? { quantity: '0', value: '0.0000', unitCost: null };
 }
 
+// The company-wide average cost per base unit, or null for an item never bought (and a service).
+// Step 17a's cost lookup starts a purchase line with it.
+export function averageCostOf(stock: MockStock, variantId: string): string | null {
+  return valueOf(stock, variantId).unitCost;
+}
+
 // Writes a movement and adds it to its variant's value, like the trigger
 function pushMovement(stock: MockStock, movement: MockMovement): void {
   stock.movements.push(movement);

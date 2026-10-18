@@ -109,7 +109,34 @@ export function seedPeople(workspace: Workspace): People {
       };
     }),
   ];
+  if (workspace.slug === 'rahman-garments') addPurchaseDesk(roles, members);
   return { roles, members, invitations: [] };
+}
+
+// Step 17a: the approval levels' roles, and the people requisition-data.ts's seed names. Added
+// after the generated members, so the team page's first rows and the roles they hold stay as they
+// were. Nobody holds Director yet: the bell for that level goes to the Owners (decision 28).
+function addPurchaseDesk(roles: MockRole[], members: Member[]): void {
+  const writer = roles.find((item) => item.name === 'Merchandiser');
+  const manager = role(
+    'Purchase manager',
+    ['purchase.supplier.manage', 'purchase.supplier.balance', 'purchase.requisition.manage'],
+    'Approves requisitions and buys from suppliers',
+  );
+  roles.push(manager, role('Director', [], 'Approves large purchases'));
+  const member = (fullName: string, email: string, held: MockRole | undefined): Member => ({
+    membershipId: crypto.randomUUID(),
+    userId: crypto.randomUUID(),
+    fullName,
+    email,
+    roles: held ? [{ id: held.id, name: held.name }] : [],
+    version: 1,
+    joinedAt: new Date(Date.now() - 200 * DAY_MS).toISOString(),
+  });
+  members.push(
+    member('Sadia Islam', 'sadia.islam@rahman-garments.com', writer),
+    member('Kamal Uddin', 'kamal.uddin@rahman-garments.com', manager),
+  );
 }
 
 export function toRole(people: People, entry: MockRole): Role {

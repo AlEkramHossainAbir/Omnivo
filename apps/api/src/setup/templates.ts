@@ -131,6 +131,14 @@ const RETURNING = ['sales.return.manage'] as const;
 const CREDITING = ['sales.credit_note.manage'] as const;
 const REFUNDING = ['sales.refund.manage'] as const;
 
+// Step 17a. The accountant keeps the suppliers' accounts and sees what the company owes each one;
+// bills and payments follow in 17c. The people who run the stock (a store keeper, a depot manager,
+// a production manager, a garments merchandiser buying fabric and trims for a buyer's order) ask
+// for goods with a requisition. Nobody gets an approval: the levels are set by the owner in
+// Settings → Approvals, by role, and a workspace starts with none.
+const SUPPLYING = ['purchase.supplier.manage', 'purchase.supplier.balance'] as const;
+const REQUESTING = ['purchase.requisition.manage'] as const;
+
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
 const ACCOUNTANT: RoleTemplate = {
@@ -156,6 +164,8 @@ const ACCOUNTANT: RoleTemplate = {
     // Step 15d: credit notes and refunds
     ...CREDITING,
     ...REFUNDING,
+    // Step 17a: the suppliers and what the company owes them
+    ...SUPPLYING,
   ],
 };
 
@@ -165,7 +175,13 @@ const STOCK_WORK = ['inventory.stock.adjust', 'inventory.stock.transfer'] as con
 const STORE_KEEPER: RoleTemplate = {
   name: 'Store keeper',
   description: 'Receives goods and writes GRNs',
-  permissions: ['inventory.product.manage', ...STOCK_WORK, ...DELIVERING, ...RETURNING],
+  permissions: [
+    'inventory.product.manage',
+    ...STOCK_WORK,
+    ...DELIVERING,
+    ...RETURNING,
+    ...REQUESTING,
+  ],
 };
 
 function group(
@@ -378,6 +394,7 @@ export const INDUSTRY_TEMPLATES = {
           'inventory.product.manage',
           'sales.customer.manage',
           ...ORDERING,
+          ...REQUESTING,
         ],
       },
       STORE_KEEPER,
@@ -441,6 +458,7 @@ export const INDUSTRY_TEMPLATES = {
           ...STOCK_WORK,
           ...DELIVERING,
           ...RETURNING,
+          ...REQUESTING,
         ],
       },
       {
@@ -513,6 +531,7 @@ export const INDUSTRY_TEMPLATES = {
           ...STOCK_WORK,
           ...DELIVERING,
           ...RETURNING,
+          ...REQUESTING,
         ],
       },
       {
@@ -561,7 +580,7 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Production manager',
         description: 'Production orders and material use',
-        permissions: ['core.user.read', 'inventory.product.manage', ...STOCK_WORK],
+        permissions: ['core.user.read', 'inventory.product.manage', ...STOCK_WORK, ...REQUESTING],
       },
       STORE_KEEPER,
     ],
@@ -621,6 +640,8 @@ export const INDUSTRY_TEMPLATES = {
           ...RETURNING,
           ...CREDITING,
           ...REFUNDING,
+          ...SUPPLYING,
+          ...REQUESTING,
         ],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [...COLLECTING] },
@@ -676,6 +697,8 @@ export const INDUSTRY_TEMPLATES = {
           ...RETURNING,
           ...CREDITING,
           ...REFUNDING,
+          ...SUPPLYING,
+          ...REQUESTING,
         ],
       },
     ],

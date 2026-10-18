@@ -6,7 +6,7 @@ import {
   PlusSignIcon,
   Tick02Icon,
 } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon } from '@hugeicons/react';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
   type CustomerAddress,
   type DocumentTotals,
@@ -126,12 +126,15 @@ export function addressLabel(address: CustomerAddress): string {
 // A notice above a document: what its state means and what to do next. Icon plus words, never
 // colour alone; warn for an offer that has ended (step 15c: or an invoice past its due date),
 // neutral otherwise. Here since 15c, not in quotation-view.tsx: the invoice and receipt pages use it
-// too, and importing it from there would pull the quotation page into their chunks.
+// too, and importing it from there would pull the quotation page into their chunks. Step 17a: a
+// notice may bring its own icon (a requisition sent back is not an hourglass).
 export function DocumentNotice({
   tone,
+  icon,
   children,
 }: {
   tone: 'warn' | 'neutral';
+  icon?: IconSvgElement;
   children: ReactNode;
 }) {
   return (
@@ -143,7 +146,7 @@ export function DocumentNotice({
       }
     >
       <HugeiconsIcon
-        icon={tone === 'warn' ? HourglassIcon : InformationCircleIcon}
+        icon={icon ?? (tone === 'warn' ? HourglassIcon : InformationCircleIcon)}
         size={17}
         strokeWidth={1.5}
         className="mt-px shrink-0"

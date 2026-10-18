@@ -140,8 +140,9 @@ export function useJournalRefresh() {
   return async (saved?: JournalEntry) => {
     if (saved) queryClient.setQueryData(journalEntryQuery(tenantId, saved.id).queryKey, saved);
     await queryClient.invalidateQueries({ queryKey: ['journal', tenantId] });
-    // A line on the receivable changes what a customer owes (step 15a): the customer list and
-    // pages show the balance
+    // A line on the receivable changes what a customer owes (step 15a), and one on the payable
+    // what the company owes a supplier (step 17a): their lists and pages show the balance
     await queryClient.invalidateQueries({ queryKey: ['customers', tenantId] });
+    await queryClient.invalidateQueries({ queryKey: ['suppliers', tenantId] });
   };
 }
