@@ -248,7 +248,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   caption text, and a sticky save bar (card, `shadow-md`) that appears only when something
   changed. Locked cells are checked and disabled.
 - **Money input:** a `৳` prefix inside the control, the value right-aligned and
-  `tabular-nums`, shown grouped (`18,42,600.50`) when not focused. The input always
+  `tabular-nums`, shown grouped (`18,42,600.50`) when not focused. Focusing it (Tab or a
+  click) shows the plain digits and selects all of them, so typing replaces the amount. The input always
   shows ASCII digits; Bangla digits typed on a Bangla keyboard are accepted and
   converted. The form value is a decimal string, never a `number`.
 - **Discount input:** `DiscountInput` from `@omnivo/ui`, the money input's box with a number (right-aligned,
@@ -375,9 +376,29 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   invoice that credit notes took money off: Credited (neutral, `Invoice04`) in place of its payment pill when the
   whole total is credited, else Partly credited (neutral, `Invoice04`) beside it. A challan's returns: Partly
   returned (neutral, `DeliveryReturn01`), Returned (neutral, `PackageReceive`); nothing came back = no pill.
+- **Purchase statuses:** requisition Draft (neutral, `FileEdit`), Waiting for approval (`brand`, `Clock01`),
+  Approved (`good`, `CheckmarkCircle02`), Cancelled (neutral, `CancelCircle`). An approval round and its steps:
+  Waiting (`brand`, `Clock01`), Approved (`good`, `CheckmarkCircle02`), Rejected (`warn`, `ArrowTurnBackward`:
+  the writer must act), Reopened (neutral, `Undo02`), and a step never reached "Not yet" / "Not decided"
+  (neutral, `MinusSignCircle`).
+- **Approval card:** a card ("Approval", with a subtitle) on every document that needs an approval. A draft lists
+  the levels its amount reaches now ("Purchase manager · from ৳20,000"). A round: "Round 2" (13.5px/500) with its
+  pill, a 13px `ink-3` line (who submitted it, when, for how much), then its steps in a 1px `line` box (radius
+  10px, one row each, 1px `line` rules): the level, its pill, a 12px `ink-3` "who and when", and the comment in a
+  `<q>`. The waiting step gets a `subtle` box below: "Step 2 waits for you." with Approve (primary `sm`) and
+  Reject (secondary `sm`, `ArrowTurnBackward`), "You submitted it, so someone else approves it." for the writer,
+  or "Waiting for Purchase manager". Earlier rounds fold into a `<details>` with a `brand` text-link summary.
+  Approve and Reject are on the document's page only, never on a list.
+- **Approval dialogs:** the dialog. Approve says whether this click finishes the approval or passes it on, with
+  an optional comment; Reject needs a comment (it says what to change). Errors that name no box show at the top.
+- **Approval levels (Settings):** one card per kind of document, each its own form. A level is a box (1px `line`,
+  radius 10px, 16px padding) with "Level 2" (13px/500 `ink-2`), a whole-taka money input "From amount" and a role
+  select side by side, and a remove icon button. "Add a level" (secondary) and Save (primary) at the bottom, the
+  rules in 13px `ink-3` above them; at most five levels. Without `core.settings.manage` the same page is read-only.
 - **Document notice:** a line above a document that says what its state means and what to do next: radius
   10px, 13.5px text, a 17px icon, `warn-bg` with `warn` text and an `Hourglass` icon for an offer that has ended
-  or a credit note more than 6 months after its invoice,
+  or a credit note more than 6 months after its invoice, or an `ArrowTurnBackward` icon and the approver's
+  comment for a document sent back by an approval,
   `subtle` with `ink-2` text and an `InformationCircle` icon otherwise.
 - **Credit line and credit dialog:** under the customer box on an order or invoice form, a 13px line: "Credit
   left: ৳35,000 of ৳2,00,000 · ৳40,000 on confirmed orders" in `ink-3`, whole taka, `tabular-nums`; over the limit

@@ -269,6 +269,21 @@ attachment, From "Company via Omnivo", reply-to কোম্পানির ই�
 পাঠানোর সময় বদলানো যায়। **কথায় টাকা** (লাখ/কোটি, বাংলা ও ইংরেজি) invoice, receipt, credit note, refund-এ — PDF
 ও প্রিন্টে। পাঠাতে ডকুমেন্টের manage permission, ডাউনলোডে কিছু লাগে না। Mushak 6.3/6.7 পরে।
 
+#### ধাপ ১৭: Purchase — চারটা গাইডে
+
+**১৭a (suppliers, payable, requisition, approval):** supplier একই `parties` টেবিলে (`is_supplier`), নিজের কোড
+সিরিজ (`S-00001`), supplier group, নিজের payment terms, সর্বোচ্চ ৫টা bank account (bank, branch, account name,
+number, routing number)। একই party দুই দিকেই হতে পারে ("Make supplier too" / "Make customer too"); এক দিক
+delete করলে শুধু সেই দিক যায়। AP-ও per party: প্রতিটা payable লাইনে supplier, balance ও statement সেখান থেকে
+(`purchase.supplier.balance` থাকলে); opening balances-এ AP supplier ধরে ভাগ। Requisition (PR, save করলেই নম্বর;
+warehouse, needed-by, লাইনে estimated cost — average cost থেকে, বদলানো যায়; draft → pending → approved,
+cancelled)। **Approval:** প্রতি ডকুমেন্ট ধরনের জন্য সর্বোচ্চ ৫টা level (amount থেকে, একটা role); submit করলে
+যে level-গুলো লাগে সেগুলো ডকুমেন্টে কপি হয়, একটার পর একটা; নিজের ডকুমেন্ট নিজে approve নয় (Owner-এর নিজেরটা
+সাথে সাথে approved, Owner যেকোনো level approve করতে পারে); reject-এ comment লাগে, draft-এ ফেরে; approved
+ডকুমেন্ট lock, Reopen করলে নতুন round; ইতিহাস কখনো মোছে না। Bell, audit log, "Approvals" পেজে আমার জন্য
+অপেক্ষমাণ তালিকা ও count।
+**১৭b–১৭d:** PO ও goods receipt (GRNI), bill ও supplier payment, purchase return ও debit note — নিজ নিজ গাইডে।
+
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 
 ---
