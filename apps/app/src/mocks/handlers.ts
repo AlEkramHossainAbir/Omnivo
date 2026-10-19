@@ -93,6 +93,31 @@ import {
   parentFor,
 } from './accounting-data';
 import {
+  allocatePayment,
+  cancelBill,
+  cancelPayment,
+  findBill,
+  findPayment,
+  listBills,
+  listPayments,
+  type MockBill,
+  type MockSupplierPayment,
+  paymentSummaryOf,
+  postBill,
+  postPayment,
+  removeBill,
+  removePayment,
+  reopenBill,
+  reopenPayment,
+  saveBill,
+  savePayment,
+  submitBill,
+  submitPayment,
+  toBill,
+  toSupplierPayment,
+  voidPayment,
+} from './bill-data';
+import {
   checkLines,
   findEntry,
   ledgerOf,
@@ -206,6 +231,7 @@ import {
   forgetRole,
   listRequisitions,
   lookupCosts,
+  onApproved,
   openLines,
   removeRequisition,
   reopenRequisition,
@@ -412,6 +438,125 @@ function postCreditNoteAndRecord(data: WorkspaceData, draft: MockCreditNote) {
 // deleted, like the API's account_used_by_sales
 function assertNotSalesAccount(data: WorkspaceData, id: string): void {
   if (data.salesAccounts.returns === id) throw new MockProblem(409, 'account_used_by_sales');
+}
+
+// Step 17c: the same for the two accounts of Settings → Purchase accounts (account_used_by_purchase)
+function assertNotPurchaseAccount(data: WorkspaceData, id: string): void {
+  const { priceDifference, services } = data.purchaseAccounts;
+  if (priceDifference === id || services === id) {
+    throw new MockProblem(409, 'account_used_by_purchase');
+  }
+}
+
+// Step 17c: a bill line, an expense or a payment that names it keeps it, drafts too (the API's
+// foreign keys, mapped to account_in_use)
+function usedByPurchase(data: WorkspaceData, id: string): boolean {
+  const { bills, payments } = data.purchase;
+  return (
+    bills.some(
+      (bill) =>
+        bill.lines.some((line) => line.accountId === id) ||
+        bill.expenses.some((expense) => expense.accountId === id),
+    ) || payments.some((payment) => payment.accountId === id)
+  );
+}
+
+// A bill's posting, with its audit rows: the goods receipt it made for its own goods (if any), and
+// the bill posted. The API writes both inside the posting.
+function recordBillPosted(data: WorkspaceData, bill: MockBill): void {
+  const receipt = data.purchase.receipts.find((item) => item.billId === bill.id);
+  if (receipt) {
+    record(
+      data,
+      'goods_receipt.posted',
+      'goods_receipt',
+      receipt.id,
+      diff({}, { number: receipt.number, bill: bill.number, entry: receipt.entry?.number ?? null }),
+    );
+  }
+  record(
+    data,
+    'bill.posted',
+    'bill',
+    bill.id,
+    diff({}, { number: bill.number, entry: bill.entry?.number ?? null }),
+  );
+}
+
+function recordPaymentPosted(data: WorkspaceData, payment: MockSupplierPayment): void {
+  record(
+    data,
+    'supplier_payment.posted',
+    'supplier_payment',
+    payment.id,
+    diff({}, { number: payment.number, entry: payment.entry?.number ?? null }),
+  );
+}
+
+// "Post" or "Submit": the engine's round (approved at once for the mock's Owner), then the posting
+function submitBillAndRecord(data: WorkspaceData, bill: MockBill): void {
+  const steps = submitBill(data, bill);
+  record(
+    data,
+    'approval.submitted',
+    'bill',
+    bill.id,
+    diff({}, { amount: bill.total, steps, status: bill.status }),
+  );
+  recordBillPosted(data, bill);
+}
+
+function submitPaymentAndRecord(data: WorkspaceData, payment: MockSupplierPayment): void {
+  const steps = submitPayment(data, payment);
+  record(
+    data,
+    'approval.submitted',
+    'supplier_payment',
+    payment.id,
+    diff({}, { amount: payment.amount, steps, status: payment.status }),
+  );
+  recordPaymentPosted(data, payment);
+}
+
+// What the approvals engine runs when a bill's or a payment's last approval is given (decision 7),
+// like the API's services register in their constructors. The approve handler runs decide() in a
+// transaction(), so a refused posting leaves the round waiting.
+onApproved('bill', (data, id) => {
+  const bill = findBill(data, id);
+  postBill(data, bill);
+  recordBillPosted(data, bill);
+});
+onApproved('supplier_payment', (data, id) => {
+  const payment = findPayment(data, id);
+  postPayment(data, payment);
+  recordPaymentPosted(data, payment);
+});
+
+// What the audit log shows of a bill and a payment: the header and the size, not every line
+function billSnapshot(bill: MockBill) {
+  return {
+    number: bill.number,
+    date: bill.date,
+    dueDate: bill.dueDate,
+    supplier: bill.supplier.code,
+    supplierBillNumber: bill.supplierBillNumber,
+    mushakNumber: bill.mushakNumber,
+    total: bill.total,
+    lines: bill.lines.length,
+    expenses: bill.expenses.length,
+  };
+}
+
+function paymentSnapshot(payment: MockSupplierPayment) {
+  return {
+    number: payment.number,
+    date: payment.date,
+    supplier: payment.supplier.code,
+    amount: payment.amount,
+    method: payment.method,
+    reference: payment.reference,
+    bills: payment.allocations.length,
+  };
 }
 
 // UI-র প্রতিটা পথ দেখার জন্য: লগইনে পাসওয়ার্ড "wrong-password" → invalid_credentials,
@@ -972,6 +1117,7 @@ export const handlers = [
         throw new MockProblem(409, 'account_used_by_stock');
       }
       assertNotSalesAccount(data, target.id);
+      assertNotPurchaseAccount(data, target.id);
       if (data.accounts.some((child) => child.parentId === id && child.archivedAt === null)) {
         throw new MockProblem(409, 'account_has_active_children');
       }
@@ -1013,10 +1159,14 @@ export const handlers = [
         throw new MockProblem(409, 'account_used_by_stock');
       }
       assertNotSalesAccount(data, target.id);
+      assertNotPurchaseAccount(data, target.id);
       if (data.accounts.some((child) => child.parentId === id)) {
         throw new MockProblem(409, 'account_has_children');
       }
-      if (data.journal.entries.some((entry) => entry.lines.some((line) => line.accountId === id))) {
+      if (
+        data.journal.entries.some((entry) => entry.lines.some((line) => line.accountId === id)) ||
+        usedByPurchase(data, id)
+      ) {
         throw new MockProblem(409, 'account_in_use');
       }
       data.accounts = data.accounts.filter((account) => account.id !== id);
@@ -3700,21 +3850,25 @@ export const handlers = [
         const body = await readBody(routes.approvals[action].body, request);
         const data = current();
         const decision = action === 'approve' ? 'approved' : 'rejected';
-        const { step, count } = decide(data, document, id, decision, body);
-        record(
-          data,
-          action === 'approve' ? 'approval.approved' : 'approval.rejected',
-          document,
-          id,
-          diff(
-            {},
-            {
-              step: `${String(step.position)} of ${String(count)}`,
-              role: step.role.name,
-              comment: body.comment,
-            },
-          ),
-        );
+        // Step 17c: the last approval of a bill or a payment posts it; a refused posting (a closed
+        // period) fails the approval and leaves the round as it was, like the API's transaction
+        transaction(data, () => {
+          const { step, count } = decide(data, document, id, decision, body);
+          record(
+            data,
+            action === 'approve' ? 'approval.approved' : 'approval.rejected',
+            document,
+            id,
+            diff(
+              {},
+              {
+                step: `${String(step.position)} of ${String(count)}`,
+                role: step.role.name,
+                comment: body.comment,
+              },
+            ),
+          );
+        });
         await delay();
         return reply(routes.approvals[action], undefined);
       }),
@@ -4140,6 +4294,344 @@ export const handlers = [
       });
       await delay();
       return reply(routes.goodsReceipts.post, toGoodsReceipt(data, target));
+    }),
+  ),
+  // --- Step 17c: supplier bills, supplier payments and the purchase accounts (bill-data.ts) ------
+  // A save that also submits runs in a transaction(), and so does every submit: the mock's Owner
+  // is approved at once, so a submit posts, and a refused posting leaves no new draft behind and
+  // an old one as it was, like the API's transaction.
+
+  mock(routes.bills.list, ({ request }) => {
+    const query = readQuery(routes.bills.list.query, request);
+    return reply(routes.bills.list, pageOf(listBills(current(), query), query));
+  }),
+
+  mock(
+    routes.bills.get,
+    guarded(({ params }) => {
+      const { id } = routes.bills.get.params.parse(params);
+      const data = current();
+      return reply(routes.bills.get, toBill(data, findBill(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.bills.create,
+    guarded(async ({ request }) => {
+      const { submit, ...input } = await readBody(routes.bills.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const draft = saveBill(data, input);
+        record(data, 'bill.created', 'bill', draft.id, diff({}, billSnapshot(draft)));
+        if (submit) submitBillAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.bills.create, toBill(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.bills.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.bills.update.params.parse(params);
+      const { submit, version, ...input } = await readBody(routes.bills.update.body, request);
+      const data = current();
+      const target = findBill(data, id);
+      checkVersion(target.version, version);
+      const saved = transaction(data, () => {
+        const draft = saveBill(data, input, target);
+        record(data, 'bill.updated', 'bill', id, diff(billSnapshot(target), billSnapshot(draft)));
+        if (submit) submitBillAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.bills.update, toBill(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.bills.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.bills.remove.params.parse(params);
+      const { version } = readQuery(routes.bills.remove.query, request);
+      const data = current();
+      const target = findBill(data, id);
+      checkVersion(target.version, version);
+      removeBill(data, target);
+      const snapshot = billSnapshot(target);
+      record(
+        data,
+        'bill.deleted',
+        'bill',
+        id,
+        diff(snapshot, Object.fromEntries(Object.keys(snapshot).map((field) => [field, null]))),
+      );
+      return reply(routes.bills.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.bills.submit,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.bills.submit.params.parse(params);
+      const { version } = await readBody(routes.bills.submit.body, request);
+      const data = current();
+      const target = findBill(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        submitBillAndRecord(data, target);
+      });
+      await delay();
+      return reply(routes.bills.submit, toBill(data, target));
+    }),
+  ),
+
+  // Reopen and cancel: the same request, each with its own rule and audit row
+  ...(['reopen', 'cancel'] as const).map((action) =>
+    mock(
+      routes.bills[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.bills[action].params.parse(params);
+        const { version } = await readBody(routes.bills[action].body, request);
+        const data = current();
+        const target = findBill(data, id);
+        checkVersion(target.version, version);
+        const before = target.status;
+        if (action === 'reopen') reopenBill(data, target);
+        else cancelBill(data, target);
+        record(
+          data,
+          action === 'reopen' ? 'approval.reopened' : 'bill.cancelled',
+          'bill',
+          id,
+          diff({ status: before }, { status: target.status }),
+        );
+        return reply(routes.bills[action], toBill(data, target));
+      }),
+    ),
+  ),
+
+  mock(routes.supplierPayments.list, ({ request }) => {
+    const query = readQuery(routes.supplierPayments.list.query, request);
+    return reply(routes.supplierPayments.list, pageOf(listPayments(current(), query), query));
+  }),
+
+  mock(
+    routes.supplierPayments.get,
+    guarded(({ params }) => {
+      const { id } = routes.supplierPayments.get.params.parse(params);
+      const data = current();
+      return reply(routes.supplierPayments.get, toSupplierPayment(data, findPayment(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.supplierPayments.create,
+    guarded(async ({ request }) => {
+      const { submit, ...input } = await readBody(routes.supplierPayments.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const draft = savePayment(data, input);
+        record(
+          data,
+          'supplier_payment.created',
+          'supplier_payment',
+          draft.id,
+          diff({}, paymentSnapshot(draft)),
+        );
+        if (submit) submitPaymentAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.supplierPayments.create, toSupplierPayment(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.supplierPayments.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.supplierPayments.update.params.parse(params);
+      const { submit, version, ...input } = await readBody(
+        routes.supplierPayments.update.body,
+        request,
+      );
+      const data = current();
+      const target = findPayment(data, id);
+      checkVersion(target.version, version);
+      const saved = transaction(data, () => {
+        const draft = savePayment(data, input, target);
+        record(
+          data,
+          'supplier_payment.updated',
+          'supplier_payment',
+          id,
+          diff(paymentSnapshot(target), paymentSnapshot(draft)),
+        );
+        if (submit) submitPaymentAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.supplierPayments.update, toSupplierPayment(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.supplierPayments.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.supplierPayments.remove.params.parse(params);
+      const { version } = readQuery(routes.supplierPayments.remove.query, request);
+      const data = current();
+      const target = findPayment(data, id);
+      checkVersion(target.version, version);
+      removePayment(data, target);
+      const snapshot = paymentSnapshot(target);
+      record(
+        data,
+        'supplier_payment.deleted',
+        'supplier_payment',
+        id,
+        diff(snapshot, Object.fromEntries(Object.keys(snapshot).map((field) => [field, null]))),
+      );
+      return reply(routes.supplierPayments.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.supplierPayments.submit,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.supplierPayments.submit.params.parse(params);
+      const { version } = await readBody(routes.supplierPayments.submit.body, request);
+      const data = current();
+      const target = findPayment(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        submitPaymentAndRecord(data, target);
+      });
+      await delay();
+      return reply(routes.supplierPayments.submit, toSupplierPayment(data, target));
+    }),
+  ),
+
+  ...(['reopen', 'cancel'] as const).map((action) =>
+    mock(
+      routes.supplierPayments[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.supplierPayments[action].params.parse(params);
+        const { version } = await readBody(routes.supplierPayments[action].body, request);
+        const data = current();
+        const target = findPayment(data, id);
+        checkVersion(target.version, version);
+        const before = target.status;
+        if (action === 'reopen') reopenPayment(data, target);
+        else cancelPayment(data, target);
+        record(
+          data,
+          action === 'reopen' ? 'approval.reopened' : 'supplier_payment.cancelled',
+          'supplier_payment',
+          id,
+          diff({ status: before }, { status: target.status }),
+        );
+        return reply(routes.supplierPayments[action], toSupplierPayment(data, target));
+      }),
+    ),
+  ),
+
+  mock(
+    routes.supplierPayments.allocate,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.supplierPayments.allocate.params.parse(params);
+      const { version, allocations } = await readBody(
+        routes.supplierPayments.allocate.body,
+        request,
+      );
+      const data = current();
+      const target = findPayment(data, id);
+      checkVersion(target.version, version);
+      const before = paymentSummaryOf(data, target).applied;
+      allocatePayment(data, target, allocations);
+      record(
+        data,
+        'supplier_payment.allocated',
+        'supplier_payment',
+        id,
+        diff({ applied: before }, { applied: paymentSummaryOf(data, target).applied }),
+      );
+      await delay();
+      return reply(routes.supplierPayments.allocate, toSupplierPayment(data, target));
+    }),
+  ),
+
+  mock(
+    routes.supplierPayments.void,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.supplierPayments.void.params.parse(params);
+      const { version, ...input } = await readBody(routes.supplierPayments.void.body, request);
+      const data = current();
+      const target = findPayment(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        voidPayment(data, target, input);
+        record(
+          data,
+          'supplier_payment.voided',
+          'supplier_payment',
+          id,
+          diff(
+            {},
+            { date: input.date, reason: input.reason, reversal: target.voidEntry?.number ?? null },
+          ),
+        );
+      });
+      await delay();
+      return reply(routes.supplierPayments.void, toSupplierPayment(data, target));
+    }),
+  ),
+
+  mock(routes.purchaseAccounts.get, () =>
+    reply(routes.purchaseAccounts.get, current().purchaseAccounts),
+  ),
+
+  mock(
+    routes.purchaseAccounts.update,
+    guarded(async ({ request }) => {
+      const input = await readBody(routes.purchaseAccounts.update.body, request);
+      const data = current();
+      // The API's rule: an active expense ledger, under its own field
+      const issues = (['priceDifference', 'services'] as const).flatMap((field) => {
+        const id = input[field];
+        if (id === null) return [];
+        const account = data.accounts.find((row) => row.id === id);
+        return account?.type === 'expense' && !account.isGroup && account.archivedAt === null
+          ? []
+          : [field];
+      });
+      if (issues.length > 0) {
+        throw new MockProblem(
+          409,
+          'purchase_account_invalid',
+          Object.fromEntries(issues.map((field) => [field, ['purchase_account_invalid']])),
+        );
+      }
+      const before = data.purchaseAccounts;
+      data.purchaseAccounts = { priceDifference: input.priceDifference, services: input.services };
+      record(
+        data,
+        'purchase_accounts.changed',
+        'workspace',
+        workspace.tenantId,
+        diff(
+          {
+            priceDifference: codeOf(data.accounts, before.priceDifference),
+            services: codeOf(data.accounts, before.services),
+          },
+          {
+            priceDifference: codeOf(data.accounts, input.priceDifference),
+            services: codeOf(data.accounts, input.services),
+          },
+        ),
+      );
+      return reply(routes.purchaseAccounts.update, data.purchaseAccounts);
     }),
   ),
 ];

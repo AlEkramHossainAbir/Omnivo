@@ -9,6 +9,7 @@ import {
   type UpdateSupplierInput,
 } from '@omnivo/contracts';
 import {
+  bills,
   goodsReceipts,
   journalEntries,
   journalLines,
@@ -18,6 +19,7 @@ import {
   partyBankAccounts,
   purchaseOrders,
   supplierGroups,
+  supplierPayments,
   tenantSettings,
 } from '@omnivo/db';
 import { and, asc, eq, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
@@ -102,6 +104,9 @@ const SUPPLIER_IN_USE = [
   // step 17b
   'purchase_orders_supplier_fk',
   'goods_receipts_supplier_fk',
+  // step 17c
+  'bills_supplier_fk',
+  'supplier_payments_supplier_fk',
 ] as const;
 
 // Suppliers (step 17a): the same parties table as the customers, with is_supplier set. This
@@ -360,7 +365,8 @@ export class SuppliersService {
 
   // The party stays, so no foreign key speaks up: what uses the supplier side is looked for here,
   // in one UNION ALL query like the customers' (the tables of SUPPLIER_IN_USE, and the payable
-  // lines that name it; 17c and 17d add their documents). The row is locked FOR UPDATE (lock()),
+  // lines that name it; 17d adds its documents). A draft bill or payment counts too: it was
+  // written for this supplier, and its supplier must stay one. The row is locked FOR UPDATE (lock()),
   // and every posting and every purchase order locks it FOR SHARE first (checkParties,
   // assertSupplier), so a line or an order written at the same moment is either seen here or
   // finds no supplier. A goods receipt needs an order of the supplier, which is found already. The supplier's own columns go back to their defaults in the same UPDATE
@@ -368,7 +374,7 @@ export class SuppliersService {
   // and the customer keeps it.
   private async dropSupplierSide(tx: Transaction, party: PartyRow): Promise<void> {
     const tenantId = getTenantId();
-    const documents = [purchaseOrders, goodsReceipts].map(
+    const documents = [purchaseOrders, goodsReceipts, bills, supplierPayments].map(
       (table) =>
         sql`SELECT 1 FROM ${table} WHERE tenant_id = ${tenantId}::uuid AND supplier_id = ${party.id}::uuid`,
     );

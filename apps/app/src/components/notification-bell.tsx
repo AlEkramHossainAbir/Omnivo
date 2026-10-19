@@ -74,6 +74,17 @@ function useOpenDocument(): (params: NotificationParams) => Promise<void> {
           ? navigate({ to: '/purchase-orders/$orderId', params: { orderId: id } })
           : navigate({ to: '/purchase-orders' }));
         return;
+      // Step 17c: a bill or a payment waiting for you, posted, or sent back
+      case 'bill':
+        await (known
+          ? navigate({ to: '/bills/$billId', params: { billId: id } })
+          : navigate({ to: '/bills' }));
+        return;
+      case 'supplier_payment':
+        await (known
+          ? navigate({ to: '/supplier-payments/$paymentId', params: { paymentId: id } })
+          : navigate({ to: '/supplier-payments' }));
+        return;
       case 'quotation':
         await (known
           ? navigate({ to: '/quotations/$quotationId', params: { quotationId: id } })

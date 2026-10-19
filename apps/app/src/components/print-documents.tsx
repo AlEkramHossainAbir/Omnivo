@@ -18,7 +18,9 @@ import {
   type SalesOrder,
   type SalesReturn,
   type StockLine,
+  type SupplierPayment,
   unappliedOf,
+  unappliedPaymentOf,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { Button, cn, PrintBlock, type PrintMeta, PrintSheet } from '@omnivo/ui';
@@ -31,7 +33,8 @@ import { variantName } from '../lib/stock';
 import { useIsoDate, useQuantity, useTenantId, useWarehouses } from './stock-parts';
 
 // The printed quotation, order, challan, invoice and money receipt (step 15c), the sales return,
-// credit note and refund (15d), and the purchase order (17b): one A4 layout, the browser's own
+// credit note and refund (15d), the purchase order (17b) and the supplier payment's voucher (17c):
+// one A4 layout, the browser's own
 // Print (or Save as PDF), so it works offline and needs no PDF service. Each page renders its sheet
 // next to itself; PrintSheet keeps it hidden on the screen and alone on paper.
 
@@ -781,6 +784,127 @@ export function RefundPrint({ refund }: { refund: Refund }) {
       </div>
       <InWords amount={refund.amount} />
       <Note note={refund.note} />
+    </Sheet>
+  );
+}
+
+// Step 17c: the payment voucher (decision 10), signed by whoever handed over the cheque and whoever
+// authorised it. Who was paid and how, from which account, to which of their bank accounts (the
+// routing number is what a BEFTN transfer needs), the amount in words, and the bills it paid with
+// the supplier's own bill numbers, because their accountant matches the voucher against those.
+export function SupplierPaymentPrint({
+  payment,
+  account,
+}: {
+  payment: SupplierPayment;
+  // "1120 · Dutch-Bangla Bank, Motijheel": the account the money left, as the page names it
+  account: string;
+}) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  const advance = unappliedPaymentOf(payment);
+  const bank = payment.supplierBankAccount;
+  return (
+    <Sheet
+      title={t('print.titles.supplierPayment')}
+      meta={[
+        { label: t('print.number'), value: payment.number ?? '' },
+        { label: t('print.date'), value: isoDate(payment.date) },
+      ]}
+      signatures={[
+        t('print.signatures.receivedBy'),
+        t('print.signatures.preparedBy'),
+        t('print.signatures.authorised'),
+      ]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.paidTo')}
+          name={payment.supplier.name}
+          code={payment.supplier.code}
+        />
+        <PrintBlock label={t('print.amountPaid')}>
+          <p className="text-h2 tabular-nums">{money(payment.amount)}</p>
+        </PrintBlock>
+        <PrintBlock label={t('print.paidBy')}>
+          <p>{t(`receipts.methods.${payment.method}`)}</p>
+        </PrintBlock>
+        {payment.reference !== null && (
+          <PrintBlock label={t('print.reference')}>
+            <p>{payment.reference}</p>
+          </PrintBlock>
+        )}
+        <PrintBlock label={t('print.paidFrom')}>
+          <p>{account}</p>
+        </PrintBlock>
+        {bank !== null && (
+          <PrintBlock label={t('print.toAccount')}>
+            <p>{bank.accountName}</p>
+            <p className="tabular-nums">
+              {bank.bankName}
+              {bank.branchName !== null && `, ${bank.branchName}`} · {bank.accountNumber}
+            </p>
+            {bank.routingNumber !== null && (
+              <p className="tabular-nums">{t('print.routing', { number: bank.routingNumber })}</p>
+            )}
+          </PrintBlock>
+        )}
+        {payment.order !== null && (
+          <PrintBlock label={t('print.againstOrder')}>
+            <p className="font-mono tabular-nums">{payment.order.number ?? ''}</p>
+          </PrintBlock>
+        )}
+      </div>
+      <InWords amount={payment.amount} />
+      {payment.allocations.length > 0 && (
+        <PrintBlock label={t('print.billsPaid')}>
+          <table className="w-full border-collapse text-caption">
+            <thead>
+              <tr>
+                <th scope="col" className={HEAD}>
+                  {t('supplierPayments.allocationColumns.bill')}
+                </th>
+                <th scope="col" className={HEAD}>
+                  {t('print.supplierBill')}
+                </th>
+                <th scope="col" className={HEAD}>
+                  {t('print.date')}
+                </th>
+                <th scope="col" className={cn(HEAD, 'text-right')}>
+                  {t('supplierPayments.allocationColumns.total')}
+                </th>
+                <th scope="col" className={cn(HEAD, 'text-right')}>
+                  {t('supplierPayments.allocationColumns.amount')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {payment.allocations.map((allocation) => (
+                <tr key={allocation.billId} className="break-inside-avoid">
+                  <td className={cn(CELL, 'font-mono tabular-nums')}>{allocation.billNumber}</td>
+                  <td className={cn(CELL, 'font-mono tabular-nums')}>
+                    {allocation.supplierBillNumber}
+                  </td>
+                  <td className={cn(CELL, 'tabular-nums')}>{isoDate(allocation.billDate)}</td>
+                  <td className={cn(CELL, 'text-right tabular-nums')}>
+                    {money(allocation.billTotal)}
+                  </td>
+                  <td className={cn(CELL, 'text-right tabular-nums')}>
+                    {money(allocation.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </PrintBlock>
+      )}
+      {!isZeroMoney(advance) && (
+        <p className="tabular-nums">
+          {t('print.advance')}: {money(advance)}
+        </p>
+      )}
+      <Note note={payment.note} />
     </Sheet>
   );
 }

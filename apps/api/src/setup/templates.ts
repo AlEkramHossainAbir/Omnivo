@@ -147,6 +147,12 @@ const REQUESTING = ['purchase.requisition.manage'] as const;
 // the permission to a role in Settings → Roles.
 const BUYING = ['purchase.order.manage'] as const;
 const RECEIVING = ['purchase.receipt.manage'] as const;
+// Step 17c. The accountant books the suppliers' bills and pays them, and so does a manager who runs
+// everything. Nobody who orders or receives the goods books the bill: the person who agreed the
+// price, or signed that the goods came, does not also decide what the company owes for them. The
+// approval levels (Settings → Approvals) decide who lets a bill or a payment through.
+const BILLING = ['purchase.bill.manage'] as const;
+const PAYING = ['purchase.payment.manage'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -175,6 +181,9 @@ const ACCOUNTANT: RoleTemplate = {
     ...REFUNDING,
     // Step 17a: the suppliers and what the company owes them
     ...SUPPLYING,
+    // Step 17c: their bills and the payments
+    ...BILLING,
+    ...PAYING,
   ],
 };
 
@@ -301,6 +310,11 @@ function standardChart(industry: IndustryAccounts): ChartTemplate {
     expense: group('5000', 'Expenses', [
       group('5100', 'Cost of sales', [
         ...industry.costOfSales,
+        // Step 17c: a supplier's charges that are not goods (a dyeing job, transport inward), and
+        // what a bill's price differs from its order's on goods already in stock. The two accounts
+        // of Settings → Purchase (PURCHASE_ACCOUNTS).
+        account('5170', 'Purchased services'),
+        account('5180', 'Purchase price difference'),
         // Step 14: stock found in a count, corrections and revaluations — gains and losses on the
         // stock itself, next to what the stock cost when it was sold
         account('5190', 'Stock adjustments and revaluation'),
@@ -383,6 +397,10 @@ function stockAccounts(codes: { loss: string; samples?: string }): Record<StockA
     received_not_billed: '2115',
   };
 }
+
+// The accounts of Settings → Purchase a new workspace starts with (step 17c), by their code in
+// standardChart(): the same for every industry, like the payable.
+export const PURCHASE_ACCOUNTS = { priceDifference: '5180', services: '5170' } as const;
 
 const STOCK_LOSSES = account('5150', 'Stock losses (damaged, expired, lost)');
 
@@ -668,6 +686,8 @@ export const INDUSTRY_TEMPLATES = {
           ...REQUESTING,
           ...BUYING,
           ...RECEIVING,
+          ...BILLING,
+          ...PAYING,
         ],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [...COLLECTING] },
@@ -727,6 +747,8 @@ export const INDUSTRY_TEMPLATES = {
           ...REQUESTING,
           ...BUYING,
           ...RECEIVING,
+          ...BILLING,
+          ...PAYING,
         ],
       },
     ],

@@ -103,7 +103,8 @@ export const purchaseOrders = pgTable(
 );
 
 // A line is a sales line (decision 6), plus the requisition line it buys for and what goods
-// receipts brought in against it
+// receipts brought in against it. What bills billed is counted from the bill lines (step 17c),
+// never stored here.
 export const purchaseOrderLines = pgTable(
   'purchase_order_lines',
   {
@@ -130,6 +131,13 @@ export const purchaseOrderLines = pgTable(
     uniqueIndex('purchase_order_lines_receipt_target_idx').on(
       table.tenantId,
       table.orderId,
+      table.id,
+      table.variantId,
+    ),
+    // Step 17c: the target of the bill line's FK (migration 0040): THIS line, for THIS variant. A
+    // bill line names no order, so the key above cannot serve.
+    uniqueIndex('purchase_order_lines_bill_target_idx').on(
+      table.tenantId,
       table.id,
       table.variantId,
     ),

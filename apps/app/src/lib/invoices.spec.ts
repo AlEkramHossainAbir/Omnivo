@@ -316,13 +316,13 @@ describe('allocationRows and suggestAllocations', () => {
   it('pays the oldest first until the money runs out', () => {
     const rows = allocationRows(open, []);
     expect(suggestAllocations('1000', rows)).toEqual([
-      { invoiceId: '1', amount: '800' },
-      { invoiceId: '2', amount: '200' },
+      { id: '1', amount: '800' },
+      { id: '2', amount: '200' },
     ]);
     // More than is owed: every invoice in full, the rest stays as an advance
     expect(suggestAllocations('5000', rows)).toEqual([
-      { invoiceId: '1', amount: '800' },
-      { invoiceId: '2', amount: '800' },
+      { id: '1', amount: '800' },
+      { id: '2', amount: '800' },
     ]);
     expect(suggestAllocations('12.', rows)).toEqual([]);
   });

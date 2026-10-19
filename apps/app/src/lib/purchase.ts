@@ -1,5 +1,6 @@
 import {
   addMoney,
+  type ApprovalDocument,
   type ApprovalRound,
   type ApprovalStep,
   compareQuantity,
@@ -158,6 +159,12 @@ export function approvedByOwnSubmit(round: ApprovalRound): boolean {
       (step) => step.decision === 'approved' && step.decidedBy?.id === round.submittedBy.id,
     )
   );
+}
+
+// Step 17c: a bill and a supplier payment are posted by their last approval (decision 7), not only
+// approved. The approval card and dialog say so, so an approver knows the click books them.
+export function postsWhenApproved(document: ApprovalDocument): boolean {
+  return document === 'bill' || document === 'supplier_payment';
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -14,7 +14,7 @@ import { Button, Card, CardHeader, Dialog } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useState } from 'react';
 
-import { approvedByOwnSubmit, roundNumber, stepState } from '../lib/purchase';
+import { approvedByOwnSubmit, postsWhenApproved, roundNumber, stepState } from '../lib/purchase';
 import { approvalRulesQuery, settingsQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { RoundStatusPill, StepStatePill } from './purchase-pills';
@@ -37,10 +37,13 @@ function Round({
   round,
   number,
   timeZone,
+  posts,
 }: {
   round: ApprovalRound;
   number: number;
   timeZone: string;
+  // Step 17c: the document is posted, not only approved (a bill, a supplier payment)
+  posts: boolean;
 }) {
   const { t, format } = useLocale();
   const roleName = useRoleName();
@@ -59,8 +62,11 @@ function Round({
         })}
       </p>
       {round.steps.length === 0 ? (
-        // No level applied to its amount: approved at once (decision 13)
-        <p className="text-body-sm text-ink-2">{t('approvals.noLevels')}</p>
+        // No level applied to its amount: approved at once (decision 13), and a bill or a payment
+        // posted at once (17c)
+        <p className="text-body-sm text-ink-2">
+          {posts ? t('approvals.noLevelsPosted') : t('approvals.noLevels')}
+        </p>
       ) : (
         <ol className="grid grid-cols-1 rounded-control border border-line">
           {round.steps.map((step) => (
@@ -92,7 +98,9 @@ function Round({
         </ol>
       )}
       {approvedByOwnSubmit(round) && (
-        <p className="text-body-sm text-ink-2">{t('approvals.ownerSubmitted')}</p>
+        <p className="text-body-sm text-ink-2">
+          {posts ? t('approvals.ownerSubmittedPosted') : t('approvals.ownerSubmitted')}
+        </p>
       )}
     </div>
   );
@@ -153,7 +161,12 @@ export function ApprovalCard({
           </div>
         )}
         {current && (
-          <Round round={current} number={roundNumber(approval.rounds, 0)} timeZone={timeZone} />
+          <Round
+            round={current}
+            number={roundNumber(approval.rounds, 0)}
+            timeZone={timeZone}
+            posts={postsWhenApproved(document)}
+          />
         )}
         {current && waiting && (
           <div className="grid grid-cols-1 gap-3 rounded-control bg-subtle px-4 py-3">
@@ -202,6 +215,7 @@ export function ApprovalCard({
                   round={round}
                   number={roundNumber(approval.rounds, index + 1)}
                   timeZone={timeZone}
+                  posts={postsWhenApproved(document)}
                 />
               ))}
             </div>

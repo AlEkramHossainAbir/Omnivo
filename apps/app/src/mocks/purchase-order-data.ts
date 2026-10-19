@@ -2,12 +2,15 @@ import {
   addQuantity,
   compareQuantity,
   type DocumentRef,
+  type EntryRef,
   type ErrorCode,
   fitsDecimals,
   type GoodsReceipt,
   type GoodsReceiptInput,
   type GoodsReceiptLine,
   type GoodsReceiptLineInput,
+  type GrnBillFilter,
+  type GrnBillState,
   isQuantity,
   isWholeQuantity,
   isZeroQuantity,
@@ -15,7 +18,9 @@ import {
   type PartyRef,
   prorateMoney,
   type PurchaseOrder,
+  type PurchaseOrderBillFilter,
   type PurchaseOrderInput,
+  type PurchaseOrderLine,
   type PurchaseOrderLineInput,
   type PurchaseOrderReceiptFilter,
   type PurchaseOrderStatus,
@@ -65,17 +70,33 @@ import type { WorkspaceData } from './workspace-data';
 // (requisition-data.ts): the mock signs in as the Owner, so a submitted order is approved at once.
 // A posted receipt moves stock in at the order's price and books Dr Inventory / Cr Goods received
 // not billed, like a stock adjustment (stock-data.ts).
+//
+// Step 17c: bills (bill-data.ts, which imports this file) bill the receipts' lines and the
+// orders' services. This file reads them through the WorkspaceData type only.
 
 // An order as stored. "Partly received", its line count, its requisitions, its receipts and its
-// approval history are worked out on read, like the API's subqueries.
+// approval history are worked out on read, like the API's subqueries. So are its bills, its
+// advances and each line's billed quantity (step 17c, decision 29: counted, never stored).
+export type MockPurchaseOrderLine = Omit<PurchaseOrderLine, 'billedQuantity'>;
 export type MockPurchaseOrder = Omit<
   PurchaseOrder,
-  'partlyReceived' | 'lineCount' | 'requisitions' | 'receipts' | 'approval'
->;
+  | 'partlyReceived'
+  | 'lineCount'
+  | 'requisitions'
+  | 'receipts'
+  | 'approval'
+  | 'bills'
+  | 'advances'
+  | 'lines'
+> & { lines: MockPurchaseOrderLine[] };
 
 // A receipt as stored, with its order's id: the order's number is looked up on read, like a
-// delivery's order
-export type MockGoodsReceipt = Omit<GoodsReceipt, 'order' | 'lineCount'> & { orderId: string };
+// delivery's order. Step 17c: a receipt a bill made has the bill's id instead (and no order); how
+// far it is billed and by which bills is worked out on read.
+export type MockGoodsReceipt = Omit<
+  GoodsReceipt,
+  'order' | 'lineCount' | 'bill' | 'bills' | 'billState'
+> & { orderId: string | null; billId: string | null };
 
 function conflict(code: ErrorCode): MockProblem {
   return new MockProblem(409, code);
@@ -122,6 +143,62 @@ function goodsToReceive(order: MockPurchaseOrder): boolean {
   );
 }
 
+// --- What bills did (step 17c) -------------------------------------------------------------------
+
+// The posted bills whose lines pass the test, oldest first, as references. A posted bill always
+// has its number.
+function postedBillsOf(
+  data: WorkspaceData,
+  test: (line: { receiptLineId: string | null; orderLineId: string | null }) => boolean,
+): DocumentRef[] {
+  return data.purchase.bills
+    .filter((bill) => bill.status === 'posted' && bill.lines.some(test))
+    .toSorted((a, b) => a.date.localeCompare(b.date))
+    .map((bill) => ({ id: bill.id, number: bill.number }));
+}
+
+// What posted bills billed of an order line, in its base unit: a receipt line's bill line keeps
+// its order line too, so goods and services count the same way (the API's billedQuantities)
+function billedOf(data: WorkspaceData, orderLineId: string): string {
+  return sumQuantity(
+    data.purchase.bills
+      .filter((bill) => bill.status === 'posted')
+      .flatMap((bill) => bill.lines)
+      .filter((line) => line.orderLineId === orderLineId)
+      .map((line) => line.baseQuantity),
+  );
+}
+
+// An order's service line no posted bill bills yet. Goods are billed from their goods receipts.
+function serviceToBill(data: WorkspaceData, line: MockPurchaseOrderLine): boolean {
+  return line.productType === 'service' && isZeroQuantity(billedOf(data, line.id));
+}
+
+// "Services to bill" (decision 22): approved, received or closed (the job was done before the
+// order was closed), with a service no posted bill bills yet
+function servicesToBill(data: WorkspaceData, order: MockPurchaseOrder): boolean {
+  return (
+    ['approved', 'received', 'closed'].includes(order.status) &&
+    order.lines.some((line) => serviceToBill(data, line))
+  );
+}
+
+// A bill that is not cancelled, even a draft, bills one of the order's services (decision 30):
+// reopened, the order would write its lines again under the bill's; cancelled, the bill would
+// bill a service nobody ordered. The API's assertNotBilled().
+function assertNotBilled(data: WorkspaceData, order: MockPurchaseOrder): void {
+  const ids = new Set(order.lines.map((line) => line.id));
+  const billed = data.purchase.bills.some(
+    (bill) =>
+      bill.status !== 'cancelled' &&
+      bill.lines.some(
+        (line) =>
+          line.receiptLineId === null && line.orderLineId !== null && ids.has(line.orderLineId),
+      ),
+  );
+  if (billed) throw conflict('purchase_order_billed');
+}
+
 export function purchaseOrderSummaryOf(stored: MockPurchaseOrder): PurchaseOrderSummary {
   return {
     id: stored.id,
@@ -149,15 +226,39 @@ export function toPurchaseOrder(data: WorkspaceData, stored: MockPurchaseOrder):
     const link = line.requisitionLine;
     if (link) requisitions.set(link.requisitionId, { id: link.requisitionId, number: link.number });
   }
+  const lineIds = new Set(stored.lines.map((line) => line.id));
   return {
     ...stored,
     ...purchaseOrderSummaryOf(stored),
+    lines: stored.lines.map((line) => ({ ...line, billedQuantity: billedOf(data, line.id) })),
     requisitions: [...requisitions.values()],
     // Drafts too, oldest first: the order page lists every receipt made against it
     receipts: data.purchase.receipts
       .filter((item) => item.orderId === stored.id)
       .toSorted((a, b) => a.date.localeCompare(b.date))
       .map((item) => ({ id: item.id, number: item.number, date: item.date, status: item.status })),
+    // Step 17c: the posted bills of its lines, and the posted payments made against it (decision
+    // 12). A voided payment paid nothing; a draft one has not paid yet.
+    bills: postedBillsOf(
+      data,
+      (line) => line.orderLineId !== null && lineIds.has(line.orderLineId),
+    ),
+    advances: data.purchase.payments
+      .filter((payment) => payment.orderId === stored.id && payment.status === 'posted')
+      .toSorted((a, b) => a.date.localeCompare(b.date))
+      .flatMap((payment) =>
+        payment.number === null
+          ? []
+          : [
+              {
+                id: payment.id,
+                number: payment.number,
+                date: payment.date,
+                amount: payment.amount,
+                applied: sumMoney(payment.allocations.map((allocation) => allocation.amount)),
+              },
+            ],
+      ),
     approval: historyOf(data, 'purchase_order', stored.id),
   };
 }
@@ -170,6 +271,7 @@ export function listPurchaseOrders(
     supplierId?: string | undefined;
     warehouseId?: string | undefined;
     receipt?: PurchaseOrderReceiptFilter | undefined;
+    bill?: PurchaseOrderBillFilter | undefined;
   },
 ): MockPurchaseOrder[] {
   return newestFirst(
@@ -178,7 +280,8 @@ export function listPurchaseOrders(
         (query.status === undefined || item.status === query.status) &&
         (query.supplierId === undefined || item.supplier.id === query.supplierId) &&
         (query.warehouseId === undefined || item.warehouseId === query.warehouseId) &&
-        (query.receipt === undefined || goodsToReceive(item)),
+        (query.receipt === undefined || goodsToReceive(item)) &&
+        (query.bill === undefined || servicesToBill(data, item)),
     ),
   );
 }
@@ -186,8 +289,13 @@ export function listPurchaseOrders(
 // --- Purchase orders, written -------------------------------------------------------------------
 
 // An active supplier. A draft keeps its supplier (keptId) even after the supplier is archived, like
-// the API's assertSupplier(), so the person can still finish it.
-function supplierOf(data: WorkspaceData, supplierId: string, keptId: string | null): PartyRef {
+// the API's assertSupplier(), so the person can still finish it. Step 17c: bills and payments
+// check their supplier with it too.
+export function supplierOf(
+  data: WorkspaceData,
+  supplierId: string,
+  keptId: string | null,
+): PartyRef {
   const found = data.suppliers.suppliers.find((item) => item.id === supplierId);
   if (!found || (found.archivedAt !== null && found.id !== keptId)) {
     throw fieldProblem('purchase_supplier_invalid', 'supplierId');
@@ -324,17 +432,24 @@ export function reopenPurchaseOrder(data: WorkspaceData, target: MockPurchaseOrd
     throw conflict('purchase_cannot_reopen');
   }
   assertNoReceipt(data, target.id);
+  assertNotBilled(data, target);
   if (target.status === 'pending') endPendingRound(data, 'purchase_order', target.id);
   moveTo(target, 'draft');
 }
 
-// Partly received, and the rest will not come
+// Partly received, and the rest will not come. Step 17c: an order of services only is never
+// received, so a posted bill of one of its lines lets it close too (the dyeing job was done and
+// billed).
 export function closePurchaseOrder(data: WorkspaceData, target: MockPurchaseOrder): void {
   if (target.status !== 'approved') throw conflict('purchase_not_approved');
-  const posted = data.purchase.receipts.some(
+  const received = data.purchase.receipts.some(
     (item) => item.orderId === target.id && item.status === 'posted',
   );
-  if (!posted) throw conflict('purchase_cancel_instead');
+  const ids = new Set(target.lines.map((line) => line.id));
+  const billed =
+    postedBillsOf(data, (line) => line.orderLineId !== null && ids.has(line.orderLineId)).length >
+    0;
+  if (!received && !billed) throw conflict('purchase_cancel_instead');
   moveTo(target, 'closed');
 }
 
@@ -345,6 +460,7 @@ export function cancelPurchaseOrder(data: WorkspaceData, target: MockPurchaseOrd
   }
   if (target.number === null) throw conflict('purchase_delete_instead');
   assertNoReceipt(data, target.id);
+  assertNotBilled(data, target);
   moveTo(target, 'cancelled');
 }
 
@@ -356,12 +472,40 @@ export function findGoodsReceipt(data: WorkspaceData, id: string): MockGoodsRece
   return found;
 }
 
+// Step 17c: a posted line that accepted something and no posted bill bills yet
+function toBill(line: GoodsReceiptLine): boolean {
+  return !line.billed && !isZeroQuantity(line.baseQuantity);
+}
+
+// Step 17c (decision 21): a draft, or a posted receipt no bill touched, is not billed; one with
+// billed lines and lines still to bill is partly billed. A receipt that turned everything back has
+// nothing to bill and stays "not billed", out of the bill form's list (to_bill).
+function billStateOf(stored: MockGoodsReceipt): GrnBillState {
+  if (stored.status !== 'posted' || !stored.lines.some((line) => line.billed)) return 'not_billed';
+  return stored.lines.some(toBill) ? 'partly_billed' : 'billed';
+}
+
+function matchesBillFilter(stored: MockGoodsReceipt, filter: GrnBillFilter | undefined): boolean {
+  if (filter === undefined) return true;
+  if (stored.status !== 'posted') return false;
+  return filter === 'to_bill' ? stored.lines.some(toBill) : billStateOf(stored) === 'billed';
+}
+
 export function toGoodsReceipt(data: WorkspaceData, stored: MockGoodsReceipt): GoodsReceipt {
-  const { orderId, ...receipt } = stored;
+  const { orderId, billId, ...receipt } = stored;
   const order = data.purchase.orders.find((item) => item.id === orderId);
+  const bill = data.purchase.bills.find((item) => item.id === billId);
+  const lineIds = new Set(stored.lines.map((line) => line.id));
   return {
     ...receipt,
-    order: { id: orderId, number: order?.number ?? null },
+    // Step 17c: the order or the bill behind it, whichever it has
+    order: orderId === null ? null : { id: orderId, number: order?.number ?? null },
+    bill: bill ? { id: bill.id, number: bill.number } : null,
+    billState: billStateOf(stored),
+    bills: postedBillsOf(
+      data,
+      (line) => line.receiptLineId !== null && lineIds.has(line.receiptLineId),
+    ),
     lineCount: stored.lines.length,
   };
 }
@@ -373,6 +517,7 @@ export function listGoodsReceipts(
     supplierId?: string | undefined;
     warehouseId?: string | undefined;
     orderId?: string | undefined;
+    bill?: GrnBillFilter | undefined;
   },
 ): GoodsReceipt[] {
   return newestFirst(data.purchase.receipts)
@@ -381,7 +526,8 @@ export function listGoodsReceipts(
         (query.status === undefined || item.status === query.status) &&
         (query.supplierId === undefined || item.supplier.id === query.supplierId) &&
         (query.warehouseId === undefined || item.warehouseId === query.warehouseId) &&
-        (query.orderId === undefined || item.orderId === query.orderId),
+        (query.orderId === undefined || item.orderId === query.orderId) &&
+        matchesBillFilter(item, query.bill),
     )
     .map((item) => toGoodsReceipt(data, item));
 }
@@ -389,21 +535,27 @@ export function listGoodsReceipts(
 // --- Goods receipts, written --------------------------------------------------------------------
 
 // The order a receipt takes goods against: approved (decision 8). Reopened, received, closed or
-// cancelled since the page was opened, it is not waiting for goods any more.
-function receivingOrder(data: WorkspaceData, orderId: string): MockPurchaseOrder {
+// cancelled since the page was opened, it is not waiting for goods any more. null: a receipt a bill
+// made (step 17c), which is posted when it is made and never reaches here.
+function receivingOrder(data: WorkspaceData, orderId: string | null): MockPurchaseOrder {
   const order = data.purchase.orders.find((item) => item.id === orderId);
   if (!order) throw fieldProblem('grn_order_invalid', 'orderId');
   if (order.status !== 'approved') throw fieldProblem('purchase_not_approved', 'orderId');
   return order;
 }
 
-type ReceiptLineInput = Omit<GoodsReceiptLineInput, 'batchId'>;
+// A line as the form sends it, or (step 17c) a bill's goods line of its own, which has no order
+// line
+type ReceiptLineInput = Omit<GoodsReceiptLineInput, 'batchId' | 'orderLineId'> & {
+  orderLineId: string | null;
+};
 
 // The API's resolveReceiptLines(): like an "in" stock line, with two differences. The accepted
 // quantity may be zero (everything that came was turned back), and then nothing comes in: no lot,
 // no serial numbers. The rejected quantity is checked against the same unit, and keeps its reason
-// only when something was turned back. Every problem at once, each under its own field.
-function resolveReceiptLines(
+// only when something was turned back. Every problem at once, each under its own field. Step 17c:
+// a bill checks its goods lines of its own with it too, when it is saved.
+export function resolveReceiptLines(
   data: WorkspaceData,
   lines: readonly ReceiptLineInput[],
 ): GoodsReceiptLine[] {
@@ -484,6 +636,8 @@ function resolveReceiptLines(
         rejectedBaseQuantity,
         rejectionReason: isZeroQuantity(rejectedBaseQuantity) ? null : input.rejectionReason,
         value: null,
+        // Step 17c: a posted bill marks it
+        billed: false,
       },
     ];
   });
@@ -508,7 +662,7 @@ function checkOrderLines(
       issues.push({ path: `lines.${String(index)}.orderLineId`, code: 'grn_order_line_invalid' });
       return;
     }
-    taken.set(line.orderLineId, [...(taken.get(line.orderLineId) ?? []), line.baseQuantity]);
+    taken.set(orderLine.id, [...(taken.get(orderLine.id) ?? []), line.baseQuantity]);
   });
   for (const [orderLineId, quantities] of taken) {
     const orderLine = order.lines.find((item) => item.id === orderLineId);
@@ -529,10 +683,11 @@ function checkOrderLines(
 type ReceiptFields = Omit<GoodsReceiptInput, 'post' | 'orderId'>;
 
 // Create (no `existing`) or change a draft. A receipt keeps its order (decision 20) and the order's
-// supplier, never one the form sends.
+// supplier, never one the form sends. orderId is null only for a receipt a bill made, which is
+// never a draft: the status check refuses it first.
 export function saveGoodsReceipt(
   data: WorkspaceData,
-  orderId: string,
+  orderId: string | null,
   input: ReceiptFields,
   existing?: MockGoodsReceipt,
 ): MockGoodsReceipt {
@@ -547,6 +702,7 @@ export function saveGoodsReceipt(
     date: input.date,
     supplier: order.supplier,
     orderId: order.id,
+    billId: null,
     warehouseId: input.warehouseId,
     status: 'draft',
     supplierChallan: input.supplierChallan,
@@ -593,6 +749,67 @@ function receiveOnOrder(order: MockPurchaseOrder, lines: readonly GoodsReceiptLi
   });
 }
 
+// The posting both kinds of receipt share (step 17c: an order's, and one a bill makes): the
+// accounts first (a missing one refuses the posting before anything moves), the lots made batches,
+// the number, the accepted goods moved in at their values, and the entry. The caller runs in
+// transaction() (workspace-data.ts): a refused posting gives everything back, the number and any
+// new batch too, like the API's transaction. Returns what the receipt keeps.
+function moveIn(
+  data: WorkspaceData,
+  receipt: { id: string; date: string; warehouseId: string },
+  received: readonly GoodsReceiptLine[],
+  values: readonly string[],
+): { number: string; lines: GoodsReceiptLine[]; entry: EntryRef | null } {
+  const accounts = bookAccounts(data);
+  const notBilled = accounts.use('received_not_billed');
+  const lines = batchesForLots(data, received);
+  const number = nextNumber(data, 'receipt', receipt.date);
+  postMoves(
+    data,
+    {
+      date: receipt.date,
+      kind: 'purchase_receipt',
+      direction: 'in',
+      documentId: receipt.id,
+      number,
+    },
+    // Only what was accepted comes in. A line that turned everything back moves nothing.
+    lines.flatMap((line, index) =>
+      isZeroQuantity(line.baseQuantity)
+        ? []
+        : [
+            {
+              line: index,
+              warehouseId: receipt.warehouseId,
+              stockLine: line,
+              batchId: line.batchId,
+              quantity: line.baseQuantity,
+              serialNumbers: line.serialNumbers,
+              value: values[index] ?? '0',
+            },
+          ],
+    ),
+  );
+  const total = sumMoney(values);
+  const branchId = branchOf(data, receipt.warehouseId);
+  // Nothing when the accepted goods cost nothing (postStockEntry writes no entry for zero)
+  const entry = postStockEntry(data, {
+    date: receipt.date,
+    source: 'purchase_receipt',
+    document: { id: receipt.id, number },
+    narration: `Goods receipt ${number}`,
+    amounts: [
+      { accountId: accounts.inventory, branchId, amount: total },
+      { accountId: notBilled, branchId, amount: negateMoney(total) },
+    ],
+  });
+  return {
+    number,
+    lines: lines.map((line, index) => ({ ...line, value: values[index] ?? null })),
+    entry,
+  };
+}
+
 // The API's postAndLog(): the date, the warehouse and the order checked again, the lines checked
 // against what the order still takes, the number taken, the accepted goods moved in at the order's
 // price, the entry booked and the order's lines counted.
@@ -606,56 +823,14 @@ export function postGoodsReceipt(data: WorkspaceData, draft: MockGoodsReceipt): 
   const order = receivingOrder(data, draft.orderId);
   // Again: another receipt of this order may have been posted since this one was saved
   checkOrderLines(data, order, draft.lines);
-  // The accounts first: a missing one refuses the posting before anything moves
-  const accounts = bookAccounts(data);
-  const notBilled = accounts.use('received_not_billed');
-  const lines = batchesForLots(data, draft.lines);
   // At the order's price (decision 2): the line's net, after its discount and before VAT, shared
   // by what came in. 600 of 1,000 gross worth ৳62,000 are worth ৳37,200.
-  const values = lines.map((line) => {
+  const values = draft.lines.map((line) => {
     const orderLine = order.lines.find((item) => item.id === line.orderLineId);
     return orderLine ? prorateMoney(orderLine.net, line.baseQuantity, orderLine.baseQuantity) : '0';
   });
-  // The handler runs this in transaction() (workspace-data.ts): a refused posting gives everything
-  // back, the number and any new batch too, like the API's transaction
-  const number = nextNumber(data, 'receipt', draft.date);
-  postMoves(
-    data,
-    { date: draft.date, kind: 'purchase_receipt', direction: 'in', documentId: draft.id, number },
-    // Only what was accepted comes in. A line that turned everything back moves nothing.
-    lines.flatMap((line, index) =>
-      isZeroQuantity(line.baseQuantity)
-        ? []
-        : [
-            {
-              line: index,
-              warehouseId: draft.warehouseId,
-              stockLine: line,
-              batchId: line.batchId,
-              quantity: line.baseQuantity,
-              serialNumbers: line.serialNumbers,
-              value: values[index] ?? '0',
-            },
-          ],
-    ),
-  );
-  const total = sumMoney(values);
-  const branchId = branchOf(data, draft.warehouseId);
-  // Nothing when the accepted goods cost nothing (postStockEntry writes no entry for zero)
-  const entry = postStockEntry(data, {
-    date: draft.date,
-    source: 'purchase_receipt',
-    document: { id: draft.id, number },
-    narration: `Goods receipt ${number}`,
-    amounts: [
-      { accountId: accounts.inventory, branchId, amount: total },
-      { accountId: notBilled, branchId, amount: negateMoney(total) },
-    ],
-  });
   Object.assign(draft, {
-    lines: lines.map((line, index) => ({ ...line, value: values[index] ?? null })),
-    entry,
-    number,
+    ...moveIn(data, draft, draft.lines, values),
     status: 'posted',
     postedAt: now(),
     version: draft.version + 1,
@@ -663,6 +838,68 @@ export function postGoodsReceipt(data: WorkspaceData, draft: MockGoodsReceipt): 
   });
   receiveOnOrder(order, draft.lines);
   return draft;
+}
+
+// A bill's goods line of its own, as the bill hands it over: everything accepted, at the line's
+// net
+type BillGoodsLine = Omit<
+  ReceiptLineInput,
+  'orderLineId' | 'rejectedQuantity' | 'rejectionReason'
+> & { value: string };
+
+// Step 17c: the goods of a bill's lines of its own (decision 4), received by a goods receipt the
+// bill posts when it is posted: no order, the bill's supplier and warehouse, each line at the bill
+// line's net (there is no order price), so the average cost takes them in at what the supplier
+// charged. Its lines are billed from the start: their bill is being posted. Errors name the lines
+// as given (lines.0 …); the bill moves them under its own lines. The API's receiveForBill().
+export function receiveForBill(
+  data: WorkspaceData,
+  input: {
+    billId: string;
+    billNumber: string;
+    supplier: PartyRef;
+    date: string;
+    warehouseId: string;
+    lines: readonly BillGoodsLine[];
+  },
+): MockGoodsReceipt {
+  assertWarehouses(data, [{ field: 'warehouseId', id: input.warehouseId }]);
+  const resolved = resolveReceiptLines(
+    data,
+    input.lines.map((line) => ({
+      ...line,
+      orderLineId: null,
+      rejectedQuantity: '0',
+      rejectionReason: null,
+    })),
+  );
+  const id = crypto.randomUUID();
+  const moved = moveIn(
+    data,
+    { id, date: input.date, warehouseId: input.warehouseId },
+    resolved,
+    input.lines.map((line) => line.value),
+  );
+  const receipt: MockGoodsReceipt = {
+    id,
+    number: moved.number,
+    date: input.date,
+    supplier: input.supplier,
+    orderId: null,
+    billId: input.billId,
+    warehouseId: input.warehouseId,
+    status: 'posted',
+    supplierChallan: null,
+    vehicle: null,
+    note: `Bill ${input.billNumber}`,
+    postedAt: now(),
+    version: 1,
+    updatedAt: now(),
+    lines: moved.lines.map((line) => ({ ...line, billed: true })),
+    entry: moved.entry,
+  };
+  data.purchase.receipts = [receipt, ...data.purchase.receipts];
+  return receipt;
 }
 
 // --- Seed ---------------------------------------------------------------------------------------

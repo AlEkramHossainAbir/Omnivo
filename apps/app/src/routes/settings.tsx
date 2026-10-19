@@ -38,6 +38,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ChangeEvent, useMemo, useRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
+import { PurchaseAccountsCard } from '../components/purchase-accounts-card';
 import { SalesAccountsCard } from '../components/sales-accounts-card';
 import { StockAccountsCard } from '../components/stock-accounts-card';
 import { TaxRatesCard } from '../components/tax-rates-card';
@@ -452,6 +453,12 @@ export function SettingsPage() {
           <TaxRatesCard key={`tax-${tenantId}`} tenantId={tenantId} canManage={canManage} />
           {/* Step 15d: where credit notes take sales back — its own form and endpoint */}
           <SalesAccountsCard key={`sales-${tenantId}`} tenantId={tenantId} canManage={canManage} />
+          {/* Step 17c: where supplier bills post what is not stock — its own form and endpoint */}
+          <PurchaseAccountsCard
+            key={`purchase-${tenantId}`}
+            tenantId={tenantId}
+            canManage={canManage}
+          />
         </>
       )}
     </div>

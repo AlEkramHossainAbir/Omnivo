@@ -17,19 +17,31 @@ const rowSchema = z.object({
   tax_rate_id: z.uuid().nullable(),
 });
 
-// The price of the latest approved purchase order line for the variant (step 17b, decision 19),
-// per base unit: the line's net (after its discount, before VAT) ÷ its base quantity. Approved,
-// received and closed orders count; a draft or a pending order is not a price anybody agreed to,
-// and a cancelled one was never bought. `supplier`: only this supplier's orders.
+// The price of the latest approved purchase order line or posted bill line for the variant (step
+// 17b, decision 19; bills from step 17c, decision 25), per base unit: the line's net (after its
+// discount, before VAT) ÷ its base quantity. Approved, received and closed orders count; a draft
+// or a pending order is not a price anybody agreed to, and a cancelled one was never bought. Only
+// a posted bill counts, for the same reason. The newest date wins, whichever document it is on: a
+// bill dated after its order says what the supplier really charged. `supplier`: only this
+// supplier's documents.
 function lastPrice(supplier: SQL | null): SQL {
   return sql`(
-    SELECT pl.net / pl.base_quantity
-      FROM purchase_order_lines pl
-      JOIN purchase_orders po ON po.tenant_id = pl.tenant_id AND po.id = pl.order_id
-     WHERE pl.tenant_id = v.tenant_id AND pl.product_id = p.id AND pl.variant_id = v.id
-       AND po.status IN ('approved', 'received', 'closed')
-       ${supplier === null ? sql`` : sql`AND po.supplier_id = ${supplier}`}
-     ORDER BY po.date DESC, po.created_at DESC, pl.line_no
+    SELECT prices.price FROM (
+      SELECT pl.net / pl.base_quantity AS price, po.date, po.created_at, pl.line_no
+        FROM purchase_order_lines pl
+        JOIN purchase_orders po ON po.tenant_id = pl.tenant_id AND po.id = pl.order_id
+       WHERE pl.tenant_id = v.tenant_id AND pl.product_id = p.id AND pl.variant_id = v.id
+         AND po.status IN ('approved', 'received', 'closed')
+         ${supplier === null ? sql`` : sql`AND po.supplier_id = ${supplier}`}
+      UNION ALL
+      SELECT bl.net / bl.base_quantity, b.date, b.created_at, bl.line_no
+        FROM bill_lines bl
+        JOIN bills b ON b.tenant_id = bl.tenant_id AND b.id = bl.bill_id
+       WHERE bl.tenant_id = v.tenant_id AND bl.product_id = p.id AND bl.variant_id = v.id
+         AND b.status = 'posted'
+         ${supplier === null ? sql`` : sql`AND b.supplier_id = ${supplier}`}
+    ) prices
+     ORDER BY prices.date DESC, prices.created_at DESC, prices.line_no
      LIMIT 1)`;
 }
 

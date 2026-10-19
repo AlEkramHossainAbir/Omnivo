@@ -7,6 +7,7 @@ import {
   fiscalYearOf,
   formatDocumentNumber,
   isNegativeMoney,
+  isPurchaseJournalSource,
   isSalesJournalSource,
   isStockJournalSource,
   isZeroMoney,
@@ -276,7 +277,8 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
   const oldWork = entry.source === 'reversal' || entry.source === 'year_close';
   checkLines(data, entry.lines.map(asInput), {
     allowArchived: oldWork,
-    allowStock: oldWork || isStockJournalSource(entry.source),
+    // Step 17c: a bill clears "goods received not billed", like the API's allowStock
+    allowStock: oldWork || isStockJournalSource(entry.source) || entry.source === 'purchase_bill',
     // A reversal of an entry posted before step 15a: its receivable line had no customer
     allowMissingParty: entry.source === 'reversal',
   });
@@ -292,6 +294,8 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
 // allowYearClose: only the year-end reopen (report-data.ts) may reverse a closing entry.
 // allowSales: only a voided money receipt (invoice-data.ts) reverses its own entry, with its own
 // narration; the Reverse button refuses every sales entry (journal_is_sales, step 15c).
+// allowPurchase: the same for a voided supplier payment (bill-data.ts); a bill is corrected by a
+// debit note (17d), never reversed (journal_is_purchase, step 17c).
 export function reverseEntry(
   data: WorkspaceData,
   entry: JournalEntry,
@@ -299,8 +303,14 @@ export function reverseEntry(
   {
     allowYearClose = false,
     allowSales = false,
+    allowPurchase = false,
     narration,
-  }: { allowYearClose?: boolean; allowSales?: boolean; narration?: string } = {},
+  }: {
+    allowYearClose?: boolean;
+    allowSales?: boolean;
+    allowPurchase?: boolean;
+    narration?: string;
+  } = {},
 ): JournalEntry {
   if (entry.status !== 'posted') throw new MockProblem(409, 'journal_not_posted');
   if (entry.source === 'reversal') throw new MockProblem(409, 'journal_is_reversal');
@@ -311,6 +321,9 @@ export function reverseEntry(
   // An invoice is corrected by a credit note (15d), a receipt by Void
   if (isSalesJournalSource(entry.source) && !allowSales) {
     throw new MockProblem(409, 'journal_is_sales');
+  }
+  if (isPurchaseJournalSource(entry.source) && !allowPurchase) {
+    throw new MockProblem(409, 'journal_is_purchase');
   }
   if (entry.reversedBy !== null) throw new MockProblem(409, 'journal_already_reversed');
   if (date < entry.date) {

@@ -87,6 +87,8 @@ export const en = {
     requisitions: 'Requisitions',
     purchaseOrders: 'Purchase orders',
     goodsReceipts: 'Goods receipts',
+    bills: 'Supplier bills',
+    supplierPayments: 'Supplier payments',
     approvals: 'Approvals',
   },
   auth: {
@@ -221,6 +223,19 @@ export const en = {
     salesReturnsAccountNone: 'None: take it off the Sales account itself',
     salesAccountsSave: 'Save account',
     salesAccountsSaved: 'Sales returns account saved',
+    // The two purchase accounts (GET/PUT /purchase-accounts), a card of its own like the sales accounts
+    purchaseAccountsTitle: 'Purchase accounts',
+    purchaseAccountsSubtitle: 'Where a supplier bill posts what is not stock',
+    priceDifferenceAccount: 'Purchase price difference',
+    priceDifferenceAccountHint:
+      'An expense account, like 5180 Purchase price difference. When a bill’s price is above or below its order’s, the difference posts here.',
+    priceDifferenceAccountNone: 'None: post it to Cost of goods sold',
+    servicesAccount: 'Purchased services',
+    servicesAccountHint:
+      'An expense account, like 5170 Purchased services. A service line on a bill that names no account posts here, like a dyeing charge on an order.',
+    servicesAccountNone: 'None: every service line names its account',
+    purchaseAccountsSave: 'Save accounts',
+    purchaseAccountsSaved: 'Purchase accounts saved',
     logoSaved: 'Logo updated',
     logoRemoved: 'Logo removed',
     saved: 'Settings saved',
@@ -251,6 +266,7 @@ export const en = {
       purchase: {
         order: 'Purchase order',
         bill: 'Supplier bill',
+        payment: 'Supplier payment',
         supplier: 'Supplier code',
         requisition: 'Purchase requisition',
       },
@@ -482,6 +498,8 @@ export const en = {
       sales_credit_note: 'Credit note',
       sales_refund: 'Refund',
       purchase_receipt: 'Goods receipt',
+      purchase_bill: 'Supplier bill',
+      purchase_payment: 'Supplier payment',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
@@ -493,6 +511,10 @@ export const en = {
     creditNoteEntryHint:
       'A credit note made this entry. A posted credit note stays as it is, so the entry is not reversed here.',
     refundEntryHint: 'A refund made this entry. To undo it, void the refund on its own page.',
+    billEntryHint:
+      'A supplier bill made this entry. A posted bill stays as it is, so the entry is not reversed here.',
+    paymentEntryHint:
+      'A supplier payment made this entry. To undo it, void the payment on its own page.',
     draftSaved: 'Draft saved',
     posted: '{{number}} posted',
     deleted: 'Draft deleted',
@@ -2701,6 +2723,8 @@ export const en = {
     // Approved, and its delivery date has passed
     late: 'Late',
     receiptFilters: { to_receive: 'To receive' },
+    // Approved, received or closed, with a service line no posted bill bills yet
+    billFilters: { to_bill: 'Services to bill' },
     columns: {
       number: 'Number',
       date: 'Date',
@@ -2782,6 +2806,10 @@ export const en = {
     rejected: 'Rejected',
     left: 'Left to receive',
     serviceLine: 'A service: not received',
+    // Posted bills, in the line's unit (billedQuantity)
+    billed: 'Billed',
+    makeBill: 'Make bill',
+    payAdvance: 'Pay advance',
     // The document notice above the order
     notices: {
       pending: 'Waiting for approval. Reopen it to change it.',
@@ -2789,6 +2817,8 @@ export const en = {
         'Approved. Send it to the supplier, and receive the goods when they come. Reopen it to change it; it is then approved again.',
       receiving:
         'Goods came in against it, so it can no longer be reopened or cancelled. Close it when the rest will not come.',
+      billing:
+        'A bill bills a service on it, so it can no longer be reopened or cancelled. Close it when nothing more will come.',
       received: 'Everything on the order came in.',
       closed: 'Closed. What did not come in was dropped.',
       cancelled: 'Cancelled. It stays here for the record.',
@@ -2798,6 +2828,15 @@ export const en = {
     receiptsTitle: 'Goods receipts',
     receiptsSubtitle: 'What came in against this order',
     noReceipts: 'Nothing received yet.',
+    billsTitle: 'Bills',
+    billsSubtitle: 'Posted supplier bills for this order',
+    noBills: 'Nothing billed yet.',
+    advancesTitle: 'Advances',
+    advancesSubtitle: 'Money paid to the supplier ahead, against this order',
+    noAdvances: 'Nothing paid ahead.',
+    // What of an advance is not applied to a bill yet
+    advanceLeft: '{{amount}} not applied yet',
+    advanceUsed: 'All applied to bills',
     approvedOn: 'Approved {{date}}',
     cantWrite:
       'You can view purchase orders. Ask a workspace owner for the purchase.order.manage permission to write them.',
@@ -2809,7 +2848,7 @@ export const en = {
   },
   goodsReceipts: {
     title: 'Goods receipts',
-    description: 'GRNs: goods that came in from suppliers against approved purchase orders',
+    description: 'GRNs: goods that came in from suppliers, on a purchase order or on a bill',
     new: 'New goods receipt',
     newTitle: 'New goods receipt',
     draftTitle: 'Draft goods receipt',
@@ -2817,6 +2856,14 @@ export const en = {
     show: 'Show',
     all: 'All',
     statuses: { draft: 'Draft', posted: 'Posted' },
+    // How much of a posted receipt is billed (goods-receipts.ts → billState)
+    billStates: {
+      not_billed: 'Not billed',
+      partly_billed: 'Partly billed',
+      billed: 'Billed',
+    },
+    billing: 'Billing',
+    billFilters: { to_bill: 'To bill', billed: 'Billed' },
     columns: {
       number: 'Number',
       date: 'Date',
@@ -2832,6 +2879,11 @@ export const en = {
     orderEmpty: 'No approved order is waiting for goods.',
     orderHint: 'The goods are booked at this order’s prices.',
     orderLocked: 'The order stays. For goods of another order, write another receipt.',
+    // A receipt a bill made (decision 21): no order, the bill instead
+    noOrder: 'No order',
+    fromBill: 'Received by {{number}}',
+    billMadeNotice:
+      'Supplier bill {{number}} received these goods: they were bought without a purchase order.',
     date: 'Date',
     warehouse: 'Received at',
     warehouseHint: 'Where the goods are unloaded. The order says {{warehouse}}.',
@@ -2869,11 +2921,333 @@ export const en = {
     postedOn: 'Posted {{date}}',
     entry: 'Journal entry',
     noEntry: 'No journal entry: what came in had no value',
+    makeBill: 'Make bill',
+    billsTitle: 'Bills',
+    billsSubtitle: 'Posted supplier bills for these goods',
+    notBilledYet: 'Not billed yet.',
+    lineBilled: 'Billed',
     notFound: 'This goods receipt no longer exists. A draft may have been deleted.',
     emptyTitle: 'No goods receipts yet',
     emptyBody:
       'When a truck is at the gate, pick its purchase order here, or receive the goods from the order’s page.',
     loadFailed: "Couldn't load the goods receipts. Refresh the page to try again.",
+  },
+  bills: {
+    title: 'Supplier bills',
+    description: 'What suppliers billed the company, and what is still to pay',
+    new: 'New bill',
+    newTitle: 'New supplier bill',
+    draftTitle: 'Draft bill',
+    back: 'Supplier bills',
+    show: 'Show',
+    all: 'All',
+    statuses: {
+      draft: 'Draft',
+      pending: 'Waiting for approval',
+      posted: 'Posted',
+      cancelled: 'Cancelled',
+    },
+    // From what was paid (bills.ts → billPaymentStatusOf). Overdue is worked out by the page.
+    payment: { unpaid: 'Unpaid', partly_paid: 'Partly paid', paid: 'Paid' },
+    overdue: 'Overdue',
+    paymentFilters: { open: 'Not paid', overdue: 'Overdue', paid: 'Paid' },
+    columns: {
+      number: 'Number',
+      supplier: 'Supplier',
+      supplierBillNumber: 'Supplier’s bill',
+      dueDate: 'Due date',
+      total: 'Total',
+      due: 'Still to pay',
+      status: 'Status',
+    },
+    supplier: 'Supplier',
+    supplierLocked: 'Remove the goods receipt and order lines to change the supplier.',
+    supplierNumbered:
+      'The supplier stays: this bill has a number. Cancel it and enter a new bill for another supplier.',
+    supplierBillNumber: 'Supplier’s bill number',
+    supplierBillNumberHint: 'As printed on their bill. Each number of a supplier is entered once.',
+    supplierBillNumberPlaceholder: 'PSM/2026/0412',
+    date: 'Bill date',
+    dateHint:
+      'The day it is booked, normally the date on the supplier’s bill. In a locked period, use the first open day.',
+    dueDate: 'Due date',
+    dueDateHint: 'Leave it empty for the payment terms: the order’s, else the supplier’s.',
+    dueOn: 'Due {{date}}',
+    mushakNumber: 'Mushak 6.3 number',
+    mushakNumberHint: 'The supplier’s VAT invoice, if they gave one',
+    mushakNumberPlaceholder: '0412/2026-27',
+    mushakDate: 'Mushak 6.3 date',
+    branch: 'Branch',
+    branchHint: 'Whose purchase it is. What you owe, the VAT and the expenses are booked to it.',
+    warehouse: 'Receive at',
+    warehouseHint:
+      'Only for items that are not on a goods receipt: posting the bill brings them into this warehouse.',
+    noWarehouse: 'Every item is on a goods receipt',
+    pricesIncludeVat: 'Prices include VAT',
+    pricesIncludeVatHint:
+      'Off: the bill’s prices are before VAT, as most suppliers write them. A bill of an order follows the order.',
+    pricesFromOrder: 'From the order: a bill writes its prices the way its orders do.',
+    note: 'Note',
+    notePlaceholder: 'The bill came with the challan. Pay by cheque once QC has passed the lot.',
+    // Where each line comes from
+    addReceipts: 'Add goods receipts',
+    receiptPickerTitle: 'Bill goods receipts',
+    receiptPickerDescription:
+      'Posted goods receipts of this supplier that are not billed yet. Each click adds what was accepted, at the order’s prices.',
+    receiptPickerEmpty: 'Every posted goods receipt of this supplier is billed.',
+    receiptLines_one: '{{count}} item',
+    receiptLines_other: '{{count}} items',
+    addServices: 'Add order services',
+    servicePickerTitle: 'Bill order services',
+    servicePickerDescription:
+      'Services on this supplier’s orders that are not billed yet, like a dyeing or a transport charge. Each click adds the service line.',
+    servicePickerEmpty: 'This supplier has no order with a service to bill.',
+    noServicesLeft: 'Every service on {{number}} is billed already.',
+    pickSupplierFirst: 'Pick the supplier first.',
+    // The item lines' empty card (the expenses have their own)
+    noLines:
+      'No items yet. Add goods receipts or order services, or add items bought without an order.',
+    fromReceipt: 'From {{number}}',
+    fromOrder: 'Service on {{number}}',
+    ownLine: 'Received by this bill',
+    receiptLineHint: 'The item, unit and quantity are the goods receipt’s.',
+    // A receipt line's price against what the goods receipt booked (orderValue)
+    orderValue: 'Order’s price: {{amount}}',
+    overOrder: '{{amount}} over the order',
+    underOrder: '{{amount}} under the order',
+    priceDifferenceNotice:
+      'The prices differ from the orders by {{amount}} in all. The difference posts to the purchase price difference account.',
+    priceDifference: 'Price difference',
+    // A service line's expense account; empty = the purchased services account in Settings
+    account: 'Expense account',
+    accountPlaceholder: 'Pick an account',
+    accountDefault: 'Purchased services ({{account}})',
+    accountRequired: 'Pick an account: no purchased services account is chosen in Settings.',
+    // Costs with no product (decision 6)
+    expensesTitle: 'Expenses',
+    expensesSubtitle: 'Costs with no product, like rent, electricity or a repair',
+    addExpense: 'Add expense',
+    expense: 'Expense {{number}}',
+    removeExpense: 'Remove expense {{number}}',
+    expenseAccount: 'Account',
+    expenseDescription: 'Description',
+    expenseDescriptionPlaceholder: 'Electricity for September, Gazipur factory',
+    expenseAmount: 'Amount',
+    expenseVat: 'VAT rate',
+    noExpenses: 'No expenses. Add one for a cost that is not a product.',
+    tooManyExpenses: 'A bill holds up to {{max}} expenses. Enter a second bill for the rest.',
+    noCostAccounts:
+      'No account can take an expense yet. Add an expense account in the chart of accounts.',
+    saveDraft: 'Save draft',
+    draftSaved: 'Draft saved',
+    saved: '{{number}} saved',
+    edit: 'Edit',
+    // The form's button: Post when no level applies to the total, else Submit for approval
+    post: 'Post bill',
+    posting: 'Posting…',
+    submit: 'Submit for approval',
+    postHint:
+      'Posting gives the bill its number and books what you owe the supplier. Items that are not on a goods receipt come in on a goods receipt of their own. A posted bill never changes.',
+    submitHint:
+      'It gets its number now. Its total with VAT chooses who approves it, and the last approval posts it. Nobody can change it while it waits.',
+    posted: '{{number}} posted',
+    submitted: '{{number}} sent for approval',
+    numberedDraft:
+      'This draft keeps its number {{number}}. Submit it again when the changes are done.',
+    deleteDraft: 'Delete draft',
+    confirmDelete: 'Delete this draft',
+    deleteWarning:
+      'A deleted draft cannot be brought back. It never had a number, and its goods receipts can be billed again.',
+    deleted: 'Draft deleted',
+    reopen: 'Reopen',
+    reopenTitle: 'Reopen {{number}}',
+    reopenBody:
+      'It goes back to draft so it can be changed, and it is approved again from the first level. It keeps its number.',
+    reopened: '{{number}} is a draft again',
+    cancel: 'Cancel bill',
+    cancelTitle: 'Cancel {{number}}',
+    cancelBody:
+      'The bill is called off and its goods receipts and services can be billed again. The supplier’s bill number is free again, for the right bill. It stays in the list as cancelled.',
+    cancelled: '{{number}} cancelled',
+    keepBill: 'Keep the bill',
+    // The document notice above the bill
+    notices: {
+      pending: 'Waiting for approval. The last approval posts it. Reopen it to change it.',
+      cancelled: 'Cancelled. It stays here for the record.',
+      rejected: '{{name}} sent it back: "{{comment}}" Change it and submit it again.',
+    },
+    cantWrite:
+      'You can view supplier bills. Ask a workspace owner for the purchase.bill.manage permission to enter them.',
+    postedOn: 'Posted {{date}}',
+    entry: 'Journal entry',
+    noEntry: 'No journal entry: nothing is charged on this bill',
+    paid: 'Paid',
+    due: 'Still to pay',
+    overdueNotice_one: 'This bill was due on {{date}}: {{count}} day late.',
+    overdueNotice_other: 'This bill was due on {{date}}: {{count}} days late.',
+    receiptsTitle: 'Goods receipts',
+    receiptsSubtitle: 'The goods this bill bills',
+    ordersTitle: 'Purchase orders',
+    paymentsTitle: 'Payments',
+    paymentsSubtitle: 'Supplier payments applied to this bill',
+    noPayments: 'Nothing paid yet.',
+    pay: 'Pay bill',
+    // Posted payments to the supplier with money not applied yet; this bill's orders first
+    advancesTitle: 'Advances to apply',
+    advancesSubtitle: 'Money paid to this supplier ahead. Apply it from the payment’s page.',
+    advanceFor: 'For {{number}}',
+    advanceLeft: '{{amount}} not applied',
+    notFound: "This bill doesn't exist, or it was a draft that was deleted.",
+    emptyTitle: 'No supplier bills yet',
+    emptyBody:
+      'Enter a supplier’s bill when it comes, like a spinning mill’s bill for 2,000 cones of 30s yarn. Bill its goods receipts, a dyeing charge on an order, or rent and electricity with no order at all.',
+    loadFailed: "Couldn't load the supplier bills. Refresh the page to try again.",
+  },
+  supplierPayments: {
+    title: 'Supplier payments',
+    description: 'Money paid to suppliers, and the bills it paid',
+    new: 'New payment',
+    newTitle: 'Pay a supplier',
+    draftTitle: 'Draft payment',
+    back: 'Supplier payments',
+    show: 'Show',
+    all: 'All',
+    statuses: {
+      draft: 'Draft',
+      pending: 'Waiting for approval',
+      posted: 'Posted',
+      voided: 'Voided',
+      cancelled: 'Cancelled',
+    },
+    columns: {
+      number: 'Number',
+      date: 'Date',
+      supplier: 'Supplier',
+      method: 'Paid by',
+      amount: 'Amount',
+      unapplied: 'Not applied',
+      status: 'Status',
+    },
+    supplier: 'Supplier',
+    supplierLocked:
+      'The supplier stays: this payment has a number. Write a new one for another supplier.',
+    date: 'Date',
+    amount: 'Amount',
+    account: 'Paid from',
+    accountHint: 'A cash, bank or mobile wallet account',
+    accountPlaceholder: 'Pick an account',
+    noAccounts:
+      'No account holds money yet. Tick "Holds money" on your cash and bank accounts in the chart of accounts.',
+    method: 'Paid by',
+    reference: 'Reference',
+    // An example for each method, the way the reference is written in the cheque book or the bank's slip
+    referencePlaceholders: {
+      cash: 'Paid at the Gazipur gate to their driver',
+      bank_transfer: 'BEFTN ref 2026101912345',
+      cheque: 'Cheque 0045123, Dutch-Bangla Bank Motijheel',
+      mobile_wallet: 'bKash TrxID 9JK3L2M8NP',
+      card: 'Card ending 4821',
+    },
+    // One of the supplier's bank accounts (decision 24)
+    bankAccount: 'To their account',
+    bankAccountHint: 'One of the supplier’s bank accounts. It prints on the voucher.',
+    bankAccountNone: 'Not to a bank account',
+    noBankAccounts: 'This supplier has no bank account. Add one on the supplier’s page.',
+    bankAccountLine: '{{bank}} · {{number}}',
+    branch: 'Branch',
+    // An advance against a purchase order (decision 12)
+    order: 'Against order',
+    orderHint: 'For money paid ahead. That order’s bills offer it first.',
+    orderNone: 'No order',
+    note: 'Note',
+    notePlaceholder: 'Advance for the November yarn: 30% before dispatch, as agreed.',
+    // Applying the money to bills
+    applyTitle: 'Apply to bills',
+    applySubtitle:
+      'Oldest due first. Change the amounts if the supplier asked for certain bills to be paid.',
+    applyOldest: 'Apply oldest first',
+    clearAll: 'Clear',
+    allocationColumns: {
+      bill: 'Bill',
+      total: 'Total',
+      due: 'Still to pay',
+      amount: 'Pay',
+    },
+    supplierBill: 'Their bill {{number}}',
+    applyTo: 'Amount paid on {{number}}',
+    pickSupplier: 'Pick the supplier to see their unpaid bills.',
+    noOpenBills: 'This supplier has no unpaid bill. The whole amount stays as an advance.',
+    applied: 'Applied',
+    unapplied: 'Left as advance',
+    overBy: 'Over by {{amount}}',
+    // A draft's allocations are a plan (decision 23)
+    planHint:
+      'This is a plan until the payment is posted. Posting checks again what each bill still owes.',
+    saveDraft: 'Save draft',
+    draftSaved: 'Draft saved',
+    saved: '{{number}} saved',
+    edit: 'Edit',
+    post: 'Post payment',
+    posting: 'Posting…',
+    submit: 'Submit for approval',
+    postHint:
+      'Posting gives the payment its number. The money leaves the account and comes off what you owe the supplier.',
+    submitHint:
+      'It gets its number now. Its amount chooses who approves it, and the last approval posts it. Nobody can change it while it waits.',
+    posted: '{{number}} posted',
+    submitted: '{{number}} sent for approval',
+    numberedDraft:
+      'This draft keeps its number {{number}}. Submit it again when the changes are done.',
+    deleteDraft: 'Delete draft',
+    confirmDelete: 'Delete this draft',
+    deleteWarning: 'A deleted draft cannot be brought back. It never had a number.',
+    deleted: 'Draft deleted',
+    reopen: 'Reopen',
+    reopenTitle: 'Reopen {{number}}',
+    reopenBody:
+      'It goes back to draft so it can be changed, and it is approved again from the first level. It keeps its number.',
+    reopened: '{{number}} is a draft again',
+    cancel: 'Cancel payment',
+    cancelTitle: 'Cancel {{number}}',
+    cancelBody:
+      'The payment is called off before any money left. It stays in the list as cancelled.',
+    cancelled: '{{number}} cancelled',
+    keepPayment: 'Keep the payment',
+    notices: {
+      pending: 'Waiting for approval. The last approval posts it. Reopen it to change it.',
+      cancelled: 'Cancelled. No money left. It stays here for the record.',
+      rejected: '{{name}} sent it back: "{{comment}}" Change it and submit it again.',
+    },
+    // The payment's own page
+    unappliedNotice:
+      '{{amount}} is not applied to a bill yet. It counts as an advance to the supplier until you apply it.',
+    apply: 'Apply money',
+    applyDialogTitle: 'Apply {{number}}',
+    applySave: 'Save',
+    allocated: '{{number}} applied',
+    void: 'Void payment',
+    voidTitle: 'Void {{number}}',
+    voidBody:
+      'Its entry is reversed on the void date, and its money comes off the bills again. The payment stays in the list with its number.',
+    voidDate: 'Void date',
+    voidDateHint:
+      'The day the money turned out not to have gone, like the day the bank stopped the cheque.',
+    voidReason: 'Reason',
+    voidReasonPlaceholder: 'Cheque stopped: the amount was written wrong',
+    confirmVoid: 'Void payment',
+    voided: '{{number}} voided',
+    voidedNotice: 'Voided on {{date}}: {{reason}}',
+    entry: 'Journal entry',
+    voidEntry: 'Reversal',
+    billsTitle: 'Bills paid',
+    noAllocations: 'Not applied to any bill.',
+    cantWrite:
+      'You can view supplier payments. Ask a workspace owner for the purchase.payment.manage permission to write them.',
+    notFound: "This payment doesn't exist, or it was a draft that was deleted.",
+    emptyTitle: 'No supplier payments yet',
+    emptyBody:
+      'Record what you pay a supplier: a cheque to the spinning mill, a bank transfer, a bKash payment or cash at the gate.',
+    loadFailed: "Couldn't load the supplier payments. Refresh the page to try again.",
   },
   // The approval of any document that needs one: the "Waiting for me" page, the approval card on the
   // document's page, and its two dialogs
@@ -2881,7 +3255,12 @@ export const en = {
     title: 'Approvals',
     description: 'Documents waiting for your decision, oldest first',
     // An ApprovalDocument kind → its name; the bell and the list put it before the number
-    kinds: { requisition: 'Requisition', purchase_order: 'Purchase order' },
+    kinds: {
+      requisition: 'Requisition',
+      purchase_order: 'Purchase order',
+      bill: 'Supplier bill',
+      supplier_payment: 'Supplier payment',
+    },
     columns: {
       document: 'Document',
       date: 'Date',
@@ -2893,7 +3272,7 @@ export const en = {
     stepOf: '{{position}} of {{count}}',
     emptyTitle: 'Nothing waits for you',
     emptyBody:
-      'When someone submits a requisition or a purchase order that needs your role, it shows up here and the bell tells you.',
+      'When someone submits a requisition, an order, a bill or a payment that needs your role, it shows up here and the bell tells you.',
     loadFailed: "Couldn't load the documents waiting for you. Refresh the page to try again.",
     cardTitle: 'Approval',
     cardSubtitle: 'Every level it reaches approves it, one after another',
@@ -2919,6 +3298,9 @@ export const en = {
     decided: '{{name}}, {{date}}',
     noLevels: 'No level applied, so it was approved when it was submitted.',
     ownerSubmitted: 'An Owner submitted it, so it was approved at once.',
+    // A bill and a payment: the last approval posts them (decision 7)
+    noLevelsPosted: 'No level applied, so it was posted when it was submitted.',
+    ownerSubmittedPosted: 'An Owner submitted it, so it was posted at once.',
     notSubmitted:
       'Not submitted yet. Every level its amount reaches approves it, one after another.',
     waitingForYou: 'Step {{position}} waits for you.',
@@ -2929,6 +3311,7 @@ export const en = {
     approveTitle: 'Approve {{number}}',
     approveBody: 'You approve step {{position}} of {{count}}, as {{role}}.',
     approveLast: 'This is the last step: {{number}} is approved when you do.',
+    approveLastPosts: 'This is the last step: {{number}} is posted in the books when you do.',
     approveNext: 'The next level is told when you do.',
     comment: 'Comment',
     approveCommentPlaceholder: 'Fine for the November production plan',
@@ -2956,6 +3339,14 @@ export const en = {
       purchase_order: {
         title: 'Purchase orders',
         subtitle: 'By the order’s total, VAT included',
+      },
+      bill: {
+        title: 'Supplier bills',
+        subtitle: 'By the bill’s total, VAT included. The last approval posts the bill.',
+      },
+      supplier_payment: {
+        title: 'Supplier payments',
+        subtitle: 'By the amount paid. The last approval posts the payment.',
       },
     },
     level: 'Level {{number}}',
@@ -3108,6 +3499,7 @@ export const en = {
       creditNote: 'Credit note',
       refund: 'Refund',
       purchaseOrder: 'Purchase order',
+      supplierPayment: 'Payment voucher',
     },
     bin: 'BIN {{bin}}',
     phone: 'Phone {{phone}}',
@@ -3155,6 +3547,14 @@ export const en = {
     paidTo: 'Paid to',
     amountPaidBack: 'Amount paid back',
     paidBackFrom: 'Paid back from',
+    // A supplier payment's voucher
+    amountPaid: 'Amount paid',
+    paidFrom: 'Paid from',
+    toAccount: 'To account',
+    routing: 'Routing {{number}}',
+    billsPaid: 'Bills paid',
+    supplierBill: 'Supplier’s bill',
+    againstOrder: 'Against order',
     signatures: {
       customer: 'Customer’s signature',
       receivedBy: 'Received by',
@@ -3360,6 +3760,12 @@ export const en = {
       receipt: {
         manage: 'Receive goods against approved purchase orders, and post goods receipts',
       },
+      bill: {
+        manage: 'Enter supplier bills, submit them for approval, reopen and cancel them',
+      },
+      payment: {
+        manage: 'Pay suppliers, submit payments for approval, apply them to bills and void them',
+      },
     },
   },
   invite: {
@@ -3424,6 +3830,8 @@ export const en = {
       requisition: 'Purchase requisitions',
       purchase_order: 'Purchase orders',
       goods_receipt: 'Goods receipts',
+      bill: 'Supplier bills',
+      supplier_payment: 'Supplier payments',
     },
     columns: {
       when: 'When',
@@ -3652,6 +4060,23 @@ export const en = {
         deleted: 'Deleted a draft goods receipt',
         posted: 'Posted a goods receipt',
       },
+      bill: {
+        created: 'Entered a supplier bill',
+        updated: 'Edited a draft bill',
+        deleted: 'Deleted a draft bill',
+        posted: 'Posted a supplier bill',
+        cancelled: 'Cancelled a supplier bill',
+      },
+      supplier_payment: {
+        created: 'Wrote a supplier payment',
+        updated: 'Edited a draft payment',
+        deleted: 'Deleted a draft payment',
+        posted: 'Posted a supplier payment',
+        cancelled: 'Cancelled a supplier payment',
+        allocated: 'Applied a supplier payment to bills',
+        voided: 'Voided a supplier payment',
+      },
+      purchase_accounts: { changed: 'Changed the purchase accounts' },
       approval: {
         submitted: 'Submitted for approval',
         approved: 'Approved a step',
@@ -3778,6 +4203,13 @@ export const en = {
       supplierReference: 'Supplier’s reference',
       supplierChallan: 'Supplier’s challan',
       purchase_order: 'Purchase orders',
+      reference: 'Reference',
+      supplierBillNumber: 'Supplier’s bill number',
+      mushakNumber: 'Mushak 6.3 number',
+      expenses: 'Expenses',
+      bills: 'Bills',
+      priceDifference: 'Purchase price difference',
+      services: 'Purchased services',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -4099,7 +4531,7 @@ export const en = {
     stock_account_invalid: 'Pick an active account of the right type.',
     stock_account_inventory: 'Pick another account: this one is the inventory account itself.',
     journal_account_stock:
-      'Only stock documents post to this account, like inventory, goods in transit or goods received not billed. Use a stock adjustment, a revaluation or a goods receipt instead.',
+      'Only stock documents post to this account, like inventory, goods in transit or goods received not billed. Use a stock adjustment, a revaluation, a goods receipt or a supplier bill instead.',
     journal_is_stock:
       'A stock document made this entry. Post another stock document to correct it.',
     revaluation_no_stock: 'There is no stock of this item to revalue.',
@@ -4305,7 +4737,7 @@ export const en = {
     requisition_cost_required: 'Enter the estimated cost. 0 is fine for a free item.',
     purchase_supplier_required: 'Pick the supplier.',
     purchase_supplier_invalid:
-      'Pick an active supplier. A numbered order keeps its supplier: write a new order for another one.',
+      'Pick an active supplier. A numbered order, bill or payment keeps its supplier: write a new one for another supplier.',
     purchase_expected_date: 'Pick a day on or after the order date.',
     purchase_requisition_line_invalid:
       'This line can no longer buy for that requisition: it must be approved, for this warehouse and for the same item. Pick it again from the lines still to order.',
@@ -4328,6 +4760,62 @@ export const en = {
     grn_line_empty: 'Enter what was accepted, what was rejected, or both.',
     grn_rejection_reason: 'Say why the goods were rejected, like "wet" or "wrong shade".',
     over_receipt_percent_format: 'Enter a percent from 0 to 100, with up to 2 decimals.',
+    purchase_branch_invalid: 'Pick an active branch.',
+    purchase_account_invalid:
+      'A purchase account must be an active expense account, not a group. Pick another one in Settings → Purchase accounts.',
+    account_used_by_purchase:
+      'Supplier bills post to this account. Choose another one in Settings → Purchase accounts first.',
+    purchase_order_billed:
+      'A bill bills a service on this order, so it cannot be reopened or cancelled. Cancel that bill first if it is not posted; otherwise close the order.',
+    bill_supplier_number_required: 'Enter the number on the supplier’s bill.',
+    bill_supplier_number_taken:
+      'This supplier already has a bill with this number. Open that bill instead, or check the number on the paper.',
+    bill_due_date: 'The due date cannot be before the bill date.',
+    bill_mushak_number_required: 'Enter the Mushak 6.3 number, or clear its date.',
+    bill_line_source:
+      'A line bills a goods receipt line or an order’s service, not both. Remove it and add it again.',
+    bill_stock_not_allowed:
+      'This line comes from a goods receipt or is a service, so it takes no lot, expiry or serial numbers. Clear them.',
+    bill_account_required:
+      'Pick an expense account. A service line may leave it empty only when a purchased services account is chosen in Settings → Purchase accounts.',
+    bill_account_not_allowed:
+      'Goods post to stock, so their line takes no account. Clear the account.',
+    bill_account_invalid:
+      'Pick an active expense or asset account that is not a group. Accounts the system posts to by itself, like payables, VAT, stock, cash and bank, cannot be picked.',
+    bill_receipt_line_invalid:
+      'This goods receipt line is not a posted line of this supplier, or its item changed. Remove it and add it again from the goods receipt.',
+    bill_receipt_line_billed:
+      'Another bill already bills this goods receipt line. Remove it from this bill.',
+    bill_receipt_line_quantity:
+      'A goods receipt line is billed whole, in its own unit and quantity. Remove the line and add it again from the goods receipt.',
+    bill_order_line_invalid:
+      'Pick a service line of an approved, received or closed purchase order of this supplier.',
+    bill_order_line_billed: 'Another bill already bills this service. Remove it from this bill.',
+    bill_line_twice: 'This line is on the bill twice. Remove one of them.',
+    bill_vat_mixed:
+      'These orders write their prices differently, some with VAT and some before VAT. Bill them on separate bills.',
+    bill_warehouse_required:
+      'Pick the warehouse the goods come into: the items that are not on a goods receipt are received by this bill.',
+    bill_expense_description_required: 'Say what the expense is for, at least 2 characters.',
+    bill_expense_amount_required: 'Enter an amount above 0.',
+    payment_amount_required: 'Enter an amount above 0.',
+    payment_account_invalid:
+      'Pick an active account that holds money, like Cash in hand or a bank account.',
+    payment_bank_account_invalid:
+      'Pick one of this supplier’s bank accounts. This one was removed from the supplier.',
+    payment_order_invalid: 'Pick an approved, received or closed purchase order of this supplier.',
+    payment_bill_invalid: 'Pick a posted bill of this supplier.',
+    payment_bill_twice: 'This bill is on the list twice. Remove one of them.',
+    payment_over_allocated:
+      'This applies more than the payment’s amount. Lower the amounts on the bills.',
+    payment_over_bill:
+      'This is more than the bill still owes. Another payment may have paid it: reload and lower the amount.',
+    payment_not_posted:
+      'Only a posted payment can be applied again or voided. Change a draft’s bills on its form.',
+    payment_void_reason_required: 'Say why it is voided, like "Cheque stopped".',
+    payment_void_date: 'The void date cannot be before the day the money was paid.',
+    journal_is_purchase:
+      'A purchase document made this entry, so it is not reversed here. Void a supplier payment on its own page; a posted bill stays as it is.',
     import_options_without_code:
       'Give rows with options a code: rows with the same code are one product.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',

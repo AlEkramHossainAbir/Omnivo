@@ -304,6 +304,7 @@ function orderLine(extra: Partial<PurchaseOrderLine> = {}): PurchaseOrderLine {
     requisitionLine: null,
     receivedQuantity: '0.0000',
     rejectedQuantity: '0.0000',
+    billedQuantity: '0.0000',
     ...extra,
   };
 }

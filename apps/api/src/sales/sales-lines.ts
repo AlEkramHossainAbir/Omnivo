@@ -137,8 +137,12 @@ export async function billingAddressOf(
 // The branch an invoice or a receipt belongs to (step 15c): an active branch of this workspace.
 // Checked here, under the form's own field, before the journal would refuse it as
 // journal_branch_invalid under a line the person never saw. FOR SHARE: nobody archives it before we
-// commit.
-export async function assertBranch(tx: Transaction, branchId: string): Promise<void> {
+// commit. `code`: a supplier's bill or payment answers with its own (step 17c).
+export async function assertBranch(
+  tx: Transaction,
+  branchId: string,
+  code: ErrorCode = 'sales_branch_invalid',
+): Promise<void> {
   const [row] = await tx
     .select({ id: branches.id })
     .from(branches)
@@ -150,7 +154,7 @@ export async function assertBranch(tx: Transaction, branchId: string): Promise<v
       ),
     )
     .for('share');
-  if (!row) throw fieldError('sales_branch_invalid', 'branchId', 'Pick an active branch.');
+  if (!row) throw fieldError(code, 'branchId', 'Pick an active branch.');
 }
 
 // A money account (step 15c): active, not a group, and flagged itself or under a flagged group

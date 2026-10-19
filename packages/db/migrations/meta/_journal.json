@@ -274,6 +274,20 @@
       "when": 1792297230436,
       "tag": "0038_purchase-orders-receipts-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792383322000,
+      "tag": "0039_bills-payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792383348392,
+      "tag": "0040_bills-payments-rules",
+      "breakpoints": true
     }
   ]
 }

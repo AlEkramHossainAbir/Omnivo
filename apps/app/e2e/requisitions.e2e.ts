@@ -71,9 +71,10 @@ test('approves the requisition waiting for the Owner, from the Approvals list', 
   await expect(page.getByText(/^Approved and locked/)).toBeVisible();
   await expect(page.getByText('Step 2 waits for you.')).toBeHidden();
 
-  // Nothing waits any more
+  // It waits no more; the seed's bill (step 17c) still does
   await openFromNav(page, 'Approvals');
-  await expect(page.getByText('Nothing waits for you')).toBeVisible();
+  await expect(listItem(page, /BILL-/)).toBeVisible();
+  await expect(listItem(page, PR(3))).toBeHidden();
 });
 
 test('sends a requisition back with a comment, then changes it and submits it again', async ({

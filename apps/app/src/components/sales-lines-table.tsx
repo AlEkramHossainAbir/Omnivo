@@ -21,6 +21,8 @@ import { useQuantity } from './stock-parts';
 // (`delivered`) also say how much went out and how much is left, and (step 15c) how much of it
 // posted invoices bill. An invoice's lines use the table as they are. Step 15d: `note` adds the
 // document's own words under an item (the return a credit note line gives the money back for).
+// Step 17c: `totals` may be null, for a supplier bill with expenses: its totals count them too, so
+// the bill's page shows them under the expenses instead.
 export function SalesLinesTable<L extends SalesLine | SalesOrderLine>({
   lines,
   totals,
@@ -30,7 +32,7 @@ export function SalesLinesTable<L extends SalesLine | SalesOrderLine>({
   more,
 }: {
   lines: readonly L[];
-  totals: DocumentTotals;
+  totals: DocumentTotals | null;
   pricesIncludeVat: boolean;
   // An order past its draft: the Delivered and Invoiced columns
   delivered?: boolean;
@@ -157,7 +159,7 @@ export function SalesLinesTable<L extends SalesLine | SalesOrderLine>({
           </tbody>
         </table>
       </div>
-      <SalesTotals totals={totals} pricesIncludeVat={pricesIncludeVat} />
+      {totals && <SalesTotals totals={totals} pricesIncludeVat={pricesIncludeVat} />}
     </Card>
   );
 }

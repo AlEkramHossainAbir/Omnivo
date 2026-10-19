@@ -45,6 +45,13 @@ type StepRow = typeof approvalSteps.$inferSelect;
 
 const decider = alias(users, 'decider');
 
+// Step 17c: what posts a document when its last approval is given (decision 7). The document's
+// own service registers it (onApproved), because posting needs that service's books, stock and
+// numbers. It runs in the approver's transaction, with the document locked and its round already
+// closed as approved; an error it throws (a closed period, a line another bill billed first)
+// fails the approval with that error, and nothing is decided.
+export type ApprovalPoster = (tx: Transaction, id: string) => Promise<void>;
+
 // The waiting list's position: when the round was submitted (as text: a Date would round the
 // microseconds away), then its id
 const cursorSchema = z.tuple([z.string(), z.uuid()]);
@@ -88,7 +95,15 @@ function notPending(): AppError {
 // decisions come straight from the /approvals routes.
 @Injectable()
 export class ApprovalsService {
+  private readonly posters = new Map<ApprovalDocument, ApprovalPoster>();
+
   constructor(@Inject(WITH_TENANT) private readonly withTenant: WithTenant) {}
+
+  // Step 17c: BillsService and SupplierPaymentsService call this from their constructors. Nest
+  // makes every provider when the app starts, so both are registered before the first request.
+  onApproved(document: ApprovalDocument, post: ApprovalPoster): void {
+    this.posters.set(document, post);
+  }
 
   // ---------------------------------------------------------------------------------------------
   // The rules
@@ -219,7 +234,7 @@ export class ApprovalsService {
     const approved = owner || steps.length === 0;
     if (approved) {
       await this.close(tx, round.id, 'approved', now);
-      await target.setStatus(tx, id, 'approved');
+      await this.finish(tx, document, id);
     } else {
       const [first] = steps;
       if (first) await this.ring(tx, document, id, first, 'approval.requested', round);
@@ -405,7 +420,7 @@ export class ApprovalsService {
         await this.ring(tx, document, id, next, 'approval.requested', round);
       } else {
         await this.close(tx, round.id, 'approved', now);
-        await target.setStatus(tx, id, 'approved');
+        await this.finish(tx, document, id);
         await this.ring(tx, document, id, step, 'approval.approved', round);
       }
     });
@@ -513,6 +528,20 @@ export class ApprovalsService {
   }
 
   // ---------------------------------------------------------------------------------------------
+
+  // The last approval: an approved requisition or order, a posted bill or payment (step 17c). The
+  // round is closed first: the database lets a bill be posted only once its newest round is
+  // approved (bills_approval_check).
+  private async finish(tx: Transaction, document: ApprovalDocument, id: string): Promise<void> {
+    const target = APPROVAL_TARGETS[document];
+    if (!target.postsOnApproval) {
+      await target.setStatus(tx, id, 'approved');
+      return;
+    }
+    const post = this.posters.get(document);
+    if (!post) throw new Error(`Nothing posts a ${document} when it is approved`);
+    await post(tx, id);
+  }
 
   // An Owner may decide any step (decision 5), even of a document they submitted as someone else
   // before becoming Owner. Anyone else needs the step's role, and not their own document

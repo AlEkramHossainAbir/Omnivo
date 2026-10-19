@@ -93,8 +93,9 @@ export function itemOfDeliveryLine(line: DeliveryLine): SalesItem {
   };
 }
 
-// A unit's size in the base unit, from the product's packs: "1" for the base unit itself
-function factorOf(
+// A unit's size in the base unit, from the product's packs: "1" for the base unit itself. Step 17c:
+// exported for a bill line of a goods receipt, priced from its order in another unit.
+export function factorOf(
   item: { baseUnitId: string; units: readonly { unitId: string; factor: string }[] },
   unitId: string,
 ): string {
@@ -250,9 +251,12 @@ export function daysLate(dueDate: string, today: string): number {
 
 // One invoice the money can go to. `due` is what this receipt may put on it: what the invoice still
 // owes, plus what this receipt already put there (applying it again replaces its own amounts).
+// Step 17c: a supplier payment's bill is a row too, so the invoice's id is `id`, and `detail` is a
+// second number under ours (the supplier's own bill number; null for an invoice).
 export interface AllocationRow {
-  invoiceId: string;
+  id: string;
   number: string;
+  detail: string | null;
   date: string;
   dueDate: string;
   total: string;
@@ -270,9 +274,10 @@ export function allocationRows(
   const rows = new Map<string, AllocationRow>();
   for (const invoice of open) {
     rows.set(invoice.id, {
-      invoiceId: invoice.id,
+      id: invoice.id,
       // An open invoice is posted, so it has a number
       number: invoice.number ?? '',
+      detail: null,
       date: invoice.date,
       dueDate: invoice.dueDate,
       total: invoice.total,
@@ -284,8 +289,9 @@ export function allocationRows(
     if (rows.has(allocation.invoiceId)) continue;
     // Paid in full, partly by this receipt: what it may hold is what it holds now
     rows.set(allocation.invoiceId, {
-      invoiceId: allocation.invoiceId,
+      id: allocation.invoiceId,
       number: allocation.invoiceNumber,
+      detail: null,
       date: allocation.invoiceDate,
       dueDate: allocation.dueDate,
       total: allocation.invoiceTotal,
@@ -302,19 +308,20 @@ export function allocationRows(
 
 // "Apply oldest first": the amount over the rows in their order, each taking what it still owes
 // until the money runs out. What is left after the last row stays as an advance. Nothing while
-// the amount box does not hold an amount.
+// the amount box does not hold an amount. By the row's id: the table turns it into the document's
+// own allocation (an invoice's or, step 17c, a bill's).
 export function suggestAllocations(
   amount: string,
   rows: readonly AllocationRow[],
-): { invoiceId: string; amount: string }[] {
+): { id: string; amount: string }[] {
   if (!isMoneyAmount(amount.trim())) return [];
   let left = amount.trim();
-  const allocations: { invoiceId: string; amount: string }[] = [];
+  const allocations: { id: string; amount: string }[] = [];
   for (const row of rows) {
     if (compareMoney(left, '0') <= 0) break;
     const take = compareMoney(left, row.due) < 0 ? left : row.due;
     if (isZeroMoney(take)) continue;
-    allocations.push({ invoiceId: row.invoiceId, amount: plainQuantity(take) });
+    allocations.push({ id: row.id, amount: plainQuantity(take) });
     left = subtractMoney(left, take);
   }
   return allocations;

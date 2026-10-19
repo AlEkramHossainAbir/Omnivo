@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Account, CreateAccountInput, UpdateAccountInput } from '@omnivo/contracts';
 import { ledgerAccounts, stockAccounts, tenantSettings } from '@omnivo/db';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../common/audit/audit.js';
 import { isForeignKeyViolation, isUniqueViolation } from '../common/db/pg-errors.js';
@@ -106,6 +106,33 @@ async function assertNotSalesAccount(tx: Transaction, accountId: string): Promis
       ),
     );
   if (used) throw usedBySales();
+}
+
+function usedByPurchase(): AppError {
+  return new AppError(
+    409,
+    'account_used_by_purchase',
+    'Supplier bills post to this account. Choose another one in Settings → Purchase first.',
+  );
+}
+
+// The accounts chosen in Settings → Purchase stay usable (step 17c), like the sales returns
+// account: archived, the price difference account would refuse every bill that differs from its
+// order. The caller holds the chart lock, and so does PurchaseAccountsService when it saves them.
+async function assertNotPurchaseAccount(tx: Transaction, accountId: string): Promise<void> {
+  const [used] = await tx
+    .select({ tenantId: tenantSettings.tenantId })
+    .from(tenantSettings)
+    .where(
+      and(
+        eq(tenantSettings.tenantId, getTenantId()),
+        or(
+          eq(tenantSettings.purchasePriceDifferenceAccountId, accountId),
+          eq(tenantSettings.purchaseServicesAccountId, accountId),
+        ),
+      ),
+    );
+  if (used) throw usedByPurchase();
 }
 
 // An account chosen in Settings → Inventory stays usable (step 14). The caller holds the chart
@@ -242,6 +269,8 @@ export class AccountsService {
       await assertNotStockAccount(tx, id);
       // Chosen for sales returns (step 15d): archived, it would refuse every credit note
       await assertNotSalesAccount(tx, id);
+      // Chosen in Settings → Purchase (step 17c)
+      await assertNotPurchaseAccount(tx, id);
       if (before.isGroup) {
         // The chart lock keeps a new or restored child from appearing before we commit
         const [child] = await tx
@@ -334,11 +363,15 @@ export class AccountsService {
         );
       }
       // Journal lines point at it (a draft's too): the history must keep its account
-      // Money receipts and refunds name it too (steps 15c, 15d), though each one's entry already does
+      // Money receipts and refunds name it too (steps 15c, 15d), though each one's entry already does,
+      // and so do a bill's lines and expenses and a supplier payment (step 17c), even as a draft
       if (
         isForeignKeyViolation(error, 'journal_lines_account_fk') ||
         isForeignKeyViolation(error, 'receipts_account_fk') ||
-        isForeignKeyViolation(error, 'refunds_account_fk')
+        isForeignKeyViolation(error, 'refunds_account_fk') ||
+        isForeignKeyViolation(error, 'bill_lines_account_fk') ||
+        isForeignKeyViolation(error, 'bill_expenses_account_fk') ||
+        isForeignKeyViolation(error, 'supplier_payments_account_fk')
       ) {
         throw new AppError(409, 'account_in_use', 'Archive this account instead: entries use it.');
       }
@@ -347,6 +380,13 @@ export class AccountsService {
       // Chosen for sales returns in Settings → Sales (step 15d)
       if (isForeignKeyViolation(error, 'tenant_settings_sales_returns_account_fk')) {
         throw usedBySales();
+      }
+      // Chosen in Settings → Purchase (step 17c)
+      if (
+        isForeignKeyViolation(error, 'tenant_settings_price_difference_account_fk') ||
+        isForeignKeyViolation(error, 'tenant_settings_services_account_fk')
+      ) {
+        throw usedByPurchase();
       }
       throw error;
     }

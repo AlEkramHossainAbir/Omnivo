@@ -34,7 +34,13 @@ export function PurchaseBackLink({
   to,
   label,
 }: {
-  to: '/requisitions' | '/approvals' | '/purchase-orders' | '/goods-receipts';
+  to:
+    | '/requisitions'
+    | '/approvals'
+    | '/purchase-orders'
+    | '/goods-receipts'
+    | '/bills'
+    | '/supplier-payments';
   label: string;
 }) {
   return (

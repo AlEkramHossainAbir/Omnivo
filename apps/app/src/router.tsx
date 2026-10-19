@@ -687,6 +687,59 @@ const goodsReceiptRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/goods-receipt'), 'GoodsReceiptPage'),
 });
 
+// Step 17c: supplier bills ("Make bill" on a goods receipt comes with ?receiptId=, on an order with
+// ?orderId=) and supplier payments ("Pay bill" comes with ?billId=, "Pay advance" on an order with
+// ?orderId=)
+const billsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/bills',
+  component: lazyRouteComponent(() => import('./routes/bills'), 'BillsPage'),
+});
+
+const newBillRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/bills/new',
+  validateSearch: (search: Record<string, unknown>): { receiptId?: string; orderId?: string } => ({
+    ...(typeof search.receiptId === 'string' &&
+      UUID.test(search.receiptId) && { receiptId: search.receiptId }),
+    ...(typeof search.orderId === 'string' &&
+      UUID.test(search.orderId) && { orderId: search.orderId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/bill'), 'NewBillPage'),
+});
+
+const billRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/bills/$billId',
+  component: lazyRouteComponent(() => import('./routes/bill'), 'BillPage'),
+});
+
+const supplierPaymentsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/supplier-payments',
+  component: lazyRouteComponent(() => import('./routes/supplier-payments'), 'SupplierPaymentsPage'),
+});
+
+const newSupplierPaymentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/supplier-payments/new',
+  validateSearch: (search: Record<string, unknown>): { billId?: string; orderId?: string } => ({
+    ...(typeof search.billId === 'string' && UUID.test(search.billId) && { billId: search.billId }),
+    ...(typeof search.orderId === 'string' &&
+      UUID.test(search.orderId) && { orderId: search.orderId }),
+  }),
+  component: lazyRouteComponent(
+    () => import('./routes/supplier-payment'),
+    'NewSupplierPaymentPage',
+  ),
+});
+
+const supplierPaymentRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/supplier-payments/$paymentId',
+  component: lazyRouteComponent(() => import('./routes/supplier-payment'), 'SupplierPaymentPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -819,6 +872,12 @@ const routeTree = rootRoute.addChildren([
     goodsReceiptsRoute,
     newGoodsReceiptRoute,
     goodsReceiptRoute,
+    billsRoute,
+    newBillRoute,
+    billRoute,
+    supplierPaymentsRoute,
+    newSupplierPaymentRoute,
+    supplierPaymentRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

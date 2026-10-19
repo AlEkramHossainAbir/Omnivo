@@ -2,6 +2,8 @@ import { PackageReceiveIcon, PlusSignIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   type GoodsReceiptSummary,
+  GRN_BILL_FILTERS,
+  type GrnBillFilter,
   STOCK_DOCUMENT_STATUSES,
   type StockDocumentStatus,
 } from '@omnivo/contracts';
@@ -20,12 +22,20 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { SupplierFilter } from '../components/purchase-parts';
-import { GoodsReceiptStatusPill } from '../components/purchase-pills';
+import { GoodsReceiptBillPill, GoodsReceiptStatusPill } from '../components/purchase-pills';
 import { useIsoDate, useTenantId, useWarehouses, warehouseLabel } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
 import { goodsReceiptsQuery } from '../lib/queries';
 
 const column = dataTableColumns<GoodsReceiptSummary>();
+
+// Step 17c: "To bill" and "Billed" sit with the statuses, like the orders' "To receive": "To bill"
+// is the accountant's queue (posted, with a line no posted bill bills yet)
+type Show = StockDocumentStatus | GrnBillFilter | '';
+
+function isBillFilter(show: Show): show is GrnBillFilter {
+  return GRN_BILL_FILTERS.some((filter) => filter === show);
+}
 
 // The goods receipts (step 17b), newest date first. Everyone reads them, like every stock
 // document; writing and posting them needs purchase.receipt.manage (the store keeper at the gate).
@@ -35,11 +45,16 @@ export function GoodsReceiptsPage() {
   const canWrite = useCan()('purchase.receipt.manage');
   const isoDate = useIsoDate();
   const { active, byId } = useWarehouses();
-  const [status, setStatus] = useState<StockDocumentStatus | ''>('');
+  const [show, setShow] = useState<Show>('');
   const [warehouseId, setWarehouseId] = useState('');
   const [supplierId, setSupplierId] = useState('');
   const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
-    goodsReceiptsQuery(useTenantId(), { status, warehouseId, supplierId }),
+    goodsReceiptsQuery(useTenantId(), {
+      status: isBillFilter(show) ? '' : show,
+      warehouseId,
+      supplierId,
+      bill: isBillFilter(show) ? show : '',
+    }),
   );
   const rows = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
   const loadMore = useCallback(() => {
@@ -83,10 +98,18 @@ export function GoodsReceiptsPage() {
           header: t('goodsReceipts.columns.order'),
           enableSorting: false,
           meta: { card: 'detail' },
-          // An order a receipt is made from was approved, so it has its number
-          cell: ({ getValue }) => (
-            <span className="font-mono tabular-nums">{getValue().number}</span>
-          ),
+          // An order a receipt is made from was approved, so it has its number. Step 17c: a
+          // receipt a bill made has none (decision 21), and names the bill instead.
+          cell: ({ row }) =>
+            row.original.order !== null ? (
+              <span className="font-mono tabular-nums">{row.original.order.number}</span>
+            ) : (
+              <span className="text-ink-3">
+                {row.original.bill === null
+                  ? t('goodsReceipts.noOrder')
+                  : t('goodsReceipts.fromBill', { number: row.original.bill.number ?? '' })}
+              </span>
+            ),
         }),
         column.accessor('warehouseId', {
           header: t('goodsReceipts.columns.warehouse'),
@@ -104,7 +127,15 @@ export function GoodsReceiptsPage() {
           header: t('goodsReceipts.columns.status'),
           enableSorting: false,
           meta: { card: 'trailing' },
-          cell: ({ getValue }) => <GoodsReceiptStatusPill status={getValue()} />,
+          // Step 17c: a posted receipt also says how much of it is billed
+          cell: ({ row }) => (
+            <span className="inline-flex flex-wrap gap-1.5">
+              <GoodsReceiptStatusPill status={row.original.status} />
+              {row.original.status === 'posted' && (
+                <GoodsReceiptBillPill state={row.original.billState} />
+              )}
+            </span>
+          ),
         }),
       ]),
     [t, isoDate, byId],
@@ -150,15 +181,19 @@ export function GoodsReceiptsPage() {
         </div>
         <SegmentedControl
           label={t('goodsReceipts.show')}
-          value={status}
+          value={show}
           options={[
             { value: '', label: t('goodsReceipts.all') },
             ...STOCK_DOCUMENT_STATUSES.map((value) => ({
               value,
               label: t(`goodsReceipts.statuses.${value}`),
             })),
+            ...GRN_BILL_FILTERS.map((value) => ({
+              value,
+              label: t(`goodsReceipts.billFilters.${value}`),
+            })),
           ]}
-          onChange={setStatus}
+          onChange={setShow}
         />
       </div>
       {isError && <p className="text-body-sm text-crit">{t('goodsReceipts.loadFailed')}</p>}

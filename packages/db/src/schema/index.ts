@@ -44,3 +44,5 @@ export * from './approvals.js';
 export * from './requisitions.js';
 export * from './purchase-orders.js';
 export * from './goods-receipts.js';
+export * from './bills.js';
+export * from './supplier-payments.js';

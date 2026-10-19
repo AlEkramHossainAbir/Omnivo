@@ -398,10 +398,13 @@ afterAll(async () => {
 describe('approval rules', () => {
   it('start with no levels, and the first save is made from version 0', async () => {
     const { items } = approvalRuleListSchema.parse((await send('GET', '/approval-rules')).json());
-    // One rule per kind of document (step 17b added the purchase order's), each its own form
+    // One rule per kind of document (step 17b added the purchase order's, 17c the bill's and the
+    // supplier payment's), each its own form
     expect(items).toEqual([
       { document: 'requisition', levels: [], version: 0, updatedAt: null },
       { document: 'purchase_order', levels: [], version: 0, updatedAt: null },
+      { document: 'bill', levels: [], version: 0, updatedAt: null },
+      { document: 'supplier_payment', levels: [], version: 0, updatedAt: null },
     ]);
 
     const stale = await send('PUT', '/approval-rules/requisition', { levels: [], version: 1 });

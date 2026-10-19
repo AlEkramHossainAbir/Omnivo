@@ -152,7 +152,9 @@ export function GoodsReceiptForm({
   );
   // The supplier only narrows the order box; the receipt takes its supplier from the order
   const [supplierId, setSupplierId] = useState(receipt?.supplier.id ?? order?.supplier.id ?? '');
-  const [orderId, setOrderId] = useState(receipt?.order.id ?? order?.id ?? '');
+  // Step 17c: a receipt a bill made has no order (decision 21), but it is posted the moment it is
+  // made, so a draft on this form always has one
+  const [orderId, setOrderId] = useState(receipt?.order?.id ?? order?.id ?? '');
   // The order picked last, for the change that waits for its order: a quicker second pick wins
   const pickedRef = useRef(orderId);
   // A draft keeps its order (decision 20); "Receive goods" came with one
@@ -183,7 +185,7 @@ export function GoodsReceiptForm({
           expiresOn: line.expiresOn ?? '',
           manufacturedOn: line.manufacturedOn ?? '',
           serialNumbers: line.serialNumbers,
-          orderLineId: line.orderLineId,
+          orderLineId: line.orderLineId ?? '',
           // Nothing turned back is an empty box, not "0"
           rejectedQuantity: isZeroQuantity(line.rejectedQuantity)
             ? ''
@@ -215,7 +217,7 @@ export function GoodsReceiptForm({
 
   // The order box: the supplier's approved orders with goods to come, or (locked) the one order
   const orderOptions = locked
-    ? [{ value: orderId, label: receipt?.order.number ?? order?.number ?? '' }]
+    ? [{ value: orderId, label: receipt?.order?.number ?? order?.number ?? '' }]
     : [
         { value: '', label: t('goodsReceipts.orderPlaceholder') },
         ...(openOrders ?? []).map((open) => ({

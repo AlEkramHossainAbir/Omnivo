@@ -112,13 +112,21 @@ export function formTotals(
   rateOf: (taxRateId: string) => string | null,
   pricesIncludeVat: boolean,
 ): { amounts: (LineAmounts | null)[]; totals: DocumentTotals } {
-  const amounts = lines.map((line) =>
-    draftLineAmounts(line, rateOf(line.taxRateId), pricesIncludeVat),
-  );
+  const amounts = draftAmounts(lines, rateOf, pricesIncludeVat);
   return {
     amounts,
     totals: documentTotals(amounts.filter((amount): amount is LineAmounts => amount !== null)),
   };
+}
+
+// Each line's amounts alone. Step 17c: a supplier bill adds its expenses to them before the totals
+// (bills.ts → billFormTotals), and works out each receipt line's price difference from them.
+export function draftAmounts(
+  lines: readonly SalesLineFormValues[],
+  rateOf: (taxRateId: string) => string | null,
+  pricesIncludeVat: boolean,
+): (LineAmounts | null)[] {
+  return lines.map((line) => draftLineAmounts(line, rateOf(line.taxRateId), pricesIncludeVat));
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -3,8 +3,12 @@ import {
   CancelCircleIcon,
   CheckmarkCircle02Icon,
   Clock01Icon,
+  Coins01Icon,
   DeliveryTruck01Icon,
   FileEditIcon,
+  Invoice01Icon,
+  Invoice02Icon,
+  Invoice03Icon,
   MinusSignCircleIcon,
   PackageReceiveIcon,
   ShoppingCart01Icon,
@@ -14,12 +18,17 @@ import {
   Undo02Icon,
 } from '@hugeicons/core-free-icons';
 import type { IconSvgElement } from '@hugeicons/react';
-import type {
-  ApprovalRoundStatus,
-  PurchaseOrderStatus,
-  RequisitionOrderState,
-  RequisitionStatus,
-  StockDocumentStatus,
+import {
+  type ApprovalRoundStatus,
+  billPaymentStatusOf,
+  type BillStatus,
+  type GrnBillState,
+  isBillOverdue,
+  type PurchaseOrderStatus,
+  type RequisitionOrderState,
+  type RequisitionStatus,
+  type StockDocumentStatus,
+  type SupplierPaymentStatus,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { Pill, type PillTone } from '@omnivo/ui';
@@ -123,6 +132,95 @@ export function GoodsReceiptStatusPill({ status }: { status: StockDocumentStatus
   ) : (
     <Pill tone="good" icon={CheckmarkCircle02Icon}>
       {t('goodsReceipts.statuses.posted')}
+    </Pill>
+  );
+}
+
+// Step 17c: how much of a posted goods receipt is billed, beside its status, like a challan's
+// invoice state (15c). Not billed is neutral: goods wait for the supplier's bill, nothing is wrong.
+const BILL_STATE_PILLS = {
+  not_billed: { tone: 'neutral', icon: Invoice01Icon },
+  partly_billed: { tone: 'brand', icon: Invoice03Icon },
+  billed: { tone: 'good', icon: Invoice02Icon },
+} as const satisfies Record<GrnBillState, { tone: PillTone; icon: IconSvgElement }>;
+
+export function GoodsReceiptBillPill({ state }: { state: GrnBillState }) {
+  const { t } = useLocale();
+  const { tone, icon } = BILL_STATE_PILLS[state];
+  return (
+    <Pill tone={tone} icon={icon}>
+      {t(`goodsReceipts.billStates.${state}`)}
+    </Pill>
+  );
+}
+
+// A supplier bill (step 17c). Before it is posted, its approval status, like an order's; once
+// posted, what was paid, like an invoice's (unpaid and partly paid are brand: money on its way), and
+// beside it Overdue (crit) once its due date has passed, worked out here from the totals and today.
+const BILL_PILLS = {
+  draft: { tone: 'neutral', icon: FileEditIcon },
+  pending: { tone: 'brand', icon: Clock01Icon },
+  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
+} as const satisfies Record<
+  Exclude<BillStatus, 'posted'>,
+  { tone: PillTone; icon: IconSvgElement }
+>;
+
+const BILL_PAYMENT_PILLS = {
+  unpaid: { tone: 'brand', icon: Clock01Icon },
+  partly_paid: { tone: 'brand', icon: Coins01Icon },
+  paid: { tone: 'good', icon: CheckmarkCircle02Icon },
+} as const;
+
+export function BillPills({
+  bill,
+  today,
+}: {
+  bill: { status: BillStatus; dueDate: string; total: string; amountPaid: string };
+  today: string;
+}) {
+  const { t } = useLocale();
+  if (bill.status !== 'posted') {
+    const { tone, icon } = BILL_PILLS[bill.status];
+    return (
+      <Pill tone={tone} icon={icon}>
+        {t(`bills.statuses.${bill.status}`)}
+      </Pill>
+    );
+  }
+  const payment = billPaymentStatusOf(bill);
+  const { tone, icon } = BILL_PAYMENT_PILLS[payment];
+  return (
+    <span className="inline-flex flex-wrap gap-1.5">
+      <Pill tone={tone} icon={icon}>
+        {t(`bills.payment.${payment}`)}
+      </Pill>
+      {isBillOverdue(bill, today) && (
+        <Pill tone="crit" icon={Time04Icon}>
+          {t('bills.overdue')}
+        </Pill>
+      )}
+    </span>
+  );
+}
+
+// A supplier payment (step 17c): its approval status, then posted, like a money receipt. Voided
+// (the money came back, a stopped cheque) and cancelled (no money left) are both neutral: the
+// words say which.
+const SUPPLIER_PAYMENT_PILLS = {
+  draft: { tone: 'neutral', icon: FileEditIcon },
+  pending: { tone: 'brand', icon: Clock01Icon },
+  posted: { tone: 'good', icon: CheckmarkCircle02Icon },
+  voided: { tone: 'neutral', icon: CancelCircleIcon },
+  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
+} as const satisfies Record<SupplierPaymentStatus, { tone: PillTone; icon: IconSvgElement }>;
+
+export function SupplierPaymentStatusPill({ status }: { status: SupplierPaymentStatus }) {
+  const { t } = useLocale();
+  const { tone, icon } = SUPPLIER_PAYMENT_PILLS[status];
+  return (
+    <Pill tone={tone} icon={icon}>
+      {t(`supplierPayments.statuses.${status}`)}
     </Pill>
   );
 }

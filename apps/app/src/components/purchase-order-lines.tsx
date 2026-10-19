@@ -7,7 +7,6 @@ import {
   type OpenRequisitionLine,
   plainQuantity,
   type PurchaseOrderLineFormValues,
-  routes,
   type SalesLineFormValues,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
@@ -17,13 +16,12 @@ import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import type { FieldErrors } from 'react-hook-form';
 
-import { call } from '../lib/api';
-import { purchaseUnitOf, startingPrice } from '../lib/purchase';
-import { openRequisitionLinesQuery, productQuery, taxRatesQuery } from '../lib/queries';
+import { openRequisitionLinesQuery, productQuery } from '../lib/queries';
 import { type LineMeta, productItemOf } from '../lib/sales';
 import { useDebounced } from '../lib/use-debounced';
 import { failureOf } from './journal-parts';
-import { type LinePricing, LinesEditor, linePriceKey } from './sales-line-editor';
+import { usePurchasePricing } from './purchase-pricing';
+import { LinesEditor, linePriceKey } from './sales-line-editor';
 import { PickButton, PickProblem } from './sales-parts';
 import { useIsoDate, useQuantity, useTenantId, useWarehouses, warehouseLabel } from './stock-parts';
 
@@ -39,47 +37,6 @@ export type PurchaseOrderLinesErrors = FieldErrors<{
 // The requisition each line buys for, by the requisition line's id: the line holds only the id,
 // and the link under it needs the requisition's number
 export type RequisitionLinks = ReadonlyMap<string, { requisitionId: string; number: string }>;
-
-// The supplier's prices (decision 19): its own last price, else anyone's, else the average cost.
-// The lookup sends the net; startingPrice() adds the VAT when the order's prices include it.
-function usePurchasePricing(supplierId: string, pricesIncludeVat: boolean): LinePricing {
-  const { t } = useLocale();
-  const rates = useQuery(taxRatesQuery(useTenantId())).data;
-  const rateOf = (id: string) => rates?.find((rate) => rate.id === id)?.rate ?? null;
-  return {
-    partyId: supplierId,
-    unitOf: purchaseUnitOf,
-    lookUp: async (items) => {
-      const answer = await call(routes.purchaseCosts.lookup, {
-        body: { supplierId: supplierId === '' ? null : supplierId, items: [...items] },
-      });
-      return new Map(
-        answer.items.map((item) => [
-          linePriceKey(item.variantId, item.unitId),
-          {
-            price: startingPrice(item.cost, rateOf(item.taxRateId), pricesIncludeVat),
-            source: item.source,
-            taxRateId: item.taxRateId,
-          },
-        ]),
-      );
-    },
-    sourceText: (source) =>
-      source === 'supplier_price'
-        ? t('purchaseLines.fromSupplierPrice')
-        : source === 'last_price'
-          ? t('purchaseLines.fromLastPrice')
-          : source === 'average_cost'
-            ? t('purchaseLines.fromAverage')
-            : t('purchaseLines.noPrice'),
-    words: {
-      noLines: t('purchaseLines.noOrderLines'),
-      reprice: t('purchaseLines.reprice'),
-      repriced: t('purchaseLines.repriced'),
-    },
-    picker: { words: 'purchaseLines', description: t('purchaseLines.orderPickerDescription') },
-  };
-}
 
 // A line from "Add items" buys for no requisition; one from "lines still to order" names its line
 const ownLine = (line: SalesLineFormValues): PurchaseOrderLineFormValues => ({
@@ -123,7 +80,7 @@ export function PurchaseOrderLinesEditor({
   const { t, errorText } = useLocale();
   const tenantId = useTenantId();
   const queryClient = useQueryClient();
-  const pricing = usePurchasePricing(supplierId, pricesIncludeVat);
+  const pricing = usePurchasePricing(supplierId, pricesIncludeVat, t('purchaseLines.noOrderLines'));
   const [links, setLinks] = useState<RequisitionLinks>(initialLinks);
   // The requisition the dialog is narrowed to ('' = every requisition of the warehouse)
   const [picking, setPicking] = useState<{ requisitionId: string } | null>(

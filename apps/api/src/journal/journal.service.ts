@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  isPurchaseJournalSource,
   isSalesJournalSource,
   isStockJournalSource,
   type JournalEntry,
@@ -208,6 +209,16 @@ export class JournalService {
             409,
             'journal_is_sales',
             'This entry belongs to a sales document. Correct it from that document.',
+          );
+        }
+        if (isPurchaseJournalSource(entry.source)) {
+          // A supplier's bill or payment (step 17c), for the same reason: a debit note corrects a
+          // bill (17d), and a payment is voided on its own page, which takes its money off the
+          // bills it paid.
+          throw new AppError(
+            409,
+            'journal_is_purchase',
+            'This entry belongs to a purchase document. Correct it from that document.',
           );
         }
         if (entry.version !== input.version) throw versionConflict();

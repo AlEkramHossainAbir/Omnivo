@@ -167,6 +167,23 @@ export const AUDIT_ACTIONS = [
   'goods_receipt.updated',
   'goods_receipt.deleted',
   'goods_receipt.posted',
+  // step 17c. A bill and a payment are posted by their last approval (or at once with no level),
+  // so ".posted" follows "approval.approved" or "approval.submitted" in their history.
+  'bill.created',
+  'bill.updated',
+  'bill.deleted',
+  'bill.posted',
+  'bill.cancelled',
+  'supplier_payment.created',
+  'supplier_payment.updated',
+  'supplier_payment.deleted',
+  'supplier_payment.posted',
+  'supplier_payment.cancelled',
+  'supplier_payment.allocated',
+  'supplier_payment.voided',
+  // The price difference and purchased services accounts in Settings → Purchase. The entity is the
+  // workspace, like settings.
+  'purchase_accounts.changed',
   // The approval steps of any document that needs one. The entity is that document (a requisition,
   // a purchase order; a bill and a payment from 17c), so its history reads in one place.
   'approval.submitted',
@@ -219,6 +236,8 @@ export const AUDIT_ENTITY_TYPES = [
   'requisition',
   'purchase_order',
   'goods_receipt',
+  'bill',
+  'supplier_payment',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

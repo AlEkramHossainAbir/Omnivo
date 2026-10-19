@@ -4,6 +4,7 @@ import {
   ACCOUNT_TYPES,
   type AccountType,
   type Industry,
+  type PurchaseAccounts,
   type SalesAccounts,
   type StockAccounts,
 } from '@omnivo/contracts';
@@ -145,6 +146,9 @@ function template(industry: Industry): Record<AccountType, MockNode> {
           children: [
             { code: '5110', name: 'Cost of goods sold', purpose: 'cost_of_goods_sold' },
             ...(garments ? [{ code: '5150', name: 'Stock losses (damaged, expired, lost)' }] : []),
+            // Step 17c: the two accounts of Settings → Purchase, like the API's templates
+            { code: '5170', name: 'Purchased services' },
+            { code: '5180', name: 'Purchase price difference' },
             { code: '5190', name: 'Stock adjustments and revaluation' },
           ],
         },
@@ -287,6 +291,13 @@ export function seedSalesAccounts(accounts: readonly Account[]): SalesAccounts {
     (account) => account.code === '4120' && account.name === 'Sales returns',
   );
   return { returns: found?.id ?? null };
+}
+
+// The purchase accounts a new workspace starts with (step 17c), like the API's
+// seedPurchaseAccounts(): 5180 for a price difference, 5170 for a service line with no account
+export function seedPurchaseAccounts(accounts: readonly Account[]): PurchaseAccounts {
+  const id = (code: string) => accounts.find((account) => account.code === code)?.id ?? null;
+  return { priceDifference: id('5180'), services: id('5170') };
 }
 
 export function noStockAccounts(): StockAccounts {

@@ -29,13 +29,17 @@ export function ApprovalsPage() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // One navigate() per kind: each path has its own parameter name, and TanStack checks each pair
-  // against the router. Step 17b: the purchase order.
+  // against the router. Step 17b: the purchase order. Step 17c: the bill and the payment.
   const open = useCallback(
     (row: WaitingApproval) => {
       if (row.document === 'requisition') {
         void navigate({ to: '/requisitions/$requisitionId', params: { requisitionId: row.id } });
       } else if (row.document === 'purchase_order') {
         void navigate({ to: '/purchase-orders/$orderId', params: { orderId: row.id } });
+      } else if (row.document === 'bill') {
+        void navigate({ to: '/bills/$billId', params: { billId: row.id } });
+      } else if (row.document === 'supplier_payment') {
+        void navigate({ to: '/supplier-payments/$paymentId', params: { paymentId: row.id } });
       }
     },
     [navigate],

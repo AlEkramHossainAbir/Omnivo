@@ -6,6 +6,7 @@ import {
   type Branch,
   contractErrorMap,
   isJournalSource,
+  isPurchaseJournalSource,
   isSalesJournalSource,
   isStockJournalSource,
   type JournalEntry,
@@ -108,8 +109,8 @@ function ReverseForm({
 }
 
 // The document a stock entry came from (step 14), a delivery's (15b), an invoice's or a money
-// receipt's (15c), a return's, a credit note's or a refund's (15d), or a goods receipt's (17b): its
-// page, by the source
+// receipt's (15c), a return's, a credit note's or a refund's (15d), a goods receipt's (17b), or a
+// supplier bill's or payment's (17c): its page, by the source
 function documentLinkOf(entry: JournalEntry) {
   const id = entry.document?.id;
   if (id === undefined) return null;
@@ -148,6 +149,13 @@ function documentLinkOf(entry: JournalEntry) {
   if (entry.source === 'purchase_receipt') {
     return { to: '/goods-receipts/$receiptId', params: { receiptId: id } } as const;
   }
+  // Step 17c: what a bill made the company owe, and the money a payment paid
+  if (entry.source === 'purchase_bill') {
+    return { to: '/bills/$billId', params: { billId: id } } as const;
+  }
+  if (entry.source === 'purchase_payment') {
+    return { to: '/supplier-payments/$paymentId', params: { paymentId: id } } as const;
+  }
   return null;
 }
 
@@ -183,9 +191,10 @@ export function EntryView({
 
   // A closing entry is undone by reopening its year (the Year-end close page), a stock document's
   // entry by another stock document (step 14), and a sales document's by the document (15c: a
-  // credit note for an invoice, Void for a receipt) — not from here
+  // credit note for an invoice, Void for a receipt) — not from here. Step 17c: a purchase
+  // document's the same way (Void for a supplier payment; a posted bill stays, journal_is_purchase).
   const fromStock = isStockJournalSource(entry.source);
-  const fromSales = isSalesJournalSource(entry.source);
+  const fromDocument = isSalesJournalSource(entry.source) || isPurchaseJournalSource(entry.source);
   const canReverse =
     canPost &&
     entry.status === 'posted' &&
@@ -193,7 +202,7 @@ export function EntryView({
     entry.source !== 'reversal' &&
     entry.source !== 'year_close' &&
     !fromStock &&
-    !fromSales;
+    !fromDocument;
   const documentLink = documentLinkOf(entry);
   const failure = failureOf(post.error);
   const amount = (value: string) =>
@@ -277,6 +286,12 @@ export function EntryView({
       )}
       {entry.source === 'sales_refund' && (
         <p className="text-label text-ink-3">{t('journal.refundEntryHint')}</p>
+      )}
+      {entry.source === 'purchase_bill' && (
+        <p className="text-label text-ink-3">{t('journal.billEntryHint')}</p>
+      )}
+      {entry.source === 'purchase_payment' && (
+        <p className="text-label text-ink-3">{t('journal.paymentEntryHint')}</p>
       )}
       {entry.narration && <p className="text-body text-ink">{entry.narration}</p>}
       {/* A plain table in its own scroll box: four columns, a handful of rows, a totals row */}

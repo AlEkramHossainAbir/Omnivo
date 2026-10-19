@@ -3,6 +3,7 @@ import {
   documentTotals,
   type PartyRef,
   type PurchaseOrder,
+  type PurchaseOrderBillFilter,
   type PurchaseOrderInput,
   type PurchaseOrderReceiptFilter,
   type PurchaseOrderStatus,
@@ -10,15 +11,18 @@ import {
   type UpdatePurchaseOrderInput,
 } from '@omnivo/contracts';
 import {
+  billLines,
+  bills,
   goodsReceipts,
   parties,
   purchaseOrderLines,
   purchaseOrders,
   requisitionLines,
   requisitions,
+  supplierPayments,
   warehouses,
 } from '@omnivo/db';
-import { and, asc, desc, eq, inArray, isNotNull, type SQL, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, ne, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -69,6 +73,25 @@ const goodsToReceive = sql`EXISTS (
 function receiptFilter(filter: PurchaseOrderReceiptFilter | undefined): SQL | undefined {
   if (filter === undefined) return undefined;
   return and(eq(purchaseOrders.status, 'approved'), goodsToReceive);
+}
+
+// Step 17c: the bill form's orders for services (decision 22): approved, received or closed (the
+// job was done before the order was closed), with a service line no posted bill bills yet. Goods
+// are billed from their goods receipts, so a goods line never makes an order "to bill".
+const servicesToBill = sql`EXISTS (
+  SELECT 1 FROM purchase_order_lines l
+    JOIN products p ON p.tenant_id = l.tenant_id AND p.id = l.product_id
+   WHERE l.tenant_id = purchase_orders.tenant_id AND l.order_id = purchase_orders.id
+     AND p.type = 'service'
+     AND NOT EXISTS (
+       SELECT 1 FROM bill_lines bl
+         JOIN bills b ON b.tenant_id = bl.tenant_id AND b.id = bl.bill_id
+        WHERE bl.tenant_id = l.tenant_id AND bl.order_line_id = l.id AND b.status = 'posted')
+)`;
+
+function billFilter(filter: PurchaseOrderBillFilter | undefined): SQL | undefined {
+  if (filter === undefined) return undefined;
+  return and(inArray(purchaseOrders.status, ['approved', 'received', 'closed']), servicesToBill);
 }
 
 function notDraft(): AppError {
@@ -135,6 +158,7 @@ export class PurchaseOrdersService {
     supplierId?: string | undefined;
     warehouseId?: string | undefined;
     receipt?: PurchaseOrderReceiptFilter | undefined;
+    bill?: PurchaseOrderBillFilter | undefined;
   }): Promise<{ items: PurchaseOrderSummary[]; nextCursor: string | null }> {
     const after = decodeCursor(query.cursor, cursorSchema);
     return this.withTenant(async (tx) => {
@@ -149,6 +173,7 @@ export class PurchaseOrdersService {
             ? undefined
             : eq(purchaseOrders.warehouseId, query.warehouseId),
           receiptFilter(query.receipt),
+          billFilter(query.bill),
           after === undefined
             ? undefined
             : sql`(${purchaseOrders.date}, ${purchaseOrders.id}) < (${after[0]}::date, ${after[1]}::uuid)`,
@@ -336,18 +361,24 @@ export class PurchaseOrdersService {
         );
       }
       await this.assertNoReceipt(tx, id);
+      await this.assertNotBilled(tx, id);
       await this.approvals.reopen(tx, 'purchase_order', id, row.status);
       return this.read(tx, id);
     });
   }
 
   // Partly received, and the rest will not come: the mill delivered 900 of 1,000 m. A draft
-  // receipt still waiting cannot be posted after this (decision 30); it is deleted.
+  // receipt still waiting cannot be posted after this (decision 30); it is deleted. Step 17c: an
+  // order of services only is never received, so a posted bill of one of its lines lets it close
+  // too (the dyeing job was done and billed).
   close(id: string, version: number): Promise<PurchaseOrder> {
     return this.withTenant(async (tx) => {
       const row = await this.lock(tx, id, version);
       if (row.status !== 'approved') throw notApproved();
-      if ((await this.receiptOf(tx, id, 'posted')) === undefined) {
+      if (
+        (await this.receiptOf(tx, id, 'posted')) === undefined &&
+        (await this.billOf(tx, id, 'posted')) === undefined
+      ) {
         throw new AppError(
           409,
           'purchase_cancel_instead',
@@ -388,6 +419,7 @@ export class PurchaseOrdersService {
       // one is never reopened. Asked for a draft too: two indexed queries, and the database asks
       // the same of every cancel.
       await this.assertNoReceipt(tx, id);
+      await this.assertNotBilled(tx, id);
       await this.setStatus(tx, id, 'cancelled');
       await audit(tx, {
         action: 'purchase_order.cancelled',
@@ -418,6 +450,46 @@ export class PurchaseOrdersService {
         'A draft goods receipt points at this order. Delete it first.',
       );
     }
+  }
+
+  // Step 17c (decision 30): a bill that is not cancelled, even a draft, bills one of its service
+  // lines. Reopened, the order would write its lines again under the bill's; cancelled, the bill
+  // would bill a service nobody ordered. The bill is cancelled first, or the order closed once a
+  // bill is posted. Asked after lock(): a bill being saved locks the order FOR SHARE first
+  // (BillsService), so it either committed before our FOR UPDATE or waits and then sees the order
+  // changed. The database asks the same (purchase_orders_bills_check).
+  private async assertNotBilled(tx: Transaction, orderId: string): Promise<void> {
+    if ((await this.billOf(tx, orderId, 'not_cancelled')) === undefined) return;
+    throw new AppError(
+      409,
+      'purchase_order_billed',
+      'A bill bills a service on this order. Cancel the bill first, or close the order.',
+    );
+  }
+
+  // A bill line on one of the order's lines: of a posted bill, or of any bill not cancelled
+  private async billOf(tx: Transaction, orderId: string, which: 'posted' | 'not_cancelled') {
+    const tenantId = getTenantId();
+    const [row] = await tx
+      .select({ id: billLines.id })
+      .from(billLines)
+      .innerJoin(bills, and(eq(bills.tenantId, billLines.tenantId), eq(bills.id, billLines.billId)))
+      .innerJoin(
+        purchaseOrderLines,
+        and(
+          eq(purchaseOrderLines.tenantId, billLines.tenantId),
+          eq(purchaseOrderLines.id, billLines.orderLineId),
+        ),
+      )
+      .where(
+        and(
+          eq(billLines.tenantId, tenantId),
+          eq(purchaseOrderLines.orderId, orderId),
+          which === 'posted' ? eq(bills.status, 'posted') : ne(bills.status, 'cancelled'),
+        ),
+      )
+      .limit(1);
+    return row;
   }
 
   private async receiptOf(tx: Transaction, orderId: string, status: 'draft' | 'posted') {
@@ -639,6 +711,51 @@ export class PurchaseOrdersService {
       .from(goodsReceipts)
       .where(and(eq(goodsReceipts.tenantId, tenantId), eq(goodsReceipts.orderId, id)))
       .orderBy(asc(goodsReceipts.date), asc(goodsReceipts.id));
+    const [billed, billRefs, advances] = await Promise.all([
+      this.billedQuantities(tx, id),
+      // Step 17c: the posted bills that bill its lines (a goods line through its receipt line,
+      // whose bill line copies the order line), oldest first
+      tx
+        .selectDistinct({ id: bills.id, number: bills.number, date: bills.date })
+        .from(billLines)
+        .innerJoin(
+          bills,
+          and(eq(bills.tenantId, billLines.tenantId), eq(bills.id, billLines.billId)),
+        )
+        .innerJoin(
+          purchaseOrderLines,
+          and(
+            eq(purchaseOrderLines.tenantId, billLines.tenantId),
+            eq(purchaseOrderLines.id, billLines.orderLineId),
+          ),
+        )
+        .where(
+          and(
+            eq(billLines.tenantId, tenantId),
+            eq(purchaseOrderLines.orderId, id),
+            eq(bills.status, 'posted'),
+          ),
+        )
+        .orderBy(asc(bills.date), asc(bills.id)),
+      // Step 17c (decision 12): the posted payments made against it. A voided one paid nothing.
+      tx
+        .select({
+          id: supplierPayments.id,
+          number: supplierPayments.number,
+          date: supplierPayments.date,
+          amount: supplierPayments.amount,
+          applied: supplierPayments.applied,
+        })
+        .from(supplierPayments)
+        .where(
+          and(
+            eq(supplierPayments.tenantId, tenantId),
+            eq(supplierPayments.orderId, id),
+            eq(supplierPayments.status, 'posted'),
+          ),
+        )
+        .orderBy(asc(supplierPayments.date), asc(supplierPayments.id)),
+    ]);
     return {
       ...toSummary(row, found.supplier, found.lineCount, found.partlyReceived),
       paymentTermsDays: row.paymentTermsDays,
@@ -651,11 +768,47 @@ export class PurchaseOrdersService {
           line.requisitionLineId === null ? null : (links.get(line.requisitionLineId) ?? null),
         receivedQuantity: line.receivedQuantity,
         rejectedQuantity: line.rejectedQuantity,
+        // The same four decimals as a sum of the database's quantities
+        billedQuantity: billed.get(line.id) ?? '0.0000',
       })),
       requisitions: requisitionRefs,
       receipts,
+      bills: billRefs.map((bill) => ({ id: bill.id, number: bill.number })),
+      // Posted, so each has a number
+      advances: advances.flatMap((advance) =>
+        advance.number === null ? [] : [{ ...advance, number: advance.number }],
+      ),
       approval: await this.approvals.history(tx, 'purchase_order', id),
     };
+  }
+
+  // Step 17c: order line → what posted bills billed of it, in the base unit (decision 29: counted,
+  // never stored)
+  private async billedQuantities(tx: Transaction, orderId: string): Promise<Map<string, string>> {
+    const tenantId = getTenantId();
+    const rows = await tx
+      .select({
+        orderLineId: purchaseOrderLines.id,
+        billed: sql<string>`sum(${billLines.baseQuantity})::text`,
+      })
+      .from(billLines)
+      .innerJoin(bills, and(eq(bills.tenantId, billLines.tenantId), eq(bills.id, billLines.billId)))
+      .innerJoin(
+        purchaseOrderLines,
+        and(
+          eq(purchaseOrderLines.tenantId, billLines.tenantId),
+          eq(purchaseOrderLines.id, billLines.orderLineId),
+        ),
+      )
+      .where(
+        and(
+          eq(billLines.tenantId, tenantId),
+          eq(purchaseOrderLines.orderId, orderId),
+          eq(bills.status, 'posted'),
+        ),
+      )
+      .groupBy(purchaseOrderLines.id);
+    return new Map(rows.map((row) => [row.orderLineId, row.billed]));
   }
 
   // customerRefs() reads any party by id: here, the order's supplier

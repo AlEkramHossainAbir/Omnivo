@@ -15,6 +15,7 @@ import {
   type NumberFormat,
   type NumberSeries,
   periodOf,
+  type PurchaseAccounts,
   type SalesAccounts,
   type Settings,
   type Setup,
@@ -25,9 +26,11 @@ import {
 import {
   noStockAccounts,
   seedAccounts,
+  seedPurchaseAccounts,
   seedSalesAccounts,
   seedStockAccounts,
 } from './accounting-data';
+import { seedBills } from './bill-data';
 import {
   emptyDocumentOutput,
   type MockDocumentOutput,
@@ -84,6 +87,9 @@ export interface WorkspaceData {
   returns: MockReturns;
   // The account credit notes take sales back from (step 15d, Settings → Sales)
   salesAccounts: SalesAccounts;
+  // The price difference and purchased services accounts bills post to (step 17c, Settings →
+  // Purchase accounts)
+  purchaseAccounts: PurchaseAccounts;
   // The PDFs, emails and share links of the documents a customer receives (step 16)
   documentOutput: MockDocumentOutput;
   // Suppliers and their groups (step 17a)
@@ -156,12 +162,14 @@ function seed(workspace: Workspace): WorkspaceData {
     billing: emptyBilling(),
     returns: emptyReturns(),
     salesAccounts: { returns: null },
+    purchaseAccounts: { priceDifference: null, services: null },
     documentOutput: emptyDocumentOutput(),
     suppliers: emptySuppliers(),
     purchase: emptyPurchase(),
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   data.salesAccounts = seedSalesAccounts(data.accounts);
+  data.purchaseAccounts = seedPurchaseAccounts(data.accounts);
   // Before the journal: its receivable lines name the customers, its payable lines the suppliers
   seedSales(data, garments);
   seedSuppliers(data, garments);
@@ -175,6 +183,8 @@ function seed(workspace: Workspace): WorkspaceData {
   seedPurchase(data, garments);
   // After the requisitions: the approval levels and the people are theirs
   seedPurchaseOrders(data, garments);
+  // After the orders: the bill's round names the same levels and people
+  seedBills(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -231,6 +241,7 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.accounts = [];
   data.stockAccounts = noStockAccounts();
   data.salesAccounts = { returns: null };
+  data.purchaseAccounts = { priceDifference: null, services: null };
   data.journal = emptyJournal();
   data.exports = [];
   // Like the chart: the setup job brings the units and categories (settleSetup)
@@ -259,7 +270,8 @@ export function transaction<T>(data: WorkspaceData, fn: () => T): T {
     salesDocuments: data.salesDocuments,
     billing: data.billing,
     returns: data.returns,
-    // Step 17b: a goods receipt moves its order's received quantities and takes a number
+    // Step 17b: a goods receipt moves its order's received quantities and takes a number. Step
+    // 17c: a bill makes a goods receipt and marks receipt lines billed; a payment pays bills.
     purchase: data.purchase,
     audit: data.audit,
   });

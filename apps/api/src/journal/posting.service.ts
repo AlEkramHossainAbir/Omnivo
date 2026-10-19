@@ -311,12 +311,14 @@ export class PostingService {
       );
     }
     // A reversal undoes old work, and a year-end close empties every income and expense account
-    // that holds a balance: both must reach an account that was archived since
+    // that holds a balance: both must reach an account that was archived since. A supplier's bill
+    // (step 17c) clears "goods received not billed", the stock account its goods receipts credited.
     await this.checkLines(tx, lines, {
       allowArchived: entry.source === 'reversal' || entry.source === 'year_close',
       allowStock:
         entry.source === 'reversal' ||
         entry.source === 'year_close' ||
+        entry.source === 'purchase_bill' ||
         isStockJournalSource(entry.source),
       // The same exception as migration 0026's: only a reversal, which copies its original's lines
       allowMissingParty: entry.source === 'reversal',

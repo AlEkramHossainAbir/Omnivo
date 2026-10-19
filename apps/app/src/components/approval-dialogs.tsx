@@ -14,6 +14,7 @@ import { useForm } from 'react-hook-form';
 
 import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
+import { postsWhenApproved } from '../lib/purchase';
 import { usePurchaseRefresh } from './purchase-parts';
 
 // Approve and Reject (step 17a), a lazy chunk of its own (approval-card.tsx says why). One dialog
@@ -89,7 +90,12 @@ function ApproveForm({ document, id, number, round, step, roleName, onDone }: De
         {errors.root?.server?.message && <FormAlert message={errors.root.server.message} />}
         {/* Whether this click finishes the approval or passes it to the next level */}
         <p className="text-body-sm text-ink-2">
-          {last ? t('approvals.approveLast', { number }) : t('approvals.approveNext')}
+          {/* Step 17c: the last approval of a bill or a payment posts it (decision 7) */}
+          {last
+            ? postsWhenApproved(document)
+              ? t('approvals.approveLastPosts', { number })
+              : t('approvals.approveLast', { number })
+            : t('approvals.approveNext')}
         </p>
         <TextAreaField
           label={t('approvals.comment')}

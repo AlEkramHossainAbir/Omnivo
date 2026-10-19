@@ -41,6 +41,7 @@ import {
 import { OWNER } from './fixtures';
 import { MockProblem } from './mock';
 import { newestFirst, seriesNumber } from './sales-document-data';
+import type { MockBill, MockSupplierPayment } from './bill-data';
 import type { MockGoodsReceipt, MockPurchaseOrder } from './purchase-order-data';
 import { averageCostOf, decimalsOf, findVariant, issuesError, refOf } from './stock-data';
 import type { WorkspaceData } from './workspace-data';
@@ -58,6 +59,9 @@ import type { WorkspaceData } from './workspace-data';
 // Step 17b: purchase orders are approved the same way, and order requisition lines. The orders and
 // goods receipts live in purchase-order-data.ts, which imports this file; this one reads them
 // through the WorkspaceData type only, like sales-document-data.ts reads the invoices.
+//
+// Step 17c: bills and supplier payments (bill-data.ts) too. They have no "approved" status: the
+// last approval posts them (decision 7), with the poster bill-data.ts registers (onApproved()).
 
 // The levels of one kind of document, with the role by id: its name is read from the roles on
 // every read, like the API's join, so a renamed role shows its new name
@@ -93,20 +97,30 @@ export interface MockPurchase {
   // Step 17b, new ones first (purchase-order-data.ts)
   orders: MockPurchaseOrder[];
   receipts: MockGoodsReceipt[];
-  // The last number given from the 'purchase.requisition', 'purchase.order' and
-  // 'inventory.receipt' series
-  counters: { requisition: number; order: number; receipt: number };
+  // Step 17c, new ones first (bill-data.ts)
+  bills: MockBill[];
+  payments: MockSupplierPayment[];
+  // The last number given from the 'purchase.requisition', 'purchase.order',
+  // 'inventory.receipt', 'purchase.bill' and 'purchase.payment' series
+  counters: { requisition: number; order: number; receipt: number; bill: number; payment: number };
 }
 
 export function emptyPurchase(): MockPurchase {
   const none = { levels: [], version: 0, updatedAt: null };
   return {
-    rules: { requisition: { ...none }, purchase_order: { ...none } },
+    rules: {
+      requisition: { ...none },
+      purchase_order: { ...none },
+      bill: { ...none },
+      supplier_payment: { ...none },
+    },
     rounds: [],
     requisitions: [],
     orders: [],
     receipts: [],
-    counters: { requisition: 0, order: 0, receipt: 0 },
+    bills: [],
+    payments: [],
+    counters: { requisition: 0, order: 0, receipt: 0, bill: 0, payment: 0 },
   };
 }
 
@@ -291,25 +305,70 @@ export function decide(
     return decided;
   }
   Object.assign(round, { status: decision, closedAt: at });
-  setStatus(target, decision === 'approved' ? 'approved' : 'draft');
+  if (!target.posts) {
+    setStatus(target.document, decision === 'approved' ? 'approved' : 'draft');
+  } else if (decision === 'rejected') {
+    backToDraft(target.document);
+  } else {
+    postApproved(data, document, id);
+  }
   return decided;
 }
 
-// The document an approval decides: a requisition, or a purchase order (step 17b). Both move the
-// same way (draft → pending → approved, or back to draft), and both are written with setStatus().
+// The document an approval decides. A requisition or a purchase order (step 17b) moves draft →
+// pending → approved, or back to draft, with setStatus(). A bill or a supplier payment (step 17c)
+// is posted by its last approval instead (`posts`), or goes back to draft.
+type ApprovalTarget =
+  | { posts: false; document: MockRequisition | MockPurchaseOrder }
+  | { posts: true; document: MockBill | MockSupplierPayment };
+
 function approvalTarget(
   data: WorkspaceData,
   document: ApprovalDocument,
   id: string,
-): MockRequisition | MockPurchaseOrder {
-  if (document === 'requisition') return findRequisition(data, id);
-  const found = data.purchase.orders.find((item) => item.id === id);
-  if (!found) throw new MockProblem(404, 'not_found');
-  return found;
+): ApprovalTarget {
+  const found = {
+    requisition: () => data.purchase.requisitions.find((item) => item.id === id),
+    purchase_order: () => data.purchase.orders.find((item) => item.id === id),
+    bill: () => data.purchase.bills.find((item) => item.id === id),
+    supplier_payment: () => data.purchase.payments.find((item) => item.id === id),
+  };
+  if (document === 'bill' || document === 'supplier_payment') {
+    const target = found[document]();
+    if (!target) throw new MockProblem(404, 'not_found');
+    return { posts: true, document: target };
+  }
+  const target = found[document]();
+  if (!target) throw new MockProblem(404, 'not_found');
+  return { posts: false, document: target };
 }
 
-// What a waiting item says about its document: a requisition by its warehouse, an order by its
-// supplier (17b.3, decision 34). null: the document is gone.
+// What posts a bill or a payment when its last approval is given (decision 7). bill-data.ts
+// registers them when it loads, like the API's services call approvals.onApproved() in their
+// constructors: this file cannot import bill-data.ts, which imports it.
+type Poster = (data: WorkspaceData, id: string) => void;
+const posters = new Map<ApprovalDocument, Poster>();
+
+export function onApproved(document: ApprovalDocument, post: Poster): void {
+  posters.set(document, post);
+}
+
+// The poster's error is the approval's: the handler runs decide() in a transaction(), so a bill
+// in a closed period leaves its round waiting, like the API's (decision 36)
+function postApproved(data: WorkspaceData, document: ApprovalDocument, id: string): void {
+  const post = posters.get(document);
+  if (!post) throw new Error(`Nothing posts a ${document} on approval`);
+  post(data, id);
+}
+
+// A rejected bill or payment goes back to draft, with a new version. Its number stays.
+function backToDraft(target: MockBill | MockSupplierPayment): void {
+  Object.assign(target, { status: 'draft', version: target.version + 1, updatedAt: now() });
+}
+
+// What a waiting item says about its document: a requisition by its warehouse; an order, a bill
+// or a payment by its supplier (17b.3 decision 34, 17c). null: the document is gone, or has no
+// number yet (submitting numbers it, so a document that waits always has one).
 function waitingSubject(
   data: WorkspaceData,
   round: MockRound,
@@ -320,9 +379,10 @@ function waitingSubject(
       ? { number: found.number, date: found.date, subject: warehouseName(data, found.warehouseId) }
       : null;
   }
-  const order = data.purchase.orders.find((item) => item.id === round.documentId);
-  return order?.number
-    ? { number: order.number, date: order.date, subject: order.supplier.name }
+  const { orders, bills, payments } = data.purchase;
+  const found = [...orders, ...bills, ...payments].find((item) => item.id === round.documentId);
+  return found?.number
+    ? { number: found.number, date: found.date, subject: found.supplier.name }
     : null;
 }
 
@@ -689,20 +749,27 @@ export function closeRequisition(data: WorkspaceData, target: MockRequisition): 
 // decision 19): the line's net (after its discount, before VAT) × the unit's factor ÷ its base
 // quantity, to the 4 decimals a cost keeps. Approved, received and closed orders count: a draft or
 // a pending order is not a price anybody agreed to. supplierId: only that supplier's orders.
-// The newest date first; a new order is put first in the array, so on one date it wins.
+// Step 17c (decision 25): a posted bill's line counts too, whichever is newer: a bill dated after
+// its order says what the supplier really charged.
+// The newest date first; a new document is put first in its array, and the bills go before the
+// orders (a bill is written after its order), so on one date the newer one wins, like the API's
+// created_at.
 function lastPrice(
   data: WorkspaceData,
   variantId: string,
   factor: string,
   supplierId: string | null,
 ): string | null {
-  const agreed = data.purchase.orders.filter(
-    (order) =>
-      ['approved', 'received', 'closed'].includes(order.status) &&
-      (supplierId === null || order.supplier.id === supplierId),
-  );
-  const [latest] = newestFirst(agreed).flatMap((order) =>
-    order.lines.filter((line) => line.variantId === variantId),
+  const ofSupplier = (document: { supplier: { id: string } }) =>
+    supplierId === null || document.supplier.id === supplierId;
+  const agreed = [
+    ...data.purchase.bills.filter((bill) => bill.status === 'posted' && ofSupplier(bill)),
+    ...data.purchase.orders.filter(
+      (order) => ['approved', 'received', 'closed'].includes(order.status) && ofSupplier(order),
+    ),
+  ];
+  const [latest] = newestFirst(agreed).flatMap((document) =>
+    document.lines.filter((line) => line.variantId === variantId),
   );
   // × the factor first, then ÷ the base quantity: one rounding at the end, like the API's NUMERIC
   return latest ? unitCostOf(toBaseQuantity(latest.net, factor, 4), latest.baseQuantity) : null;
@@ -785,6 +852,19 @@ export function seedPurchase(data: WorkspaceData, garments: boolean): void {
       { minAmount: '50000.0000', roleId: manager.id },
       { minAmount: '500000.0000', roleId: director.id },
     ],
+    version: 1,
+    updatedAt: now(),
+  };
+  // Step 17c: bills by their total with VAT from ৳1,00,000 by the purchase manager, who knows what
+  // was ordered; payments by their amount from ৳2,00,000 by a director, who signs the cheques
+  // (bill-data.ts seeds one bill waiting for Kamal)
+  data.purchase.rules.bill = {
+    levels: [{ minAmount: '100000.0000', roleId: manager.id }],
+    version: 1,
+    updatedAt: now(),
+  };
+  data.purchase.rules.supplier_payment = {
+    levels: [{ minAmount: '200000.0000', roleId: director.id }],
     version: 1,
     updatedAt: now(),
   };

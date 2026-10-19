@@ -72,6 +72,8 @@ const VARIANT_IN_USE = [
   // step 17b
   'purchase_order_lines_variant_fk',
   'goods_receipt_lines_variant_fk',
+  // step 17c
+  'bill_lines_variant_fk',
 ] as const;
 
 // The list's orders. Each sorts by one key and then the id, so the order is total and a cursor

@@ -94,6 +94,9 @@ export const purchaseOrderLineSchema = salesLineSchema.extend({
   // In the base unit, by posted goods receipts: what came and was turned back at the gate. It
   // does not count as received; the supplier still owes it.
   rejectedQuantity: z.string(),
+  // In the base unit, by posted bills (step 17c): a goods line through its goods receipt lines, a
+  // service line straight from the order (it is billed whole and once)
+  billedQuantity: z.string(),
 });
 export type PurchaseOrderLine = z.infer<typeof purchaseOrderLineSchema>;
 
@@ -107,6 +110,17 @@ export const orderReceiptSchema = z.object({
 });
 export type OrderReceipt = z.infer<typeof orderReceiptSchema>;
 
+// A posted payment made against the order before its goods were billed: an advance (step 17c).
+// applied is what of it went onto bills since.
+export const orderAdvanceSchema = z.object({
+  id: z.uuid(),
+  number: z.string(),
+  date: z.iso.date(),
+  amount: z.string(),
+  applied: z.string(),
+});
+export type OrderAdvance = z.infer<typeof orderAdvanceSchema>;
+
 export const purchaseOrderSchema = purchaseOrderSummarySchema.extend({
   // The supplier's payment terms when the order was written, or what the buyer agreed for this
   // order: the PDF prints it, and the bill (17c) starts from it
@@ -119,6 +133,9 @@ export const purchaseOrderSchema = purchaseOrderSummarySchema.extend({
   // The requisitions its lines buy for, by number
   requisitions: z.array(documentRefSchema),
   receipts: z.array(orderReceiptSchema),
+  // The posted bills that bill its lines, and the posted payments made against it (step 17c)
+  bills: z.array(documentRefSchema),
+  advances: z.array(orderAdvanceSchema),
   // Every time it was submitted, newest first
   approval: documentApprovalSchema,
 });
@@ -201,11 +218,17 @@ export const deletePurchaseOrderQuerySchema = z.object({
 export const PURCHASE_ORDER_RECEIPT_FILTERS = ['to_receive'] as const;
 export type PurchaseOrderReceiptFilter = (typeof PURCHASE_ORDER_RECEIPT_FILTERS)[number];
 
+// to_bill: approved, received or closed, with a service line no posted bill bills yet — what the
+// bill form offers for services (step 17c). Goods are billed from their goods receipts.
+export const PURCHASE_ORDER_BILL_FILTERS = ['to_bill'] as const;
+export type PurchaseOrderBillFilter = (typeof PURCHASE_ORDER_BILL_FILTERS)[number];
+
 export const purchaseOrderListQuerySchema = pageQuerySchema.extend({
   status: z.enum(PURCHASE_ORDER_STATUSES).optional(),
   supplierId: z.uuid().optional(),
   warehouseId: z.uuid().optional(),
   receipt: z.enum(PURCHASE_ORDER_RECEIPT_FILTERS).optional(),
+  bill: z.enum(PURCHASE_ORDER_BILL_FILTERS).optional(),
 });
 export type PurchaseOrderListQuery = z.input<typeof purchaseOrderListQuerySchema>;
 

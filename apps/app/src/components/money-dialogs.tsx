@@ -28,7 +28,7 @@ import { applyApiError } from '../lib/field-errors';
 import { allocationRows } from '../lib/invoices';
 import { rowPath } from '../lib/products';
 import { openInvoicesQuery } from '../lib/queries';
-import { AllocationTable } from './allocation-table';
+import { AllocationTable, INVOICE_SIDE } from './allocation-table';
 import { useSalesRefresh } from './sales-parts';
 import { useTenantId } from './stock-parts';
 
@@ -133,11 +133,17 @@ export function ApplyForm({
             name="allocations"
             render={({ field }) => (
               <AllocationTable
+                side={INVOICE_SIDE}
                 rows={rows}
                 value={field.value}
                 onChange={field.onChange}
                 amount={amount}
-                errors={errors.allocations}
+                errors={{
+                  list: errors.allocations?.root?.message ?? errors.allocations?.message,
+                  row: (index) =>
+                    errors.allocations?.[index]?.amount?.message ??
+                    errors.allocations?.[index]?.invoiceId?.message,
+                }}
                 empty={t('receipts.noOpenInvoices')}
               />
             )}

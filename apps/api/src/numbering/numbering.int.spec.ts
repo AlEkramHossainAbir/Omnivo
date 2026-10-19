@@ -101,7 +101,16 @@ describe('number series endpoints', () => {
   it('lists every document type with its next number, without using it up', async () => {
     const today = periodOf(todayIn('Asia/Dhaka'), 'fiscal', 7);
     const { items } = numberSeriesListSchema.parse((await send('GET', '/number-series')).json());
-    expect(items.map((series) => series.documentType)).toHaveLength(19);
+    expect(items.map((series) => series.documentType)).toHaveLength(20);
+    // Bills and supplier payments (step 17c): numbered by fiscal year when first submitted
+    expect(items.find((series) => series.documentType === 'purchase.bill')).toMatchObject({
+      prefix: 'BILL',
+      nextNumber: `BILL-${today}-0001`,
+    });
+    expect(items.find((series) => series.documentType === 'purchase.payment')).toMatchObject({
+      prefix: 'PV',
+      nextNumber: `PV-${today}-0001`,
+    });
     // Suppliers and requisitions (step 17a): a supplier's code is a plain running number like a
     // customer's; a requisition is numbered by fiscal year, when it is saved
     expect(items.find((series) => series.documentType === 'purchase.supplier')).toMatchObject({

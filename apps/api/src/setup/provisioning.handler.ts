@@ -11,6 +11,7 @@ import { WITH_TENANT } from '../infra/tokens.js';
 import { notify } from '../notifications/notify.js';
 import { seedCatalog } from './seed-catalog.js';
 import { seedChart } from './seed-chart.js';
+import { seedPurchaseAccounts } from './seed-purchase-accounts.js';
 import { seedSalesReturnsAccount } from './seed-sales-accounts.js';
 import { seedStockAccounts } from './seed-stock-accounts.js';
 import { seedTaxRates } from './seed-tax-rates.js';
@@ -98,6 +99,8 @@ export class ProvisioningHandler implements EventHandler<'workspace.setup_reques
       // Step 15d: the pharmacy's and the shop's "Sales returns". Nothing to do for the other
       // templates, or when it was chosen already.
       await seedSalesReturnsAccount(tx, tenantId, template);
+      // Step 17c: "Purchase price difference" and "Purchased services", the same in every chart
+      await seedPurchaseAccounts(tx, tenantId, template);
       // null when step 12's migration already gave this workspace its catalog (a failed setup
       // retried after the catalog job ran)
       const catalog = await seedCatalog(tx, tenantId, template.catalog);

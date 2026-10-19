@@ -155,7 +155,7 @@ test('keeps the sales returns account, and protects it on the chart', async ({ p
   // Back to taking sales back from the Sales account itself
   await openFromNav(page, 'Settings');
   await select.selectOption({ label: 'None: take it off the Sales account itself' });
-  await page.getByRole('button', { name: 'Save account' }).click();
+  await page.getByRole('button', { name: 'Save account', exact: true }).click();
   await toastShown(page, 'Sales returns account saved');
   await expect(select.locator('option:checked')).toHaveText(
     'None: take it off the Sales account itself',

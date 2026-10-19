@@ -204,6 +204,9 @@ export interface LinesEditorProps<L extends SalesLineFormValues> {
   // More buttons beside "Add items" (an invoice's "Add challans"). They add lines with their meta
   // through `add`, which adds nothing and says false when the document would hold too many.
   moreAdds?: (add: (entries: readonly { line: L; meta: LineMeta }[]) => boolean) => ReactNode;
+  // Step 17c: false = no totals under the lines. A supplier bill's totals count its expenses too,
+  // so the bill form shows them itself, under both.
+  totals?: boolean;
 }
 
 const sameLine = (line: SalesLineFormValues): SalesLineFormValues => line;
@@ -231,6 +234,7 @@ export function LinesEditor<L extends SalesLineFormValues>({
   fixed = () => false,
   lineNote,
   moreAdds,
+  totals: showTotals = true,
 }: LinesEditorProps<L>) {
   const { t, format, errorText } = useLocale();
   const tenantId = useTenantId();
@@ -619,7 +623,9 @@ export function LinesEditor<L extends SalesLineFormValues>({
         </Button>
         {moreAdds?.(add)}
       </div>
-      {lines.length > 0 && <SalesTotals totals={totals} pricesIncludeVat={pricesIncludeVat} />}
+      {showTotals && lines.length > 0 && (
+        <SalesTotals totals={totals} pricesIncludeVat={pricesIncludeVat} />
+      )}
 
       <Dialog open={picking} onOpenChange={setPicking}>
         {picking && (

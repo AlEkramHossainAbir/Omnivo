@@ -29,6 +29,8 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // receivable) and a refund pays a customer's advance back out of a cash or bank account.
 // purchase_receipt (step 17b): a goods receipt brings stock in at the purchase order's price (Dr
 // Inventory / Cr Goods received not billed). A stock document like a delivery.
+// purchase_bill, purchase_payment (step 17c): a supplier's bill (goods received not billed or the
+// expense, VAT input, the payable) and a supplier payment (the payable, a cash or bank account).
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -44,6 +46,8 @@ export const JOURNAL_SOURCES = [
   'sales_credit_note',
   'sales_refund',
   'purchase_receipt',
+  'purchase_bill',
+  'purchase_payment',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -81,11 +85,25 @@ export function isSalesJournalSource(value: string): value is SalesJournalSource
   return SALES_JOURNAL_SOURCES.some((source) => source === value);
 }
 
+// The sources a purchase document posts (step 17c). Like the sales ones, the journal's Reverse
+// refuses them (journal_is_purchase): a bill is corrected by a debit note (17d), a payment by
+// voiding it on its own page.
+export const PURCHASE_JOURNAL_SOURCES = [
+  'purchase_bill',
+  'purchase_payment',
+] as const satisfies readonly JournalSource[];
+export type PurchaseJournalSource = (typeof PURCHASE_JOURNAL_SOURCES)[number];
+
+export function isPurchaseJournalSource(value: string): value is PurchaseJournalSource {
+  return PURCHASE_JOURNAL_SOURCES.some((source) => source === value);
+}
+
 // Every source whose entry points at the document that made it (journal_entries_document_check in
 // the database holds the same list)
 export const DOCUMENT_JOURNAL_SOURCES = [
   ...STOCK_JOURNAL_SOURCES,
   ...SALES_JOURNAL_SOURCES,
+  ...PURCHASE_JOURNAL_SOURCES,
 ] as const satisfies readonly JournalSource[];
 
 // '2026-07-01' and -1 → '2026-06-30'. The arithmetic runs in UTC, so no time zone can move the

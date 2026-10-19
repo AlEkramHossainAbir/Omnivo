@@ -15,6 +15,7 @@ import {
   FileImportIcon,
   FolderTreeIcon,
   HourglassIcon,
+  Invoice01Icon,
   Invoice03Icon,
   Invoice04Icon,
   Layers01Icon,
@@ -29,6 +30,7 @@ import {
   PackageIcon,
   PackageOutOfStockIcon,
   PackageReceiveIcon,
+  Payment02Icon,
   PieChartIcon,
   RulerIcon,
   SecurityCheckIcon,
@@ -367,6 +369,14 @@ export function AppShell() {
             </NavLink>
             <NavLink to="/goods-receipts" icon={PackageReceiveIcon}>
               {t('nav.goodsReceipts')}
+            </NavLink>
+            {/* Step 17c: then the supplier's bill and what was paid. Not the sales invoice's and
+                receipt's icons: a person scanning for the customer's money must not land here. */}
+            <NavLink to="/bills" icon={Invoice01Icon}>
+              {t('nav.bills')}
+            </NavLink>
+            <NavLink to="/supplier-payments" icon={Payment02Icon}>
+              {t('nav.supplierPayments')}
             </NavLink>
             <NavLink
               to="/approvals"

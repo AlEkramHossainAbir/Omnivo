@@ -142,6 +142,8 @@ describe('starting the setup', () => {
           'core.user.read',
           'inventory.stock.revalue',
           'inventory.stock.value',
+          'purchase.bill.manage',
+          'purchase.payment.manage',
           'purchase.supplier.balance',
           'purchase.supplier.manage',
           'sales.credit_note.manage',

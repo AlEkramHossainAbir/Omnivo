@@ -817,6 +817,9 @@ describe('approval', () => {
     expect(items.map((item) => [item.document, item.levels.length])).toEqual([
       ['requisition', 0],
       ['purchase_order', 1],
+      // Step 17c: the bill and the supplier payment have levels of their own
+      ['bill', 0],
+      ['supplier_payment', 0],
     ]);
 
     order = await acted('submit', order);

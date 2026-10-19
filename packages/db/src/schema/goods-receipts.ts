@@ -1,6 +1,7 @@
 import { STOCK_DOCUMENT_STATUSES } from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   foreignKey,
@@ -14,6 +15,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
 import { batches } from './batches.js';
+import { bills } from './bills.js';
 import { parties } from './parties.js';
 import { productVariants } from './products.js';
 import { purchaseOrderLines, purchaseOrders } from './purchase-orders.js';
@@ -24,6 +26,8 @@ import { warehouses } from './warehouses.js';
 
 // Step 17b: goods receipts (GRN). Like a delivery: a draft is changed freely, a posted one never
 // (migration 0038). Always made from an approved purchase order (decision 8).
+// Step 17c: or by a bill's own goods lines, with no order (decision 21; rules in migration 0040).
+// Bills mark the lines they bill (billed).
 export const goodsReceipts = pgTable(
   'goods_receipts',
   {
@@ -37,8 +41,10 @@ export const goodsReceipts = pgTable(
     date: date('date', { mode: 'string' }).notNull(),
     // The order's supplier: in the FK below, so it cannot be another one
     supplierId: uuid('supplier_id').notNull(),
-    // Never changes once the receipt is written (decision 20, migration 0038)
-    orderId: uuid('order_id').notNull(),
+    // Never changes once the receipt is written (decision 20, migration 0038). Step 17c: NULL on a
+    // receipt a bill made, which names its bill instead (exactly one of the two)
+    orderId: uuid('order_id'),
+    billId: uuid('bill_id'),
     // Where it was unloaded; may be another warehouse than the order's (decision 20)
     warehouseId: uuid('warehouse_id').notNull(),
     // The number on the supplier's own delivery challan
@@ -60,6 +66,11 @@ export const goodsReceipts = pgTable(
     // An order's receipts (its page; "has it any receipt?" before a reopen or a cancel)
     index('goods_receipts_order_idx').on(table.tenantId, table.orderId),
     index('goods_receipts_warehouse_idx').on(table.tenantId, table.warehouseId),
+    // Step 17c: the receipt a bill made (its page), and the FK's check. A bill makes at most one:
+    // its goods lines of its own all come into its one warehouse.
+    uniqueIndex('goods_receipts_bill_idx')
+      .on(table.tenantId, table.billId)
+      .where(sql`${table.billId} IS NOT NULL`),
     foreignKey({
       name: 'goods_receipts_supplier_fk',
       columns: [table.tenantId, table.supplierId],
@@ -71,11 +82,22 @@ export const goodsReceipts = pgTable(
       columns: [table.tenantId, table.supplierId, table.orderId],
       foreignColumns: [purchaseOrders.tenantId, purchaseOrders.supplierId, purchaseOrders.id],
     }),
+    // Step 17c: the same with the bill. A posted bill is never deleted, and the receipt is made
+    // only while it is being posted.
+    foreignKey({
+      name: 'goods_receipts_bill_fk',
+      columns: [table.tenantId, table.supplierId, table.billId],
+      foreignColumns: [bills.tenantId, bills.supplierId, bills.id],
+    }),
     foreignKey({
       name: 'goods_receipts_warehouse_fk',
       columns: [table.tenantId, table.warehouseId],
       foreignColumns: [warehouses.tenantId, warehouses.id],
     }),
+    check(
+      'goods_receipts_source_check',
+      sql`(${table.orderId} IS NULL) <> (${table.billId} IS NULL)`,
+    ),
     // Posted ⇔ it has a number and a posting time, like a delivery
     check(
       'goods_receipts_posted_check',
@@ -92,9 +114,10 @@ export const goodsReceiptLines = pgTable(
   {
     ...stockLineColumns(),
     receiptId: uuid('receipt_id').notNull(),
-    // A copy of the receipt's order, so the FKs below can say the order line is a line of it
-    orderId: uuid('order_id').notNull(),
-    orderLineId: uuid('order_line_id').notNull(),
+    // A copy of the receipt's order, so the FKs below can say the order line is a line of it.
+    // Step 17c: both NULL on a receipt a bill made.
+    orderId: uuid('order_id'),
+    orderLineId: uuid('order_line_id'),
     // A batch product: the lot as typed. Posting finds or makes the batch (batch_id).
     lotNumber: text('lot_number'),
     expiresOn: date('expires_on', { mode: 'string' }),
@@ -109,16 +132,37 @@ export const goodsReceiptLines = pgTable(
     rejectionReason: text('rejection_reason'),
     // What the accepted goods were booked at (the order line's net per base unit), set when posted
     value: numeric('value', { precision: 19, scale: 4 }),
+    // Step 17c: a posted bill billed it. Set by the bill's posting, false → true and never back
+    // (migration 0040), so one line is never billed twice.
+    billed: boolean('billed').notNull().default(false),
   },
   (table) => [
     uniqueIndex('goods_receipt_lines_line_idx').on(table.tenantId, table.receiptId, table.lineNo),
     index('goods_receipt_lines_variant_idx').on(table.tenantId, table.productId, table.variantId),
+    // Step 17c: the target of the bill line's FK: THIS line, for THIS variant
+    uniqueIndex('goods_receipt_lines_bill_target_idx').on(
+      table.tenantId,
+      table.id,
+      table.variantId,
+    ),
+    // Step 17c: the receipts with something left to bill (the to_bill filter, the bill form).
+    // Partial: once billed, a line leaves it.
+    index('goods_receipt_lines_to_bill_idx')
+      .on(table.tenantId, table.receiptId)
+      .where(sql`NOT ${table.billed} AND ${table.quantity} > 0`),
     // An order line's receipts, and the order line FK's check
     index('goods_receipt_lines_order_line_idx').on(
       table.tenantId,
       table.orderId,
       table.orderLineId,
     ),
+    // Step 17c: the receipt alone. The key below holds order_id, and a key with a NULL in it is not
+    // checked at all (MATCH SIMPLE), so a line of a receipt a bill made needs this one.
+    foreignKey({
+      name: 'goods_receipt_lines_receipt_id_fk',
+      columns: [table.tenantId, table.receiptId],
+      foreignColumns: [goodsReceipts.tenantId, goodsReceipts.id],
+    }).onDelete('cascade'),
     // order_id is in the key: a line belongs to a receipt of that order. When a draft receipt is
     // deleted, its lines go with it.
     foreignKey({
@@ -166,5 +210,12 @@ export const goodsReceiptLines = pgTable(
       sql`(${table.rejectedQuantity} = 0 OR ${table.rejectionReason} IS NOT NULL) AND (${table.rejectionReason} IS NULL OR char_length(${table.rejectionReason}) BETWEEN 1 AND 200)`,
     ),
     check('goods_receipt_lines_value_check', sql`${table.value} IS NULL OR ${table.value} >= 0`),
+    // Step 17c: an order line exactly when an order. Only a line that accepted something is billed
+    // (a line that turned everything back has nothing to bill).
+    check(
+      'goods_receipt_lines_order_check',
+      sql`(${table.orderId} IS NULL) = (${table.orderLineId} IS NULL)`,
+    ),
+    check('goods_receipt_lines_billed_check', sql`NOT ${table.billed} OR ${table.quantity} > 0`),
   ],
 );

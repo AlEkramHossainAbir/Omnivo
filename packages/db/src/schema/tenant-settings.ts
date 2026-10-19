@@ -50,6 +50,12 @@ export const tenantSettings = pgTable(
     overReceiptPercent: numeric('over_receipt_percent', { precision: 5, scale: 2 })
       .notNull()
       .default('0'),
+    // Step 17c (decision 17): the expense account a bill's price difference goes to ("Purchase
+    // price difference"; NULL = the Cost of goods sold account), and the one a service line starts
+    // from ("Purchased services"; NULL = none, the line must name one). Their own route
+    // (/purchase-accounts) writes them, never PUT /settings.
+    purchasePriceDifferenceAccountId: uuid('purchase_price_difference_account_id'),
+    purchaseServicesAccountId: uuid('purchase_services_account_id'),
     createdAt: baseColumns().createdAt,
     updatedAt: baseColumns().updatedAt,
     updatedBy: baseColumns().updatedBy,
@@ -74,6 +80,17 @@ export const tenantSettings = pgTable(
     foreignKey({
       name: 'tenant_settings_sales_returns_account_fk',
       columns: [table.tenantId, table.salesReturnsAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    // Step 17c: the same for the two purchase accounts
+    foreignKey({
+      name: 'tenant_settings_price_difference_account_fk',
+      columns: [table.tenantId, table.purchasePriceDifferenceAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    foreignKey({
+      name: 'tenant_settings_services_account_fk',
+      columns: [table.tenantId, table.purchaseServicesAccountId],
       foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
     }),
   ],

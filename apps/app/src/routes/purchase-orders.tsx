@@ -1,8 +1,10 @@
 import { PlusSignIcon, ShoppingBasket01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
+  PURCHASE_ORDER_BILL_FILTERS,
   PURCHASE_ORDER_RECEIPT_FILTERS,
   PURCHASE_ORDER_STATUSES,
+  type PurchaseOrderBillFilter,
   type PurchaseOrderReceiptFilter,
   type PurchaseOrderStatus,
   type PurchaseOrderSummary,
@@ -36,11 +38,15 @@ import { purchaseOrdersQuery } from '../lib/queries';
 const column = dataTableColumns<PurchaseOrderSummary>();
 
 // "To receive" sits with the statuses, like the requisitions' "To order": it is the store keeper's
-// queue (approved, with goods still to come)
-type Show = PurchaseOrderStatus | PurchaseOrderReceiptFilter | 'all';
+// queue (approved, with goods still to come). Step 17c: "Services to bill", the accountant's.
+type Show = PurchaseOrderStatus | PurchaseOrderReceiptFilter | PurchaseOrderBillFilter | 'all';
 
 function isReceiptFilter(show: Show): show is PurchaseOrderReceiptFilter {
   return PURCHASE_ORDER_RECEIPT_FILTERS.some((filter) => filter === show);
+}
+
+function isBillFilter(show: Show): show is PurchaseOrderBillFilter {
+  return PURCHASE_ORDER_BILL_FILTERS.some((filter) => filter === show);
 }
 
 // The purchase orders (step 17b), newest date first. Everyone reads them (a store keeper checks
@@ -57,10 +63,11 @@ export function PurchaseOrdersPage() {
   const [supplierId, setSupplierId] = useState('');
   const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
     purchaseOrdersQuery(useTenantId(), {
-      status: show === 'all' || isReceiptFilter(show) ? '' : show,
+      status: show === 'all' || isReceiptFilter(show) || isBillFilter(show) ? '' : show,
       warehouseId,
       supplierId,
       receipt: isReceiptFilter(show) ? show : '',
+      bill: isBillFilter(show) ? show : '',
     }),
   );
   const rows = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
@@ -175,6 +182,10 @@ export function PurchaseOrdersPage() {
             ...PURCHASE_ORDER_RECEIPT_FILTERS.map((value) => ({
               value,
               label: t(`purchaseOrders.receiptFilters.${value}`),
+            })),
+            ...PURCHASE_ORDER_BILL_FILTERS.map((value) => ({
+              value,
+              label: t(`purchaseOrders.billFilters.${value}`),
             })),
           ]}
           onChange={setShow}

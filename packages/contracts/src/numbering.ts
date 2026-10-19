@@ -25,6 +25,7 @@ export const DOCUMENT_TYPES = [
   'sales.refund',
   'purchase.supplier',
   'purchase.requisition',
+  'purchase.payment',
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -63,6 +64,8 @@ const DEFAULT_PREFIXES = {
   'purchase.supplier': 'S',
   // A purchase requisition: a request to buy, before any supplier is asked (step 17a)
   'purchase.requisition': 'PR',
+  // A supplier payment, the payment voucher (step 17c)
+  'purchase.payment': 'PV',
 } satisfies Record<DocumentType, string>;
 
 // টেন্যান্ট কিছু না বদলালে এই ছাঁচ — DB-তে রো লেখা হয় শুধু প্রথম বদলের সময়।

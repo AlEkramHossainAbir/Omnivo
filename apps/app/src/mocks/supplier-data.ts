@@ -419,13 +419,15 @@ export function makeCustomer(data: WorkspaceData, saved: MockSupplier): MockCust
 // only its supplier side goes, if no payable line names it (the API's dropSupplierSide). A
 // supplier-only party is used by any line that names it (journal_lines_party_fk). Step 17b: a
 // purchase order or a goods receipt, drafts too, uses it either way (purchase_orders_supplier_fk,
-// goods_receipts_supplier_fk).
+// goods_receipts_supplier_fk). Step 17c: a bill or a supplier payment too (bills_supplier_fk,
+// supplier_payments_supplier_fk).
 export function removeSupplier(data: WorkspaceData, target: MockSupplier): void {
   const lines = data.journal.entries.flatMap((entry) => entry.lines);
   const used = target.isCustomer
     ? lines.some((line) => line.party?.id === target.id && isPayable(data, line.accountId))
     : lines.some((line) => line.party?.id === target.id);
-  const ordered = [...data.purchase.orders, ...data.purchase.receipts].some(
+  const { orders, receipts, bills, payments } = data.purchase;
+  const ordered = [...orders, ...receipts, ...bills, ...payments].some(
     (document) => document.supplier.id === target.id,
   );
   if (used || ordered) throw new MockProblem(409, 'supplier_in_use');

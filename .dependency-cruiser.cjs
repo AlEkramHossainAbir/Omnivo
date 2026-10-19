@@ -5,7 +5,10 @@ module.exports = {
       name: 'no-circular',
       severity: 'error',
       comment: 'Circular imports break module boundaries and tree-shaking.',
-      from: {},
+      // Step 17c: a bill line points at a goods receipt line, and a goods receipt a bill made points
+      // at its bill. The two tables reference each other, and Drizzle reads a table's foreign keys
+      // only when it is asked for them, after both files have loaded. Only these two files.
+      from: { pathNot: '^packages/db/src/schema/(bills|goods-receipts)\\.ts$' },
       to: { circular: true },
     },
     {

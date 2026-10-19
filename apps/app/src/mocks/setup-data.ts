@@ -1,6 +1,11 @@
 import type { Industry, Setup } from '@omnivo/contracts';
 
-import { seedAccounts, seedSalesAccounts, seedStockAccounts } from './accounting-data';
+import {
+  seedAccounts,
+  seedPurchaseAccounts,
+  seedSalesAccounts,
+  seedStockAccounts,
+} from './accounting-data';
 import { MockProblem } from './mock';
 import { startingCatalog } from './product-data';
 import { startingTaxRates } from './sales-data';
@@ -60,6 +65,8 @@ export function settleSetup(data: WorkspaceData): void {
     data.stockAccounts = seedStockAccounts(data.accounts, industry);
     // Step 15d: like the API's provisioning, only where the chart has "4120 Sales returns"
     data.salesAccounts = seedSalesAccounts(data.accounts);
+    // Step 17c: like the API's provisioning, 5180 and 5170
+    data.purchaseAccounts = seedPurchaseAccounts(data.accounts);
   }
   if (data.catalog.units.length === 0) data.catalog = startingCatalog(industry);
   // Step 15a: the VAT rates, like the API's TaxRatesHandler (skipped if there are any)

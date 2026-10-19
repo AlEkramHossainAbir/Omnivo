@@ -1,5 +1,9 @@
 import {
   type BalanceSheetQuery,
+  type BillPage,
+  type BillPaymentFilter,
+  type BillStatus,
+  type BillSummary,
   type BranchStatus,
   type CreditNoteStatus,
   type CustomerSort,
@@ -17,6 +21,7 @@ import {
   type ProductSort,
   type ProductStatus,
   type ProfitAndLossQuery,
+  type PurchaseOrderBillFilter,
   type PurchaseOrderReceiptFilter,
   type PurchaseOrderStatus,
   type QuotationStatus,
@@ -26,7 +31,9 @@ import {
   type RequisitionStatus,
   routes,
   type StockDocumentStatus,
+  type GrnBillFilter,
   type StockFilter,
+  type SupplierPaymentStatus,
   type SupplierSort,
   type SupplierStatus,
   type TransferStatus,
@@ -1251,6 +1258,8 @@ export interface PurchaseOrderListFilter {
   supplierId: string;
   // "To receive": approved, with goods still to come (the store keeper's queue)
   receipt: PurchaseOrderReceiptFilter | '';
+  // Step 17c: "Services to bill": a service line no posted bill bills yet (the accountant's queue)
+  bill: PurchaseOrderBillFilter | '';
 }
 
 export function purchaseOrdersQuery(tenantId: string, filter: PurchaseOrderListFilter) {
@@ -1264,6 +1273,7 @@ export function purchaseOrdersQuery(tenantId: string, filter: PurchaseOrderListF
           ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
           ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
           ...(filter.receipt !== '' && { receipt: filter.receipt }),
+          ...(filter.bill !== '' && { bill: filter.bill }),
           ...(pageParam !== null && { cursor: pageParam }),
         },
       }),
@@ -1300,6 +1310,8 @@ export interface GoodsReceiptListFilter {
   status: StockDocumentStatus | '';
   warehouseId: string;
   supplierId: string;
+  // Step 17c: "To bill" (posted, with a line no posted bill bills yet) or "Billed"
+  bill: GrnBillFilter | '';
 }
 
 export function goodsReceiptsQuery(tenantId: string, filter: GoodsReceiptListFilter) {
@@ -1312,6 +1324,7 @@ export function goodsReceiptsQuery(tenantId: string, filter: GoodsReceiptListFil
           ...(filter.status !== '' && { status: filter.status }),
           ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
           ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
+          ...(filter.bill !== '' && { bill: filter.bill }),
           ...(pageParam !== null && { cursor: pageParam }),
         },
       }),
@@ -1326,6 +1339,150 @@ export function goodsReceiptQuery(tenantId: string, receiptId: string) {
     queryKey: ['purchase', tenantId, 'receipt', receiptId],
     queryFn: () => call(routes.goodsReceipts.get, { params: { id: receiptId } }),
     retry: false,
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Supplier bills and supplier payments (step 17c), under the same ['purchase', tenantId] prefix:
+// posting a bill changes its goods receipts (billed), its orders (billed quantities) and the lists;
+// posting a payment changes the bills it pays and its order's advances. One invalidate does it all.
+
+export interface BillListFilter {
+  status: BillStatus | '';
+  supplierId: string;
+  payment: BillPaymentFilter | '';
+}
+
+export function billsQuery(tenantId: string, filter: BillListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'bills', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.bills.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
+          ...(filter.payment !== '' && { payment: filter.payment }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function billQuery(tenantId: string, billId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'bill', billId],
+    queryFn: () => call(routes.bills.get, { params: { id: billId } }),
+    retry: false,
+  });
+}
+
+// The payment form's list: the supplier's posted bills not paid in full, the oldest due date first
+// (the API's order for this filter). Read up to the most a payment applies to, in one go, like the
+// money receipt's open invoices: the table and "Apply oldest first" need them all at once.
+export function openBillsQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'bills', 'open', supplierId],
+    queryFn: async () => {
+      const items: BillSummary[] = [];
+      let cursor: string | null = null;
+      do {
+        const page: BillPage = await call(routes.bills.list, {
+          query: {
+            limit: 100,
+            payment: 'open',
+            supplierId,
+            ...(cursor !== null && { cursor }),
+          },
+        });
+        items.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor !== null && items.length < MAX_RECEIPT_ALLOCATIONS);
+      return items.slice(0, MAX_RECEIPT_ALLOCATIONS);
+    },
+  });
+}
+
+// The bill form's "Add goods receipts": the supplier's posted receipts with a line to bill
+export function receiptsToBillQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'receipts', 'to-bill', supplierId],
+    queryFn: async () =>
+      (
+        await call(routes.goodsReceipts.list, {
+          query: { limit: 100, bill: 'to_bill', supplierId },
+        })
+      ).items,
+  });
+}
+
+// The bill form's "Add order services": the supplier's orders with a service no posted bill bills
+// yet (decision 22). A draft bill elsewhere may hold one; the API says so at submit.
+export function ordersToBillQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'orders', 'to-bill', supplierId],
+    queryFn: async () =>
+      (
+        await call(routes.purchaseOrders.list, {
+          query: { limit: 100, bill: 'to_bill', supplierId },
+        })
+      ).items,
+  });
+}
+
+export interface SupplierPaymentListFilter {
+  status: SupplierPaymentStatus | '';
+  supplierId: string;
+}
+
+export function supplierPaymentsQuery(tenantId: string, filter: SupplierPaymentListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'payments', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.supplierPayments.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function supplierPaymentQuery(tenantId: string, paymentId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'payment', paymentId],
+    queryFn: () => call(routes.supplierPayments.get, { params: { id: paymentId } }),
+    retry: false,
+  });
+}
+
+// The payment form's "Against order": the supplier's approved, received or closed orders
+// (decision 44), newest first. 100 at most: an advance is paid against a recent order.
+export function ordersToPayQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'orders', 'to-pay', supplierId],
+    queryFn: async () =>
+      (await call(routes.purchaseOrders.list, { query: { limit: 100, supplierId } })).items.filter(
+        (order) =>
+          order.status === 'approved' || order.status === 'received' || order.status === 'closed',
+      ),
+  });
+}
+
+// Settings → Purchase accounts (decision 17), like the sales accounts: its own key, read by the
+// settings card and by the bill form (a service line's empty account names it)
+export function purchaseAccountsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['purchase-accounts', tenantId],
+    queryFn: () => call(routes.purchaseAccounts.get),
   });
 }
 

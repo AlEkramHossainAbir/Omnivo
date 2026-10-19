@@ -15,8 +15,14 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // approved when it is submitted.
 
 // The documents that can need an approval. Each guide adds its own: 17a the requisition, 17b the
-// purchase order, 17c the bill and the supplier payment.
-export const APPROVAL_DOCUMENTS = ['requisition', 'purchase_order'] as const;
+// purchase order, 17c the bill and the supplier payment. A requisition and an order are approved;
+// a bill and a payment are posted by their last approval (step 17c).
+export const APPROVAL_DOCUMENTS = [
+  'requisition',
+  'purchase_order',
+  'bill',
+  'supplier_payment',
+] as const;
 export type ApprovalDocument = (typeof APPROVAL_DOCUMENTS)[number];
 
 export function isApprovalDocument(value: string): value is ApprovalDocument {
@@ -207,7 +213,7 @@ export const waitingApprovalSchema = z.object({
   number: z.string(),
   date: z.iso.date(),
   // What the document is about, for the list: the warehouse of a requisition, the supplier of an
-  // order (17b)
+  // order (17b), a bill or a payment (17c)
   subject: z.string(),
   amount: z.string(),
   submittedBy: personSchema,

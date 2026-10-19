@@ -113,10 +113,13 @@ export async function resolvePurchaseItems(
 }
 
 // resolvePurchaseItems() without the throw: one entry per line (null where the line has a
-// problem) and the problems, so a caller with more to check can report everything at once
+// problem) and the problems, so a caller with more to check can report everything at once.
+// keptVariantIds: items that stay usable after they are archived (step 17c: a bill bills goods a
+// receipt already brought in, or a service already ordered).
 async function checkPurchaseItems(
   tx: Transaction,
   lines: readonly PurchaseItemInput[],
+  keptVariantIds: ReadonlySet<string> = new Set(),
 ): Promise<{ resolved: (ResolvedPurchaseItem | null)[]; issues: LineIssue[] }> {
   const variants = await loadVariants(
     tx,
@@ -129,7 +132,9 @@ async function checkPurchaseItems(
       return null;
     };
     const variant = variants.get(line.variantId);
-    if (variant === undefined || variant.archived) return at('variantId', 'purchase_item_invalid');
+    if (variant === undefined || (variant.archived && !keptVariantIds.has(variant.variantId))) {
+      return at('variantId', 'purchase_item_invalid');
+    }
     const unit =
       line.unitId === variant.baseUnitId
         ? { factor: '1', decimals: variant.baseDecimals }
@@ -156,13 +161,15 @@ async function checkPurchaseItems(
 // order's lines already use stay usable after they are archived, like resolveSalesLines()), and
 // the amounts worked out with the contract's lineAmounts(), the function the form totals with.
 // The result has a sales line's shape, so salesLineValues() and toSalesLine() store and read it.
+// Step 17c: a bill passes keptVariantIds too (checkPurchaseItems()).
 export async function resolvePurchaseLines(
   tx: Transaction,
   lines: readonly SalesLineInput[],
   pricesIncludeVat: boolean,
   keptRateIds: ReadonlySet<string> = new Set(),
+  keptVariantIds: ReadonlySet<string> = new Set(),
 ): Promise<ResolvedSalesLine[]> {
-  const { resolved, issues } = await checkPurchaseItems(tx, lines);
+  const { resolved, issues } = await checkPurchaseItems(tx, lines, keptVariantIds);
   const rateIds = [...new Set(lines.map((line) => line.taxRateId))];
   const rateRows = await tx
     .select({
