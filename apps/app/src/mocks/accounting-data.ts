@@ -94,6 +94,8 @@ function template(industry: Industry): Record<AccountType, MockNode> {
           name: 'Current liabilities',
           children: [
             { code: '2110', name: 'Accounts payable', purpose: 'accounts_payable' },
+            // Step 17b: what goods receipts brought in and no bill has billed yet
+            { code: '2115', name: 'Goods received not billed' },
             { code: '2120', name: 'Output VAT', purpose: 'vat_output' },
             { code: '2130', name: 'VAT and tax deducted at source (VDS, TDS)' },
             { code: '2140', name: 'Salaries and wages payable' },
@@ -273,6 +275,7 @@ export function seedStockAccounts(accounts: readonly Account[], industry: Indust
     correction: id('5190'),
     transfer_shortage: loss,
     revaluation: id('5190'),
+    received_not_billed: id('2115'),
   };
 }
 
@@ -298,5 +301,6 @@ export function noStockAccounts(): StockAccounts {
     correction: null,
     transfer_shortage: null,
     revaluation: null,
+    received_not_billed: null,
   };
 }

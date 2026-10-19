@@ -273,6 +273,28 @@ function onOrder(data: WorkspaceData, variantId: string, warehouseId: string | u
   );
 }
 
+// What approved purchase orders still have to bring to the warehouse (or to any): ordered −
+// received, goods lines only, never below zero (step 17b, the API's incomingTo()). A pending order
+// is not counted: nobody agreed to it yet.
+function incoming(data: WorkspaceData, variantId: string, warehouseId: string | undefined): string {
+  return sumQuantity(
+    data.purchase.orders
+      .filter(
+        (order) =>
+          order.status === 'approved' &&
+          (warehouseId === undefined || order.warehouseId === warehouseId),
+      )
+      .flatMap((order) =>
+        order.lines
+          .filter((line) => line.variantId === variantId && line.productType === 'goods')
+          .map((line) => {
+            const left = subtractQuantity(line.baseQuantity, line.receivedQuantity);
+            return compareQuantity(left, '0') > 0 ? left : '0';
+          }),
+      ),
+  );
+}
+
 function isLow(
   stock: MockStock,
   balances: ReturnType<typeof balancesOf>,
@@ -319,6 +341,7 @@ function itemOf(
     onHand: onHand(stock, balances, variant.id, warehouseId),
     inTransit: inTransit(stock, variant.id, warehouseId),
     onOrder: onOrder(data, variant.id, warehouseId),
+    incoming: incoming(data, variant.id, warehouseId),
     low: isLow(stock, balances, variant.id, warehouseId),
     ...valueFields(stock, balances, variant.id, warehouseId),
   };
@@ -548,6 +571,7 @@ export function reorderReport(data: WorkspaceData, warehouseId: string | undefin
           warehouseId: level.warehouseId,
           onHand: here,
           inTransit: inTransit(data.stock, level.variantId, level.warehouseId),
+          incoming: incoming(data, level.variantId, level.warehouseId),
           minQuantity: level.minQuantity,
           reorderQuantity: level.reorderQuantity,
         },
@@ -862,7 +886,8 @@ export function branchOf(data: WorkspaceData, warehouseId: string): string | nul
   return data.stock.warehouses.find((place) => place.id === warehouseId)?.branchId ?? null;
 }
 
-function bookAccounts(data: WorkspaceData) {
+// Step 17b: a goods receipt books to the inventory account and use('received_not_billed') too
+export function bookAccounts(data: WorkspaceData) {
   const inventory = data.accounts.find((account) => account.purpose === 'inventory')?.id;
   const equity = data.accounts.find((account) => account.purpose === 'opening_balance_equity')?.id;
   if (inventory === undefined || equity === undefined) {
@@ -919,14 +944,13 @@ export function saveAdjustment(
   return saved;
 }
 
-export function postAdjustment(data: WorkspaceData, draft: StockAdjustment): StockAdjustment {
-  if (draft.status !== 'draft') throw new MockProblem(409, 'stock_not_draft');
-  assertDate(data, draft.date);
-  const direction = draft.direction === 'out' ? 'out' : 'in';
-  // An "in" line's lot becomes a batch: an existing one of the variant, or a new one
+// An "in" line's lot becomes a batch: an existing one of the variant, or a new one (the API's
+// StockPostingService.resolveBatches()). A line without a lot stays as it is. Step 17b's goods
+// receipts post their lines through it too.
+export function batchesForLots<T extends StockLine>(data: WorkspaceData, lines: readonly T[]): T[] {
   const issues: { path: string; code: ErrorCode }[] = [];
-  const lines = draft.lines.map((line, index) => {
-    if (direction !== 'in' || line.lotNumber === null) return line;
+  const resolved = lines.map((line, index) => {
+    if (line.lotNumber === null) return line;
     const lot = line.lotNumber;
     let batch = data.stock.batches.find(
       (candidate) =>
@@ -955,6 +979,14 @@ export function postAdjustment(data: WorkspaceData, draft: StockAdjustment): Sto
     return { ...line, batchId: batch.id, expiresOn: batch.expiresOn };
   });
   if (issues.length > 0) throw issuesError(issues);
+  return resolved;
+}
+
+export function postAdjustment(data: WorkspaceData, draft: StockAdjustment): StockAdjustment {
+  if (draft.status !== 'draft') throw new MockProblem(409, 'stock_not_draft');
+  assertDate(data, draft.date);
+  const direction = draft.direction === 'out' ? 'out' : 'in';
+  const lines = direction === 'in' ? batchesForLots(data, draft.lines) : draft.lines;
   // The accounts first: a missing one refuses the posting before anything moves
   const accounts = bookAccounts(data);
   const reason = draft.reason;

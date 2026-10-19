@@ -108,7 +108,8 @@ function ReverseForm({
 }
 
 // The document a stock entry came from (step 14), a delivery's (15b), an invoice's or a money
-// receipt's (15c), or a return's, a credit note's or a refund's (15d): its page, by the source
+// receipt's (15c), a return's, a credit note's or a refund's (15d), or a goods receipt's (17b): its
+// page, by the source
 function documentLinkOf(entry: JournalEntry) {
   const id = entry.document?.id;
   if (id === undefined) return null;
@@ -142,6 +143,10 @@ function documentLinkOf(entry: JournalEntry) {
   }
   if (entry.source === 'sales_refund') {
     return { to: '/refunds/$refundId', params: { refundId: id } } as const;
+  }
+  // Step 17b: the goods a receipt brought in, owed until the supplier's bill
+  if (entry.source === 'purchase_receipt') {
+    return { to: '/goods-receipts/$receiptId', params: { receiptId: id } } as const;
   }
   return null;
 }

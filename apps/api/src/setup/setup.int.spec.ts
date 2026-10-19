@@ -158,6 +158,7 @@ describe('starting the setup', () => {
         [
           'core.user.read',
           'inventory.product.manage',
+          'purchase.order.manage',
           'purchase.requisition.manage',
           'sales.customer.manage',
           'sales.order.manage',
@@ -170,6 +171,7 @@ describe('starting the setup', () => {
           'inventory.product.manage',
           'inventory.stock.adjust',
           'inventory.stock.transfer',
+          'purchase.receipt.manage',
           'purchase.requisition.manage',
           'sales.delivery.manage',
           'sales.return.manage',

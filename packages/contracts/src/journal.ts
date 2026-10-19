@@ -27,6 +27,8 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // Inventory / Cr Cost of goods sold). A stock document like a delivery.
 // sales_credit_note, sales_refund (step 15d): a credit note takes a sale back (sales returns, VAT,
 // receivable) and a refund pays a customer's advance back out of a cash or bank account.
+// purchase_receipt (step 17b): a goods receipt brings stock in at the purchase order's price (Dr
+// Inventory / Cr Goods received not billed). A stock document like a delivery.
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -41,6 +43,7 @@ export const JOURNAL_SOURCES = [
   'sales_return',
   'sales_credit_note',
   'sales_refund',
+  'purchase_receipt',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -55,6 +58,7 @@ export const STOCK_JOURNAL_SOURCES = [
   'stock_revaluation',
   'sales_delivery',
   'sales_return',
+  'purchase_receipt',
 ] as const satisfies readonly JournalSource[];
 export type StockJournalSource = (typeof STOCK_JOURNAL_SOURCES)[number];
 

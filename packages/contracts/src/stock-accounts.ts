@@ -11,6 +11,9 @@ import { defineRoute } from './http.js';
 //   found … correction  The other side of an adjustment, one per reason (except opening stock)
 //   transfer_shortage   What a transfer lost on the way (received short)
 //   revaluation         The other side of a stock revaluation
+//   received_not_billed Goods received not billed (step 17b): a goods receipt brings stock in at the
+//                       order's price and owes it here, a liability, until the supplier's bill
+//                       (17c) moves it to the payable
 export const STOCK_ACCOUNT_USES = [
   'in_transit',
   'found',
@@ -22,6 +25,7 @@ export const STOCK_ACCOUNT_USES = [
   'correction',
   'transfer_shortage',
   'revaluation',
+  'received_not_billed',
 ] as const;
 export type StockAccountUse = (typeof STOCK_ACCOUNT_USES)[number];
 
@@ -29,10 +33,13 @@ export function isStockAccountUse(value: string): value is StockAccountUse {
   return STOCK_ACCOUNT_USES.some((use) => use === value);
 }
 
-// Goods in transit are still the company's goods: an asset. Every other use is a gain or a loss,
-// so it belongs in the profit and loss — an income or an expense account.
+// Goods in transit are still the company's goods: an asset. Goods received and not billed are
+// money the company owes: a liability. Every other use is a gain or a loss, so it belongs in the
+// profit and loss — an income or an expense account.
 export function accountTypeFits(use: StockAccountUse, type: string): boolean {
-  return use === 'in_transit' ? type === 'asset' : type === 'income' || type === 'expense';
+  if (use === 'in_transit') return type === 'asset';
+  if (use === 'received_not_billed') return type === 'liability';
+  return type === 'income' || type === 'expense';
 }
 
 // One value per use. The keys are written out (not built from the list) so the type is exact
@@ -49,6 +56,7 @@ function perUse<T>(make: () => T): Record<StockAccountUse, T> {
     correction: make(),
     transfer_shortage: make(),
     revaluation: make(),
+    received_not_billed: make(),
   };
 }
 

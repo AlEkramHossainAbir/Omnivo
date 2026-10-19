@@ -29,8 +29,9 @@ import { useQuantity, useTenantId, useUnitCode, VariantCell } from './stock-part
 
 // The lines of a requisition (step 17a): item, unit, quantity, estimated cost. Like the sales line
 // editor, the form holds the lines as one controlled value (a Controller on "lines"), and this
-// editor changes that array; 17b's purchase order adds its price, discount and VAT here. A lazy
-// chunk of its own: it brings decimal.js with the money box, and the product picker.
+// editor changes that array. 17b's purchase order is priced like a sales line, so it uses the sales
+// editor instead (purchase-order-lines.tsx). A lazy chunk of its own: it brings decimal.js with the
+// money box, and the product picker.
 
 export type PurchaseLinesErrors = FieldErrors<{ lines: RequisitionLineFormValues[] }>['lines'];
 
@@ -284,11 +285,15 @@ export function PurchaseLinesEditor({
                   update(index, { estimatedCost: value });
                 }}
               />
+              {/* Step 17b: the lookup starts from the last price paid (a requisition has no
+                  supplier, so never "this supplier's"), else the average cost */}
               {lineMeta.source !== undefined && (
                 <span className="text-right text-caption text-ink-3">
-                  {lineMeta.source === 'average_cost'
-                    ? t('purchaseLines.fromAverage')
-                    : t('purchaseLines.noCost')}
+                  {lineMeta.source === 'last_price'
+                    ? t('purchaseLines.fromLastPrice')
+                    : lineMeta.source === 'average_cost'
+                      ? t('purchaseLines.fromAverage')
+                      : t('purchaseLines.noCost')}
                 </span>
               )}
             </LineField>

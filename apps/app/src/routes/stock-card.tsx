@@ -421,6 +421,8 @@ export function StockCardPage() {
                 void navigate({ to: route, params: { deliveryId: movement.documentId } });
               } else if (route === '/sales-returns/$returnId') {
                 void navigate({ to: route, params: { returnId: movement.documentId } });
+              } else if (route === '/goods-receipts/$receiptId') {
+                void navigate({ to: route, params: { receiptId: movement.documentId } });
               }
             }}
             onEndReached={loadMore}

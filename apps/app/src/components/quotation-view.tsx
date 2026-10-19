@@ -51,7 +51,7 @@ export function QuotationView({
     kind: 'quotation',
     id: quotation.id,
     number: quotation.number,
-    customerId: quotation.customer.id,
+    partyId: quotation.customer.id,
   };
 
   const decline = useMutation({

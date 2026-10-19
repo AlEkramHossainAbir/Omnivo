@@ -594,8 +594,8 @@ export function saveCustomer(
 
 // The journal keeps a party's code and name on each line, and so does each sales document (step
 // 15b); the API joins them on read. After a rename they show the new name, like the API's. A
-// supplier is renamed the same way (step 17a): its payable lines, and its sales documents when it
-// is a customer too.
+// supplier is renamed the same way (step 17a): its payable lines, its purchase orders and goods
+// receipts (step 17b), and its sales documents when it is a customer too.
 export function refreshPartyRefs(data: WorkspaceData, saved: PartyRef): void {
   const ref = { id: saved.id, code: saved.code, name: saved.name };
   for (const entry of data.journal.entries) {
@@ -605,6 +605,9 @@ export function refreshPartyRefs(data: WorkspaceData, saved: PartyRef): void {
   }
   for (const document of salesDocumentsOf(data)) {
     if (document.customer.id === saved.id) document.customer = ref;
+  }
+  for (const document of [...data.purchase.orders, ...data.purchase.receipts]) {
+    if (document.supplier.id === saved.id) document.supplier = ref;
   }
 }
 

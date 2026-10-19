@@ -1,6 +1,15 @@
 import { CURRENCIES, DEFAULT_SETTINGS } from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
-import { boolean, check, foreignKey, pgTable, smallint, text, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  check,
+  foreignKey,
+  numeric,
+  pgTable,
+  smallint,
+  text,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
 import { attachments } from './attachments.js';
 import { ledgerAccounts } from './ledger-accounts.js';
@@ -36,6 +45,11 @@ export const tenantSettings = pgTable(
     // Step 15d: the income account a credit note takes the sale back from ("Sales returns"). NULL =
     // the Sales account itself. Its own route (/sales-accounts) writes it, never PUT /settings.
     salesReturnsAccountId: uuid('sales_returns_account_id'),
+    // Step 17b: how much more than ordered a goods receipt may bring in, in percent of the order
+    // line (3.00 = 3%). 0 = never more than ordered.
+    overReceiptPercent: numeric('over_receipt_percent', { precision: 5, scale: 2 })
+      .notNull()
+      .default('0'),
     createdAt: baseColumns().createdAt,
     updatedAt: baseColumns().updatedAt,
     updatedBy: baseColumns().updatedBy,
@@ -46,6 +60,8 @@ export const tenantSettings = pgTable(
       'tenant_settings_fiscal_month_check',
       sql`${table.fiscalYearStartMonth} BETWEEN 1 AND 12`,
     ),
+    // The contract's limit: 100% = double the order line
+    check('tenant_settings_over_receipt_check', sql`${table.overReceiptPercent} BETWEEN 0 AND 100`),
     // composite FK: লোগো হিসেবে অন্য টেন্যান্টের ফাইল বসানো DB-লেভেলেই অসম্ভব। NULL হলে চেক হয় না
     foreignKey({
       name: 'tenant_settings_logo_fk',

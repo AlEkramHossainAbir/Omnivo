@@ -23,6 +23,7 @@ import {
   roleListSchema,
   roleSchema,
   setupSchema,
+  taxRateListSchema,
   type Unit,
   unitListSchema,
   waitingApprovalPageSchema,
@@ -65,6 +66,8 @@ let faruk: SignedIn;
 let nabila: SignedIn;
 let userIds: Map<SignedIn, string>;
 let units: Unit[];
+// Step 17b: the VAT rate a purchase order line starts with, when the product has none of its own
+let defaultRate: string;
 let main: Warehouse;
 let purchaseManager: Role;
 let director: Role;
@@ -317,6 +320,11 @@ beforeAll(async () => {
     expect(setupSchema.parse((await send('GET', '/setup')).json()).status).toBe('ready');
   });
   units = unitListSchema.parse((await send('GET', '/units')).json()).items;
+  const rate = taxRateListSchema
+    .parse((await send('GET', '/tax-rates')).json())
+    .items.find((item) => item.isDefault);
+  if (!rate) throw new Error('setup made no default VAT rate');
+  defaultRate = rate.id;
   const [first] = warehouseListSchema.parse((await send('GET', '/warehouses')).json()).items;
   if (!first) throw new Error('sign-up made no warehouse');
   main = first;
@@ -390,7 +398,11 @@ afterAll(async () => {
 describe('approval rules', () => {
   it('start with no levels, and the first save is made from version 0', async () => {
     const { items } = approvalRuleListSchema.parse((await send('GET', '/approval-rules')).json());
-    expect(items).toEqual([{ document: 'requisition', levels: [], version: 0, updatedAt: null }]);
+    // One rule per kind of document (step 17b added the purchase order's), each its own form
+    expect(items).toEqual([
+      { document: 'requisition', levels: [], version: 0, updatedAt: null },
+      { document: 'purchase_order', levels: [], version: 0, updatedAt: null },
+    ]);
 
     const stale = await send('PUT', '/approval-rules/requisition', { levels: [], version: 1 });
     expect(stale.statusCode).toBe(409);
@@ -921,13 +933,21 @@ describe('cost lookup', () => {
         unitId: unitId('roll'),
         cost: '10500.0000',
         source: 'average_cost',
+        taxRateId: defaultRate,
       },
-      { variantId: variantOf(knitting), unitId: unitId('pcs'), cost: null, source: null },
+      {
+        variantId: variantOf(knitting),
+        unitId: unitId('pcs'),
+        cost: null,
+        source: null,
+        taxRateId: defaultRate,
+      },
       {
         variantId: variantOf(jersey),
         unitId: unitId('kg'),
         cost: '420.0000',
         source: 'average_cost',
+        taxRateId: defaultRate,
       },
     ]);
   });
@@ -940,7 +960,13 @@ describe('cost lookup', () => {
       rupa,
     );
     expect(costLookupSchema.parse(res.json()).items).toEqual([
-      { variantId: variantOf(jersey), unitId: unitId('kg'), cost: null, source: null },
+      {
+        variantId: variantOf(jersey),
+        unitId: unitId('kg'),
+        cost: null,
+        source: null,
+        taxRateId: defaultRate,
+      },
     ]);
   });
 });

@@ -52,26 +52,28 @@ const TARGET = {
 // A document's page from the notification's kind and id. The list of that kind when the id is
 // missing or not a document's (an older notification); the dashboard for a kind this app does
 // not know. One navigate() per kind: each path has its own parameter name, and TanStack checks
-// each pair against the router. Step 17a: the kinds that need an approval too (17b adds the
-// purchase order).
+// each pair against the router. Step 17a: the kinds that need an approval too. Step 17b: a purchase
+// order is both (its approval, and its failed email), so the two lists are one switch.
 function useOpenDocument(): (params: NotificationParams) => Promise<void> {
   const navigate = useNavigate();
   return async (params) => {
     const { document: kind, id } = params;
     const known = typeof id === 'string' && id !== '';
-    // A requisition is the only kind now; 17b's purchase order makes this a switch like the one
-    // below (a one-case switch fails the lint rule against conditions that are always true)
-    if (typeof kind === 'string' && isApprovalDocument(kind)) {
-      await (known
-        ? navigate({ to: '/requisitions/$requisitionId', params: { requisitionId: id } })
-        : navigate({ to: '/requisitions' }));
-      return;
-    }
-    if (typeof kind !== 'string' || !isOutputDocument(kind)) {
+    if (typeof kind !== 'string' || !(isOutputDocument(kind) || isApprovalDocument(kind))) {
       await navigate({ to: '/' });
       return;
     }
     switch (kind) {
+      case 'requisition':
+        await (known
+          ? navigate({ to: '/requisitions/$requisitionId', params: { requisitionId: id } })
+          : navigate({ to: '/requisitions' }));
+        return;
+      case 'purchase_order':
+        await (known
+          ? navigate({ to: '/purchase-orders/$orderId', params: { orderId: id } })
+          : navigate({ to: '/purchase-orders' }));
+        return;
       case 'quotation':
         await (known
           ? navigate({ to: '/quotations/$quotationId', params: { quotationId: id } })

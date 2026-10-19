@@ -156,8 +156,19 @@ export const AUDIT_ACTIONS = [
   'requisition.updated',
   'requisition.deleted',
   'requisition.cancelled',
-  // The approval steps of any document that needs one. The entity is that document (a requisition
-  // now; an order, a bill and a payment from 17b and 17c), so its history reads in one place.
+  // step 17b
+  'requisition.closed',
+  'purchase_order.created',
+  'purchase_order.updated',
+  'purchase_order.deleted',
+  'purchase_order.closed',
+  'purchase_order.cancelled',
+  'goods_receipt.created',
+  'goods_receipt.updated',
+  'goods_receipt.deleted',
+  'goods_receipt.posted',
+  // The approval steps of any document that needs one. The entity is that document (a requisition,
+  // a purchase order; a bill and a payment from 17c), so its history reads in one place.
   'approval.submitted',
   'approval.approved',
   'approval.rejected',
@@ -206,6 +217,8 @@ export const AUDIT_ENTITY_TYPES = [
   'supplier',
   'supplier_group',
   'requisition',
+  'purchase_order',
+  'goods_receipt',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

@@ -17,9 +17,12 @@ import {
   type ProductSort,
   type ProductStatus,
   type ProfitAndLossQuery,
+  type PurchaseOrderReceiptFilter,
+  type PurchaseOrderStatus,
   type QuotationStatus,
   type ReceiptStatus,
   type RefundStatus,
+  type RequisitionOrderFilter,
   type RequisitionStatus,
   routes,
   type StockDocumentStatus,
@@ -1173,7 +1176,9 @@ export function salesAccountsQuery(tenantId: string) {
 // ---------------------------------------------------------------------------------------------
 // Requisitions and approvals (step 17a). Everything starts with ['purchase', tenantId]: approving a
 // requisition changes the requisition, its list, the "waiting for me" list and the navigation's
-// count, and one invalidate refreshes them all. 17b's purchase orders join the prefix.
+// count, and one invalidate refreshes them all. Step 17b: the purchase orders and the goods
+// receipts join the prefix: approving an order changes what its requisitions have ordered, and
+// posting a receipt changes what its order has received.
 
 // The approval levels of every kind of document (Settings → Approval levels, and a draft's card)
 export function approvalRulesQuery(tenantId: string) {
@@ -1186,6 +1191,8 @@ export function approvalRulesQuery(tenantId: string) {
 export interface RequisitionListFilter {
   status: RequisitionStatus | '';
   warehouseId: string;
+  // Step 17b: "To order" is the buyer's queue: approved, with a line not ordered in full
+  order: RequisitionOrderFilter | '';
 }
 
 export function requisitionsQuery(tenantId: string, filter: RequisitionListFilter) {
@@ -1197,6 +1204,7 @@ export function requisitionsQuery(tenantId: string, filter: RequisitionListFilte
           limit: 50,
           ...(filter.status !== '' && { status: filter.status }),
           ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
+          ...(filter.order !== '' && { order: filter.order }),
           ...(pageParam !== null && { cursor: pageParam }),
         },
       }),
@@ -1210,6 +1218,113 @@ export function requisitionQuery(tenantId: string, requisitionId: string) {
   return queryOptions({
     queryKey: ['purchase', tenantId, 'requisition', requisitionId],
     queryFn: () => call(routes.requisitions.get, { params: { id: requisitionId } }),
+    retry: false,
+  });
+}
+
+// Step 17b: the lines still to order for one warehouse, oldest requisition first (decision 18).
+// The first 50 that match: the dialog searches instead of scrolling through hundreds.
+export function openRequisitionLinesQuery(
+  tenantId: string,
+  filter: { warehouseId: string; requisitionId: string; search: string },
+) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'requisition-lines', filter],
+    queryFn: async () =>
+      (
+        await call(routes.requisitionLines.open, {
+          query: {
+            limit: 50,
+            warehouseId: filter.warehouseId,
+            ...(filter.requisitionId !== '' && { requisitionId: filter.requisitionId }),
+            ...(filter.search !== '' && { search: filter.search }),
+          },
+        })
+      ).items,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export interface PurchaseOrderListFilter {
+  status: PurchaseOrderStatus | '';
+  warehouseId: string;
+  supplierId: string;
+  // "To receive": approved, with goods still to come (the store keeper's queue)
+  receipt: PurchaseOrderReceiptFilter | '';
+}
+
+export function purchaseOrdersQuery(tenantId: string, filter: PurchaseOrderListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'orders', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.purchaseOrders.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
+          ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
+          ...(filter.receipt !== '' && { receipt: filter.receipt }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// The goods receipt form's order box: the supplier's approved orders with goods still to come.
+// 100 at most, like the delivery's open orders: a supplier with more open orders than that is a
+// problem of its own.
+export function ordersToReceiveQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'orders', 'to-receive', supplierId],
+    queryFn: async () =>
+      (
+        await call(routes.purchaseOrders.list, {
+          query: { limit: 100, receipt: 'to_receive', supplierId },
+        })
+      ).items,
+  });
+}
+
+export function purchaseOrderQuery(tenantId: string, orderId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'order', orderId],
+    queryFn: () => call(routes.purchaseOrders.get, { params: { id: orderId } }),
+    retry: false,
+  });
+}
+
+export interface GoodsReceiptListFilter {
+  status: StockDocumentStatus | '';
+  warehouseId: string;
+  supplierId: string;
+}
+
+export function goodsReceiptsQuery(tenantId: string, filter: GoodsReceiptListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'receipts', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.goodsReceipts.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
+          ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function goodsReceiptQuery(tenantId: string, receiptId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'receipt', receiptId],
+    queryFn: () => call(routes.goodsReceipts.get, { params: { id: receiptId } }),
     retry: false,
   });
 }

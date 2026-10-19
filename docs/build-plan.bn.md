@@ -282,7 +282,17 @@ cancelled)। **Approval:** প্রতি ডকুমেন্ট ধরন�
 সাথে সাথে approved, Owner যেকোনো level approve করতে পারে); reject-এ comment লাগে, draft-এ ফেরে; approved
 ডকুমেন্ট lock, Reopen করলে নতুন round; ইতিহাস কখনো মোছে না। Bell, audit log, "Approvals" পেজে আমার জন্য
 অপেক্ষমাণ তালিকা ও count।
-**১৭b–১৭d:** PO ও goods receipt (GRNI), bill ও supplier payment, purchase return ও debit note — নিজ নিজ গাইডে।
+**১৭b (purchase order, goods receipt):** approved requisition-এর লাইন থেকে PO, লাইন ধরে (এক requisition কয়েক
+supplier-এর PO-তে ভাগ হয়, কয়েকটা requisition এক PO-তে; requisition-এ Partly ordered / Ordered, আর Close)। PO-র
+লাইন sales লাইনের মতো (price, discount % বা ৳, VAT rate, "prices include VAT"); শুরুর দাম শেষ কেনা দাম (এই
+supplier-এর, না হলে যেকারো, না হলে average cost); শুধু BDT। প্রথম submit-এ নম্বর (PO), approval ১৭a-র engine-এ,
+VAT-সহ total ধরে; approved হলে lock, goods আসার আগে Reopen, পরে শুধু Close। PDF (দুই ভাষা), email, WhatsApp link।
+**Goods receipt (GRN)** শুধু approved PO থেকে: লাইনে accepted ও rejected (কারণসহ), lot/expiry/serial, supplier
+challan, vehicle; "Receive over the order" % (company setting, default 0) পর্যন্ত বেশি নেওয়া যায়। Post করলে
+accepted মাল PO-র VAT ছাড়া net দামে stock-এ (moving average), entry Dr Inventory / Cr Goods received not billed
+(2115, stock account `received_not_billed`, warehouse-এর branch-এ)। PO: Partly received → Received, বা Close; Late
+pill; stock ও reorder-এ Incoming।
+**১৭c–১৭d:** bill ও supplier payment, purchase return ও debit note — নিজ নিজ গাইডে।
 
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 

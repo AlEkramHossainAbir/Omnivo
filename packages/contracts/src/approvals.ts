@@ -14,9 +14,9 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // their own document, except an Owner: the Owner answers to nobody, so the Owner's own document is
 // approved when it is submitted.
 
-// The documents that can need an approval. Each guide adds its own: 17b the purchase order, 17c the
-// bill and the supplier payment.
-export const APPROVAL_DOCUMENTS = ['requisition'] as const;
+// The documents that can need an approval. Each guide adds its own: 17a the requisition, 17b the
+// purchase order, 17c the bill and the supplier payment.
+export const APPROVAL_DOCUMENTS = ['requisition', 'purchase_order'] as const;
 export type ApprovalDocument = (typeof APPROVAL_DOCUMENTS)[number];
 
 export function isApprovalDocument(value: string): value is ApprovalDocument {

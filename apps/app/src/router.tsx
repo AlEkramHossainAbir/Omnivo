@@ -641,6 +641,52 @@ const approvalsRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/approvals'), 'ApprovalsPage'),
 });
 
+// Step 17b: purchase orders ("Make purchase order" on a requisition comes with ?requisitionId=) and
+// goods receipts ("Receive goods" on an order comes with ?orderId=). '/…/new' beats '/…/$id'.
+const purchaseOrdersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/purchase-orders',
+  component: lazyRouteComponent(() => import('./routes/purchase-orders'), 'PurchaseOrdersPage'),
+});
+
+const newPurchaseOrderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/purchase-orders/new',
+  validateSearch: (search: Record<string, unknown>): { requisitionId?: string } => ({
+    ...(typeof search.requisitionId === 'string' &&
+      UUID.test(search.requisitionId) && { requisitionId: search.requisitionId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/purchase-order'), 'NewPurchaseOrderPage'),
+});
+
+const purchaseOrderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/purchase-orders/$orderId',
+  component: lazyRouteComponent(() => import('./routes/purchase-order'), 'PurchaseOrderPage'),
+});
+
+const goodsReceiptsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/goods-receipts',
+  component: lazyRouteComponent(() => import('./routes/goods-receipts'), 'GoodsReceiptsPage'),
+});
+
+const newGoodsReceiptRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/goods-receipts/new',
+  validateSearch: (search: Record<string, unknown>): { orderId?: string } => ({
+    ...(typeof search.orderId === 'string' &&
+      UUID.test(search.orderId) && { orderId: search.orderId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/goods-receipt'), 'NewGoodsReceiptPage'),
+});
+
+const goodsReceiptRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/goods-receipts/$receiptId',
+  component: lazyRouteComponent(() => import('./routes/goods-receipt'), 'GoodsReceiptPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -767,6 +813,12 @@ const routeTree = rootRoute.addChildren([
     newRequisitionRoute,
     requisitionRoute,
     approvalsRoute,
+    purchaseOrdersRoute,
+    newPurchaseOrderRoute,
+    purchaseOrderRoute,
+    goodsReceiptsRoute,
+    newGoodsReceiptRoute,
+    goodsReceiptRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

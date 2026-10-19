@@ -4,6 +4,7 @@ import {
   LANGUAGE_CODES,
   type LanguageCode,
   type OutputDocument,
+  type PartyRole,
 } from '@omnivo/contracts';
 import { LANGUAGES } from '@omnivo/i18n';
 
@@ -16,7 +17,23 @@ export interface OutputTarget {
   kind: OutputDocument;
   id: string;
   number: string;
-  customerId: string;
+  // Who the document goes to: the customer, or (step 17b) the supplier of a purchase order. The
+  // kind says which (recipientRole).
+  partyId: string;
+}
+
+// Step 17b: a purchase order goes to its supplier, every sales document to its customer. A Record,
+// so a new kind of document does not compile until it says who gets it.
+const RECIPIENT_ROLES = {
+  quotation: 'customer',
+  invoice: 'customer',
+  receipt: 'customer',
+  credit_note: 'customer',
+  purchase_order: 'supplier',
+} as const satisfies Record<OutputDocument, PartyRole>;
+
+export function recipientRole(kind: OutputDocument): PartyRole {
+  return RECIPIENT_ROLES[kind];
 }
 
 // The language that is not this one: the second item of the Send menu ("Download PDF in বাংলা").

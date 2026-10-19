@@ -66,7 +66,7 @@ export function InvoiceView({ invoice, today }: { invoice: Invoice; today: strin
   // Step 16: only a numbered invoice goes out (decision 11); a draft has no number yet
   const target: OutputTarget | null =
     posted && invoice.number !== null
-      ? { kind: 'invoice', id: invoice.id, number: invoice.number, customerId: invoice.customer.id }
+      ? { kind: 'invoice', id: invoice.id, number: invoice.number, partyId: invoice.customer.id }
       : null;
 
   // "Credit whole invoice" (decision 5): a draft with every line as it was billed, saved in one

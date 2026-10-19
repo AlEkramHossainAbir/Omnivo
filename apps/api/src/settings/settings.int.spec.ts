@@ -92,6 +92,8 @@ function form(settings: Settings) {
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
     pricesIncludeVat: settings.pricesIncludeVat,
+    // Step 17b: the whole form, the over-receipt percent too
+    overReceiptPercent: settings.overReceiptPercent,
   };
 }
 
@@ -105,6 +107,8 @@ describe('settings', () => {
       logo: null,
       // Step 15a: prices are typed before VAT, the way a distributor quotes
       pricesIncludeVat: false,
+      // Step 17b: a goods receipt never brings in more than ordered
+      overReceiptPercent: '0.00',
       version: 1,
     });
   });
@@ -260,5 +264,48 @@ describe('prices and VAT', () => {
     );
     const without = await send('PUT', '/settings', partial);
     expect(without.statusCode).toBe(400);
+  });
+});
+
+// Last too, for the same reason
+describe('receiving over the order', () => {
+  it('saves the percent with two decimals, and logs it only when it changed (step 17b)', async () => {
+    const res = await send('PUT', '/settings', {
+      ...form(await current()),
+      overReceiptPercent: '3',
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(settingsSchema.parse(res.json()).overReceiptPercent).toBe('3.00');
+    const logged = async () =>
+      auditPageSchema
+        .parse((await send('GET', '/audit-logs?entityType=workspace')).json())
+        .items.filter((item) => item.action === 'settings.updated');
+    const [entry] = await logged();
+    expect(entry?.changes).toEqual({ overReceiptPercent: { from: '0.00', to: '3' } });
+
+    // "3.0" is the 3.00 already saved: a new version, but nothing to log
+    const same = await send('PUT', '/settings', {
+      ...form(await current()),
+      overReceiptPercent: '3.0',
+    });
+    expect(same.statusCode, same.body).toBe(200);
+    const [latest] = await logged();
+    expect(latest?.changes).toEqual({});
+    // An empty box is 0
+    const empty = await send('PUT', '/settings', {
+      ...form(await current()),
+      overReceiptPercent: '',
+    });
+    expect(settingsSchema.parse(empty.json()).overReceiptPercent).toBe('0.00');
+  });
+
+  it('refuses more than 100 percent, more than two decimals and anything but a number', async () => {
+    for (const overReceiptPercent of ['101', '2.555', '-1', 'three']) {
+      const res = await send('PUT', '/settings', { ...form(await current()), overReceiptPercent });
+      expect(res.statusCode).toBe(400);
+      expect(problemSchema.parse(res.json()).fieldErrors).toEqual({
+        overReceiptPercent: ['over_receipt_percent_format'],
+      });
+    }
   });
 });

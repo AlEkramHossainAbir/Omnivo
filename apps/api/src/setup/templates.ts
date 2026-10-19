@@ -138,6 +138,15 @@ const REFUNDING = ['sales.refund.manage'] as const;
 // Settings → Approvals, by role, and a workspace starts with none.
 const SUPPLYING = ['purchase.supplier.manage', 'purchase.supplier.balance'] as const;
 const REQUESTING = ['purchase.requisition.manage'] as const;
+// Step 17b (decision 25). The buyer writes purchase orders: a garments merchandiser buying fabric
+// and trims for a buyer's order, a production manager buying raw materials, a shop's manager.
+// The store keeper (and a depot manager) receives what comes in at the gate. Where a company has
+// both, they are kept apart on purpose: the person who orders the goods does not also sign that
+// they came. A shop's manager and a general manager run everything, so they do both. A pharma or
+// distribution company buys at head office, so its orders are the owner's until the owner gives
+// the permission to a role in Settings → Roles.
+const BUYING = ['purchase.order.manage'] as const;
+const RECEIVING = ['purchase.receipt.manage'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -181,6 +190,7 @@ const STORE_KEEPER: RoleTemplate = {
     ...DELIVERING,
     ...RETURNING,
     ...REQUESTING,
+    ...RECEIVING,
   ],
 };
 
@@ -259,6 +269,10 @@ function standardChart(industry: IndustryAccounts): ChartTemplate {
     liability: group('2000', 'Liabilities', [
       group('2100', 'Current liabilities', [
         account('2110', 'Accounts payable', 'accounts_payable'),
+        // Step 17b: what goods receipts brought in and no bill has billed yet. A stock account
+        // (Settings → Inventory), not a purpose: an old workspace gets it from the stock accounts
+        // job, which never takes over an account the owner made at this code.
+        account('2115', 'Goods received not billed'),
         account('2120', 'Output VAT', 'vat_output'),
         account('2130', 'VAT and tax deducted at source (VDS, TDS)'),
         account('2140', 'Salaries and wages payable'),
@@ -366,6 +380,7 @@ function stockAccounts(codes: { loss: string; samples?: string }): Record<StockA
     correction: '5190',
     transfer_shortage: codes.loss,
     revaluation: '5190',
+    received_not_billed: '2115',
   };
 }
 
@@ -395,6 +410,7 @@ export const INDUSTRY_TEMPLATES = {
           'sales.customer.manage',
           ...ORDERING,
           ...REQUESTING,
+          ...BUYING,
         ],
       },
       STORE_KEEPER,
@@ -459,6 +475,7 @@ export const INDUSTRY_TEMPLATES = {
           ...DELIVERING,
           ...RETURNING,
           ...REQUESTING,
+          ...RECEIVING,
         ],
       },
       {
@@ -532,6 +549,7 @@ export const INDUSTRY_TEMPLATES = {
           ...DELIVERING,
           ...RETURNING,
           ...REQUESTING,
+          ...RECEIVING,
         ],
       },
       {
@@ -580,7 +598,13 @@ export const INDUSTRY_TEMPLATES = {
       {
         name: 'Production manager',
         description: 'Production orders and material use',
-        permissions: ['core.user.read', 'inventory.product.manage', ...STOCK_WORK, ...REQUESTING],
+        permissions: [
+          'core.user.read',
+          'inventory.product.manage',
+          ...STOCK_WORK,
+          ...REQUESTING,
+          ...BUYING,
+        ],
       },
       STORE_KEEPER,
     ],
@@ -642,6 +666,8 @@ export const INDUSTRY_TEMPLATES = {
           ...REFUNDING,
           ...SUPPLYING,
           ...REQUESTING,
+          ...BUYING,
+          ...RECEIVING,
         ],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [...COLLECTING] },
@@ -699,6 +725,8 @@ export const INDUSTRY_TEMPLATES = {
           ...REFUNDING,
           ...SUPPLYING,
           ...REQUESTING,
+          ...BUYING,
+          ...RECEIVING,
         ],
       },
     ],

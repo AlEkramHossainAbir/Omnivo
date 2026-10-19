@@ -2,8 +2,8 @@ import { z } from 'zod';
 
 import { defineRoute } from './http.js';
 
-// What the purchase documents share (step 17): requisitions now, purchase orders, goods receipts
-// and bills in 17b and 17c.
+// What the purchase documents share (step 17): requisitions (17a), purchase orders and goods
+// receipts (17b), and bills (17c).
 
 // The most lines one purchase document holds: a pharmacy's monthly requisition runs to a few
 // hundred items, like a distributor's sales order (MAX_SALES_LINES)
@@ -12,13 +12,23 @@ export const MAX_PURCHASE_LINES = 300;
 // ---------------------------------------------------------------------------------------------
 // The cost a line starts with
 
-// Where a line's starting cost came from. average_cost: the company-wide average per base unit
-// (step 14) × the unit's factor, shown only to someone with inventory.stock.value. 17b adds the
-// last purchase price, which comes first (you chose this).
-export const PURCHASE_COST_SOURCES = ['average_cost'] as const;
+// Where a line's starting cost came from, in the order they are tried (step 17b):
+//   supplier_price  the price on this supplier's latest purchase order for the variant
+//   last_price      the price on anyone's latest purchase order for it
+//   average_cost    the company-wide average per base unit (step 14) × the unit's factor, shown
+//                   only to someone with inventory.stock.value
+// A purchase price is a price people typed and agreed, so everyone who writes purchases may see
+// it; the average is worked out from the books, so it keeps step 14's rule. "Latest" counts orders
+// that were approved (received and closed ones too): a draft is not a price anybody agreed to.
+// The price is what one unit cost after the line's discount and before VAT (the net), moved to the
+// line's unit, 4 decimals: what the goods were worth, whatever that order's VAT setting was.
+export const PURCHASE_COST_SOURCES = ['supplier_price', 'last_price', 'average_cost'] as const;
 export type PurchaseCostSource = (typeof PURCHASE_COST_SOURCES)[number];
 
 export const costLookupInputSchema = z.object({
+  // The order's supplier, so its own last price comes first. null = no supplier yet, or a
+  // requisition (it has none).
+  supplierId: z.uuid().nullable().default(null),
   items: z
     .array(z.object({ variantId: z.uuid(), unitId: z.uuid() }))
     .min(1)
@@ -32,8 +42,11 @@ export const costLookupItemSchema = z.object({
   // Per one of the unit, 4 decimals. null = nothing to start from (a new product, a person
   // without inventory.stock.value): the person types it.
   cost: z.string().nullable(),
-  // z.string(), not the enum: 17b adds a source, and an older client must still parse the answer
+  // z.string(), not the enum: a newer server's new source must not break an older client
   source: z.string().nullable(),
+  // The product's own active VAT rate, or the workspace's default (as the sales price lookup gives
+  // it): what a purchase order line starts with. A requisition has no VAT and ignores it.
+  taxRateId: z.uuid(),
 });
 export type CostLookupItem = z.infer<typeof costLookupItemSchema>;
 

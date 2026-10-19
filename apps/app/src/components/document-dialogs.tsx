@@ -9,6 +9,7 @@ import {
   documentEmailInputSchema,
   type LanguageCode,
   MAX_EMAIL_RECIPIENTS,
+  type PartyRole,
   routes,
   SHARE_LINK_DAYS,
   whatsAppNumber,
@@ -56,10 +57,13 @@ function useTenant(): string {
 // into it would lose what they typed.
 export function EmailForm({
   target,
+  role,
   language,
   onDone,
 }: {
   target: OutputTarget;
+  // Step 17b: who it goes to, for the words when they have no email (the Send menu knows)
+  role: PartyRole;
   language: LanguageCode;
   onDone: () => void;
 }) {
@@ -73,16 +77,26 @@ export function EmailForm({
     );
   }
   if (!draft.data) return null;
-  return <EmailFields target={target} language={language} draft={draft.data} onDone={onDone} />;
+  return (
+    <EmailFields
+      target={target}
+      role={role}
+      language={language}
+      draft={draft.data}
+      onDone={onDone}
+    />
+  );
 }
 
 function EmailFields({
   target,
+  role,
   language,
   draft,
   onDone,
 }: {
   target: OutputTarget;
+  role: PartyRole;
   language: LanguageCode;
   draft: DocumentEmailDraft;
   onDone: () => void;
@@ -195,8 +209,17 @@ function EmailFields({
           autoComplete="off"
           spellCheck={false}
           placeholder={t('documentOutput.emailDialog.toPlaceholder')}
-          // The customer has no email: say so under the box until someone types one
-          hint={draft.to === '' ? t('documentOutput.emailDialog.noCustomerEmail') : hint}
+          // The customer (17b: the supplier) has no email: say so under the box until someone
+          // types one
+          hint={
+            draft.to === ''
+              ? t(
+                  role === 'supplier'
+                    ? 'documentOutput.emailDialog.noSupplierEmail'
+                    : 'documentOutput.emailDialog.noCustomerEmail',
+                )
+              : hint
+          }
           {...register('to')}
           error={errors.to?.message}
         />
@@ -258,10 +281,12 @@ const LINK_BUTTON =
 // message ready. The link is shown only here (decision 13): closing the dialog forgets it.
 export function ShareForm({
   target,
+  role,
   language,
   phone,
 }: {
   target: OutputTarget;
+  role: PartyRole;
   language: LanguageCode;
   phone: string | null;
 }) {
@@ -400,7 +425,13 @@ export function ShareForm({
         </div>
         {/* The same reading of the phone the server used for the link (decision 17) */}
         {whatsAppNumber(phone) === null && (
-          <p className="text-label text-ink-3">{t('documentOutput.shareDialog.noNumber')}</p>
+          <p className="text-label text-ink-3">
+            {t(
+              role === 'supplier'
+                ? 'documentOutput.shareDialog.noSupplierNumber'
+                : 'documentOutput.shareDialog.noNumber',
+            )}
+          </p>
         )}
       </div>
     </DialogContent>

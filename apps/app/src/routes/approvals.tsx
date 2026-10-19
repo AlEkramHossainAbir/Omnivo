@@ -29,11 +29,13 @@ export function ApprovalsPage() {
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // One navigate() per kind: each path has its own parameter name, and TanStack checks each pair
-  // against the router. 17b adds the purchase order here.
+  // against the router. Step 17b: the purchase order.
   const open = useCallback(
     (row: WaitingApproval) => {
       if (row.document === 'requisition') {
         void navigate({ to: '/requisitions/$requisitionId', params: { requisitionId: row.id } });
+      } else if (row.document === 'purchase_order') {
+        void navigate({ to: '/purchase-orders/$orderId', params: { orderId: row.id } });
       }
     },
     [navigate],

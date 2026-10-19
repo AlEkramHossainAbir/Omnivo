@@ -3,6 +3,7 @@ import {
   type AdjustmentLine,
   compareQuantity,
   type DeliveryLine,
+  type GoodsReceiptLine,
   type SalesReturnLine,
   subtractMoney,
   subtractQuantity,
@@ -15,9 +16,10 @@ import type { ReactNode } from 'react';
 
 import { useIsoDate, useQuantity, useUnitCode, useValue, VariantCell } from './stock-parts';
 
-// A line of any stock document this table shows; a delivery's (step 15b) and a sales return's
-// (15d) have a value and no cost
-type DocumentLine = AdjustmentLine | TransferLine | DeliveryLine | SalesReturnLine;
+// A line of any stock document this table shows; a delivery's (step 15b), a sales return's (15d)
+// and a goods receipt's (17b) have a value and no cost
+type DocumentLine =
+  AdjustmentLine | TransferLine | DeliveryLine | SalesReturnLine | GoodsReceiptLine;
 
 // Step 14: what a line was worth (null without inventory.stock.value), and on an adjustment the
 // cost a person typed. Read from any kind of line.

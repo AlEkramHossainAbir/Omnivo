@@ -10,11 +10,18 @@ import { CURRENCIES } from './settings.js';
 // Step 16: a document goes out to the customer as a PDF — downloaded, attached to an email, or
 // behind a share link that opens without a login (sent on WhatsApp). The worker draws the PDF
 // once and keeps it; a new one is drawn only when the document (or the company on its header)
-// has changed since.
+// has changed since. Step 17b sends a purchase order to its supplier the same way.
 
-// The four documents a customer receives. An order, a challan, a return and a refund stay with
-// the browser's Print (step 15c).
-export const OUTPUT_DOCUMENTS = ['quotation', 'invoice', 'receipt', 'credit_note'] as const;
+// The four documents a customer receives, and the one a supplier receives (step 17b, you chose
+// the whole Send menu for it). A sales order, a challan, a return and a refund stay with the
+// browser's Print (step 15c).
+export const OUTPUT_DOCUMENTS = [
+  'quotation',
+  'invoice',
+  'receipt',
+  'credit_note',
+  'purchase_order',
+] as const;
 export type OutputDocument = (typeof OUTPUT_DOCUMENTS)[number];
 
 export function isOutputDocument(value: string): value is OutputDocument {
@@ -30,6 +37,7 @@ export const SEND_PERMISSIONS = {
   invoice: 'sales.invoice.manage',
   receipt: 'sales.receipt.manage',
   credit_note: 'sales.credit_note.manage',
+  purchase_order: 'purchase.order.manage',
 } as const satisfies Record<OutputDocument, PermissionKey>;
 
 const languageSchema = z.enum(LANGUAGE_CODES);
@@ -55,8 +63,8 @@ export const documentFileSchema = z.object({
 });
 export type DocumentFile = z.infer<typeof documentFileSchema>;
 
-// The language of the PDF. The page sends the customer's document language unless the person
-// picked another one.
+// The language of the PDF. The page sends the party's document language (the customer's, or the
+// supplier's for a purchase order) unless the person picked another one.
 export const documentFileInputSchema = z.object({ language: languageSchema });
 export type DocumentFileInput = z.infer<typeof documentFileInputSchema>;
 
@@ -96,7 +104,7 @@ export const documentEmailInputSchema = z.object({
 export type DocumentEmailInput = z.infer<typeof documentEmailInputSchema>;
 export type DocumentEmailFormValues = z.input<typeof documentEmailInputSchema>;
 
-// What the dialog starts with: the customer's email address, and a subject and message in the
+// What the dialog starts with: the customer's (or supplier's) email address, and a subject and message in the
 // chosen language. The server writes them (with the rest of the email and the PDF) so that every
 // word the customer reads comes from one place, in the customer's language, whatever language
 // the person's own screen is in.
@@ -199,8 +207,8 @@ export function whatsAppUrl(phone: string | null, text: string): string {
 // ---------------------------------------------------------------------------------------------
 // The public page behind a link
 
-// What the customer sees before downloading: enough to know what the file is and from whom. Only
-// an invoice has a due date and an amount still due.
+// What the customer (or the supplier) sees before downloading: enough to know what the file is
+// and from whom. Only an invoice has a due date and an amount still due.
 export const publicDocumentSchema = z.object({
   company: z.string(),
   logoUrl: z.url().nullable(),
@@ -209,7 +217,9 @@ export const publicDocumentSchema = z.object({
   kind: z.string(),
   number: z.string(),
   date: z.iso.date(),
-  customer: z.string(),
+  // Who it was sent to: the customer, or the supplier of a purchase order (named "customer" until
+  // step 17b)
+  recipient: z.string(),
   total: z.string(),
   currency: z.enum(CURRENCIES),
   dueDate: z.iso.date().nullable(),
@@ -232,7 +242,7 @@ export const documentOutputRoutes = {
   file: defineRoute({
     method: 'POST',
     path: '/documents/:kind/:id/files',
-    summary: 'Get the PDF of a quotation, invoice, receipt or credit note, made now if needed',
+    summary: 'Get the PDF of a document that goes out, made now if needed',
     auth: 'bearer',
     status: 200,
     params: documentParamsSchema,

@@ -309,7 +309,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
-  its own box on a phone; the page never scrolls sideways.
+  its own box on a phone; the page never scrolls sideways. Its `fieldset` is `relative`, so the `sr-only` radios
+  stay inside the box that scrolls.
 - **Sidebar nav:** 14px/500 `ink-2` items with `ink-3` icons, radius 8px, hover
   `subtle`. The active item uses a `brand-soft` background with `brand` text and icon.
   Group labels are 11.5px/500 `ink-3`. Counts are right-aligned (`crit` when they need
@@ -349,14 +350,16 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `role="group"` labelled "Line 2". On a wide card (`@3xl`) the rows share one grid template with the header and
   the totals row, and each control's label is `sr-only`; on a narrow card the labels show and debit/credit sit
   side by side. Totals row on `subtle` with a `good` "Balanced" or `crit` "Out by" pill.
-- **Sales line editor (quotations, orders):** `SalesLinesEditor`, a card that is a container (`@container`) and
+- **Sales line editor (quotations, orders, purchase orders):** `SalesLinesEditor`, a card that is a container (`@container`) and
   its own lazy chunk. The lines are one controlled form value (a `Controller` on `lines`), so two form types
   share it. On a wide card (`@5xl`) item, unit, quantity, price, discount, VAT rate and amount share one grid
   template with a caption header; on a narrow card each control shows its label. The price column says "Price
   with VAT" or "Price before VAT" from the document's own setting. A new line shows where its price came from
   under the box (12px `ink-3`: "From their price list", "Product price", "No price set: type one"). When a line
   was priced for another customer, a text link at the top offers "Use this customer's prices on every line";
-  changing the customer never reprices by itself. Under the lines, a totals block on `subtle` (line discounts
+  changing the customer never reprices by itself. A purchase order uses the same editor with a supplier's
+  `LinePricing`: the hints are "Last price from this supplier", "Last price paid", "From the average cost" and "No
+  earlier price: type one", and the link says "Use this supplier's last prices on every line". Under the lines, a totals block on `subtle` (line discounts
   only when there are any, before VAT, VAT, total at 500) with paisa, and on the left whether prices include VAT.
 - **Sales document statuses:** quotation Open (`brand`, `Clock01`), Accepted (`good`, `CheckmarkCircle02`),
   Declined (neutral, `CancelCircle`), Expired (`warn`, `Hourglass`, worked out by the page: open and past its
@@ -380,7 +383,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Approved (`good`, `CheckmarkCircle02`), Cancelled (neutral, `CancelCircle`). An approval round and its steps:
   Waiting (`brand`, `Clock01`), Approved (`good`, `CheckmarkCircle02`), Rejected (`warn`, `ArrowTurnBackward`:
   the writer must act), Reopened (neutral, `Undo02`), and a step never reached "Not yet" / "Not decided"
-  (neutral, `MinusSignCircle`).
+  (neutral, `MinusSignCircle`). A requisition is also Closed (neutral, `StopCircle`), and an approved one has a
+  second pill for how much is ordered: Partly ordered (`brand`, `ShoppingCart01`), Ordered (`good`,
+  `ShoppingCartCheck01`), none while nothing is. Purchase order Draft (neutral, `FileEdit`), Waiting for approval
+  (`brand`, `Clock01`), Approved (`good`, `CheckmarkCircle02`), Partly received (`brand`, `DeliveryTruck01`, in
+  Approved's place), Received (`good`, `PackageReceive`), Closed (neutral, `StopCircle`), Cancelled (neutral,
+  `CancelCircle`), plus a second `warn` "Late" pill (`Time04`) for an approved order past its expected date. Goods
+  receipt Draft (neutral, `FileEdit`), Posted (`good`, `CheckmarkCircle02`).
 - **Approval card:** a card ("Approval", with a subtitle) on every document that needs an approval. A draft lists
   the levels its amount reaches now ("Purchase manager · from ৳20,000"). A round: "Round 2" (13.5px/500) with its
   pill, a 13px `ink-3` line (who submitted it, when, for how much), then its steps in a 1px `line` box (radius
@@ -410,12 +419,15 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `overflow-x-auto` box: invoice number (`Geist Mono`) with its dates under it, the total, what is still due
   (500), and a money input for this receipt. Above it "Apply oldest first" and "Clear" (secondary `sm`); below
   it a `subtle` row with Applied and "Left as advance" (or a `crit` "Over by ৳x" with an `Alert02` icon).
-- **Stock line rows (adjustments, transfers):** a card that is a container (`@container`); one grid template for a
+- **Stock line rows (adjustments, transfers, goods receipts):** a card that is a container (`@container`); one grid template for a
   caption header and every row on a wide card (`@3xl`): item (name, SKU, stock here), unit, quantity (with
   "= 72 pcs" under it), and on a line that brings stock in, the unit cost per unit of the line (a `MoneyInput`
   with 4 decimals, "Cost per case", placeholder "At average cost", "= ৳3,600.00" under it), batch or serial
   numbers, remove. On a narrow card each control shows its label. Lines are added with the "Add items" dialog
-  (search or scan; Enter adds the only match; the dialog stays open).
+  (search or scan; Enter adds the only match; the dialog stays open). On a goods receipt the quantity is
+  "Accepted", with "Ordered 1,000 m · 400 m left on the order · Up to 430 m may come" under it (the last part only
+  when the workspace lets more in), then "Rejected" in the line's unit and, once something is rejected, "Why it was
+  rejected".
 - **Stock values:** a value worked out from the books is shown only with `inventory.stock.value`; without it the
   column is left out (lists) or shows a dash (documents). A stock document links its journal entries
   ("JV-2026-27-0042") for people who read the journal, and a stock entry links back ("From ADJ-…").
@@ -445,7 +457,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   are a real `<table>` whose `<thead>` repeats on every page; rows, blocks, totals and the signature lines use
   `break-inside-avoid`. Only a numbered document prints (a draft on paper looks real); a voided receipt does not.
 - **Send menu (document output):** a secondary button "Send" (`Sent` icon, `ArrowDown01` on the right) next to
-  Print on a quotation, invoice, money receipt and credit note: Download PDF (the customer's language), Download
+  Print on a quotation, purchase order, invoice, money receipt and credit note: Download PDF (the customer's language), Download
   PDF in the other language (named in its own script, "বাংলা"), Email, Share on WhatsApp. Without the send
   permission it is a single secondary "Download PDF" button (`Pdf01`). While the PDF is being made the button says
   "Making the PDF…"; after about 20 seconds it gives up with a message, never a spinner forever.
@@ -464,7 +476,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (secondary `sm`, `Unlink01`, asks first) on an active link for people with the send permission.
 - **Public document page (`/d/<token>`):** no app shell and no login. The `bg` page with one centered card (at
   most 480px; padding 32px, 22px on phones): the company's logo and name, the document's name and number
-  (`Geist Mono`, never broken), the customer, then number, date, total (and for an invoice the due date and what
+  (`Geist Mono`, never broken), the customer or the supplier (`recipient`), then number, date, total (and for an invoice the due date and what
   is still due) in a two-column list, a full-width primary "Download PDF" (a `crit` line with `Alert02` instead
   when the PDF could not be made), and a 13px `ink-3` line that the link is private. A caption footer "Sent with
   Omnivo". It speaks the link's language and does not save it. An ended or unknown link shows the same "This link

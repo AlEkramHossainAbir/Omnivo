@@ -192,13 +192,15 @@ export interface ResolvedLine {
 // The API's resolveSalesLines(): an active product or service, its unit, the decimals, and an
 // active VAT rate (or one the document's lines already use: keptRateIds). Every problem at once,
 // each under its own field. keptVariantIds (step 15c): an archived product still billed on an
-// invoice line, because the challan or the order behind that line already sold it.
+// invoice line, because the challan or the order behind that line already sold it. itemCode
+// (step 17b): a purchase order's line is priced the same way, and says purchase_item_invalid.
 export function resolveSalesLines(
   data: WorkspaceData,
   lines: readonly SalesLineInput[],
   pricesIncludeVat: boolean,
   keptRateIds: ReadonlySet<string>,
   keptVariantIds: ReadonlySet<string> = new Set(),
+  itemCode: ErrorCode = 'sales_item_invalid',
 ): ResolvedLine[] {
   const issues: { path: string; code: ErrorCode }[] = [];
   const resolved = lines.flatMap((input, index): ResolvedLine[] => {
@@ -208,7 +210,7 @@ export function resolveSalesLines(
     const found = findVariant(data, input.variantId);
     const archived = found?.product.archivedAt !== null || found.variant.archivedAt !== null;
     if (!found || (archived && !keptVariantIds.has(input.variantId))) {
-      at('variantId', 'sales_item_invalid');
+      at('variantId', itemCode);
       return [];
     }
     const { product, variant } = found;

@@ -39,6 +39,7 @@ import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
+import { seedPurchaseOrders } from './purchase-order-data';
 import type { MockExport } from './report-data';
 import { emptyPurchase, type MockPurchase, seedPurchase } from './requisition-data';
 import { emptyReturns, type MockReturns } from './return-data';
@@ -87,7 +88,8 @@ export interface WorkspaceData {
   documentOutput: MockDocumentOutput;
   // Suppliers and their groups (step 17a)
   suppliers: MockSuppliers;
-  // Approval levels and rounds, and requisitions (step 17a)
+  // Approval levels and rounds, and requisitions (step 17a); purchase orders and goods receipts
+  // (step 17b)
   purchase: MockPurchase;
 }
 
@@ -122,6 +124,8 @@ function seed(workspace: Workspace): WorkspaceData {
       ...DEFAULT_SETTINGS,
       logo: null,
       allowNegativeStock: false,
+      // Step 17b: a receipt takes no more than the order, until the owner allows a little more
+      overReceiptPercent: '0.00',
       // The pharmacy sells at the printed MRP, VAT included; the garments maker quotes before VAT
       pricesIncludeVat: !garments,
       version: 1,
@@ -169,6 +173,8 @@ function seed(workspace: Workspace): WorkspaceData {
   seedDocumentOutput(data, garments);
   // After the stock and the team: the lines' costs are its averages, the rounds name members
   seedPurchase(data, garments);
+  // After the requisitions: the approval levels and the people are theirs
+  seedPurchaseOrders(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -253,6 +259,8 @@ export function transaction<T>(data: WorkspaceData, fn: () => T): T {
     salesDocuments: data.salesDocuments,
     billing: data.billing,
     returns: data.returns,
+    // Step 17b: a goods receipt moves its order's received quantities and takes a number
+    purchase: data.purchase,
     audit: data.audit,
   });
   try {

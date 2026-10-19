@@ -5,6 +5,7 @@ import {
   compareQuantity,
   fitsDecimals,
   isQuantity,
+  isQuantityOrZero,
   levelSchema,
   negateQuantity,
   plainQuantity,
@@ -13,6 +14,7 @@ import {
   sumQuantity,
   toBaseQuantity,
   wholeCount,
+  withTolerance,
 } from './quantities.js';
 
 describe('quantities', () => {
@@ -62,5 +64,23 @@ describe('quantities', () => {
     expect(levelSchema.parse('0')).toBe('0');
     expect(receivedQuantitySchema.safeParse('0').success).toBe(true);
     expect(receivedQuantitySchema.safeParse('').success).toBe(false);
+  });
+});
+
+describe('receiving over the order (step 17b)', () => {
+  it('adds the percent to the ordered quantity', () => {
+    expect(withTolerance('1000', '3')).toBe('1030.0000');
+    expect(withTolerance('7', '2.5')).toBe('7.1750');
+    expect(withTolerance('48', '0')).toBe('48.0000');
+  });
+
+  it('rounds the limit down, so it never lets in more than the percent says', () => {
+    // 0.0003 × 1.5 = 0.00045: 0.0004 is allowed, 0.0005 would be more than 50%
+    expect(withTolerance('0.0003', '50')).toBe('0.0004');
+  });
+
+  it('takes zero as a quantity where zero is a real answer', () => {
+    expect(['0', '0.0000', '12.5'].every(isQuantityOrZero)).toBe(true);
+    expect(['', '-1', '1.23456'].some(isQuantityOrZero)).toBe(false);
   });
 });

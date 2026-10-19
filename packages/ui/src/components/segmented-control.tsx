@@ -21,8 +21,10 @@ export function SegmentedControl<TValue extends string>({
   return (
     // A fieldset is never narrower than its content unless told (min-w-0). With many options
     // (a sales order has six statuses) the control scrolls inside its own box on a phone, like
-    // the nav row, instead of pushing the page sideways.
-    <fieldset className="inline-flex max-w-full min-w-0 overflow-x-auto rounded-lg border border-line-strong bg-surface p-0.5">
+    // the nav row, instead of pushing the page sideways. `relative` (step 17b): the radios are
+    // sr-only, so absolutely placed; without a placed box around them they are clipped by nothing
+    // and the ones past the edge widen the page (a purchase order list has eight options).
+    <fieldset className="relative inline-flex max-w-full min-w-0 overflow-x-auto rounded-lg border border-line-strong bg-surface p-0.5">
       <legend className="sr-only">{label}</legend>
       {options.map((option) => (
         <label

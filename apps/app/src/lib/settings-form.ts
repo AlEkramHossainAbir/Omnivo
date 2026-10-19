@@ -1,4 +1,4 @@
-import type { Settings, updateSettingsInputSchema } from '@omnivo/contracts';
+import { plainQuantity, type Settings, type updateSettingsInputSchema } from '@omnivo/contracts';
 import type { z } from 'zod';
 
 // Shared by the settings page and the onboarding wizard's company step (moved from
@@ -23,5 +23,7 @@ export function settingsToForm(settings: Settings): SettingsFormValues {
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
     pricesIncludeVat: settings.pricesIncludeVat,
+    // Step 17b: "3.00" from the server is "3" in the box, and "0.00" is "0"
+    overReceiptPercent: plainQuantity(settings.overReceiptPercent),
   };
 }

@@ -3,6 +3,7 @@ import {
   Delete02Icon,
   PencilEdit02Icon,
   SentIcon,
+  ShoppingCart01Icon,
   Wrench01Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -20,29 +21,34 @@ import {
   toast,
 } from '@omnivo/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 
 import { call } from '../lib/api';
 import { useCan } from '../lib/permissions';
+import { leftToOrder } from '../lib/purchase';
 import { requisitionQuery } from '../lib/queries';
 import { variantName } from '../lib/stock';
 import { Fact } from './adjustment-view';
 import { ApprovalCard } from './approval-card';
 import { failureOf } from './journal-parts';
 import { PurchaseBackLink, usePurchaseRefresh } from './purchase-parts';
-import { RequisitionStatusPill } from './purchase-pills';
-import { DocumentNotice } from './sales-parts';
+import { RequisitionOrderPill, RequisitionStatusPill } from './purchase-pills';
+import { DocumentNotice, LINK_NUMBER, LINK_ROW, LinkList } from './sales-parts';
 import { useIsoDate, useQuantity, useTenantId, useWarehouses, warehouseLabel } from './stock-parts';
 
-// What the view asks before it acts: both change who may do what next, so neither is one click
-type Asking = 'reopen' | 'cancel';
+// What the view asks before it acts: each changes who may do what next, so none is one click.
+// Step 17b: close, once orders buy for it.
+type Asking = 'reopen' | 'cancel' | 'close';
 
-// The lines as they were saved: a real <table> in a card, scrolling inside its own box on a phone
+// The lines as they were saved: a real <table> in a card, scrolling inside its own box on a phone.
+// Step 17b: once approved, how much purchase orders cover and what is left, in the base unit (the
+// unit orders count in: one may buy cones for a line asked in bags).
 function LinesTable({ requisition }: { requisition: Requisition }) {
   const { t, format } = useLocale();
   const quantity = useQuantity();
   const money = (value: string) => format.money(value, { decimals: 2 });
+  const ordering = requisition.status === 'approved' || requisition.status === 'closed';
   return (
     <Card className="overflow-hidden">
       <div className="overflow-x-auto">
@@ -62,6 +68,11 @@ function LinesTable({ requisition }: { requisition: Requisition }) {
               <th scope="col" className="px-5 py-2.5 text-right">
                 {t('purchaseLines.amount')}
               </th>
+              {ordering && (
+                <th scope="col" className="px-5 py-2.5 text-right">
+                  {t('requisitions.ordered')}
+                </th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -102,6 +113,15 @@ function LinesTable({ requisition }: { requisition: Requisition }) {
                 <td className="px-5 py-3 text-right font-medium whitespace-nowrap tabular-nums">
                   {money(line.amount)}
                 </td>
+                {ordering && (
+                  <td className="px-5 py-3 text-right whitespace-nowrap tabular-nums">
+                    {quantity(line.orderedQuantity, line.baseUnitId)}
+                    <span className="block text-caption text-ink-3">
+                      {t('requisitions.leftToOrder')}:{' '}
+                      {quantity(leftToOrder(line), line.baseUnitId)}
+                    </span>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
@@ -131,13 +151,19 @@ export function RequisitionView({
   const isoDate = useIsoDate();
   const refresh = usePurchaseRefresh();
   const { byId } = useWarehouses();
-  const canWrite = useCan()('purchase.requisition.manage');
+  const can = useCan();
+  const canWrite = can('purchase.requisition.manage');
+  // Step 17b: "Make purchase order" is the buyer's
+  const canOrder = can('purchase.order.manage');
   const [asking, setAsking] = useState<Asking | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const { id, number, status, version, approval } = requisition;
   const [round] = approval.rounds;
   // Never submitted: it may be deleted. Once a round exists, its history stays (decision 19).
   const neverSubmitted = approval.rounds.length === 0;
+  // Step 17b: an order that is not cancelled buys for it, even a draft (decision 27). It is then
+  // closed, never reopened or cancelled (decision 17).
+  const held = requisition.orders.length > 0;
   // The step that sent it back, when the newest round was rejected: its comment says what to change
   const rejection =
     status === 'draft' && round?.status === 'rejected'
@@ -170,9 +196,8 @@ export function RequisitionView({
     onSuccess: async (saved, action) => {
       setAsking(null);
       await settle(saved);
-      toast(
-        t(action === 'reopen' ? 'requisitions.reopened' : 'requisitions.cancelled', { number }),
-      );
+      const done = { reopen: 'reopened', cancel: 'cancelled', close: 'closed' } as const;
+      toast(t(`requisitions.${done[action]}`, { number }));
     },
   });
   const remove = useMutation({
@@ -195,7 +220,12 @@ export function RequisitionView({
       <PageHeader
         title={number}
         description={warehouseLabel(byId.get(requisition.warehouseId))}
-        actions={<RequisitionStatusPill status={status} />}
+        actions={
+          <span className="inline-flex flex-wrap gap-1.5">
+            <RequisitionStatusPill status={status} />
+            <RequisitionOrderPill state={requisition.orderState} />
+          </span>
+        }
       />
       {failure && <FormAlert message={failure} />}
       {rejection && (
@@ -207,7 +237,9 @@ export function RequisitionView({
         </DocumentNotice>
       )}
       {status !== 'draft' && (
-        <DocumentNotice tone="neutral">{t(`requisitions.notices.${status}`)}</DocumentNotice>
+        <DocumentNotice tone="neutral">
+          {t(`requisitions.notices.${status === 'approved' && held ? 'ordered' : status}`)}
+        </DocumentNotice>
       )}
       <Card className="grid grid-cols-1 gap-x-6 gap-y-4 p-5 sm:grid-cols-4">
         <Fact label={t('requisitions.date')} value={isoDate(requisition.date)} />
@@ -237,6 +269,28 @@ export function RequisitionView({
         draft={status === 'draft'}
         approval={approval}
       />
+      {(status === 'approved' || status === 'closed') && (
+        <LinkList
+          title={t('requisitions.ordersTitle')}
+          subtitle={t('requisitions.ordersSubtitle')}
+          empty={held ? undefined : t('requisitions.noOrders')}
+        >
+          {requisition.orders.map((order) => (
+            <li key={order.id}>
+              <Link
+                to="/purchase-orders/$orderId"
+                params={{ orderId: order.id }}
+                className={LINK_ROW}
+              >
+                {/* A draft nobody submitted has no number yet */}
+                <span className={LINK_NUMBER}>
+                  {order.number ?? t('purchaseOrders.statuses.draft')}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </LinkList>
+      )}
 
       {canWrite && status === 'draft' && (
         <div className="grid grid-cols-1 gap-2">
@@ -290,21 +344,8 @@ export function RequisitionView({
           <p className="text-right text-label text-ink-3">{t('requisitions.submitHint')}</p>
         </div>
       )}
-      {canWrite && (status === 'pending' || status === 'approved') && (
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {/* A pending requisition is reopened first; an approved one may be cancelled at once */}
-          {status === 'approved' && (
-            <Button
-              variant="secondary"
-              className="mr-auto"
-              disabled={busy}
-              onClick={() => {
-                setAsking('cancel');
-              }}
-            >
-              {t('requisitions.cancel')}
-            </Button>
-          )}
+      {canWrite && status === 'pending' && (
+        <div className="flex justify-end">
           <Button
             variant="secondary"
             disabled={busy}
@@ -314,6 +355,48 @@ export function RequisitionView({
           >
             {t('requisitions.reopen')}
           </Button>
+        </div>
+      )}
+      {status === 'approved' && (canWrite || canOrder) && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {/* An approved requisition may be cancelled at once, until an order buys for it; then
+              the rest is closed (decision 17) */}
+          {canWrite && (
+            <Button
+              variant="secondary"
+              className="mr-auto"
+              disabled={busy}
+              onClick={() => {
+                setAsking(held ? 'close' : 'cancel');
+              }}
+            >
+              {held ? t('requisitions.close') : t('requisitions.cancel')}
+            </Button>
+          )}
+          {canWrite && !held && (
+            <Button
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                setAsking('reopen');
+              }}
+            >
+              {t('requisitions.reopen')}
+            </Button>
+          )}
+          {/* Decision 18: the order form opens with the lines still to order, narrowed to this
+              requisition */}
+          {canOrder && requisition.orderState !== 'ordered' && (
+            <Button
+              disabled={busy}
+              onClick={() =>
+                void navigate({ to: '/purchase-orders/new', search: { requisitionId: id } })
+              }
+            >
+              <HugeiconsIcon icon={ShoppingCart01Icon} size={17} strokeWidth={1.5} />
+              {t('requisitions.makeOrder')}
+            </Button>
+          )}
         </div>
       )}
 
@@ -331,7 +414,7 @@ export function RequisitionView({
               <>
                 <DialogClose asChild>
                   <Button variant="secondary">
-                    {asking === 'cancel' ? t('requisitions.keep') : t('common.cancel')}
+                    {asking === 'reopen' ? t('common.cancel') : t('requisitions.keep')}
                   </Button>
                 </DialogClose>
                 <Button

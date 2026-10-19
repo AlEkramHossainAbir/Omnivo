@@ -8,7 +8,8 @@ import {
   isZeroQuantity,
   type LineAmounts,
   plainQuantity,
-  type PriceSource,
+  type Product,
+  type ProductVariant,
   type SalesLine,
   type SalesLineFormValues,
   type SalesOrderLine,
@@ -145,11 +146,13 @@ export interface LineMeta {
   // React's key: stays with the line when a line above it is removed
   key: string;
   item: SalesItem;
-  // Where a new line's price came from (the price lookup). undefined for a saved line: nothing new
-  // to say about it.
-  source: PriceSource | null | undefined;
-  // The customer the price was looked up for ('' = none chosen yet). When the form's customer is
-  // another one, the editor offers to reprice.
+  // Where a new line's price came from: a PRICE_SOURCES value of the sales price lookup, or (step
+  // 17b, a purchase order) a PURCHASE_COST_SOURCES value of the cost lookup. A plain string: the
+  // editor serves both, and the pricing that asked says what it means (LinePricing.sourceText).
+  // undefined for a saved line: nothing new to say about it.
+  source: string | null | undefined;
+  // The party the price was looked up for: the customer, or (17b) the supplier ('' = none chosen
+  // yet). When the form's party is another one, the editor offers to reprice.
   pricedFor: string;
 }
 
@@ -164,6 +167,24 @@ export const SALES_LINE_FIELDS = [
   'discount',
   'taxRateId',
 ] as const;
+
+// The item of a variant of a product added with "Add items". Step 17b: also a requisition's line on
+// a purchase order, which brings its product from the product's own page.
+export function productItemOf(product: Product, variant: ProductVariant): SalesItem {
+  return {
+    variantId: variant.id,
+    productId: product.id,
+    productCode: product.code,
+    productName: product.name,
+    optionValues: variant.optionValues,
+    sku: variant.sku,
+    baseUnitId: product.baseUnitId,
+    units: product.units.map((pack) => ({ unitId: pack.unitId, factor: pack.factor })),
+    productType: product.type,
+    tracking: product.tracking,
+    hasExpiry: product.hasExpiry,
+  };
+}
 
 // The item of a saved line (step 15c: also an order's service line on an invoice)
 export function salesItemOf(line: SalesLine): SalesItem {

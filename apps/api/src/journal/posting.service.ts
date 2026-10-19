@@ -131,10 +131,12 @@ export async function checkParties(
 // The accounts only stock documents post to (step 14): the inventory account and the goods in
 // transit account. A manual entry or an opening balance on them would make the books say one value
 // and the stock another, with nothing to bring them back together. Stock comes in through an
-// adjustment (opening stock too), and a wrong value is put right by a revaluation.
+// adjustment (opening stock too), and a wrong value is put right by a revaluation. Step 17b adds
+// "goods received not billed": what it holds must be what the posted goods receipts brought in
+// and the bills (17c) have not billed yet, or the bill would clear a number nobody can explain.
 export async function stockAccountIds(tx: Transaction): Promise<Set<string>> {
   const tenantId = getTenantId();
-  const [inventory, inTransit] = await Promise.all([
+  const [inventory, chosen] = await Promise.all([
     tx
       .select({ id: ledgerAccounts.id })
       .from(ledgerAccounts)
@@ -142,9 +144,14 @@ export async function stockAccountIds(tx: Transaction): Promise<Set<string>> {
     tx
       .select({ id: stockAccounts.accountId })
       .from(stockAccounts)
-      .where(and(eq(stockAccounts.tenantId, tenantId), eq(stockAccounts.use, 'in_transit'))),
+      .where(
+        and(
+          eq(stockAccounts.tenantId, tenantId),
+          inArray(stockAccounts.use, ['in_transit', 'received_not_billed']),
+        ),
+      ),
   ]);
-  return new Set([...inventory, ...inTransit].map((row) => row.id));
+  return new Set([...inventory, ...chosen].map((row) => row.id));
 }
 
 // Who did it: the person behind the request, or nobody (a background job) — like audit()
@@ -165,7 +172,7 @@ export class PostingService {
   // locks FOR UPDATE), while other postings to the same account go on in parallel.
   // allowArchived: a reversal undoes an entry exactly, even if one of its accounts was archived
   // since — archiving hides an account from new work, it must not block fixing old work.
-  // allowStock: the entry may post to the inventory and goods in transit accounts — a stock
+  // allowStock: the entry may post to the stock accounts (stockAccountIds()) — a stock
   // document's entry, or a reversal or closing entry of old work. Every other entry may not.
   // allowMissingParty: see checkParties() — a draft, or a reversal.
   async checkLines(

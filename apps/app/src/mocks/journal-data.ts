@@ -71,12 +71,14 @@ function linesProblem(
   );
 }
 
-// The inventory account and the goods in transit account: only stock documents post to them
-// (step 14, the API's stockAccountIds())
+// The inventory account, the goods in transit account and (step 17b) goods received not billed:
+// only stock documents post to them (step 14, the API's stockAccountIds())
 export function stockAccountIds(data: WorkspaceData): Set<string> {
   const inventory = data.accounts.find((account) => account.purpose === 'inventory')?.id;
   return new Set(
-    [inventory, data.stockAccounts.in_transit].filter((id): id is string => typeof id === 'string'),
+    [inventory, data.stockAccounts.in_transit, data.stockAccounts.received_not_billed].filter(
+      (id): id is string => typeof id === 'string',
+    ),
   );
 }
 

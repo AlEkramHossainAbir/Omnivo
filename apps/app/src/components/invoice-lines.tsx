@@ -24,7 +24,7 @@ import {
 import { isServiceLine, type LineMeta, type SalesItem } from '../lib/sales';
 import { firstMessage } from '../lib/stock';
 import { failureOf } from './journal-parts';
-import { LinesEditor, SalesField } from './sales-line-editor';
+import { LinesEditor, SalesField, useSalesPricing } from './sales-line-editor';
 import { PickButton, PickProblem } from './sales-parts';
 import { SerialNumbersInput } from './serial-numbers-input';
 import { useIsoDate, useQuantity, useTenantId } from './stock-parts';
@@ -79,6 +79,7 @@ export function InvoiceLinesEditor({
 }) {
   const { t } = useLocale();
   const quantityText = useQuantity();
+  const pricing = useSalesPricing(customerId);
   const [picking, setPicking] = useState<'challans' | 'charges' | null>(null);
   const onForm = new Set(lines.flatMap((line) => sourceIdOf(line) ?? []));
 
@@ -150,7 +151,7 @@ export function InvoiceLinesEditor({
       onChange={onChange}
       getLines={getLines}
       initialMeta={initialMeta}
-      customerId={customerId}
+      pricing={pricing}
       pricesIncludeVat={pricesIncludeVat}
       errors={errors}
       newLine={ownLine}

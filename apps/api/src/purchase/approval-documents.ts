@@ -1,5 +1,5 @@
 import type { ApprovalDocument, AuditEntityType } from '@omnivo/contracts';
-import { requisitions, warehouses } from '@omnivo/db';
+import { parties, purchaseOrders, requisitions, warehouses } from '@omnivo/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
@@ -7,8 +7,9 @@ import type { Transaction } from '../common/tenant/with-tenant.js';
 
 // What the approvals engine needs from each kind of document, so one engine serves them all
 // (decision 16). The engine never writes a document's own columns except its status, and only
-// through setStatus(). 17b adds the purchase order here, 17c the bill and the payment; the
-// `satisfies` below does not compile until every kind in APPROVAL_DOCUMENTS has its entry.
+// through setStatus(). The purchase order is the second kind (17b); 17c adds the bill and the
+// payment. The `satisfies` below does not compile until every kind in APPROVAL_DOCUMENTS has its
+// entry.
 
 // The statuses the engine moves a document between. Every kind has these three, whatever it calls
 // its others (a requisition's cancelled, an order's received).
@@ -75,4 +76,55 @@ const requisition: ApprovalTarget = {
   },
 };
 
-export const APPROVAL_TARGETS = { requisition } satisfies Record<ApprovalDocument, ApprovalTarget>;
+// Step 17b: a purchase order is the requisition's twin, with its supplier as the subject: the
+// approver asks "from whom?" before "for which warehouse?"
+const purchaseOrder: ApprovalTarget = {
+  entityType: 'purchase_order',
+  async lock(tx, id) {
+    const [row] = await tx
+      .select({ status: purchaseOrders.status })
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.tenantId, getTenantId()), eq(purchaseOrders.id, id)))
+      .for('update');
+    return row ?? null;
+  },
+  async setStatus(tx, id, status) {
+    await tx
+      .update(purchaseOrders)
+      .set({
+        status,
+        version: sql`${purchaseOrders.version} + 1`,
+        updatedBy: currentPrincipal().userId,
+      })
+      .where(and(eq(purchaseOrders.tenantId, getTenantId()), eq(purchaseOrders.id, id)));
+  },
+  async describe(tx, ids) {
+    if (ids.length === 0) return new Map();
+    const rows = await tx
+      .select({
+        id: purchaseOrders.id,
+        number: purchaseOrders.number,
+        date: purchaseOrders.date,
+        subject: parties.name,
+      })
+      .from(purchaseOrders)
+      .innerJoin(
+        parties,
+        and(
+          eq(parties.tenantId, purchaseOrders.tenantId),
+          eq(parties.id, purchaseOrders.supplierId),
+        ),
+      )
+      .where(and(eq(purchaseOrders.tenantId, getTenantId()), inArray(purchaseOrders.id, [...ids])));
+    // An order is numbered before its first round (PurchaseOrdersService.submit), so every order
+    // the engine asks about has one; flatMap only satisfies the nullable column
+    return new Map(
+      rows.flatMap(({ id, number, ...row }) => (number === null ? [] : [[id, { number, ...row }]])),
+    );
+  },
+};
+
+export const APPROVAL_TARGETS = {
+  requisition,
+  purchase_order: purchaseOrder,
+} satisfies Record<ApprovalDocument, ApprovalTarget>;

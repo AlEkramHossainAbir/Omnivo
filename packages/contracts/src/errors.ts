@@ -368,6 +368,30 @@ export const ERROR_CODES = [
   'purchase_cannot_cancel',
   'requisition_needed_by',
   'requisition_cost_required',
+  // Step 17b: purchase orders and goods receipts. The purchase_* codes of 17a (purchase_not_draft,
+  // purchase_was_submitted, purchase_cannot_reopen, purchase_cannot_cancel) serve the order too.
+  'purchase_supplier_required',
+  'purchase_supplier_invalid',
+  'purchase_expected_date',
+  'purchase_requisition_line_invalid',
+  'purchase_requisition_line_twice',
+  // Cancel refused because a later document uses it (an order buys for the requisition, a goods
+  // receipt brought some of the order in), and close refused because nothing does yet
+  'purchase_close_instead',
+  'purchase_cancel_instead',
+  // Cancel refused on a draft order nobody submitted: it has no number, so it is deleted
+  'purchase_delete_instead',
+  // Reopen or cancel refused while a draft goods receipt points at the order: delete it first
+  'purchase_receipt_draft',
+  // Close, receive or post against a document that is no longer approved: a requisition or an
+  // order someone reopened, closed or cancelled while the page was open
+  'purchase_not_approved',
+  'grn_order_invalid',
+  'grn_order_line_invalid',
+  'grn_over_order',
+  'grn_line_empty',
+  'grn_rejection_reason',
+  'over_receipt_percent_format',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

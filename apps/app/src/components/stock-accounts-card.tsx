@@ -22,7 +22,7 @@ import { accountsQuery, stockAccountsQuery } from '../lib/queries';
 // Settings → Inventory, step 14: where stock documents post in the books. Its own form and save
 // button: the choices are saved by their own endpoint, apart from the company settings above.
 const GROUPS: readonly {
-  key: 'adjustments' | 'transfers' | 'revaluation';
+  key: 'adjustments' | 'transfers' | 'revaluation' | 'purchase';
   uses: StockAccountUse[];
 }[] = [
   {
@@ -31,6 +31,8 @@ const GROUPS: readonly {
   },
   { key: 'transfers', uses: ['in_transit', 'transfer_shortage'] },
   { key: 'revaluation', uses: ['revaluation'] },
+  // Step 17b: what goods receipts owe until the supplier's bill (a liability)
+  { key: 'purchase', uses: ['received_not_billed'] },
 ];
 
 function toForm(choices: StockAccounts): StockAccountsFormValues {
@@ -45,6 +47,7 @@ function toForm(choices: StockAccounts): StockAccountsFormValues {
     correction: choices.correction ?? '',
     transfer_shortage: choices.transfer_shortage ?? '',
     revaluation: choices.revaluation ?? '',
+    received_not_billed: choices.received_not_billed ?? '',
   };
 }
 
@@ -151,7 +154,10 @@ function StockAccountsForm({
                   key={use}
                   label={t(`settings.stockAccountUses.${use}`)}
                   hint={
-                    use === 'in_transit' || use === 'transfer_shortage' || use === 'revaluation'
+                    use === 'in_transit' ||
+                    use === 'transfer_shortage' ||
+                    use === 'revaluation' ||
+                    use === 'received_not_billed'
                       ? t(`settings.stockAccountHints.${use}`)
                       : undefined
                   }

@@ -1,32 +1,92 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  type OpenRequisitionLinePage,
   type Requisition,
   type RequisitionInput,
+  type RequisitionLine,
   requisitionLineAmount,
+  type RequisitionOrderFilter,
+  type RequisitionOrderState,
   type RequisitionStatus,
   type RequisitionSummary,
+  subtractQuantity,
   sumMoney,
   type UpdateRequisitionInput,
 } from '@omnivo/contracts';
-import { requisitionLines, requisitions, users, warehouses } from '@omnivo/db';
-import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
+import {
+  products,
+  productVariants,
+  purchaseOrderLines,
+  purchaseOrders,
+  requisitionLines,
+  requisitions,
+  users,
+  warehouses,
+} from '@omnivo/db';
+import { and, asc, desc, eq, inArray, ne, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
 import { isCheckViolation } from '../common/db/pg-errors.js';
+import { containsPattern } from '../common/db/search.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
+import type { VariantInfo } from '../inventory/stock-lines.js';
 import { withVariants } from '../sales/sales-lines.js';
 import { NumberingService } from '../numbering/numbering.service.js';
 import { ApprovalsService } from './approvals.service.js';
 import { assertWarehouse, resolvePurchaseItems } from './purchase-lines.js';
 
 type RequisitionRow = typeof requisitions.$inferSelect;
+type LineRow = typeof requisitionLines.$inferSelect;
 
 const cursorSchema = z.tuple([z.iso.date(), z.uuid()]);
+// The open lines: oldest requisition first, then its lines in order
+const openCursorSchema = z.tuple([z.iso.date(), z.uuid(), z.number().int()]);
+
+// How much of a requisition line purchase orders took, in the base unit (step 17b, decision 16):
+// all of an order line while its order is open or received, only what came in once it is closed
+// (the rest is still wanted), nothing once it is cancelled. A service is never received, so a
+// closed order counts it in full: it was bought. Counted here, never stored (decision 26).
+// `line` is the requisition line's name in the outer query.
+function orderedOf(line: string): SQL<string> {
+  const l = sql.raw(line);
+  return sql<string>`coalesce((
+    SELECT sum(CASE WHEN po.status = 'closed' AND p.type = 'goods' THEN pl.received_quantity
+                    ELSE pl.base_quantity END)
+      FROM purchase_order_lines pl
+      JOIN purchase_orders po ON po.tenant_id = pl.tenant_id AND po.id = pl.order_id
+      JOIN products p ON p.tenant_id = pl.tenant_id AND p.id = pl.product_id
+     WHERE pl.tenant_id = ${l}.tenant_id AND pl.requisition_line_id = ${l}.id
+       AND po.status <> 'cancelled'), 0)`;
+}
+
+// Some line of it was ordered, and some line still waits for more
+const lineOrdered = sql`EXISTS (
+  SELECT 1 FROM requisition_lines rl
+   WHERE rl.tenant_id = requisitions.tenant_id AND rl.requisition_id = requisitions.id
+     AND ${orderedOf('rl')} > 0
+)`;
+const lineToOrder = sql`EXISTS (
+  SELECT 1 FROM requisition_lines rl
+   WHERE rl.tenant_id = requisitions.tenant_id AND rl.requisition_id = requisitions.id
+     AND ${orderedOf('rl')} < rl.base_quantity
+)`;
+
+// Only an approved or closed requisition is ordered from: a draft's lines are not settled yet
+const orderState = sql<RequisitionOrderState>`CASE
+  WHEN requisitions.status NOT IN ('approved', 'closed') OR NOT ${lineOrdered} THEN 'not_ordered'
+  WHEN ${lineToOrder} THEN 'partly_ordered'
+  ELSE 'ordered' END`;
+
+// The list's order filter: approved, with a line still to order (what a buyer works through)
+function orderFilter(filter: RequisitionOrderFilter | undefined): SQL | undefined {
+  if (filter === undefined) return undefined;
+  return and(eq(requisitions.status, 'approved'), lineToOrder);
+}
 
 // By the table's name: inside this subquery a bare "id" would be the line's own
 const lineCount = sql<number>`(
@@ -50,10 +110,20 @@ function wasSubmitted(): AppError {
   );
 }
 
+// Step 17b: a purchase order buys for it, so its lines must stay as they are
+function closeInstead(): AppError {
+  return new AppError(
+    409,
+    'purchase_close_instead',
+    'A purchase order buys for this requisition. Close it instead.',
+  );
+}
+
 function toSummary(
   row: RequisitionRow,
   requestedByName: string,
   lines: number,
+  ordered: RequisitionOrderState,
 ): RequisitionSummary {
   return {
     id: row.id,
@@ -62,6 +132,7 @@ function toSummary(
     neededBy: row.neededBy,
     warehouseId: row.warehouseId,
     status: row.status,
+    orderState: ordered,
     amount: row.amount,
     lineCount: lines,
     requestedBy: { id: row.requestedBy, name: requestedByName },
@@ -106,6 +177,7 @@ export class RequisitionsService {
     cursor?: string | undefined;
     status?: RequisitionStatus | undefined;
     warehouseId?: string | undefined;
+    order?: RequisitionOrderFilter | undefined;
   }): Promise<{ items: RequisitionSummary[]; nextCursor: string | null }> {
     const after = decodeCursor(query.cursor, cursorSchema);
     return this.withTenant(async (tx) => {
@@ -116,6 +188,7 @@ export class RequisitionsService {
           query.warehouseId === undefined
             ? undefined
             : eq(requisitions.warehouseId, query.warehouseId),
+          orderFilter(query.order),
           after === undefined
             ? undefined
             : sql`(${requisitions.date}, ${requisitions.id}) < (${after[0]}::date, ${after[1]}::uuid)`,
@@ -128,7 +201,7 @@ export class RequisitionsService {
       ]);
       return {
         items: page.items.map((row) =>
-          toSummary(row.requisition, row.requestedByName, row.lineCount),
+          toSummary(row.requisition, row.requestedByName, row.lineCount, row.orderState),
         ),
         nextCursor: page.nextCursor,
       };
@@ -137,6 +210,96 @@ export class RequisitionsService {
 
   get(id: string): Promise<Requisition> {
     return this.withTenant((tx) => this.read(tx, id));
+  }
+
+  // Step 17b: the lines a purchase order for this warehouse may buy for (decision 18): lines of
+  // approved requisitions with something still to order, oldest requisition first. A closed
+  // requisition is left out: its rest will not be bought.
+  openLines(query: {
+    limit: number;
+    cursor?: string | undefined;
+    warehouseId: string;
+    requisitionId?: string | undefined;
+    search?: string | undefined;
+  }): Promise<OpenRequisitionLinePage> {
+    const after = decodeCursor(query.cursor, openCursorSchema);
+    const ordered = sql<string>`round(${orderedOf('requisition_lines')}, 4)::text`;
+    return this.withTenant(async (tx) => {
+      const search =
+        query.search === undefined || query.search === ''
+          ? undefined
+          : containsPattern(query.search);
+      const rows = await tx
+        .select({
+          line: requisitionLines,
+          requisition: {
+            id: requisitions.id,
+            number: requisitions.number,
+            date: requisitions.date,
+            neededBy: requisitions.neededBy,
+          },
+          orderedQuantity: ordered,
+        })
+        .from(requisitionLines)
+        .innerJoin(
+          requisitions,
+          and(
+            eq(requisitions.tenantId, requisitionLines.tenantId),
+            eq(requisitions.id, requisitionLines.requisitionId),
+          ),
+        )
+        .innerJoin(
+          productVariants,
+          and(
+            eq(productVariants.tenantId, requisitionLines.tenantId),
+            eq(productVariants.id, requisitionLines.variantId),
+          ),
+        )
+        .innerJoin(
+          products,
+          and(
+            eq(products.tenantId, productVariants.tenantId),
+            eq(products.id, productVariants.productId),
+          ),
+        )
+        .where(
+          and(
+            eq(requisitionLines.tenantId, getTenantId()),
+            eq(requisitions.status, 'approved'),
+            eq(requisitions.warehouseId, query.warehouseId),
+            query.requisitionId === undefined
+              ? undefined
+              : eq(requisitions.id, query.requisitionId),
+            sql`${orderedOf('requisition_lines')} < ${requisitionLines.baseQuantity}`,
+            search === undefined
+              ? undefined
+              : sql`(lower(${requisitions.number}) LIKE ${search} OR lower(${products.name}) LIKE ${search}
+                     OR lower(${products.code}) LIKE ${search} OR lower(${productVariants.sku}) LIKE ${search})`,
+            after === undefined
+              ? undefined
+              : sql`(${requisitions.date}, ${requisitions.id}, ${requisitionLines.lineNo}) > (${after[0]}::date, ${after[1]}::uuid, ${after[2]}::int)`,
+          ),
+        )
+        .orderBy(asc(requisitions.date), asc(requisitions.id), asc(requisitionLines.lineNo))
+        .limit(query.limit + 1);
+      const page = toPage(rows, query.limit, (last) => [
+        last.requisition.date,
+        last.requisition.id,
+        last.line.lineNo,
+      ]);
+      const lines = await withVariants(
+        tx,
+        page.items.map((row) => ({ ...row, variantId: row.line.variantId })),
+      );
+      return {
+        items: lines.map(({ row, variant }) => ({
+          ...toLine(row.line, variant, row.orderedQuantity),
+          requisition: row.requisition,
+          remainingQuantity: subtractQuantity(row.line.baseQuantity, row.orderedQuantity),
+        })),
+        nextCursor: page.nextCursor,
+      };
+    });
   }
 
   create(input: RequisitionInput): Promise<Requisition> {
@@ -255,7 +418,8 @@ export class RequisitionsService {
   }
 
   // Pending: taken back to change it. Approved: changed after all, then approved again from the
-  // first level (decision 6). 17b refuses it once a purchase order was made from it.
+  // first level (decision 6). Step 17b: refused once a purchase order buys for it, even a draft one
+  // (decision 27): reopening writes its lines again, and the order's lines would lose their link.
   reopen(id: string, version: number): Promise<Requisition> {
     return this.withTenant(async (tx) => {
       const row = await this.lock(tx, id, version);
@@ -266,12 +430,14 @@ export class RequisitionsService {
           'Only a pending or approved requisition can be reopened.',
         );
       }
+      if (row.status === 'approved' && (await this.isOrdered(tx, id))) throw closeInstead();
       await this.approvals.reopen(tx, 'requisition', id, row.status);
       return this.read(tx, id);
     });
   }
 
   // Will not be bought. A pending one is reopened first: someone may be deciding it right now.
+  // Step 17b: once an order buys for it, some of it is being bought, so it is closed instead.
   cancel(id: string, version: number): Promise<Requisition> {
     return this.withTenant(async (tx) => {
       const row = await this.lock(tx, id, version);
@@ -282,6 +448,7 @@ export class RequisitionsService {
           'Only a draft or approved requisition can be cancelled. Reopen a pending one first.',
         );
       }
+      if (row.status === 'approved' && (await this.isOrdered(tx, id))) throw closeInstead();
       await tx
         .update(requisitions)
         .set({
@@ -298,6 +465,112 @@ export class RequisitionsService {
       });
       return this.read(tx, id);
     });
+  }
+
+  // Step 17b (decision 17): partly ordered, and the rest will not be. It leaves the lines still to
+  // order; the orders already written go on. Closed is final.
+  close(id: string, version: number): Promise<Requisition> {
+    return this.withTenant(async (tx) => {
+      const row = await this.lock(tx, id, version);
+      if (row.status !== 'approved') {
+        throw new AppError(
+          409,
+          'purchase_not_approved',
+          'Only an approved requisition can be closed.',
+        );
+      }
+      if (!(await this.isOrdered(tx, id))) {
+        throw new AppError(
+          409,
+          'purchase_cancel_instead',
+          'No purchase order buys for this requisition. Cancel it instead.',
+        );
+      }
+      await tx
+        .update(requisitions)
+        .set({
+          status: 'closed',
+          version: sql`${requisitions.version} + 1`,
+          updatedBy: currentPrincipal().userId,
+        })
+        .where(and(eq(requisitions.tenantId, getTenantId()), eq(requisitions.id, id)));
+      await audit(tx, {
+        action: 'requisition.closed',
+        entityType: 'requisition',
+        entityId: id,
+        changes: diff({ status: row.status }, { status: 'closed' }),
+      });
+      return this.read(tx, id);
+    });
+  }
+
+  // An order that is not cancelled buys for one of its lines (migration 0038's function, the same
+  // question its guard asks). Asked after lock(): a purchase order line written at the same moment
+  // locks the requisition FOR SHARE, so it either committed before our FOR UPDATE (and is counted
+  // here) or waits for us and then finds the requisition changed.
+  private async isOrdered(tx: Transaction, id: string): Promise<boolean> {
+    const [row] = z
+      .array(z.object({ ordered: z.boolean() }))
+      .parse(
+        await tx.execute(
+          sql`SELECT requisition_is_ordered(${getTenantId()}::uuid, ${id}::uuid) AS ordered`,
+        ),
+      );
+    return row?.ordered === true;
+  }
+
+  // What each line of it was ordered, in the base unit (orderedOf)
+  private async orderedQuantities(
+    tx: Transaction,
+    requisitionId: string,
+  ): Promise<Map<string, string>> {
+    const rows = await tx
+      .select({
+        id: requisitionLines.id,
+        ordered: sql<string>`round(${orderedOf('requisition_lines')}, 4)::text`,
+      })
+      .from(requisitionLines)
+      .where(
+        and(
+          eq(requisitionLines.tenantId, getTenantId()),
+          eq(requisitionLines.requisitionId, requisitionId),
+        ),
+      );
+    return new Map(rows.map((row) => [row.id, row.ordered]));
+  }
+
+  // The orders that buy for it, by number; a cancelled one bought nothing. A draft that was never
+  // submitted has no number yet (null).
+  private ordersOf(tx: Transaction, requisitionId: string) {
+    return tx
+      .selectDistinct({ id: purchaseOrders.id, number: purchaseOrders.number })
+      .from(purchaseOrderLines)
+      .innerJoin(
+        purchaseOrders,
+        and(
+          eq(purchaseOrders.tenantId, purchaseOrderLines.tenantId),
+          eq(purchaseOrders.id, purchaseOrderLines.orderId),
+        ),
+      )
+      .where(
+        and(
+          eq(purchaseOrderLines.tenantId, getTenantId()),
+          inArray(
+            purchaseOrderLines.requisitionLineId,
+            tx
+              .select({ id: requisitionLines.id })
+              .from(requisitionLines)
+              .where(
+                and(
+                  eq(requisitionLines.tenantId, getTenantId()),
+                  eq(requisitionLines.requisitionId, requisitionId),
+                ),
+              ),
+          ),
+          ne(purchaseOrders.status, 'cancelled'),
+        ),
+      )
+      .orderBy(asc(purchaseOrders.number), asc(purchaseOrders.id));
   }
 
   private async resolveLines(
@@ -387,7 +660,7 @@ export class RequisitionsService {
   // The requisitions with who asked and their line counts, newest date first
   private rows(tx: Transaction, where: SQL | undefined, limit: number) {
     return tx
-      .select({ requisition: requisitions, requestedByName: users.fullName, lineCount })
+      .select({ requisition: requisitions, requestedByName: users.fullName, lineCount, orderState })
       .from(requisitions)
       .innerJoin(users, eq(users.id, requisitions.requestedBy))
       .where(and(eq(requisitions.tenantId, getTenantId()), where))
@@ -400,28 +673,38 @@ export class RequisitionsService {
     if (!found) throw notFound('Requisition');
     const { requisition: row } = found;
     const lines = await withVariants(tx, await this.linesOf(tx, id));
+    const ordered = await this.orderedQuantities(tx, id);
     return {
-      ...toSummary(row, found.requestedByName, found.lineCount),
+      ...toSummary(row, found.requestedByName, found.lineCount, found.orderState),
       note: row.note,
-      lines: lines.map(({ row: line, variant }) => ({
-        id: line.id,
-        variantId: variant.variantId,
-        productId: variant.productId,
-        productCode: variant.productCode,
-        productName: variant.productName,
-        optionValues: variant.optionValues,
-        sku: variant.sku,
-        baseUnitId: variant.baseUnitId,
-        productType: variant.type,
-        units: variant.units.map((pack) => ({ unitId: pack.unitId, factor: pack.factor })),
-        unitId: line.unitId,
-        quantity: line.quantity,
-        baseQuantity: line.baseQuantity,
-        description: line.description,
-        estimatedCost: line.estimatedCost,
-        amount: line.amount,
-      })),
+      lines: lines.map(({ row: line, variant }) =>
+        toLine(line, variant, ordered.get(line.id) ?? '0.0000'),
+      ),
       approval: await this.approvals.history(tx, 'requisition', id),
+      orders: await this.ordersOf(tx, id),
     };
   }
+}
+
+// A stored line with its variant, as the API sends it
+function toLine(line: LineRow, variant: VariantInfo, orderedQuantity: string): RequisitionLine {
+  return {
+    id: line.id,
+    variantId: variant.variantId,
+    productId: variant.productId,
+    productCode: variant.productCode,
+    productName: variant.productName,
+    optionValues: variant.optionValues,
+    sku: variant.sku,
+    baseUnitId: variant.baseUnitId,
+    productType: variant.type,
+    units: variant.units.map((pack) => ({ unitId: pack.unitId, factor: pack.factor })),
+    unitId: line.unitId,
+    quantity: line.quantity,
+    baseQuantity: line.baseQuantity,
+    description: line.description,
+    estimatedCost: line.estimatedCost,
+    amount: line.amount,
+    orderedQuantity,
+  };
 }

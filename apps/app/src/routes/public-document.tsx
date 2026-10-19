@@ -16,8 +16,8 @@ import { type ReactNode, useEffect } from 'react';
 import { ApiRequestError, call } from '../lib/api';
 import { saveFile } from '../lib/document-output';
 
-// Step 16: the page behind a share link (/d/<token>). No login and no app shell: the customer is
-// not an Omnivo user. It says what the document is and from whom, and downloads its PDF.
+// Step 16: the page behind a share link (/d/<token>). No login and no app shell: the customer (step
+// 17b: or the supplier of a purchase order) is not an Omnivo user. It says what the document is and from whom, and downloads its PDF.
 
 // While the PDF is being drawn the page asks again every 2 s, at most 15 times (30 s). After that
 // it says the PDF could not be made: a worker that is down does not get better by being asked.
@@ -93,7 +93,7 @@ function DocumentCard({
           <span className="font-mono whitespace-nowrap tabular-nums">{shared.number}</span>
         </h1>
         <p className="text-body-sm text-ink-2">
-          {t('publicDocument.to', { customer: shared.customer })}
+          {t('publicDocument.to', { recipient: shared.recipient })}
         </p>
       </div>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-4">

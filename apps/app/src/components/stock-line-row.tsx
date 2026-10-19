@@ -56,7 +56,14 @@ const COSTED_COLUMNS =
 
 // The column headers of a wide card. Hidden from screen readers: each control has its own
 // (sr-only) label there, which reads better than a header far away.
-export function StockLinesHeader({ costed = false }: { costed?: boolean }) {
+export function StockLinesHeader({
+  costed = false,
+  quantityLabel,
+}: {
+  costed?: boolean;
+  // Step 17b: a goods receipt's quantity is what was accepted
+  quantityLabel?: string;
+}) {
   const { t } = useLocale();
   return (
     <div
@@ -68,7 +75,7 @@ export function StockLinesHeader({ costed = false }: { costed?: boolean }) {
     >
       <span>{t('stockLines.items')}</span>
       <span>{t('stockLines.unit')}</span>
-      <span className="text-right">{t('stockLines.quantity')}</span>
+      <span className="text-right">{quantityLabel ?? t('stockLines.quantity')}</span>
       {costed && <span className="text-right">{t('stockLines.unitCost')}</span>}
       <span>{t('stock.history.detail')}</span>
     </div>
@@ -100,6 +107,8 @@ export function StockLineRow({
   serials,
   cost,
   note,
+  quantityLabel,
+  rejection,
   errors,
   onRemove,
   onSplit,
@@ -131,6 +140,10 @@ export function StockLineRow({
   cost?: ReactNode;
   // Step 15b: a line under the item, such as what the order asked for and what it has left
   note?: ReactNode;
+  // Step 17b: a goods receipt's line. Its quantity is what was accepted (the box's label says so),
+  // and what was turned back, with the reason, sits first in the detail column.
+  quantityLabel?: string;
+  rejection?: ReactNode;
   errors: LineErrors;
   onRemove: () => void;
   // FEFO for a line that takes stock out; a return's lines have none (15d)
@@ -199,7 +212,11 @@ export function StockLineRow({
           {...fields.unitId}
         />
       </LineField>
-      <LineField id={id('quantity')} label={t('stockLines.quantity')} error={errors.quantity}>
+      <LineField
+        id={id('quantity')}
+        label={quantityLabel ?? t('stockLines.quantity')}
+        error={errors.quantity}
+      >
         <Input
           id={id('quantity')}
           inputMode="decimal"
@@ -217,6 +234,7 @@ export function StockLineRow({
       </LineField>
       {cost !== undefined && <div className="col-span-2 @3xl:col-span-1">{cost}</div>}
       <div className="col-span-2 grid grid-cols-1 gap-3 @3xl:col-span-1">
+        {rejection}
         {item.tracking === 'batch' && mode === 'in' && fields.lotNumber && (
           <>
             <LineField id={id('lotNumber')} label={t('stockLines.lot')} error={errors.lotNumber}>

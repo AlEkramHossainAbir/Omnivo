@@ -1,7 +1,13 @@
 import type { DocumentFile, DocumentShare } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { languageName, otherLanguage, shareState, waitForPdf } from './document-output';
+import {
+  languageName,
+  otherLanguage,
+  recipientRole,
+  shareState,
+  waitForPdf,
+} from './document-output';
 
 function file(status: DocumentFile['status']): DocumentFile {
   return {
@@ -98,5 +104,13 @@ describe('languages', () => {
     expect(otherLanguage('en')).toBe('bn');
     expect(otherLanguage('bn')).toBe('en');
     expect(languageName('bn')).toBe('বাংলা');
+  });
+});
+
+// Step 17b: the Send menu reads the recipient's language and phone from the right side
+describe('recipientRole', () => {
+  it('sends a purchase order to its supplier and every sales document to its customer', () => {
+    expect(recipientRole('purchase_order')).toBe('supplier');
+    expect(recipientRole('invoice')).toBe('customer');
   });
 });

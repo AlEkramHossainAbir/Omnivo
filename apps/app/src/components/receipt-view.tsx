@@ -66,7 +66,7 @@ export function ReceiptView({ receipt, today }: { receipt: Receipt; today: strin
   const account = accounts?.find((item) => item.id === receipt.accountId);
   // Step 16: a voided receipt does not go out (decision 11), the same rule as Print
   const target: OutputTarget | null = posted
-    ? { kind: 'receipt', id: receipt.id, number: receipt.number, customerId: receipt.customer.id }
+    ? { kind: 'receipt', id: receipt.id, number: receipt.number, partyId: receipt.customer.id }
     : null;
 
   return (

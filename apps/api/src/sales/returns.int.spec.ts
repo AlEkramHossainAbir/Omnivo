@@ -249,6 +249,8 @@ async function setPricesIncludeVat(on: boolean): Promise<void> {
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
     pricesIncludeVat: on,
+    // Step 17b: the whole form, the over-receipt percent too
+    overReceiptPercent: settings.overReceiptPercent,
   });
   expect(res.statusCode, res.body).toBe(200);
 }

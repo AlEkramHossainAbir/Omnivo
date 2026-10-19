@@ -112,9 +112,9 @@ export class DocumentOutputService {
     const sender = await this.withTenant((tx) => this.senderName(tx));
     const copy = DOCUMENT_COPY[language];
     return {
-      to: built.customer.email ?? '',
+      to: built.recipient.email ?? '',
       subject: copy.emailSubject(built.facts, built.company.name),
-      message: copy.emailMessage(built.facts, built.customer.name, sender, built.company.name),
+      message: copy.emailMessage(built.facts, built.recipient.name, sender, built.company.name),
     };
   }
 
@@ -218,7 +218,7 @@ export class DocumentOutputService {
     // The app's route, not the API's: the page at /d/:token asks the public API route
     const url = `${this.config.appOrigin}/d/${token}`;
     const message = DOCUMENT_COPY[language].shareMessage(built.facts, built.company.name, url);
-    return { share, url, message, whatsAppUrl: whatsAppUrl(built.customer.phone, message) };
+    return { share, url, message, whatsAppUrl: whatsAppUrl(built.recipient.phone, message) };
   }
 
   // Turned off once; pressing it again on an off link changes nothing and is not an error

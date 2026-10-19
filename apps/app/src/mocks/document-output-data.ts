@@ -18,14 +18,17 @@ import { formatDate, formatMoney, formatNumber } from '@omnivo/i18n';
 import { OWNER } from './fixtures';
 import { findInvoice, findReceipt, toInvoice, toReceipt } from './invoice-data';
 import { MockProblem } from './mock';
+import { findPurchaseOrder } from './purchase-order-data';
 import { findCreditNote, toCreditNote } from './return-data';
 import { findCustomer } from './sales-data';
 import { findQuotation, toQuotation } from './sales-document-data';
+import { findSupplier } from './supplier-data';
 import type { WorkspaceData } from './workspace-data';
 
 // Step 16 on the mock's arrays: the PDFs, the emails and the share links of a quotation, an
 // invoice, a money receipt and a credit note, with the API's rules, shortened. There is no worker:
 // like an export (report-data.ts), a file or an email "finishes" on the first read after its delay.
+// Step 17b adds the purchase order, which goes to its supplier.
 
 // Shorter than the Send menu's 1.5 s wait, so its first poll finds the file ready
 const FILE_DELAY_MS = 1_200;
@@ -74,9 +77,11 @@ export function emptyDocumentOutput(): MockDocumentOutput {
 interface Issued {
   number: string;
   date: string;
-  customerId: string;
+  // Who receives it: the customer, or a purchase order's supplier (step 17b)
+  partyId: string;
   total: string;
-  // The quotation's "valid until" or the invoice's due date, named in the email's first message
+  // The quotation's "valid until", the invoice's due date or the order's "deliver by", named in
+  // the email's first message
   until: string | null;
   dueDate: string | null;
   amountDue: string | null;
@@ -97,7 +102,7 @@ function issuedOf(data: WorkspaceData, kind: OutputDocument, id: string): Issued
       return {
         number: doc.number,
         date: doc.date,
-        customerId: doc.customer.id,
+        partyId: doc.customer.id,
         total: doc.total,
         until: doc.validUntil,
         dueDate: null,
@@ -111,7 +116,7 @@ function issuedOf(data: WorkspaceData, kind: OutputDocument, id: string): Issued
       return {
         number: doc.number,
         date: doc.date,
-        customerId: doc.customer.id,
+        partyId: doc.customer.id,
         total: doc.total,
         until: doc.dueDate,
         dueDate: doc.dueDate,
@@ -125,7 +130,7 @@ function issuedOf(data: WorkspaceData, kind: OutputDocument, id: string): Issued
       return {
         number: doc.number,
         date: doc.date,
-        customerId: doc.customer.id,
+        partyId: doc.customer.id,
         total: doc.amount,
         until: null,
         dueDate: null,
@@ -139,7 +144,7 @@ function issuedOf(data: WorkspaceData, kind: OutputDocument, id: string): Issued
       return {
         number: doc.number,
         date: doc.date,
-        customerId: doc.customer.id,
+        partyId: doc.customer.id,
         total: doc.total,
         until: null,
         dueDate: null,
@@ -147,7 +152,31 @@ function issuedOf(data: WorkspaceData, kind: OutputDocument, id: string): Issued
         invoice: doc.invoice.number,
       };
     }
+    // Step 17b: only an approved order goes out; a draft or a pending one may still change, and a
+    // cancelled one was called off (the API's document_not_issued)
+    case 'purchase_order': {
+      const doc = findPurchaseOrder(data, id);
+      const issued = ['approved', 'received', 'closed'].includes(doc.status);
+      if (doc.number === null || !issued) return notIssued();
+      return {
+        number: doc.number,
+        date: doc.date,
+        partyId: doc.supplier.id,
+        total: doc.total,
+        until: doc.expectedDate,
+        dueDate: null,
+        amountDue: null,
+        invoice: null,
+      };
+    }
   }
+}
+
+// The person or company it goes to, as the email and the WhatsApp link need them
+function recipientOf(data: WorkspaceData, kind: OutputDocument, doc: Issued) {
+  return kind === 'purchase_order'
+    ? findSupplier(data, doc.partyId)
+    : findCustomer(data.sales, doc.partyId);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -159,12 +188,14 @@ const TITLES = {
     invoice: 'Invoice',
     receipt: 'Money receipt',
     credit_note: 'Credit note',
+    purchase_order: 'Purchase order',
   },
   bn: {
     quotation: 'কোটেশন',
     invoice: 'ইনভয়েস',
     receipt: 'মানি রিসিট',
     credit_note: 'ক্রেডিট নোট',
+    purchase_order: 'পারচেজ অর্ডার',
   },
 } satisfies Record<LanguageCode, Record<OutputDocument, string>>;
 
@@ -187,7 +218,7 @@ function emailSubject(kind: OutputDocument, doc: Issued, company: string, langua
 function emailMessage(
   kind: OutputDocument,
   doc: Issued,
-  customer: string,
+  recipient: string,
   company: string,
   language: LanguageCode,
 ): string {
@@ -199,16 +230,24 @@ function emailMessage(
       invoice: `ইনভয়েস ${doc.number} (${amount}) সংযুক্ত করা হলো। পরিশোধের তারিখ ${until}।`,
       receipt: `আপনার পেমেন্টের জন্য ধন্যবাদ। মানি রিসিট ${doc.number} (${amount}) সংযুক্ত করা হলো।`,
       credit_note: `ইনভয়েস ${doc.invoice ?? ''}-এর বিপরীতে ক্রেডিট নোট ${doc.number} (${amount}) সংযুক্ত করা হলো।`,
+      purchase_order:
+        until === ''
+          ? `আমাদের পারচেজ অর্ডার ${doc.number} (${amount}) সংযুক্ত করা হলো।`
+          : `আমাদের পারচেজ অর্ডার ${doc.number} (${amount}) সংযুক্ত করা হলো। অনুগ্রহ করে ${until}-এর মধ্যে মাল পৌঁছে দিন।`,
     } satisfies Record<OutputDocument, string>;
-    return `প্রিয় ${customer},\n\n${lead[kind]}\n\nধন্যবাদান্তে,\n${OWNER.fullName}\n${company}`;
+    return `প্রিয় ${recipient},\n\n${lead[kind]}\n\nধন্যবাদান্তে,\n${OWNER.fullName}\n${company}`;
   }
   const lead = {
     quotation: `Please find attached our quotation ${doc.number} for ${amount}.`,
     invoice: `Please find attached invoice ${doc.number} for ${amount}, due on ${until}.`,
     receipt: `Thank you for your payment. Please find attached money receipt ${doc.number} for ${amount}.`,
     credit_note: `Please find attached credit note ${doc.number} for ${amount}, against invoice ${doc.invoice ?? ''}.`,
+    purchase_order:
+      until === ''
+        ? `Please find attached our purchase order ${doc.number} for ${amount}.`
+        : `Please find attached our purchase order ${doc.number} for ${amount}. Please deliver by ${until}.`,
   } satisfies Record<OutputDocument, string>;
-  return `Dear ${customer},\n\n${lead[kind]}\n\nRegards,\n${OWNER.fullName}\n${company}`;
+  return `Dear ${recipient},\n\n${lead[kind]}\n\nRegards,\n${OWNER.fullName}\n${company}`;
 }
 
 function shareMessage(
@@ -310,12 +349,12 @@ export function emailDraft(
   language: LanguageCode,
 ): DocumentEmailDraft {
   const doc = issuedOf(data, kind, id);
-  const customer = findCustomer(data.sales, doc.customerId);
+  const recipient = recipientOf(data, kind, doc);
   const company = data.settings.companyName;
   return {
-    to: customer.email ?? '',
+    to: recipient.email ?? '',
     subject: emailSubject(kind, doc, company, language),
-    message: emailMessage(kind, doc, customer.name, company, language),
+    message: emailMessage(kind, doc, recipient.name, company, language),
   };
 }
 
@@ -394,7 +433,7 @@ export function createShare(
   language: LanguageCode,
 ): CreatedShare {
   const doc = issuedOf(data, kind, id);
-  const customer = findCustomer(data.sales, doc.customerId);
+  const recipient = recipientOf(data, kind, doc);
   const now = Date.now();
   const share: MockDocumentShare = {
     id: crypto.randomUUID(),
@@ -418,7 +457,7 @@ export function createShare(
     share: toDocumentShare(share),
     url,
     message,
-    whatsAppUrl: whatsAppUrl(customer.phone, message),
+    whatsAppUrl: whatsAppUrl(recipient.phone, message),
   };
 }
 
@@ -600,7 +639,7 @@ export function publicDocument(data: WorkspaceData, token: string): PublicDocume
         kind: 'invoice',
         number: 'INV-2026-27-0042',
         date: today,
-        customer: 'Aarong',
+        recipient: 'Aarong',
         total: '115000.0000',
         currency: data.settings.baseCurrency,
         dueDate: daysAfter(today, 30),
@@ -615,7 +654,7 @@ export function publicDocument(data: WorkspaceData, token: string): PublicDocume
         kind: 'quotation',
         number: 'QT-2026-27-0003',
         date: today,
-        customer: 'Aarong',
+        recipient: 'Aarong',
         total: '72427.5000',
         currency: data.settings.baseCurrency,
         dueDate: null,
@@ -630,7 +669,7 @@ export function publicDocument(data: WorkspaceData, token: string): PublicDocume
         kind: 'receipt',
         number: 'MR-2026-27-0007',
         date: today,
-        customer: 'Bengal Buying House Ltd.',
+        recipient: 'Bengal Buying House Ltd.',
         total: '25000.0000',
         currency: data.settings.baseCurrency,
         dueDate: null,

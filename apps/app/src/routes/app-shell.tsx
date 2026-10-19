@@ -28,10 +28,12 @@ import {
   Notebook02Icon,
   PackageIcon,
   PackageOutOfStockIcon,
+  PackageReceiveIcon,
   PieChartIcon,
   RulerIcon,
   SecurityCheckIcon,
   Settings02Icon,
+  ShoppingBasket01Icon,
   ShoppingCart01Icon,
   Store01Icon,
   TableIcon,
@@ -358,6 +360,13 @@ export function AppShell() {
           <NavGroup label={t('nav.purchase')}>
             <NavLink to="/requisitions" icon={TaskAdd01Icon}>
               {t('nav.requisitions')}
+            </NavLink>
+            {/* Step 17b: the documents in the order they happen, like the Sales group */}
+            <NavLink to="/purchase-orders" icon={ShoppingBasket01Icon}>
+              {t('nav.purchaseOrders')}
+            </NavLink>
+            <NavLink to="/goods-receipts" icon={PackageReceiveIcon}>
+              {t('nav.goodsReceipts')}
             </NavLink>
             <NavLink
               to="/approvals"

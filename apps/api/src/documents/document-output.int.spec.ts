@@ -465,6 +465,8 @@ beforeAll(async () => {
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
     pricesIncludeVat: false,
+    // Step 17b: the whole form, the over-receipt percent too
+    overReceiptPercent: settings.overReceiptPercent,
   });
   expect(saved.statusCode, saved.body).toBe(200);
 
@@ -924,7 +926,8 @@ describe('share links', () => {
       kind: 'invoice',
       number: invoice.number,
       date: '2026-10-06',
-      customer: 'Bhairab Bazar Traders',
+      // Step 17b: the customer, or a purchase order's supplier
+      recipient: 'Bhairab Bazar Traders',
       total: invoice.total,
       currency: 'BDT',
       dueDate: '2026-11-05',

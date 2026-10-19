@@ -223,6 +223,30 @@ export class StockBooksService {
     ]);
   }
 
+  // A goods receipt (step 17b): the goods come into the inventory account at the purchase order's
+  // price, and the company owes that amount on "goods received not billed" until the supplier's
+  // bill (17c) moves it to the payable (Dr Inventory / Cr Goods received not billed). Both with the
+  // branch of the warehouse that received them, so each branch's balance sheet carries what it
+  // owes for its own goods. A receipt that turned everything back, or a free sample, is worth
+  // nothing and writes no entry.
+  async purchaseReceipt(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    moved: WarehouseValue,
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [moved]);
+    const branchId = branchOf(moved.warehouseId);
+    return this.write(tx, document, 'purchase_receipt', `Goods receipt ${document.number}`, [
+      { accountId: accounts.inventory, branchId, amount: moved.value },
+      {
+        accountId: accounts.use('received_not_billed'),
+        branchId,
+        amount: negateMoney(moved.value),
+      },
+    ]);
+  }
+
   // The posted entries of a document, oldest first: an adjustment has at most one, a transfer two
   async entriesOf(tx: Transaction, documentId: string): Promise<EntryRef[]> {
     const rows = await tx

@@ -10,6 +10,7 @@ import {
   type Invoice,
   isZeroMoney,
   plainQuantity,
+  type PurchaseOrder,
   type Quotation,
   type Receipt,
   type Refund,
@@ -27,12 +28,12 @@ import type { ReactNode } from 'react';
 import { settingsQuery } from '../lib/queries';
 import { creditReasonKey, returnReasonKey } from '../lib/returns';
 import { variantName } from '../lib/stock';
-import { useIsoDate, useQuantity, useTenantId } from './stock-parts';
+import { useIsoDate, useQuantity, useTenantId, useWarehouses } from './stock-parts';
 
-// The printed quotation, order, challan, invoice and money receipt (step 15c), and the sales
-// return, credit note and refund (15d): one A4 layout, the browser's own Print (or Save as PDF), so
-// it works offline and needs no PDF service. Each page renders its sheet next to itself; PrintSheet
-// keeps it hidden on the screen and alone on paper.
+// The printed quotation, order, challan, invoice and money receipt (step 15c), the sales return,
+// credit note and refund (15d), and the purchase order (17b): one A4 layout, the browser's own
+// Print (or Save as PDF), so it works offline and needs no PDF service. Each page renders its sheet
+// next to itself; PrintSheet keeps it hidden on the screen and alone on paper.
 
 // "Print" in a document's header: the browser prints the sheet of the page
 export function PrintButton() {
@@ -368,6 +369,56 @@ export function SalesOrderPrint({ order }: { order: SalesOrder }) {
         )}
       </div>
       <PricedLines lines={order.lines} totals={order} pricesIncludeVat={order.pricesIncludeVat} />
+      <Note note={order.note} />
+    </Sheet>
+  );
+}
+
+// Step 17b: the purchase order, as its PDF draws it (apps/api/src/documents/models.service.ts): the
+// supplier, where the goods go and by when, the terms, the priced lines and the total in words: the
+// company commits to pay it, like a bill
+export function PurchaseOrderPrint({ order }: { order: PurchaseOrder }) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  const place = useWarehouses().byId.get(order.warehouseId);
+  return (
+    <Sheet
+      title={t('print.titles.purchaseOrder')}
+      meta={[
+        { label: t('print.number'), value: order.number ?? '' },
+        { label: t('print.date'), value: isoDate(order.date) },
+        order.expectedDate === null
+          ? null
+          : { label: t('print.deliverBy'), value: isoDate(order.expectedDate) },
+        order.supplierReference === null
+          ? null
+          : { label: t('print.customerReference'), value: order.supplierReference },
+        {
+          label: t('print.paymentTerms'),
+          value:
+            order.paymentTermsDays === 0
+              ? t('print.onDelivery')
+              : t('print.termsDays', { count: order.paymentTermsDays }),
+        },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.supplier')}
+          name={order.supplier.name}
+          code={order.supplier.code}
+        />
+        {place && (
+          <PartyBlock label={t('print.deliverTo')} name={place.name} address={place.address} />
+        )}
+      </div>
+      <PricedLines
+        lines={order.lines}
+        totals={order}
+        pricesIncludeVat={order.pricesIncludeVat}
+        words
+      />
       <Note note={order.note} />
     </Sheet>
   );

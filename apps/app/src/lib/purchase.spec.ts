@@ -1,10 +1,21 @@
-import type { ApprovalRound, ApprovalStep, RequisitionLine } from '@omnivo/contracts';
+import type {
+  ApprovalRound,
+  ApprovalStep,
+  PurchaseOrderLine,
+  RequisitionLine,
+} from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
+  allowedToReceive,
   approvedByOwnSubmit,
+  isOrderLate,
+  leftToOrder,
+  leftToReceive,
+  receiptFill,
   requisitionFormTotals,
   roundNumber,
+  startingPrice,
   stepState,
   toRequisitionFormLine,
 } from './purchase';
@@ -88,6 +99,7 @@ describe('toRequisitionFormLine', () => {
     description: '30s combed cotton yarn',
     estimatedCost: '7499.0000',
     amount: '14998.0000',
+    orderedQuantity: '0.0000',
   };
 
   it('shows the quantity as typed and an empty description when it is the product name', () => {
@@ -148,3 +160,150 @@ describe('roundNumber', () => {
     expect([0, 1, 2].map((index) => roundNumber(rounds, index))).toEqual([3, 2, 1]);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Step 17b
+
+describe('leftToOrder', () => {
+  const line = { baseQuantity: '480.0000', orderedQuantity: '0.0000' } as const;
+
+  it('is what the requisition asked for, less what orders cover, in the base unit', () => {
+    expect(leftToOrder({ ...requisitionLine(), ...line, orderedQuantity: '360.0000' })).toBe(
+      '120.0000',
+    );
+  });
+
+  it('is never less than nothing: a mill’s minimum order may order more (decision 16)', () => {
+    expect(leftToOrder({ ...requisitionLine(), ...line, orderedQuantity: '500.0000' })).toBe(
+      '0.0000',
+    );
+  });
+});
+
+describe('isOrderLate', () => {
+  it('is late only when approved and past its delivery date', () => {
+    const order = { status: 'approved', expectedDate: '2026-10-15' };
+    expect(isOrderLate(order, '2026-10-16')).toBe(true);
+    expect(isOrderLate(order, '2026-10-15')).toBe(false);
+    expect(isOrderLate({ ...order, status: 'received' }, '2026-10-16')).toBe(false);
+    expect(isOrderLate({ ...order, expectedDate: null }, '2026-10-16')).toBe(false);
+  });
+});
+
+describe('leftToReceive and allowedToReceive', () => {
+  it('leaves what was rejected to come: the supplier still owes it', () => {
+    const line = orderLine({ receivedQuantity: '600.0000', rejectedQuantity: '50.0000' });
+    expect(leftToReceive(line)).toBe('400.0000');
+  });
+
+  it('lets in the workspace’s percent more, rounded down like the API (decision 22)', () => {
+    const line = orderLine({ receivedQuantity: '600.0000' });
+    // 1,000 m at 3% = 1,030 m in all, 600 m came already
+    expect(allowedToReceive(line, '3.00')).toBe('430.0000');
+    expect(allowedToReceive(line, '0.00')).toBe('400.0000');
+    expect(allowedToReceive(orderLine({ receivedQuantity: '1040.0000' }), '3.00')).toBe('0.0000');
+  });
+
+  it('never asks a service line for goods (decision 29)', () => {
+    const service = orderLine({ productType: 'service' });
+    expect(leftToReceive(service)).toBe('0.0000');
+    expect(allowedToReceive(service, '10')).toBe('0.0000');
+  });
+});
+
+describe('receiptFill', () => {
+  it('keeps the order’s unit for an untouched line, and asks for the rest in the base unit', () => {
+    const bags = orderLine({
+      id: 'bags',
+      unitId: 'bag',
+      quantity: '40.0000',
+      baseQuantity: '1000.0000',
+    });
+    const started = orderLine({ id: 'started', receivedQuantity: '600.0000' });
+    const service = orderLine({ id: 'dyeing', productType: 'service' });
+    expect(receiptFill([bags, started, service], new Map())).toEqual([
+      { orderLineId: 'bags', variantId: 'fabric', unitId: 'bag', quantity: '40' },
+      { orderLineId: 'started', variantId: 'fabric', unitId: 'm', quantity: '400' },
+    ]);
+  });
+
+  it('adds only what the form does not hold yet', () => {
+    const line = orderLine({ id: 'fabric-line' });
+    expect(receiptFill([line], new Map([['fabric-line', '250']]))).toEqual([
+      { orderLineId: 'fabric-line', variantId: 'fabric', unitId: 'm', quantity: '750' },
+    ]);
+    expect(receiptFill([line], new Map([['fabric-line', '1000']]))).toEqual([]);
+  });
+});
+
+describe('startingPrice', () => {
+  it('is the net when the order’s prices are before VAT', () => {
+    expect(startingPrice('312.5000', '15.00', false)).toBe('312.5000');
+  });
+
+  it('adds the VAT, to the paisa, when the order’s prices include it', () => {
+    // 312.50 + 15% (46.875 → 46.88)
+    expect(startingPrice('312.5000', '15.00', true)).toBe('359.3800');
+  });
+
+  it('stays empty when nothing is known, or the rate is not loaded', () => {
+    expect(startingPrice(null, '15.00', true)).toBeNull();
+    expect(startingPrice('312.5000', null, true)).toBe('312.5000');
+  });
+});
+
+// A requisition line with the fields the helpers do not read filled in
+function requisitionLine(): RequisitionLine {
+  return {
+    id: 'req-line',
+    variantId: 'yarn',
+    productId: 'p-yarn',
+    productCode: 'P-00031',
+    productName: '30s combed cotton yarn',
+    optionValues: [],
+    sku: 'P-00031',
+    baseUnitId: 'cone',
+    productType: 'goods',
+    units: [],
+    unitId: 'cone',
+    quantity: '480.0000',
+    baseQuantity: '480.0000',
+    description: '30s combed cotton yarn',
+    estimatedCost: '312.0000',
+    amount: '149760.0000',
+    orderedQuantity: '0.0000',
+  };
+}
+
+// An order line of 1,000 m of fabric, nothing received yet
+function orderLine(extra: Partial<PurchaseOrderLine> = {}): PurchaseOrderLine {
+  return {
+    id: 'line-1',
+    variantId: 'fabric',
+    productId: 'p-fabric',
+    productCode: 'P-00102',
+    productName: 'Single jersey 180 GSM',
+    optionValues: [],
+    sku: 'P-00102',
+    baseUnitId: 'm',
+    productType: 'goods',
+    tracking: 'batch',
+    hasExpiry: false,
+    units: [{ unitId: 'bag', factor: '25.000000' }],
+    unitId: 'm',
+    quantity: '1000.0000',
+    baseQuantity: '1000.0000',
+    description: 'Single jersey 180 GSM',
+    unitPrice: '312.5000',
+    discountType: 'percent',
+    discount: '0.0000',
+    taxRate: { id: 'vat-15', name: 'VAT 15%', kind: 'standard', rate: '15.00' },
+    net: '312500.0000',
+    vat: '46875.0000',
+    total: '359375.0000',
+    requisitionLine: null,
+    receivedQuantity: '0.0000',
+    rejectedQuantity: '0.0000',
+    ...extra,
+  };
+}

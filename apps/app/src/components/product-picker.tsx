@@ -25,10 +25,14 @@ import { useTenantId } from './stock-parts';
 // its own language ("Each click adds a line in its selling unit" or "… its buying unit").
 export function ProductPicker({
   words,
+  description,
   onAdd,
   maxLines,
 }: {
   words: 'salesLines' | 'purchaseLines';
+  // Step 17b: a purchase order says its lines start at the last price paid, where the
+  // requisition's picker says nothing of prices; both speak from purchaseLines
+  description?: string | undefined;
   onAdd: (product: Product) => Promise<boolean>;
   maxLines: number;
 }) {
@@ -58,7 +62,10 @@ export function ProductPicker({
   };
 
   return (
-    <DialogContent title={t(`${words}.pickerTitle`)} description={t(`${words}.pickerDescription`)}>
+    <DialogContent
+      title={t(`${words}.pickerTitle`)}
+      description={description ?? t(`${words}.pickerDescription`)}
+    >
       <div className="grid grid-cols-1 gap-4">
         <Input
           type="search"

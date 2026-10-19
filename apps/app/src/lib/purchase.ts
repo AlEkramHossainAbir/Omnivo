@@ -1,17 +1,28 @@
 import {
+  addMoney,
   type ApprovalRound,
   type ApprovalStep,
+  compareQuantity,
   defaultLineDescription,
   draftRequisitionLineAmount,
+  isZeroQuantity,
+  percentOfMoney,
   plainQuantity,
   type Product,
   type ProductVariant,
+  type PurchaseOrder,
+  type PurchaseOrderLine,
+  type PurchaseOrderLineFormValues,
   type RequisitionLine,
   type RequisitionLineFormValues,
+  subtractQuantity,
   sumMoney,
   type VariantRef,
   waitingStep,
+  withTolerance,
 } from '@omnivo/contracts';
+
+import { type LineMeta, SALES_LINE_FIELDS, salesItemOf, toFormLine } from './sales';
 
 // The pure parts of the purchase pages (step 17a): no React, so they are unit-tested
 // (purchase.spec.ts) and shared by the form, the editor and the view. Here, not in
@@ -147,4 +158,136 @@ export function approvedByOwnSubmit(round: ApprovalRound): boolean {
       (step) => step.decision === 'approved' && step.decidedBy?.id === round.submittedBy.id,
     )
   );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 17b: what is left to order and to receive
+
+// What is more than nothing, or nothing: a line ordered or received over its quantity has nothing
+// left, never less than nothing
+function atLeastZero(value: string): string {
+  return compareQuantity(value, '0') > 0 ? value : '0.0000';
+}
+
+// What a requisition line still needs ordering, in the base unit (decision 16 counts what is
+// ordered)
+export function leftToOrder(line: RequisitionLine): string {
+  return atLeastZero(subtractQuantity(line.baseQuantity, line.orderedQuantity));
+}
+
+// An approved order whose delivery date has passed: attention, not a status. Nothing changes in
+// the database when the date passes; the page works it out, like a sales order's "Late". ISO dates
+// compare as strings.
+export function isOrderLate(
+  order: { status: string; expectedDate: string | null },
+  today: string,
+): boolean {
+  return order.status === 'approved' && order.expectedDate !== null && order.expectedDate < today;
+}
+
+// What an order line still has to bring, in the base unit. A service line (a dyeing charge) is
+// never received (decision 29); what was rejected does not count as received, the supplier still
+// owes it.
+export function leftToReceive(line: PurchaseOrderLine): string {
+  if (line.productType === 'service') return '0.0000';
+  return atLeastZero(subtractQuantity(line.baseQuantity, line.receivedQuantity));
+}
+
+// The most that may still come on an order line, in the base unit, with the workspace's
+// over-receipt percent (decision 22): the same withTolerance() the API checks with, less what
+// posted receipts accepted
+export function allowedToReceive(line: PurchaseOrderLine, percent: string): string {
+  if (line.productType === 'service') return '0.0000';
+  return atLeastZero(
+    subtractQuantity(withTolerance(line.baseQuantity, percent), line.receivedQuantity),
+  );
+}
+
+// A goods receipt line made from an order line: what it sends to the API, before the gate fills
+// in the lot and what it turned back
+export interface ReceiptFill {
+  orderLineId: string;
+  variantId: string;
+  unitId: string;
+  quantity: string;
+}
+
+// "Add what is left on the order": one line per goods line with something still to come, minus
+// what the form already holds for it (`onForm`: accepted base quantities by order line). A line
+// nothing came for yet keeps the order's unit and quantity (40 bags); a partly received one asks
+// for the rest in the base unit (120 kg), because the rest is rarely whole bags. Like the sales
+// order's fillFromOrder (15b).
+export function receiptFill(
+  lines: readonly PurchaseOrderLine[],
+  onForm: ReadonlyMap<string, string>,
+): ReceiptFill[] {
+  return lines.flatMap((line) => {
+    const already = onForm.get(line.id) ?? '0';
+    const left = subtractQuantity(leftToReceive(line), already);
+    if (compareQuantity(left, '0') <= 0) return [];
+    const untouched = isZeroQuantity(line.receivedQuantity) && isZeroQuantity(already);
+    return [
+      {
+        orderLineId: line.id,
+        variantId: line.variantId,
+        unitId: untouched ? line.unitId : line.baseUnitId,
+        quantity: untouched ? plainQuantity(line.quantity) : plainQuantity(left),
+      },
+    ];
+  });
+}
+
+// A purchase order line's starting price (decision 19). The cost lookup sends the net per unit:
+// what the goods were worth before VAT, whatever the earlier order's VAT setting was. An order
+// whose prices include VAT starts from the net plus its VAT at the line's rate, to the paisa, so
+// the "Price with VAT" box does not quietly start a VAT short. null stays null: nothing is known,
+// and the person types a price.
+export function startingPrice(
+  net: string | null,
+  rate: string | null,
+  pricesIncludeVat: boolean,
+): string | null {
+  if (net === null || !pricesIncludeVat || rate === null) return net;
+  return addMoney(net, percentOfMoney(net, rate));
+}
+
+// The fields of a purchase order line the server may name in an error: a sales line's, and the
+// requisition line it buys for ("lines.2.requisitionLineId": closed meanwhile, or twice)
+export const PURCHASE_ORDER_LINE_FIELDS = [...SALES_LINE_FIELDS, 'requisitionLineId'] as const;
+
+// A saved order's lines as the form holds them, the editor's meta, and the requisition each line
+// buys for (its number, for the link under the line). The sales line's own helpers: an order line
+// is a sales line (decision 6).
+export function savedOrderLines(order: PurchaseOrder): {
+  values: PurchaseOrderLineFormValues[];
+  meta: LineMeta[];
+  links: Map<string, { requisitionId: string; number: string }>;
+} {
+  return {
+    values: order.lines.map((line) => ({
+      ...toFormLine(line),
+      requisitionLineId: line.requisitionLine?.id ?? '',
+    })),
+    meta: order.lines.map((line) => ({
+      key: line.id,
+      item: salesItemOf(line),
+      source: undefined,
+      pricedFor: order.supplier.id,
+    })),
+    links: new Map(
+      order.lines.flatMap((line) =>
+        line.requisitionLine === null
+          ? []
+          : [
+              [
+                line.requisitionLine.id,
+                {
+                  requisitionId: line.requisitionLine.requisitionId,
+                  number: line.requisitionLine.number,
+                },
+              ],
+            ],
+      ),
+    ),
+  };
 }

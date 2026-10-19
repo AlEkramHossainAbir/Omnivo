@@ -10,23 +10,27 @@ import {
   isZeroMoney,
   type LanguageCode,
   type OutputDocument,
+  type PartyRef,
+  type PurchaseOrder,
   type Quotation,
   type Receipt,
   type SalesLine,
   unappliedOf,
 } from '@omnivo/contracts';
-import { attachments, parties, tenants, tenantSettings, units } from '@omnivo/db';
+import { attachments, parties, tenants, tenantSettings, units, warehouses } from '@omnivo/db';
 import { and, eq, inArray } from 'drizzle-orm';
 
 import { AppError } from '../common/http/app-error.js';
 import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
+import { PurchaseOrdersService } from '../purchase/purchase-orders.service.js';
 import { formatAmount, formatIsoDate, formatNumber } from '../reports/export/format.js';
 import { CreditNotesService } from '../sales/credit-notes.service.js';
 import { InvoicesService } from '../sales/invoices.service.js';
 import { QuotationsService } from '../sales/quotations.service.js';
 import { ReceiptsService } from '../sales/receipts.service.js';
+import { billingAddressOf } from '../sales/sales-lines.js';
 import { DOCUMENT_COPY, type DocumentCopy, type DocumentFacts } from './copy.js';
 import { type DocumentModel, fingerprintOf } from './model.js';
 
@@ -38,7 +42,19 @@ type Loaded =
   | { kind: 'quotation'; doc: Quotation }
   | { kind: 'invoice'; doc: Invoice }
   | { kind: 'receipt'; doc: Receipt }
-  | { kind: 'credit_note'; doc: CreditNote };
+  | { kind: 'credit_note'; doc: CreditNote }
+  | { kind: 'purchase_order'; doc: PurchaseOrder };
+
+// Who receives it: the customer, or the supplier of a purchase order (step 17b)
+function recipientRef(loaded: Loaded): PartyRef {
+  return loaded.kind === 'purchase_order' ? loaded.doc.supplier : loaded.doc.customer;
+}
+
+// Where a purchase order's goods go: the warehouse's name and address, on one line
+interface DeliveryPlace {
+  name: string;
+  address: string | null;
+}
 
 interface Company {
   name: string;
@@ -62,7 +78,8 @@ export interface BuiltDocument {
   fingerprint: string;
   // What the email and WhatsApp sentences say about it
   facts: DocumentFacts;
-  customer: { id: string; name: string; email: string | null; phone: string | null };
+  // The customer, or the supplier of a purchase order: where the email and the WhatsApp go
+  recipient: { id: string; name: string; email: string | null; phone: string | null };
   company: { name: string; logo: { key: string; contentType: string } | null };
   // The public page's numbers: plain decimal strings and ISO dates, the page formats them
   summary: {
@@ -85,7 +102,10 @@ function documentNotIssued(): AppError {
 
 // The number of a document that may go out (decision 11), or the error. A quotation is numbered
 // when it is saved. An invoice and a credit note get theirs when they are posted. A voided receipt
-// still has its number, but it is not money received any more.
+// still has its number, but it is not money received any more. A purchase order is numbered when
+// it is submitted (step 17b), but it goes to the supplier only once approved: a pending one may
+// still be rejected, and a cancelled one will not be bought. A received or closed order may still
+// be sent again (the supplier asks for a copy).
 function issuedNumber(loaded: Loaded): string {
   switch (loaded.kind) {
     case 'quotation':
@@ -97,11 +117,17 @@ function issuedNumber(loaded: Loaded): string {
     case 'credit_note':
       if (loaded.doc.status === 'draft' || loaded.doc.number === null) throw documentNotIssued();
       return loaded.doc.number;
+    case 'purchase_order': {
+      const { status, number } = loaded.doc;
+      const sent = status === 'approved' || status === 'received' || status === 'closed';
+      if (!sent || number === null) throw documentNotIssued();
+      return number;
+    }
   }
 }
 
 // The PDF's model and everything around it, from the same reads the document's own page uses
-// (the four services' get). Runs in the API only: the worker draws the stored model.
+// (the services' get). Runs in the API only: the worker draws the stored model.
 @Injectable()
 export class DocumentModels {
   constructor(
@@ -110,29 +136,39 @@ export class DocumentModels {
     private readonly invoices: InvoicesService,
     private readonly receipts: ReceiptsService,
     private readonly creditNotes: CreditNotesService,
+    private readonly purchaseOrders: PurchaseOrdersService,
   ) {}
 
   async build(kind: OutputDocument, id: string, language: LanguageCode): Promise<BuiltDocument> {
     const loaded = await this.load(kind, id);
     const number = issuedNumber(loaded);
     const lines = loaded.kind === 'receipt' ? [] : loaded.doc.lines;
+    const recipientId = recipientRef(loaded).id;
     const context = await this.withTenant(async (tx) => ({
       company: await companyOf(tx),
       units: await unitsOf(
         tx,
         lines.map((line) => line.unitId),
       ),
-      customer: await customerOf(tx, loaded.doc.customer.id),
+      recipient: await recipientOf(tx, recipientId),
+      // A purchase order prints the supplier's address and where to deliver; the sales documents
+      // keep their own copies of the customer's addresses
+      supplierAddress:
+        loaded.kind === 'purchase_order' ? await billingAddressOf(tx, recipientId) : null,
+      place: loaded.kind === 'purchase_order' ? await placeOf(tx, loaded.doc.warehouseId) : null,
     }));
     const writer = new ModelWriter(language, context.company, context.units);
-    const model = writer.model(loaded, number);
+    const model = writer.model(loaded, number, {
+      supplierAddress: context.supplierAddress,
+      place: context.place,
+    });
     return {
       kind,
       id,
       model,
       fingerprint: fingerprintOf(model),
       facts: writer.facts(loaded, number),
-      customer: context.customer,
+      recipient: context.recipient,
       company: { name: context.company.name, logo: context.company.logo },
       summary: {
         number,
@@ -156,6 +192,8 @@ export class DocumentModels {
         return { kind, doc: await this.receipts.get(id) };
       case 'credit_note':
         return { kind, doc: await this.creditNotes.get(id) };
+      case 'purchase_order':
+        return { kind, doc: await this.purchaseOrders.get(id) };
     }
   }
 }
@@ -209,14 +247,24 @@ async function unitsOf(tx: Transaction, unitIds: readonly string[]): Promise<Map
   return new Map(rows.map((row) => [row.id, { code: row.code, decimals: row.decimals }]));
 }
 
-// Where an email and a WhatsApp message go: the customer's own email and phone
-async function customerOf(tx: Transaction, id: string): Promise<BuiltDocument['customer']> {
+// Where an email and a WhatsApp message go: the customer's (or the supplier's) own email and phone
+async function recipientOf(tx: Transaction, id: string): Promise<BuiltDocument['recipient']> {
   const [row] = await tx
     .select({ id: parties.id, name: parties.name, email: parties.email, phone: parties.phone })
     .from(parties)
     .where(and(eq(parties.tenantId, getTenantId()), eq(parties.id, id)));
-  // The document's customer FK makes this a broken database, not a 404
-  if (!row) throw new Error(`Customer ${id} of a document is missing`);
+  // The document's party FK makes this a broken database, not a 404
+  if (!row) throw new Error(`Party ${id} of a document is missing`);
+  return row;
+}
+
+// The warehouse a purchase order's goods are delivered to (step 17b)
+async function placeOf(tx: Transaction, warehouseId: string): Promise<DeliveryPlace> {
+  const [row] = await tx
+    .select({ name: warehouses.name, address: warehouses.address })
+    .from(warehouses)
+    .where(and(eq(warehouses.tenantId, getTenantId()), eq(warehouses.id, warehouseId)));
+  if (!row) throw new Error(`Warehouse ${warehouseId} of a purchase order is missing`);
   return row;
 }
 
@@ -273,10 +321,24 @@ class ModelWriter {
           date: null,
           invoice: loaded.doc.invoice.number,
         };
+      case 'purchase_order': {
+        const { expectedDate } = loaded.doc;
+        return {
+          ...base,
+          amount: this.money(loaded.doc.total),
+          date: expectedDate === null ? null : this.day(expectedDate),
+          invoice: null,
+        };
+      }
     }
   }
 
-  model(loaded: Loaded, number: string): DocumentModel {
+  // extra: what only a purchase order prints, read by build() (null for the sales documents)
+  model(
+    loaded: Loaded,
+    number: string,
+    extra: { supplierAddress: string | null; place: DeliveryPlace | null },
+  ): DocumentModel {
     const { copy } = this;
     const common = {
       language: this.language,
@@ -297,10 +359,11 @@ class ModelWriter {
       { label: copy.number, value: number },
       { label: copy.date, value: this.day(loaded.doc.date) },
     ];
+    const recipient = recipientRef(loaded);
     const party = (label: string, lines: string[] = []) => ({
       label,
-      name: loaded.doc.customer.name,
-      code: loaded.doc.customer.code,
+      name: recipient.name,
+      code: recipient.code,
       lines,
     });
     const note = (text: string | null) =>
@@ -439,6 +502,40 @@ class ModelWriter {
           totals: this.totals(creditNote, creditNote.pricesIncludeVat, []),
           words: this.words(creditNote.total),
           note: note(creditNote.note),
+          signatures: [copy.signatures.preparedBy, copy.signatures.authorised],
+        };
+      }
+      case 'purchase_order': {
+        const order = loaded.doc;
+        const { place } = extra;
+        return {
+          ...common,
+          meta: [
+            ...numberAndDate,
+            ...(order.expectedDate === null
+              ? []
+              : [{ label: copy.deliverBy, value: this.day(order.expectedDate) }]),
+            ...(order.supplierReference === null
+              ? []
+              : [{ label: copy.customerReference, value: order.supplierReference }]),
+            { label: copy.paymentTerms, value: copy.termsDays(order.paymentTermsDays) },
+          ],
+          party: party(copy.supplier, extra.supplierAddress?.split('\n') ?? []),
+          // Where the truck goes: the warehouse and its address, on one line
+          facts:
+            place === null
+              ? []
+              : [
+                  {
+                    label: copy.deliverTo,
+                    value: [place.name, ...(place.address?.split('\n') ?? [])].join(', '),
+                  },
+                ],
+          table: this.linesTable(order.lines, order.pricesIncludeVat),
+          totals: this.totals(order, order.pricesIncludeVat, []),
+          // What the company commits to pay, so it is written in words like a bill
+          words: this.words(order.total),
+          note: note(order.note),
           signatures: [copy.signatures.preparedBy, copy.signatures.authorised],
         };
       }

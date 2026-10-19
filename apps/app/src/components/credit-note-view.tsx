@@ -70,7 +70,7 @@ export function CreditNoteView({ creditNote }: { creditNote: CreditNote }) {
           kind: 'credit_note',
           id: creditNote.id,
           number: creditNote.number,
-          customerId: creditNote.customer.id,
+          partyId: creditNote.customer.id,
         }
       : null;
   const unapplied = unappliedOf({

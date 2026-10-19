@@ -12,6 +12,7 @@ import { levelSchema, quantitySchema } from './quantities.js';
 // revaluation (step 14): a change of value without a change of quantity — its quantity is zero.
 // delivery (step 15b): goods leaving for a customer on a delivery challan.
 // sales_return (step 15d): goods a customer sent back.
+// purchase_receipt (step 17b): goods a supplier delivered against a purchase order.
 export const MOVEMENT_KINDS = [
   'adjustment',
   'transfer_out',
@@ -19,6 +20,7 @@ export const MOVEMENT_KINDS = [
   'revaluation',
   'delivery',
   'sales_return',
+  'purchase_receipt',
 ] as const;
 export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 
@@ -155,6 +157,10 @@ export const stockItemSchema = variantRefSchema.extend({
   // from the chosen warehouse (or from any). Nothing is held for them; it is shown next to onHand,
   // so a salesperson sees what is already promised.
   onOrder: z.string(),
+  // Ordered from suppliers and not received yet (step 17b): what approved purchase orders still
+  // have to bring to the chosen warehouse (or to any), never below zero. Shown next to onHand, so a
+  // buyer does not order the same yarn twice.
+  incoming: z.string(),
   // At or below its reorder level in the chosen warehouse (or in any warehouse)
   low: z.boolean(),
   // Step 14, only for someone with inventory.stock.value (null for everyone else, and for a
@@ -284,6 +290,8 @@ export const reorderItemSchema = variantRefSchema.extend({
   warehouseId: z.uuid(),
   onHand: z.string(),
   inTransit: z.string(),
+  // What approved purchase orders still have to bring to this warehouse (step 17b)
+  incoming: z.string(),
   minQuantity: z.string(),
   reorderQuantity: z.string().nullable(),
 });

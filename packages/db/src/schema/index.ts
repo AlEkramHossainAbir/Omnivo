@@ -42,3 +42,5 @@ export * from './refunds.js';
 export * from './document-output.js';
 export * from './approvals.js';
 export * from './requisitions.js';
+export * from './purchase-orders.js';
+export * from './goods-receipts.js';

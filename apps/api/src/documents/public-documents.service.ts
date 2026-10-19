@@ -57,7 +57,7 @@ export class PublicDocumentsService {
         kind: share.kind,
         number: built.summary.number,
         date: built.summary.date,
-        customer: built.customer.name,
+        recipient: built.recipient.name,
         total: built.summary.total,
         currency: built.summary.currency,
         dueDate: built.summary.dueDate,

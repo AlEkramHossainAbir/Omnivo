@@ -85,6 +85,8 @@ export const en = {
     suppliers: 'Suppliers',
     supplierGroups: 'Supplier groups',
     requisitions: 'Requisitions',
+    purchaseOrders: 'Purchase orders',
+    goodsReceipts: 'Goods receipts',
     approvals: 'Approvals',
   },
   auth: {
@@ -168,6 +170,9 @@ export const en = {
     allowNegativeStock: 'Allow negative stock',
     allowNegativeStockHint:
       'Sales and adjustments may then take more than the stock shows, for products without batches or serial numbers. Leave it off unless your counters sell before the stock is entered.',
+    overReceiptPercent: 'Receive over the order',
+    overReceiptPercentHint:
+      'A goods receipt may bring in up to this percent more than was ordered, like 3% for yarn sold by weight. 0 = never more than ordered.',
     stockAccountsTitle: 'Stock accounts',
     stockAccountsSubtitle:
       'Where stock documents post in the books. Stock itself always goes to {{inventory}}, and opening stock against {{equity}}.',
@@ -175,6 +180,7 @@ export const en = {
       adjustments: 'Adjustments',
       transfers: 'Transfers',
       revaluation: 'Revaluation',
+      purchase: 'Buying',
     },
     stockAccountUses: {
       in_transit: 'Goods in transit',
@@ -187,11 +193,14 @@ export const en = {
       correction: 'Correction',
       transfer_shortage: 'Received short',
       revaluation: 'Revaluation',
+      received_not_billed: 'Goods received, not billed',
     },
     stockAccountHints: {
       in_transit: 'An asset: stock sent between two branches, until it arrives',
       transfer_shortage: 'What a transfer lost on the way',
       revaluation: 'The difference when an item gets a new average cost',
+      received_not_billed:
+        'A liability: what goods receipts brought in, until the supplier’s bill is entered',
     },
     stockAccountPlaceholder: 'Pick an account',
     stockAccountsSave: 'Save stock accounts',
@@ -472,6 +481,7 @@ export const en = {
       sales_return: 'Sales return',
       sales_credit_note: 'Credit note',
       sales_refund: 'Refund',
+      purchase_receipt: 'Goods receipt',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
@@ -1015,6 +1025,7 @@ export const en = {
       onHand: 'On hand',
       inTransit: 'In transit',
       onOrder: 'On order',
+      incoming: 'Incoming',
       unitCost: 'Average cost',
       value: 'Value',
       status: 'Status',
@@ -1024,6 +1035,9 @@ export const en = {
     newTransfer: 'New transfer',
     // Under the "On order" column header: why it is not taken off "On hand"
     onOrderHint: 'Ordered by customers, not delivered yet. Nothing is held for it.',
+    // Under the "Incoming" column header: why it is not in "On hand" yet
+    incomingHint:
+      'Still to come on approved purchase orders. Not on hand until a goods receipt is posted.',
     emptyTitle: 'No stock yet',
     emptyBody:
       'Post your opening stock with an adjustment: every product counted on your first day, warehouse by warehouse.',
@@ -1088,6 +1102,7 @@ export const en = {
       revaluation: 'Revaluation',
       delivery: 'Delivered',
       sales_return: 'Came back',
+      purchase_receipt: 'Goods receipt',
     },
     historyEmpty: 'No movement in these dates.',
   },
@@ -1277,6 +1292,7 @@ export const en = {
       warehouse: 'Warehouse',
       onHand: 'On hand',
       inTransit: 'In transit',
+      incoming: 'Incoming',
       level: 'Reorder level',
       order: 'Order',
     },
@@ -2548,8 +2564,17 @@ export const en = {
     costPer: 'Cost per {{unit}}',
     amount: 'Amount',
     // Where a new line's cost came from (the cost lookup)
+    fromSupplierPrice: 'Last price from this supplier',
+    fromLastPrice: 'Last price paid',
     fromAverage: 'From the average cost',
     noCost: 'No cost known: type one',
+    // A purchase order's line: a price, not an estimate
+    noPrice: 'No earlier price: type one',
+    orderPickerDescription:
+      'Search products and services. Each click adds a line in its buying unit, at the last price paid.',
+    reprice: 'Use this supplier’s last prices on every line',
+    repriced: 'Prices updated',
+    noOrderLines: 'No items yet. Add lines still to order, or add items.',
     noLines: 'No items yet. Add what needs to be bought.',
     tooMany: 'A document holds up to {{max}} lines. Write a second one for the rest.',
     lineCount_one: '{{count}} item',
@@ -2569,8 +2594,16 @@ export const en = {
       draft: 'Draft',
       pending: 'Waiting for approval',
       approved: 'Approved',
+      closed: 'Closed',
       cancelled: 'Cancelled',
     },
+    // How much purchase orders cover (requisitions.ts → orderState)
+    orderStates: {
+      not_ordered: 'Not ordered',
+      partly_ordered: 'Partly ordered',
+      ordered: 'Ordered',
+    },
+    orderFilters: { to_order: 'To order' },
     columns: {
       number: 'Number',
       date: 'Date',
@@ -2590,6 +2623,9 @@ export const en = {
     notePlaceholder:
       'For buyer PO-HM-2026-1187: 2,000 polo shirts in navy. Cutting starts on 10 November.',
     requestedBy: 'Requested by',
+    // A line on the requisition's page, in the line's unit
+    ordered: 'Ordered',
+    leftToOrder: 'Left to order',
     save: 'Save requisition',
     saved: '{{number}} saved',
     edit: 'Edit',
@@ -2610,6 +2646,12 @@ export const en = {
       'Nobody can order from it any more. It stays in the list as cancelled, with its history.',
     keep: 'Keep it',
     cancelled: '{{number}} cancelled',
+    makeOrder: 'Make purchase order',
+    close: 'Close requisition',
+    closeTitle: 'Close {{number}}',
+    closeBody:
+      'What is not ordered yet will not be ordered. The orders that buy for it go on as they are.',
+    closed: '{{number}} closed',
     delete: 'Delete requisition',
     confirmDelete: 'Delete {{number}}',
     deleteWarning:
@@ -2621,7 +2663,14 @@ export const en = {
       approved: 'Approved and locked. Reopen it to change it; it is then approved again.',
       cancelled: 'Cancelled. It stays here for the record.',
       rejected: '{{name}} sent it back: "{{comment}}" Change it and submit it again.',
+      // Approved, and a purchase order buys for it
+      ordered:
+        'Purchase orders buy for it, so it can no longer be reopened or cancelled. Close it when the rest will not be ordered.',
+      closed: 'Closed. What was not ordered will not be.',
     },
+    ordersTitle: 'Purchase orders',
+    ordersSubtitle: 'Orders that buy for this requisition',
+    noOrders: 'Nothing ordered yet.',
     cantWrite:
       'You can view requisitions. Ask a workspace owner for the purchase.requisition.manage permission to write them.',
     notFound: "This requisition doesn't exist, or it was deleted.",
@@ -2630,13 +2679,209 @@ export const en = {
       'Write one when the store or the floor needs something, like 2,000 cones of 30s yarn or a motor for a sewing machine. It is approved before anyone orders.',
     loadFailed: "Couldn't load the requisitions. Refresh the page to try again.",
   },
+  purchaseOrders: {
+    title: 'Purchase orders',
+    description: 'What the company ordered from suppliers, and how much of it has come in',
+    new: 'New purchase order',
+    newTitle: 'New purchase order',
+    draftTitle: 'Draft purchase order',
+    back: 'Purchase orders',
+    show: 'Show',
+    all: 'All',
+    allWarehouses: 'All warehouses',
+    statuses: {
+      draft: 'Draft',
+      pending: 'Waiting for approval',
+      approved: 'Approved',
+      received: 'Received',
+      closed: 'Closed',
+      cancelled: 'Cancelled',
+    },
+    partlyReceived: 'Partly received',
+    // Approved, and its delivery date has passed
+    late: 'Late',
+    receiptFilters: { to_receive: 'To receive' },
+    columns: {
+      number: 'Number',
+      date: 'Date',
+      supplier: 'Supplier',
+      expectedDate: 'Deliver by',
+      warehouse: 'Warehouse',
+      total: 'Total',
+      status: 'Status',
+    },
+    supplier: 'Supplier',
+    supplierLocked:
+      'The supplier stays: this order has a number. Write a new order for another one.',
+    date: 'Order date',
+    expectedDate: 'Deliver by',
+    expectedDateHint:
+      'When the supplier should bring the goods. Leave it empty if there is no date.',
+    noDate: 'No date',
+    supplierReference: 'Supplier’s reference',
+    supplierReferenceHint: 'Their quotation or proforma invoice number, printed on the order',
+    supplierReferencePlaceholder: 'PI-2026-0412',
+    warehouse: 'Deliver to',
+    warehouseHint:
+      'The warehouse the goods come to. Lines still to order come from its requisitions.',
+    paymentTerms: 'Payment terms',
+    paymentTermsHint:
+      'Days to pay after the goods come. They start as the supplier’s; 0 = on delivery.',
+    pricesIncludeVat: 'Prices include VAT',
+    pricesIncludeVatHint:
+      'Off: the supplier’s prices are before VAT, as most quotes are. The supplier’s bill takes the VAT as input VAT.',
+    note: 'Note',
+    notePlaceholder: 'Yarn in 50 kg bags, the lot number on each. Gate 2, 9 am to 5 pm.',
+    // The order line's link to the requisition line it buys for
+    forRequisition: 'For {{number}}',
+    // The "lines still to order" dialog (GET /requisition-lines)
+    addFromRequisitions: 'Add lines still to order',
+    openLinesTitle: 'Lines still to order',
+    openLinesDescription:
+      'Approved requisitions for {{warehouse}}, oldest first. Each click adds a line for what is left.',
+    openLinesSearch: 'Search by item or requisition number',
+    openLinesEmpty: 'Nothing is left to order for this warehouse.',
+    openLineNeededBy: '{{number}} · needed by {{date}}',
+    openLineLeft: '{{quantity}} left to order',
+    pickWarehouseFirst: 'Pick the warehouse first: lines still to order are per warehouse.',
+    saveDraft: 'Save draft',
+    draftSaved: 'Draft saved',
+    saved: '{{number}} saved',
+    edit: 'Edit',
+    submit: 'Submit for approval',
+    submitHint:
+      'It gets its number now. Its total with VAT chooses who approves it, and nobody can change it while it waits.',
+    submitted: '{{number}} sent for approval',
+    // No level applies, or an Owner submitted it: approved in the same step
+    submittedApproved: '{{number}} approved',
+    numberedDraft:
+      'This draft keeps its number {{number}}. Submit it again when the changes are done.',
+    deleteDraft: 'Delete draft',
+    confirmDelete: 'Delete this draft',
+    deleteWarning: 'A deleted draft cannot be brought back. It never had a number.',
+    deleted: 'Draft deleted',
+    receive: 'Receive goods',
+    reopen: 'Reopen',
+    reopenTitle: 'Reopen {{number}}',
+    reopenBody:
+      'It goes back to draft so it can be changed, and it is approved again from the first level. It keeps its number. If the supplier has it already, send them the new one.',
+    reopened: '{{number}} is a draft again',
+    close: 'Close order',
+    closeTitle: 'Close {{number}}',
+    closeBody:
+      'What has not come in is dropped, and its requisitions can order the rest again. Draft goods receipts of this order can no longer be posted.',
+    closed: '{{number}} closed',
+    cancel: 'Cancel order',
+    cancelTitle: 'Cancel {{number}}',
+    cancelBody:
+      'The order is called off, and its requisitions can be ordered again. It stays in the list as cancelled. Tell the supplier if they have it.',
+    cancelled: '{{number}} cancelled',
+    keepOrder: 'Keep the order',
+    // The lines on the order's page, in the line's unit
+    received: 'Received',
+    rejected: 'Rejected',
+    left: 'Left to receive',
+    serviceLine: 'A service: not received',
+    // The document notice above the order
+    notices: {
+      pending: 'Waiting for approval. Reopen it to change it.',
+      approved:
+        'Approved. Send it to the supplier, and receive the goods when they come. Reopen it to change it; it is then approved again.',
+      receiving:
+        'Goods came in against it, so it can no longer be reopened or cancelled. Close it when the rest will not come.',
+      received: 'Everything on the order came in.',
+      closed: 'Closed. What did not come in was dropped.',
+      cancelled: 'Cancelled. It stays here for the record.',
+      rejected: '{{name}} sent it back: "{{comment}}" Change it and submit it again.',
+    },
+    requisitions: 'Requisitions',
+    receiptsTitle: 'Goods receipts',
+    receiptsSubtitle: 'What came in against this order',
+    noReceipts: 'Nothing received yet.',
+    approvedOn: 'Approved {{date}}',
+    cantWrite:
+      'You can view purchase orders. Ask a workspace owner for the purchase.order.manage permission to write them.',
+    notFound: "This order doesn't exist, or it was a draft that was deleted.",
+    emptyTitle: 'No purchase orders yet',
+    emptyBody:
+      'Order what an approved requisition needs, like 2,000 cones of 30s yarn from a Narayanganj spinning mill. It is approved, sent to the supplier, and received at the gate.',
+    loadFailed: "Couldn't load the purchase orders. Refresh the page to try again.",
+  },
+  goodsReceipts: {
+    title: 'Goods receipts',
+    description: 'GRNs: goods that came in from suppliers against approved purchase orders',
+    new: 'New goods receipt',
+    newTitle: 'New goods receipt',
+    draftTitle: 'Draft goods receipt',
+    back: 'Goods receipts',
+    show: 'Show',
+    all: 'All',
+    statuses: { draft: 'Draft', posted: 'Posted' },
+    columns: {
+      number: 'Number',
+      date: 'Date',
+      supplier: 'Supplier',
+      order: 'Purchase order',
+      warehouse: 'Warehouse',
+      lines: 'Items',
+      status: 'Status',
+    },
+    supplier: 'Supplier',
+    order: 'Purchase order',
+    orderPlaceholder: 'Pick an approved order',
+    orderEmpty: 'No approved order is waiting for goods.',
+    orderHint: 'The goods are booked at this order’s prices.',
+    orderLocked: 'The order stays. For goods of another order, write another receipt.',
+    date: 'Date',
+    warehouse: 'Received at',
+    warehouseHint: 'Where the goods are unloaded. The order says {{warehouse}}.',
+    supplierChallan: 'Supplier’s challan',
+    supplierChallanPlaceholder: 'CH-2026-1187',
+    vehicle: 'Vehicle and driver',
+    vehiclePlaceholder: 'Dhaka Metro-Ta 11-2233, Rahim',
+    note: 'Note',
+    notePlaceholder: 'Checked by QC. 3 bags wet from the rain, turned back.',
+    fillFromOrder: 'Add what is left on the order',
+    nothingLeft: 'Nothing is left to receive on this order.',
+    ordered: 'Ordered {{quantity}}',
+    leftOnOrder: '{{quantity}} left on the order',
+    // Up to how much may still come on this order line, with the over-receipt percent
+    allowed: 'Up to {{quantity}} may come',
+    accepted: 'Accepted',
+    rejected: 'Rejected',
+    rejectionReason: 'Why it was rejected',
+    rejectionReasonPlaceholder: 'Wet, wrong shade',
+    // What the truck brought: accepted + rejected
+    came: '{{quantity}} came',
+    saveDraft: 'Save draft',
+    post: 'Post goods receipt',
+    posting: 'Posting…',
+    posted: '{{number}} posted',
+    draftSaved: 'Draft saved',
+    deleteDraft: 'Delete draft',
+    confirmDelete: 'Delete this draft',
+    deleteWarning: 'A deleted draft cannot be brought back.',
+    deleted: 'Draft deleted',
+    postHint:
+      'Posting brings what was accepted into stock at the order’s price, owed as goods received not billed until the supplier’s bill. A posted receipt never changes.',
+    cantWrite:
+      'You can view goods receipts. Ask a workspace owner for the purchase.receipt.manage permission to write and post them.',
+    postedOn: 'Posted {{date}}',
+    entry: 'Journal entry',
+    noEntry: 'No journal entry: what came in had no value',
+    notFound: 'This goods receipt no longer exists. A draft may have been deleted.',
+    emptyTitle: 'No goods receipts yet',
+    emptyBody:
+      'When a truck is at the gate, pick its purchase order here, or receive the goods from the order’s page.',
+    loadFailed: "Couldn't load the goods receipts. Refresh the page to try again.",
+  },
   // The approval of any document that needs one: the "Waiting for me" page, the approval card on the
   // document's page, and its two dialogs
   approvals: {
     title: 'Approvals',
     description: 'Documents waiting for your decision, oldest first',
     // An ApprovalDocument kind → its name; the bell and the list put it before the number
-    kinds: { requisition: 'Requisition' },
+    kinds: { requisition: 'Requisition', purchase_order: 'Purchase order' },
     columns: {
       document: 'Document',
       date: 'Date',
@@ -2648,7 +2893,7 @@ export const en = {
     stepOf: '{{position}} of {{count}}',
     emptyTitle: 'Nothing waits for you',
     emptyBody:
-      'When someone submits a requisition that needs your role, it shows up here and the bell tells you.',
+      'When someone submits a requisition or a purchase order that needs your role, it shows up here and the bell tells you.',
     loadFailed: "Couldn't load the documents waiting for you. Refresh the page to try again.",
     cardTitle: 'Approval',
     cardSubtitle: 'Every level it reaches approves it, one after another',
@@ -2708,6 +2953,10 @@ export const en = {
         title: 'Purchase requisitions',
         subtitle: 'By the estimated amount of the requisition',
       },
+      purchase_order: {
+        title: 'Purchase orders',
+        subtitle: 'By the order’s total, VAT included',
+      },
     },
     level: 'Level {{number}}',
     from: 'From amount',
@@ -2734,6 +2983,7 @@ export const en = {
       invoice: 'Invoice',
       receipt: 'Money receipt',
       credit_note: 'Credit note',
+      purchase_order: 'Purchase order',
     },
     send: 'Send',
     downloadPdf: 'Download PDF',
@@ -2758,6 +3008,8 @@ export const en = {
       toPlaceholder: 'accounts@rahmantraders.com.bd',
       noCustomerEmail:
         'This customer has no email address. Type one here, or add it to the customer.',
+      noSupplierEmail:
+        'This supplier has no email address. Type one here, or add it to the supplier.',
       subject: 'Subject',
       message: 'Message',
       messageHint: 'Under your message, the email says what is attached and how to reply.',
@@ -2794,6 +3046,8 @@ export const en = {
       openWhatsApp: 'Open WhatsApp',
       noNumber:
         'The customer’s phone is not a mobile number, so WhatsApp will ask you to pick the contact.',
+      noSupplierNumber:
+        'The supplier’s phone is not a mobile number, so WhatsApp will ask you to pick the contact.',
       shownOnce: 'The link is shown only now. To send it again later, make a new one.',
     },
     shares: {
@@ -2825,7 +3079,7 @@ export const en = {
     document: 'Document',
     pageTitle: '{{document}} {{number}} from {{company}}',
     from: 'From {{company}}',
-    to: 'For {{customer}}',
+    to: 'For {{recipient}}',
     number: 'Number',
     date: 'Date',
     total: 'Total',
@@ -2853,6 +3107,7 @@ export const en = {
       salesReturn: 'Sales return',
       creditNote: 'Credit note',
       refund: 'Refund',
+      purchaseOrder: 'Purchase order',
     },
     bin: 'BIN {{bin}}',
     phone: 'Phone {{phone}}',
@@ -2867,6 +3122,14 @@ export const en = {
     billTo: 'Bill to',
     shipTo: 'Ship to',
     customer: 'Customer',
+    // A purchase order's words: the same as its PDF (apps/api/src/documents/copy.ts)
+    supplier: 'Supplier',
+    deliverBy: 'Deliver by',
+    deliverTo: 'Deliver to',
+    paymentTerms: 'Payment terms',
+    termsDays_one: '{{count}} day',
+    termsDays_other: '{{count}} days',
+    onDelivery: 'On delivery',
     columns: {
       number: '#',
       item: 'Item',
@@ -3088,7 +3351,14 @@ export const en = {
         balance: 'See what the company owes suppliers, and their statements',
       },
       requisition: {
-        manage: 'Write requisitions, submit them for approval, reopen and cancel them',
+        manage: 'Write requisitions, submit them for approval, reopen, close and cancel them',
+      },
+      order: {
+        manage:
+          'Write purchase orders, submit them for approval, send them to suppliers, reopen, close and cancel them',
+      },
+      receipt: {
+        manage: 'Receive goods against approved purchase orders, and post goods receipts',
       },
     },
   },
@@ -3152,6 +3422,8 @@ export const en = {
       supplier: 'Suppliers',
       supplier_group: 'Supplier groups',
       requisition: 'Purchase requisitions',
+      purchase_order: 'Purchase orders',
+      goods_receipt: 'Goods receipts',
     },
     columns: {
       when: 'When',
@@ -3365,6 +3637,20 @@ export const en = {
         updated: 'Edited a draft requisition',
         deleted: 'Deleted a draft requisition',
         cancelled: 'Cancelled a requisition',
+        closed: 'Closed a requisition',
+      },
+      purchase_order: {
+        created: 'Wrote a purchase order',
+        updated: 'Edited a draft purchase order',
+        deleted: 'Deleted a draft purchase order',
+        closed: 'Closed a purchase order',
+        cancelled: 'Cancelled a purchase order',
+      },
+      goods_receipt: {
+        created: 'Wrote a goods receipt',
+        updated: 'Edited a draft goods receipt',
+        deleted: 'Deleted a draft goods receipt',
+        posted: 'Posted a goods receipt',
       },
       approval: {
         submitted: 'Submitted for approval',
@@ -3465,7 +3751,7 @@ export const en = {
       quotation: 'Quotation',
       deliveryDate: 'Delivery date',
       customerReference: 'Customer’s reference',
-      order: 'Sales order',
+      order: 'Order',
       vehicle: 'Vehicle',
       dueDate: 'Due date',
       amount: 'Amount',
@@ -3485,6 +3771,13 @@ export const en = {
       role: 'Role',
       comment: 'Comment',
       requisition: 'Purchase requisitions',
+      overReceiptPercent: 'Receive over the order (%)',
+      received_not_billed: 'Goods received, not billed',
+      supplier: 'Supplier',
+      expectedDate: 'Deliver by',
+      supplierReference: 'Supplier’s reference',
+      supplierChallan: 'Supplier’s challan',
+      purchase_order: 'Purchase orders',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -3806,7 +4099,7 @@ export const en = {
     stock_account_invalid: 'Pick an active account of the right type.',
     stock_account_inventory: 'Pick another account: this one is the inventory account itself.',
     journal_account_stock:
-      'Only stock documents post to this account. Use a stock adjustment, or a revaluation, instead.',
+      'Only stock documents post to this account, like inventory, goods in transit or goods received not billed. Use a stock adjustment, a revaluation or a goods receipt instead.',
     journal_is_stock:
       'A stock document made this entry. Post another stock document to correct it.',
     revaluation_no_stock: 'There is no stock of this item to revalue.',
@@ -3966,7 +4259,7 @@ export const en = {
     account_used_by_sales:
       'Credit notes post to this account. Choose another sales returns account in Settings → Sales first.',
     document_not_issued:
-      "This document has no number yet, or it was voided, so it can't be downloaded or sent. Post it first.",
+      "This document can't be downloaded or sent yet. Post it, or wait for its approval. A voided or cancelled one is not sent.",
     email_to_required: 'Type at least one address to send it to.',
     // 5 = MAX_EMAIL_RECIPIENTS; the schema's issue carries no number to put in
     email_too_many: 'Up to 5 addresses in a box. Send a second email to the rest.',
@@ -4010,6 +4303,31 @@ export const en = {
       'Only a draft or an approved document can be cancelled. Reopen a waiting one first.',
     requisition_needed_by: 'Pick a day on or after the requisition date.',
     requisition_cost_required: 'Enter the estimated cost. 0 is fine for a free item.',
+    purchase_supplier_required: 'Pick the supplier.',
+    purchase_supplier_invalid:
+      'Pick an active supplier. A numbered order keeps its supplier: write a new order for another one.',
+    purchase_expected_date: 'Pick a day on or after the order date.',
+    purchase_requisition_line_invalid:
+      'This line can no longer buy for that requisition: it must be approved, for this warehouse and for the same item. Pick it again from the lines still to order.',
+    purchase_requisition_line_twice:
+      'Another line of this order buys for the same requisition line. Change that line’s quantity instead.',
+    purchase_close_instead:
+      'A later document uses this one, so it cannot be reopened or cancelled. Close it instead.',
+    purchase_cancel_instead:
+      'Nothing was ordered or received against this yet, so there is nothing to close. Cancel it instead.',
+    purchase_delete_instead: 'This draft was never submitted and has no number. Delete it instead.',
+    purchase_receipt_draft:
+      'A draft goods receipt is waiting on this order. Delete that draft first, or post it and close the order.',
+    purchase_not_approved:
+      'This document is no longer approved: someone reopened, closed or cancelled it. Reload it to see where it is now.',
+    grn_order_invalid: 'Pick an approved purchase order.',
+    grn_order_line_invalid:
+      'This line is not on the purchase order, or is for another item. Add it again from the order.',
+    grn_over_order:
+      'This is more than the order allows, even with the over-receipt percent in Settings. Accept less, and enter the rest as rejected.',
+    grn_line_empty: 'Enter what was accepted, what was rejected, or both.',
+    grn_rejection_reason: 'Say why the goods were rejected, like "wet" or "wrong shade".',
+    over_receipt_percent_format: 'Enter a percent from 0 to 100, with up to 2 decimals.',
     import_options_without_code:
       'Give rows with options a code: rows with the same code are one product.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',

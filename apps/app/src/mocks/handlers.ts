@@ -1,7 +1,10 @@
 import {
   type Account,
   accountTypeFits,
+  addQuantity,
+  APPROVAL_DOCUMENTS,
   type AuthSession,
+  compareQuantity,
   type ErrorCode,
   type Preferences,
   type ProductCategory,
@@ -128,6 +131,24 @@ import {
   toImport,
 } from './product-data';
 import {
+  cancelPurchaseOrder,
+  closePurchaseOrder,
+  findGoodsReceipt,
+  findPurchaseOrder,
+  listGoodsReceipts,
+  listPurchaseOrders,
+  postGoodsReceipt,
+  purchaseOrderSummaryOf,
+  removeGoodsReceipt,
+  removePurchaseOrder,
+  reopenPurchaseOrder,
+  saveGoodsReceipt,
+  savePurchaseOrder,
+  submitPurchaseOrder,
+  toGoodsReceipt,
+  toPurchaseOrder,
+} from './purchase-order-data';
+import {
   assertCustomerUnused,
   assertGroupNameFree,
   assertPriceListNameFree,
@@ -178,12 +199,14 @@ import {
 import {
   approvalsNeedRole,
   cancelRequisition,
+  closeRequisition,
   decide,
   describeLevels,
   findRequisition,
   forgetRole,
   listRequisitions,
   lookupCosts,
+  openLines,
   removeRequisition,
   reopenRequisition,
   requisitionSummaryOf,
@@ -295,6 +318,7 @@ function guarded(resolver: HttpResponseResolver): HttpResponseResolver {
 function editable(settings: Settings) {
   return {
     allowNegativeStock: settings.allowNegativeStock,
+    overReceiptPercent: settings.overReceiptPercent,
     pricesIncludeVat: settings.pricesIncludeVat,
     companyName: settings.companyName,
     legalName: settings.legalName,
@@ -735,8 +759,21 @@ export const handlers = [
         });
       }
       const before = editable(data.settings);
-      data.settings = { ...data.settings, ...fields, version: version + 1 };
-      record(data, 'settings.updated', 'workspace', workspace.tenantId, diff(before, fields));
+      // Step 17b: the form's "3" is stored as NUMERIC(5,2), "3.00" (it has at most 2 decimals, so
+      // cutting the 4 that addQuantity() gives is exact); an unchanged percent is not logged
+      const overReceiptPercent = addQuantity(fields.overReceiptPercent, '0').slice(0, -2);
+      const unchanged = compareQuantity(overReceiptPercent, before.overReceiptPercent) === 0;
+      data.settings = { ...data.settings, ...fields, overReceiptPercent, version: version + 1 };
+      record(
+        data,
+        'settings.updated',
+        'workspace',
+        workspace.tenantId,
+        diff(before, {
+          ...fields,
+          overReceiptPercent: unchanged ? before.overReceiptPercent : fields.overReceiptPercent,
+        }),
+      );
       await delay();
       return reply(routes.settings.update, data.settings);
     }),
@@ -3624,8 +3661,11 @@ export const handlers = [
     }),
   ),
 
+  // One card per kind of document, in the contract's order (step 17b adds purchase orders)
   mock(routes.approvalRules.list, () =>
-    reply(routes.approvalRules.list, { items: [toRule(current(), 'requisition')] }),
+    reply(routes.approvalRules.list, {
+      items: APPROVAL_DOCUMENTS.map((document) => toRule(current(), document)),
+    }),
   ),
 
   mock(
@@ -3664,7 +3704,7 @@ export const handlers = [
         record(
           data,
           action === 'approve' ? 'approval.approved' : 'approval.rejected',
-          'requisition',
+          document,
           id,
           diff(
             {},
@@ -3683,9 +3723,10 @@ export const handlers = [
 
   mock(routes.requisitions.list, ({ request }) => {
     const query = readQuery(routes.requisitions.list.query, request);
-    const page = pageOf(listRequisitions(current(), query), query);
+    const data = current();
+    const page = pageOf(listRequisitions(data, query), query);
     return reply(routes.requisitions.list, {
-      items: page.items.map(requisitionSummaryOf),
+      items: page.items.map((item) => requisitionSummaryOf(data, item)),
       nextCursor: page.nextCursor,
     });
   }),
@@ -3810,7 +3851,7 @@ export const handlers = [
       const target = findRequisition(data, id);
       checkVersion(target.version, version);
       const before = target.status;
-      cancelRequisition(target);
+      cancelRequisition(data, target);
       record(
         data,
         'requisition.cancelled',
@@ -3827,6 +3868,278 @@ export const handlers = [
     guarded(async ({ request }) => {
       const body = await readBody(routes.purchaseCosts.lookup.body, request);
       return reply(routes.purchaseCosts.lookup, lookupCosts(current(), body));
+    }),
+  ),
+
+  // ---------------------------------------------------------------------------------------------
+  // Purchase orders and goods receipts (step 17b)
+
+  mock(
+    routes.requisitions.close,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.requisitions.close.params.parse(params);
+      const { version } = await readBody(routes.requisitions.close.body, request);
+      const data = current();
+      const target = findRequisition(data, id);
+      checkVersion(target.version, version);
+      closeRequisition(data, target);
+      record(
+        data,
+        'requisition.closed',
+        'requisition',
+        id,
+        diff({ status: 'approved' }, { status: target.status }),
+      );
+      return reply(routes.requisitions.close, toRequisition(data, target));
+    }),
+  ),
+
+  mock(routes.requisitionLines.open, ({ request }) => {
+    const { limit, cursor, ...query } = readQuery(routes.requisitionLines.open.query, request);
+    return reply(
+      routes.requisitionLines.open,
+      pageOf(openLines(current(), query), { limit, cursor }),
+    );
+  }),
+
+  mock(routes.purchaseOrders.list, ({ request }) => {
+    const query = readQuery(routes.purchaseOrders.list.query, request);
+    const page = pageOf(listPurchaseOrders(current(), query), query);
+    return reply(routes.purchaseOrders.list, {
+      items: page.items.map(purchaseOrderSummaryOf),
+      nextCursor: page.nextCursor,
+    });
+  }),
+
+  mock(
+    routes.purchaseOrders.get,
+    guarded(({ params }) => {
+      const { id } = routes.purchaseOrders.get.params.parse(params);
+      const data = current();
+      return reply(routes.purchaseOrders.get, toPurchaseOrder(data, findPurchaseOrder(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.purchaseOrders.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.purchaseOrders.create.body, request);
+      const data = current();
+      const created = savePurchaseOrder(data, body);
+      record(
+        data,
+        'purchase_order.created',
+        'purchase_order',
+        created.id,
+        diff({}, { supplier: created.supplier.name, total: created.total }),
+      );
+      await delay();
+      return reply(routes.purchaseOrders.create, toPurchaseOrder(data, created));
+    }),
+  ),
+
+  mock(
+    routes.purchaseOrders.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.purchaseOrders.update.params.parse(params);
+      const { version, ...body } = await readBody(routes.purchaseOrders.update.body, request);
+      const data = current();
+      const target = findPurchaseOrder(data, id);
+      checkVersion(target.version, version);
+      const before = { supplier: target.supplier.name, total: target.total };
+      savePurchaseOrder(data, body, target);
+      record(
+        data,
+        'purchase_order.updated',
+        'purchase_order',
+        id,
+        diff(before, { supplier: target.supplier.name, total: target.total }),
+      );
+      await delay();
+      return reply(routes.purchaseOrders.update, toPurchaseOrder(data, target));
+    }),
+  ),
+
+  mock(
+    routes.purchaseOrders.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.purchaseOrders.remove.params.parse(params);
+      const { version } = readQuery(routes.purchaseOrders.remove.query, request);
+      const data = current();
+      const target = findPurchaseOrder(data, id);
+      checkVersion(target.version, version);
+      removePurchaseOrder(data, target);
+      record(
+        data,
+        'purchase_order.deleted',
+        'purchase_order',
+        id,
+        diff({ supplier: target.supplier.name }, { supplier: null }),
+      );
+      return reply(routes.purchaseOrders.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.purchaseOrders.submit,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.purchaseOrders.submit.params.parse(params);
+      const { version } = await readBody(routes.purchaseOrders.submit.body, request);
+      const data = current();
+      const target = findPurchaseOrder(data, id);
+      checkVersion(target.version, version);
+      const steps = submitPurchaseOrder(data, target);
+      record(
+        data,
+        'approval.submitted',
+        'purchase_order',
+        id,
+        diff({}, { amount: target.total, steps, status: target.status }),
+      );
+      await delay();
+      return reply(routes.purchaseOrders.submit, toPurchaseOrder(data, target));
+    }),
+  ),
+
+  // Reopen, close and cancel: the same request, each with its own rule and audit row
+  ...(['reopen', 'close', 'cancel'] as const).map((action) =>
+    mock(
+      routes.purchaseOrders[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.purchaseOrders[action].params.parse(params);
+        const { version } = await readBody(routes.purchaseOrders[action].body, request);
+        const data = current();
+        const target = findPurchaseOrder(data, id);
+        checkVersion(target.version, version);
+        const before = target.status;
+        const change = {
+          reopen: () => {
+            reopenPurchaseOrder(data, target);
+            return 'approval.reopened' as const;
+          },
+          close: () => {
+            closePurchaseOrder(data, target);
+            return 'purchase_order.closed' as const;
+          },
+          cancel: () => {
+            cancelPurchaseOrder(data, target);
+            return 'purchase_order.cancelled' as const;
+          },
+        }[action];
+        const auditAction = change();
+        record(
+          data,
+          auditAction,
+          'purchase_order',
+          id,
+          diff({ status: before }, { status: target.status }),
+        );
+        return reply(routes.purchaseOrders[action], toPurchaseOrder(data, target));
+      }),
+    ),
+  ),
+
+  mock(routes.goodsReceipts.list, ({ request }) => {
+    const query = readQuery(routes.goodsReceipts.list.query, request);
+    return reply(routes.goodsReceipts.list, pageOf(listGoodsReceipts(current(), query), query));
+  }),
+
+  mock(
+    routes.goodsReceipts.get,
+    guarded(({ params }) => {
+      const { id } = routes.goodsReceipts.get.params.parse(params);
+      const data = current();
+      return reply(routes.goodsReceipts.get, toGoodsReceipt(data, findGoodsReceipt(data, id)));
+    }),
+  ),
+
+  // "Post goods receipt" on a new form: saved and posted in one step, or nothing at all
+  mock(
+    routes.goodsReceipts.create,
+    guarded(async ({ request }) => {
+      const { post, orderId, ...input } = await readBody(routes.goodsReceipts.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const draft = saveGoodsReceipt(data, orderId, input);
+        record(data, 'goods_receipt.created', 'goods_receipt', draft.id);
+        if (!post) return draft;
+        postGoodsReceipt(data, draft);
+        record(
+          data,
+          'goods_receipt.posted',
+          'goods_receipt',
+          draft.id,
+          diff({}, { number: draft.number, entry: draft.entry?.number ?? null }),
+        );
+        return draft;
+      });
+      await delay();
+      return reply(routes.goodsReceipts.create, toGoodsReceipt(data, saved));
+    }),
+  ),
+
+  // The edit form sends no order: a receipt keeps its own (decision 20)
+  mock(
+    routes.goodsReceipts.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.goodsReceipts.update.params.parse(params);
+      const { post, version, ...input } = await readBody(routes.goodsReceipts.update.body, request);
+      const data = current();
+      const target = findGoodsReceipt(data, id);
+      checkVersion(target.version, version);
+      const saved = transaction(data, () => {
+        const draft = saveGoodsReceipt(data, target.orderId, input, target);
+        record(data, 'goods_receipt.updated', 'goods_receipt', id);
+        if (!post) return draft;
+        postGoodsReceipt(data, draft);
+        record(
+          data,
+          'goods_receipt.posted',
+          'goods_receipt',
+          id,
+          diff({}, { number: draft.number, entry: draft.entry?.number ?? null }),
+        );
+        return draft;
+      });
+      await delay();
+      return reply(routes.goodsReceipts.update, toGoodsReceipt(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.goodsReceipts.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.goodsReceipts.remove.params.parse(params);
+      const { version } = readQuery(routes.goodsReceipts.remove.query, request);
+      const data = current();
+      const target = findGoodsReceipt(data, id);
+      checkVersion(target.version, version);
+      removeGoodsReceipt(data, target);
+      record(data, 'goods_receipt.deleted', 'goods_receipt', id);
+      return reply(routes.goodsReceipts.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.goodsReceipts.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.goodsReceipts.post.params.parse(params);
+      const { version } = await readBody(routes.goodsReceipts.post.body, request);
+      const data = current();
+      const target = findGoodsReceipt(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        postGoodsReceipt(data, target);
+        record(
+          data,
+          'goods_receipt.posted',
+          'goods_receipt',
+          id,
+          diff({}, { number: target.number, entry: target.entry?.number ?? null }),
+        );
+      });
+      await delay();
+      return reply(routes.goodsReceipts.post, toGoodsReceipt(data, target));
     }),
   ),
 ];

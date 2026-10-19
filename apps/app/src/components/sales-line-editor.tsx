@@ -4,7 +4,6 @@ import {
   defaultLineDescription,
   MAX_SALES_LINES,
   plainQuantity,
-  type PriceLookupItem,
   type Product,
   routes,
   type SalesLineFormValues,
@@ -28,7 +27,13 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldErrors } from 'react-hook-form';
 
 import { call } from '../lib/api';
-import { formTotals, isServiceLine, type LineMeta, type SalesItem } from '../lib/sales';
+import {
+  formTotals,
+  isServiceLine,
+  type LineMeta,
+  productItemOf,
+  type SalesItem,
+} from '../lib/sales';
 import { basePreview, unitChoices } from '../lib/stock';
 import { taxRateOptions, useRateText } from '../lib/tax-rates';
 import { taxRatesQuery, unitsQuery } from '../lib/queries';
@@ -42,7 +47,9 @@ import { useQuantity, useTenantId, useUnitCode, VariantCell } from './stock-part
 // array. A field array would need the form's own type here, and the forms have different types;
 // one array value has the same type in the quotation and the order (SalesLineFormValues[]), so
 // neither form needs a cast. An invoice line has more fields, so the editor is generic over the
-// line (LinesEditor<L>), and SalesLinesEditor is its plain sales-line form.
+// line (LinesEditor<L>), and SalesLinesEditor is its plain sales-line form. Step 17b: a purchase
+// order's line is a sales line too (decision 6), so its editor (purchase-order-lines.tsx) is this
+// one with another LinePricing: the supplier's last prices instead of the customer's price list.
 
 export type SalesLinesErrors = FieldErrors<{ lines: SalesLineFormValues[] }>['lines'];
 
@@ -53,6 +60,69 @@ function nextKey(): string {
 }
 
 const keyOf = (variantId: string, unitId: string) => `${variantId}:${unitId}`;
+
+// A new line's starting price, from either lookup: per one of the unit, null when nothing is
+// known (the person types it), where it came from, and the VAT rate the line starts with
+export interface LinePrice {
+  price: string | null;
+  source: string | null;
+  taxRateId: string;
+}
+
+// How a document prices the lines it adds (step 17b): the sales price lookup for a customer, or
+// the purchase cost lookup for a supplier. Everything else the editor does is the same for both.
+export interface LinePricing {
+  // The party the prices are for; '' = none chosen yet
+  partyId: string;
+  // The unit a product added with "Add items" starts in: its selling unit, or its buying unit
+  unitOf: (product: Product) => string;
+  // The prices of some variants in some units, by `${variantId}:${unitId}` (linePriceKey)
+  lookUp: (
+    items: readonly { variantId: string; unitId: string }[],
+  ) => Promise<ReadonlyMap<string, LinePrice>>;
+  // Where a new line's price came from, under its box ("From their price list")
+  sourceText: (source: string | null) => string;
+  // The empty card, the reprice link and its toast
+  words: { noLines: string; reprice: string; repriced: string };
+  // The "Add items" dialog's section of texts, and its description when the section's own is not
+  // the one
+  picker: { words: 'salesLines' | 'purchaseLines'; description?: string };
+}
+
+export const linePriceKey = keyOf;
+
+// The quotation's, the order's and the invoice's pricing: the customer's price list, else the
+// product's price, in the selling unit
+export function useSalesPricing(customerId: string): LinePricing {
+  const { t } = useLocale();
+  return {
+    partyId: customerId,
+    unitOf: (product) => product.salesUnitId ?? product.baseUnitId,
+    lookUp: async (items) => {
+      const answer = await call(routes.salesPrices.lookup, {
+        body: { customerId: customerId === '' ? null : customerId, items: [...items] },
+      });
+      return new Map(
+        answer.items.map((item) => [
+          keyOf(item.variantId, item.unitId),
+          { price: item.price, source: item.source, taxRateId: item.taxRateId },
+        ]),
+      );
+    },
+    sourceText: (source) =>
+      source === 'price_list'
+        ? t('salesLines.fromPriceList')
+        : source === 'product'
+          ? t('salesLines.fromProduct')
+          : t('salesLines.noPrice'),
+    words: {
+      noLines: t('salesLines.noLines'),
+      reprice: t('salesLines.reprice'),
+      repriced: t('salesLines.repriced'),
+    },
+    picker: { words: 'salesLines' },
+  };
+}
 
 // One template for the header and every line on a wide card. @5xl (64rem), not the @3xl of the
 // stock lines: seven columns of controls do not fit in 48rem. Below it, each control shows its
@@ -112,7 +182,8 @@ export interface LinesEditorProps<L extends SalesLineFormValues> {
   // lookup appends to these, not to the lines of the render that started it
   getLines: () => L[];
   initialMeta: LineMeta[];
-  customerId: string;
+  // Step 17b: where new lines get their prices (useSalesPricing for the sales documents)
+  pricing: LinePricing;
   pricesIncludeVat: boolean;
   errors: SalesLinesErrors;
   // The form's own line for a product added with "Add items" (an invoice line has more fields)
@@ -137,9 +208,14 @@ export interface LinesEditorProps<L extends SalesLineFormValues> {
 
 const sameLine = (line: SalesLineFormValues): SalesLineFormValues => line;
 
-// The quotation's and the order's editor: a product added is a plain sales line
-export function SalesLinesEditor(props: Omit<LinesEditorProps<SalesLineFormValues>, 'newLine'>) {
-  return <LinesEditor {...props} newLine={sameLine} />;
+// The quotation's and the order's editor: a product added is a plain sales line, priced for the
+// customer
+export function SalesLinesEditor({
+  customerId,
+  ...props
+}: Omit<LinesEditorProps<SalesLineFormValues>, 'newLine' | 'pricing'> & { customerId: string }) {
+  const pricing = useSalesPricing(customerId);
+  return <LinesEditor {...props} pricing={pricing} newLine={sameLine} />;
 }
 
 export function LinesEditor<L extends SalesLineFormValues>({
@@ -147,7 +223,7 @@ export function LinesEditor<L extends SalesLineFormValues>({
   onChange,
   getLines,
   initialMeta,
-  customerId,
+  pricing,
   pricesIncludeVat,
   errors,
   newLine,
@@ -182,18 +258,9 @@ export function LinesEditor<L extends SalesLineFormValues>({
     ],
     [rates, rateText, t],
   );
+  const { partyId, lookUp } = pricing;
   const repriceable =
-    customerId !== '' && meta.some((line) => line.pricedFor !== customerId) && lines.length > 0;
-
-  // Prices and rates for some variants in some units, for this customer
-  const lookUp = async (items: { variantId: string; unitId: string }[]) => {
-    const answer = await call(routes.salesPrices.lookup, {
-      body: { customerId: customerId === '' ? null : customerId, items },
-    });
-    return new Map<string, PriceLookupItem>(
-      answer.items.map((item) => [keyOf(item.variantId, item.unitId), item]),
-    );
-  };
+    partyId !== '' && meta.some((line) => line.pricedFor !== partyId) && lines.length > 0;
 
   // Lines made elsewhere (an invoice's challan picker), with their meta. false = too many.
   const add = (entries: readonly { line: L; meta: LineMeta }[]): boolean => {
@@ -203,12 +270,12 @@ export function LinesEditor<L extends SalesLineFormValues>({
     return true;
   };
 
-  // "Add": every active variant of the product, in its selling unit, at the looked-up price.
-  // false = the document would hold too many lines; nothing is added.
+  // "Add": every active variant of the product, in its selling (17b: buying) unit, at the
+  // looked-up price. false = the document would hold too many lines; nothing is added.
   const addProduct = async (product: Product): Promise<boolean> => {
     const variants = product.variants.filter((variant) => variant.archivedAt === null);
     if (getLines().length + variants.length > maxLines) return false;
-    const unitId = product.salesUnitId ?? product.baseUnitId;
+    const unitId = pricing.unitOf(product);
     const prices = await lookUp(variants.map((variant) => ({ variantId: variant.id, unitId })));
     const added = variants.map((variant) => {
       const found = prices.get(keyOf(variant.id, unitId));
@@ -223,22 +290,14 @@ export function LinesEditor<L extends SalesLineFormValues>({
         // Left empty when the lookup had no rate (no default rate): the box says to pick one
         taxRateId: found?.taxRateId ?? '',
       };
-      const item: SalesItem = {
-        variantId: variant.id,
-        productId: product.id,
-        productCode: product.code,
-        productName: product.name,
-        optionValues: variant.optionValues,
-        sku: variant.sku,
-        baseUnitId: product.baseUnitId,
-        units: product.units.map((pack) => ({ unitId: pack.unitId, factor: pack.factor })),
-        productType: product.type,
-        tracking: product.tracking,
-        hasExpiry: product.hasExpiry,
-      };
       return {
         line: newLine(line),
-        meta: { key: nextKey(), item, source: found?.source ?? null, pricedFor: customerId },
+        meta: {
+          key: nextKey(),
+          item: productItemOf(product, variant),
+          source: found?.source ?? null,
+          pricedFor: partyId,
+        },
       };
     });
     // Checked above, before the wait; another add may have come in meanwhile
@@ -275,7 +334,7 @@ export function LinesEditor<L extends SalesLineFormValues>({
       onChange(getLines().map((line, i) => (i === at ? { ...line, unitPrice: price } : line)));
       setMeta((before) =>
         before.map((line, i) =>
-          i === at ? { ...line, source: found?.source ?? null, pricedFor: customerId } : line,
+          i === at ? { ...line, source: found?.source ?? null, pricedFor: partyId } : line,
         ),
       );
     } catch {
@@ -283,7 +342,8 @@ export function LinesEditor<L extends SalesLineFormValues>({
     }
   };
 
-  // "Use this customer's prices on every line": only lines with a price somewhere change
+  // "Use this customer's prices on every line" (17b: "this supplier's last prices"): only lines
+  // with a price somewhere change
   const reprice = async () => {
     setRepricing(true);
     try {
@@ -300,10 +360,10 @@ export function LinesEditor<L extends SalesLineFormValues>({
         before.map((line, at) => {
           const now = lines[at];
           const found = now ? prices.get(keyOf(now.variantId, now.unitId)) : undefined;
-          return { ...line, source: found?.source ?? null, pricedFor: customerId };
+          return { ...line, source: found?.source ?? null, pricedFor: partyId };
         }),
       );
-      toast(t('salesLines.repriced'));
+      toast(pricing.words.repriced);
     } catch (error) {
       toast(errorText(failureOf(error instanceof Error ? error : null) ?? 'unknown_error'));
     } finally {
@@ -326,12 +386,12 @@ export function LinesEditor<L extends SalesLineFormValues>({
             onClick={() => void reprice()}
             className="text-label font-medium text-brand underline-offset-3 hover:underline"
           >
-            {t('salesLines.reprice')}
+            {pricing.words.reprice}
           </button>
         </div>
       )}
       {lines.length === 0 ? (
-        <p className="px-5 py-6 text-body-sm text-ink-2">{t('salesLines.noLines')}</p>
+        <p className="px-5 py-6 text-body-sm text-ink-2">{pricing.words.noLines}</p>
       ) : (
         <div
           aria-hidden="true"
@@ -486,11 +546,7 @@ export function LinesEditor<L extends SalesLineFormValues>({
               />
               {lineMeta.source !== undefined && (
                 <span className="text-right text-caption text-ink-3">
-                  {lineMeta.source === 'price_list'
-                    ? t('salesLines.fromPriceList')
-                    : lineMeta.source === 'product'
-                      ? t('salesLines.fromProduct')
-                      : t('salesLines.noPrice')}
+                  {pricing.sourceText(lineMeta.source)}
                 </span>
               )}
             </SalesField>
@@ -566,7 +622,14 @@ export function LinesEditor<L extends SalesLineFormValues>({
       {lines.length > 0 && <SalesTotals totals={totals} pricesIncludeVat={pricesIncludeVat} />}
 
       <Dialog open={picking} onOpenChange={setPicking}>
-        {picking && <ProductPicker words="salesLines" onAdd={addProduct} maxLines={maxLines} />}
+        {picking && (
+          <ProductPicker
+            words={pricing.picker.words}
+            description={pricing.picker.description}
+            onAdd={addProduct}
+            maxLines={maxLines}
+          />
+        )}
       </Dialog>
     </Card>
   );

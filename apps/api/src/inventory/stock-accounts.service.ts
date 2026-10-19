@@ -135,6 +135,7 @@ export class StockAccountsService {
       correction: byUse.get('correction') ?? null,
       transfer_shortage: byUse.get('transfer_shortage') ?? null,
       revaluation: byUse.get('revaluation') ?? null,
+      received_not_billed: byUse.get('received_not_billed') ?? null,
     };
   }
 }

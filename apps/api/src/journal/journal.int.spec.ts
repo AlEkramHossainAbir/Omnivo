@@ -403,6 +403,8 @@ describe('a posted entry', () => {
       timezone: settings.timezone,
       allowNegativeStock: settings.allowNegativeStock,
       pricesIncludeVat: settings.pricesIncludeVat,
+      // Step 17b: the whole form, the over-receipt percent too
+      overReceiptPercent: settings.overReceiptPercent,
     });
     expect(res.statusCode).toBe(409);
     expect(problemSchema.parse(res.json()).fieldErrors).toEqual({

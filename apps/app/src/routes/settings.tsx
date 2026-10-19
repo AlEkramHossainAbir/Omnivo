@@ -241,6 +241,20 @@ function SettingsForm({ settings, canManage }: { settings: Settings; canManage: 
               {t('settings.allowNegativeStockHint')}
             </p>
           </div>
+          {/* Step 17b: how much more than ordered a goods receipt may bring in */}
+          <div className="grid max-w-xs grid-cols-1 border-t border-line p-5">
+            <TextField
+              label={t('settings.overReceiptPercent')}
+              hint={t('settings.overReceiptPercentHint')}
+              inputMode="decimal"
+              autoComplete="off"
+              align="end"
+              suffix="%"
+              disabled={!canManage}
+              {...register('overReceiptPercent')}
+              error={errors.overReceiptPercent?.message}
+            />
+          </div>
         </Card>
 
         {/* Step 15a. Saved with the company settings, like the stock rule above. */}

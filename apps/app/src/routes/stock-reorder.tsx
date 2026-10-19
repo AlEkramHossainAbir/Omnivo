@@ -67,6 +67,17 @@ export function StockReorderPage() {
               ? '—'
               : quantity(row.original.inTransit, row.original.baseUnitId),
         }),
+        // Step 17b: what approved purchase orders still have to bring (decision 23): an item
+        // under its level with an order on the way needs no second order
+        column.accessor('incoming', {
+          header: t('reorder.columns.incoming'),
+          enableSorting: false,
+          meta: { align: 'end', card: 'detail' },
+          cell: ({ row }) =>
+            isZeroQuantity(row.original.incoming)
+              ? '—'
+              : quantity(row.original.incoming, row.original.baseUnitId),
+        }),
         column.accessor('minQuantity', {
           header: t('reorder.columns.level'),
           enableSorting: false,

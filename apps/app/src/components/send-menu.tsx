@@ -25,16 +25,17 @@ import {
   languageName,
   otherLanguage,
   type OutputTarget,
+  recipientRole,
   saveFile,
   waitForPdf,
 } from '../lib/document-output';
 import { useCan } from '../lib/permissions';
-import { customerQuery } from '../lib/queries';
+import { customerQuery, supplierQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { failureOf } from './journal-parts';
 
 // Step 16: the Send menu in the header of a quotation, an invoice, a money receipt and a credit
-// note. A lazy chunk of its own, loaded by those four pages: it brings Radix's dropdown (with its
+// note (step 17b: and a purchase order). A lazy chunk of its own, loaded by those four pages: it brings Radix's dropdown (with its
 // positioning code), and inside the pages' chunks the menu and the history cards took the invoice
 // page from 68 KB to 108 KB, over its 100 KB budget.
 // The two dialogs are one more chunk (document-dialogs.tsx), loaded when one opens: they bring the
@@ -52,17 +53,27 @@ function useTenant(): string {
   return useSession((state) => state.me?.tenant.id) ?? '';
 }
 
-// The customer's document language and phone (the document carries only the customer's name and
-// code). null while the customer loads; English if it cannot be read, so Download still works.
-function useCustomerOf(customerId: string): {
+// The recipient's document language and phone (the document carries only its name and code): the
+// customer's, or (step 17b) the supplier's. null while it loads; English if it cannot be read, so
+// Download still works. Two queries, each enabled for one side, like the party box: a hook cannot be
+// called conditionally, and the two answers have different types.
+function useRecipientOf(target: OutputTarget): {
   language: LanguageCode;
   phone: string | null;
 } | null {
-  const customer = useQuery(customerQuery(useTenant(), customerId));
-  if (customer.data) {
-    return { language: customer.data.documentLanguage, phone: customer.data.phone };
-  }
-  return customer.isError ? { language: 'en', phone: null } : null;
+  const tenantId = useTenant();
+  const role = recipientRole(target.kind);
+  const customer = useQuery({
+    ...customerQuery(tenantId, target.partyId),
+    enabled: role === 'customer',
+  });
+  const supplier = useQuery({
+    ...supplierQuery(tenantId, target.partyId),
+    enabled: role === 'supplier',
+  });
+  const party = role === 'customer' ? customer : supplier;
+  if (party.data) return { language: party.data.documentLanguage, phone: party.data.phone };
+  return party.isError ? { language: 'en', phone: null } : null;
 }
 
 // Download PDF: ask for the file, wait while the worker draws it, then save it. A second click
@@ -94,18 +105,18 @@ function useDownload(target: OutputTarget) {
 export function SendMenu({ target }: { target: OutputTarget }) {
   const { t } = useLocale();
   const canSend = useCan()(SEND_PERMISSIONS[target.kind]);
-  const customer = useCustomerOf(target.customerId);
+  const recipient = useRecipientOf(target);
   const download = useDownload(target);
   const [dialog, setDialog] = useState<'email' | 'share' | null>(null);
-  const busy = download.isPending || customer === null;
+  const busy = download.isPending || recipient === null;
 
-  if (!canSend || customer === null) {
+  if (!canSend || recipient === null) {
     return (
       <Button
         variant="secondary"
         disabled={busy}
         onClick={() => {
-          if (customer) download.mutate(customer.language);
+          if (recipient) download.mutate(recipient.language);
         }}
       >
         <HugeiconsIcon icon={Pdf01Icon} size={17} strokeWidth={1.5} />
@@ -114,7 +125,7 @@ export function SendMenu({ target }: { target: OutputTarget }) {
     );
   }
 
-  const other = otherLanguage(customer.language);
+  const other = otherLanguage(recipient.language);
   return (
     <>
       {/* modal={false}: the menu opens a dialog; a modal menu would leave the page's
@@ -136,7 +147,7 @@ export function SendMenu({ target }: { target: OutputTarget }) {
           <DropdownMenuItem
             icon={Pdf01Icon}
             onSelect={() => {
-              download.mutate(customer.language);
+              download.mutate(recipient.language);
             }}
           >
             {t('documentOutput.downloadPdf')}
@@ -177,14 +188,20 @@ export function SendMenu({ target }: { target: OutputTarget }) {
           {dialog === 'email' && (
             <EmailForm
               target={target}
-              language={customer.language}
+              role={recipientRole(target.kind)}
+              language={recipient.language}
               onDone={() => {
                 setDialog(null);
               }}
             />
           )}
           {dialog === 'share' && (
-            <ShareForm target={target} language={customer.language} phone={customer.phone} />
+            <ShareForm
+              target={target}
+              role={recipientRole(target.kind)}
+              language={recipient.language}
+              phone={recipient.phone}
+            />
           )}
         </Suspense>
       </Dialog>

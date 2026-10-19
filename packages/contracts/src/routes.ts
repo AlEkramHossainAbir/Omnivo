@@ -20,15 +20,17 @@ import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
 import { deliveryRoutes } from './deliveries.js';
 import { documentOutputRoutes, publicDocumentRoutes } from './document-output.js';
+import { goodsReceiptRoutes } from './goods-receipts.js';
 import { priceListRoutes } from './price-lists.js';
 import { productCategoryRoutes } from './product-categories.js';
 import { productImportRoutes } from './product-imports.js';
 import { productRoutes } from './products.js';
 import { purchaseCostRoutes } from './purchase.js';
+import { purchaseOrderRoutes } from './purchase-orders.js';
 import { quotationRoutes } from './quotations.js';
 import { receiptRoutes } from './receipts.js';
 import { refundRoutes } from './refunds.js';
-import { requisitionRoutes } from './requisitions.js';
+import { requisitionLineRoutes, requisitionRoutes } from './requisitions.js';
 import { roleRoutes } from './roles.js';
 import { salesAccountRoutes } from './sales-accounts.js';
 import { salesOrderRoutes } from './sales-orders.js';
@@ -114,4 +116,7 @@ export const routes = {
   approvals: approvalRoutes,
   purchaseCosts: purchaseCostRoutes,
   requisitions: requisitionRoutes,
+  requisitionLines: requisitionLineRoutes,
+  purchaseOrders: purchaseOrderRoutes,
+  goodsReceipts: goodsReceiptRoutes,
 };

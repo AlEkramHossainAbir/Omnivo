@@ -6,6 +6,7 @@ import { CostLookupService } from './cost-lookup.service.js';
 import { RequisitionsService } from './requisitions.service.js';
 
 type Routes = typeof routes.requisitions;
+type LineRoutes = typeof routes.requisitionLines;
 type CostRoutes = typeof routes.purchaseCosts;
 
 @Controller()
@@ -50,6 +51,17 @@ export class RequisitionsController {
   @Endpoint(routes.requisitions.cancel)
   cancel({ params, body }: RouteInput<Routes['cancel']>): Promise<RouteResponse<Routes['cancel']>> {
     return this.requisitions.cancel(params.id, body.version);
+  }
+
+  @Endpoint(routes.requisitions.close)
+  close({ params, body }: RouteInput<Routes['close']>): Promise<RouteResponse<Routes['close']>> {
+    return this.requisitions.close(params.id, body.version);
+  }
+
+  // Step 17b: what the purchase order form picks from
+  @Endpoint(routes.requisitionLines.open)
+  openLines({ query }: RouteInput<LineRoutes['open']>): Promise<RouteResponse<LineRoutes['open']>> {
+    return this.requisitions.openLines(query);
   }
 }
 

@@ -233,6 +233,8 @@ function settingsForm(settings: Settings, pricesIncludeVat: boolean) {
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
     pricesIncludeVat,
+    // Step 17b: the whole form, the over-receipt percent too
+    overReceiptPercent: settings.overReceiptPercent,
   };
 }
 

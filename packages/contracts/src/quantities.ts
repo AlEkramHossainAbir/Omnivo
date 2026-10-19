@@ -40,11 +40,16 @@ export const quantitySchema = z
   .trim()
   .refine((value) => isQuantity(value), errorCode('quantity_format'));
 
+// A quantity that may be zero: what arrived of a transfer line, what a goods receipt accepted
+export function isQuantityOrZero(value: string): boolean {
+  return QUANTITY.test(value);
+}
+
 // What arrived of a transfer line: zero is a real answer (the carton never came)
 export const receivedQuantitySchema = z
   .string()
   .trim()
-  .refine((value) => QUANTITY.test(value), errorCode('quantity_format'));
+  .refine((value) => isQuantityOrZero(value), errorCode('quantity_format'));
 
 // A level (a reorder point): zero is allowed ("tell me when it runs out"), '' = no level
 export const levelSchema = z
@@ -78,6 +83,15 @@ export function compareQuantity(a: string, b: string): number {
 
 export function isZeroQuantity(value: string): boolean {
   return toUnits(value) === 0n;
+}
+
+// The most that may come in against an ordered quantity when the workspace allows a little more
+// (step 17b, "Receive up to 3% over the order"): quantity × (100 + percent) ÷ 100, rounded down to
+// 4 decimals, so the limit never lets in more than the percent says. An order of 1,000 m of fabric
+// at 3% takes up to 1,030 m. The percent has at most 2 decimals and is never negative.
+export function withTolerance(quantity: string, percent: string): string {
+  const hundred = 100n * SCALE;
+  return fromUnits((toUnits(quantity) * (hundred + toUnits(percent))) / hundred);
 }
 
 // "1.50" fits a unit with 1 decimal (the trailing zero means nothing); "1.25" does not. A box or

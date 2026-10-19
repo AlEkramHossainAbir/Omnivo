@@ -27,6 +27,7 @@ export function SalesLinesTable<L extends SalesLine | SalesOrderLine>({
   pricesIncludeVat,
   delivered = false,
   note,
+  more,
 }: {
   lines: readonly L[];
   totals: DocumentTotals;
@@ -34,6 +35,9 @@ export function SalesLinesTable<L extends SalesLine | SalesOrderLine>({
   // An order past its draft: the Delivered and Invoiced columns
   delivered?: boolean;
   note?: (line: L) => ReactNode;
+  // Step 17b: more columns after the amount (a purchase order's Received and Rejected): their
+  // headers, and a line's cells (one <td> per header)
+  more?: { headers: readonly string[]; cells: (line: L) => ReactNode } | undefined;
 }) {
   const { t, format } = useLocale();
   const quantity = useQuantity();
@@ -74,6 +78,11 @@ export function SalesLinesTable<L extends SalesLine | SalesOrderLine>({
                   {t('salesOrders.invoiced')}
                 </th>
               )}
+              {more?.headers.map((header) => (
+                <th key={header} scope="col" className="px-5 py-2.5 text-right">
+                  {header}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -142,6 +151,7 @@ export function SalesLinesTable<L extends SalesLine | SalesOrderLine>({
                     {quantity(line.invoicedQuantity, line.baseUnitId)}
                   </td>
                 )}
+                {more?.cells(line)}
               </tr>
             ))}
           </tbody>

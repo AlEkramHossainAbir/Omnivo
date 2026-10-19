@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Settings, UpdateSettingsInput } from '@omnivo/contracts';
+import { compareQuantity, type Settings, type UpdateSettingsInput } from '@omnivo/contracts';
 import { attachments, journalEntries, tenantSettings, tenants } from '@omnivo/db';
 import { and, eq, sql } from 'drizzle-orm';
 
@@ -72,7 +72,15 @@ export class SettingsService {
         entityId: tenantId,
         changes: diff(
           { companyName: current.companyName, ...pickEditable(before) },
-          { companyName, ...fields },
+          {
+            companyName,
+            ...fields,
+            // Step 17b: the form's "3" is the stored "3.00", so an unchanged percent is not logged
+            overReceiptPercent:
+              compareQuantity(fields.overReceiptPercent, before.overReceiptPercent) === 0
+                ? before.overReceiptPercent
+                : fields.overReceiptPercent,
+          },
         ),
       });
       return this.read(tx);
@@ -187,5 +195,7 @@ function pickEditable(settings: typeof tenantSettings.$inferSelect) {
     timezone: settings.timezone,
     allowNegativeStock: settings.allowNegativeStock,
     pricesIncludeVat: settings.pricesIncludeVat,
+    // Step 17b: NUMERIC(5,2), so "3" is saved and read back as "3.00"
+    overReceiptPercent: settings.overReceiptPercent,
   };
 }

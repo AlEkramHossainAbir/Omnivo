@@ -20,7 +20,9 @@ import { users } from './users.js';
 import { warehouses } from './warehouses.js';
 
 // Step 17a: purchase requisitions. The rules on what may change when (and when one may be
-// deleted) live in migration 0036.
+// deleted) live in migration 0036. Step 17b: purchase orders buy for its lines
+// (purchase_order_lines.requisition_line_id); what was ordered is counted from them, never stored
+// here, and the new rules (closed, no reopen once ordered) are in migration 0038.
 export const requisitions = pgTable(
   'requisitions',
   {
@@ -92,6 +94,8 @@ export const requisitionLines = pgTable(
   },
   (table) => [
     uniqueIndex('requisition_lines_line_idx').on(table.tenantId, table.requisitionId, table.lineNo),
+    // The target of the purchase order line's FK (step 17b): a requisition line for THIS variant
+    uniqueIndex('requisition_lines_order_target_idx').on(table.tenantId, table.id, table.variantId),
     // A line blocks deleting its variant (product_variant_in_use), and finds where it is used
     index('requisition_lines_variant_idx').on(table.tenantId, table.productId, table.variantId),
     foreignKey({

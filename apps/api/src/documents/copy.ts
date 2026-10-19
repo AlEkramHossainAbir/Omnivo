@@ -6,8 +6,9 @@ import {
   SHARE_LINK_DAYS,
 } from '@omnivo/contracts';
 
-// Every word a customer reads in step 16, in both languages side by side: the PDF, the email's
-// first subject and message, the lines the server adds under the message, and the WhatsApp text.
+// Every word a customer reads in step 16 (and a supplier, since step 17b), in both languages side
+// by side: the PDF, the email's first subject and message, the lines the server adds under the
+// message, and the WhatsApp text.
 // The server writes them (decision 12), so a person whose screen is in English can send a Bangla
 // invoice. The PDF's words are the browser print's (print.* in en.ts/bn.ts), so paper and PDF say
 // the same thing. satisfies: a text missing in one language does not compile.
@@ -19,7 +20,8 @@ export interface DocumentFacts {
   number: string;
   // "৳1,15,000.00", in the language's digits
   amount: string;
-  // The quotation's "valid until" or the invoice's due date, already formatted; else null
+  // The quotation's "valid until", the invoice's due date or the purchase order's delivery date,
+  // already formatted; else null
   date: string | null;
   // A credit note's invoice number; else null
   invoice: string | null;
@@ -41,6 +43,13 @@ export interface DocumentCopy {
   customer: string;
   billTo: string;
   receivedFrom: string;
+  // Step 17b: a purchase order's own words
+  supplier: string;
+  deliverBy: string;
+  deliverTo: string;
+  paymentTerms: string;
+  // 0 = paid when the goods come; written in the language's digits
+  termsDays: (days: number) => string;
   columns: {
     number: string;
     item: string;
@@ -77,7 +86,13 @@ export interface DocumentCopy {
   page: (page: string, pages: string) => string;
   // The email dialog's first values; the person can change both
   emailSubject: (facts: DocumentFacts, company: string) => string;
-  emailMessage: (facts: DocumentFacts, customer: string, sender: string, company: string) => string;
+  // recipient: the customer, or the supplier of a purchase order
+  emailMessage: (
+    facts: DocumentFacts,
+    recipient: string,
+    sender: string,
+    company: string,
+  ) => string;
   // The lines the server puts under the person's message. They are not editable: they say what is
   // attached and who really sent it, which the customer must be able to trust.
   emailAttached: (fileName: string) => string;
@@ -96,6 +111,7 @@ export const DOCUMENT_COPY = {
       invoice: 'Invoice',
       receipt: 'Money receipt',
       credit_note: 'Credit note',
+      purchase_order: 'Purchase order',
     },
     bin: (bin) => `BIN ${bin}`,
     phone: (phone) => `Phone ${phone}`,
@@ -111,6 +127,11 @@ export const DOCUMENT_COPY = {
     customer: 'Customer',
     billTo: 'Bill to',
     receivedFrom: 'Received from',
+    supplier: 'Supplier',
+    deliverBy: 'Deliver by',
+    deliverTo: 'Deliver to',
+    paymentTerms: 'Payment terms',
+    termsDays: (days) => (days === 0 ? 'On delivery' : `${String(days)} days`),
     columns: {
       number: '#',
       item: 'Item',
@@ -162,7 +183,7 @@ export const DOCUMENT_COPY = {
     },
     page: (page, pages) => `Page ${page} of ${pages}`,
     emailSubject: (facts, company) => `${facts.title} ${facts.number} from ${company}`,
-    emailMessage: (facts, customer, sender, company) => {
+    emailMessage: (facts, recipient, sender, company) => {
       const lead = {
         quotation:
           facts.date === null
@@ -171,8 +192,12 @@ export const DOCUMENT_COPY = {
         invoice: `Please find attached invoice ${facts.number} for ${facts.amount}, due on ${facts.date ?? ''}.`,
         receipt: `Thank you for your payment. Please find attached money receipt ${facts.number} for ${facts.amount}.`,
         credit_note: `Please find attached credit note ${facts.number} for ${facts.amount}, against invoice ${facts.invoice ?? ''}.`,
+        purchase_order:
+          facts.date === null
+            ? `Please find attached our purchase order ${facts.number} for ${facts.amount}.`
+            : `Please find attached our purchase order ${facts.number} for ${facts.amount}. Please deliver by ${facts.date}.`,
       } satisfies Record<OutputDocument, string>;
-      return `Dear ${customer},\n\n${lead[facts.kind]}\n\nRegards,\n${sender}\n${company}`;
+      return `Dear ${recipient},\n\n${lead[facts.kind]}\n\nRegards,\n${sender}\n${company}`;
     },
     emailAttached: (fileName) => `Attached: ${fileName}`,
     emailSentBy: (sender, company) => `${sender} sent this from ${company} using Omnivo.`,
@@ -189,6 +214,7 @@ export const DOCUMENT_COPY = {
       invoice: 'ইনভয়েস',
       receipt: 'মানি রিসিট',
       credit_note: 'ক্রেডিট নোট',
+      purchase_order: 'পারচেজ অর্ডার',
     },
     bin: (bin) => `BIN ${bin}`,
     phone: (phone) => `ফোন ${phone}`,
@@ -204,6 +230,11 @@ export const DOCUMENT_COPY = {
     customer: 'গ্রাহক',
     billTo: 'বিলের ঠিকানা',
     receivedFrom: 'যার কাছ থেকে পাওয়া গেছে',
+    supplier: 'সরবরাহকারী',
+    deliverBy: 'সরবরাহের তারিখ',
+    deliverTo: 'যেখানে পৌঁছাবে',
+    paymentTerms: 'পেমেন্টের মেয়াদ',
+    termsDays: (days) => (days === 0 ? 'মাল পাওয়ার সময়' : `${bnDigits.format(days)} দিন`),
     columns: {
       number: '#',
       item: 'আইটেম',
@@ -255,7 +286,7 @@ export const DOCUMENT_COPY = {
     },
     page: (page, pages) => `পৃষ্ঠা ${page} / ${pages}`,
     emailSubject: (facts, company) => `${company} থেকে ${facts.title} ${facts.number}`,
-    emailMessage: (facts, customer, sender, company) => {
+    emailMessage: (facts, recipient, sender, company) => {
       const lead = {
         quotation:
           facts.date === null
@@ -264,8 +295,12 @@ export const DOCUMENT_COPY = {
         invoice: `ইনভয়েস ${facts.number} (${facts.amount}) সংযুক্ত করা হলো। পরিশোধের তারিখ ${facts.date ?? ''}।`,
         receipt: `আপনার পেমেন্টের জন্য ধন্যবাদ। মানি রিসিট ${facts.number} (${facts.amount}) সংযুক্ত করা হলো।`,
         credit_note: `ইনভয়েস ${facts.invoice ?? ''}-এর বিপরীতে ক্রেডিট নোট ${facts.number} (${facts.amount}) সংযুক্ত করা হলো।`,
+        purchase_order:
+          facts.date === null
+            ? `আমাদের পারচেজ অর্ডার ${facts.number} (${facts.amount}) সংযুক্ত করা হলো।`
+            : `আমাদের পারচেজ অর্ডার ${facts.number} (${facts.amount}) সংযুক্ত করা হলো। অনুগ্রহ করে ${facts.date}-এর মধ্যে মাল পৌঁছে দিন।`,
       } satisfies Record<OutputDocument, string>;
-      return `প্রিয় ${customer},\n\n${lead[facts.kind]}\n\nধন্যবাদান্তে,\n${sender}\n${company}`;
+      return `প্রিয় ${recipient},\n\n${lead[facts.kind]}\n\nধন্যবাদান্তে,\n${sender}\n${company}`;
     },
     emailAttached: (fileName) => `সংযুক্ত: ${fileName}`,
     emailSentBy: (sender, company) => `${sender} এটা ${company} থেকে Omnivo দিয়ে পাঠিয়েছেন।`,

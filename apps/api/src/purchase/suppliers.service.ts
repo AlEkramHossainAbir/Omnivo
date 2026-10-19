@@ -9,12 +9,14 @@ import {
   type UpdateSupplierInput,
 } from '@omnivo/contracts';
 import {
+  goodsReceipts,
   journalEntries,
   journalLines,
   ledgerAccounts,
   parties,
   partyAddresses,
   partyBankAccounts,
+  purchaseOrders,
   supplierGroups,
   tenantSettings,
 } from '@omnivo/db';
@@ -95,7 +97,12 @@ function fieldError(code: ErrorCode, field: string): AppError {
 
 // Rows that hold on to a supplier-only party, so its delete is refused (supplier_in_use). 17b–17d
 // add their documents.
-const SUPPLIER_IN_USE = ['journal_lines_party_fk'] as const;
+const SUPPLIER_IN_USE = [
+  'journal_lines_party_fk',
+  // step 17b
+  'purchase_orders_supplier_fk',
+  'goods_receipts_supplier_fk',
+] as const;
 
 // Suppliers (step 17a): the same parties table as the customers, with is_supplier set. This
 // service only reads and writes the supplier's side and the fields both sides share (decision 9);
@@ -351,33 +358,29 @@ export class SuppliersService {
     }
   }
 
-  // The party stays, so no foreign key speaks up: the payable lines that name it are looked for
-  // here (17b–17d add their documents). The row is locked FOR UPDATE (lock()), and every posting
-  // locks it FOR SHARE first (checkParties), so a line posted at the same moment is either seen
-  // here or finds no supplier. The supplier's own columns go back to their defaults in the same
-  // UPDATE (parties_supplier_side_check), and its bank accounts go. The billing address is the
-  // party's, and the customer keeps it.
+  // The party stays, so no foreign key speaks up: what uses the supplier side is looked for here,
+  // in one UNION ALL query like the customers' (the tables of SUPPLIER_IN_USE, and the payable
+  // lines that name it; 17c and 17d add their documents). The row is locked FOR UPDATE (lock()),
+  // and every posting and every purchase order locks it FOR SHARE first (checkParties,
+  // assertSupplier), so a line or an order written at the same moment is either seen here or
+  // finds no supplier. A goods receipt needs an order of the supplier, which is found already. The supplier's own columns go back to their defaults in the same UPDATE
+  // (parties_supplier_side_check), and its bank accounts go. The billing address is the party's,
+  // and the customer keeps it.
   private async dropSupplierSide(tx: Transaction, party: PartyRow): Promise<void> {
     const tenantId = getTenantId();
-    const [used] = await tx
-      .select({ id: journalLines.id })
-      .from(journalLines)
-      .innerJoin(
-        ledgerAccounts,
-        and(
-          eq(ledgerAccounts.tenantId, journalLines.tenantId),
-          eq(ledgerAccounts.id, journalLines.accountId),
-        ),
-      )
-      .where(
-        and(
-          eq(journalLines.tenantId, tenantId),
-          eq(journalLines.partyId, party.id),
-          eq(ledgerAccounts.purpose, 'accounts_payable'),
-        ),
-      )
-      .limit(1);
-    if (used) throw supplierInUse();
+    const documents = [purchaseOrders, goodsReceipts].map(
+      (table) =>
+        sql`SELECT 1 FROM ${table} WHERE tenant_id = ${tenantId}::uuid AND supplier_id = ${party.id}::uuid`,
+    );
+    const used = await tx.execute(sql`
+      ${sql.join(documents, sql` UNION ALL `)}
+      UNION ALL
+      SELECT 1 FROM ${journalLines} l
+        JOIN ${ledgerAccounts} a ON a.tenant_id = l.tenant_id AND a.id = l.account_id
+       WHERE l.tenant_id = ${tenantId}::uuid AND l.party_id = ${party.id}::uuid
+         AND a.purpose = 'accounts_payable'
+      LIMIT 1`);
+    if (used.length > 0) throw supplierInUse();
     await tx
       .update(parties)
       .set({

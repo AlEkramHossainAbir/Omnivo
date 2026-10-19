@@ -43,7 +43,10 @@ const DESCRIPTIONS = {
   'sales.refund.manage': 'Pay money back to customers and void refunds',
   'purchase.supplier.manage': 'Add, edit, archive and delete suppliers and supplier groups',
   'purchase.supplier.balance': 'See what the company owes suppliers, and their statements',
-  'purchase.requisition.manage': 'Write, submit, reopen, cancel and delete purchase requisitions',
+  'purchase.requisition.manage':
+    'Write, submit, reopen, close, cancel and delete purchase requisitions',
+  'purchase.order.manage': 'Write, submit, reopen, close, cancel and send purchase orders',
+  'purchase.receipt.manage': 'Write and post goods receipts, which bring stock in',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

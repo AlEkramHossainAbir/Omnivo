@@ -133,6 +133,21 @@ export function StockPage() {
               </span>
             ),
         }),
+        // Step 17b: what approved purchase orders still have to bring here (decision 23), so a
+        // buyer does not order the same yarn twice. Not on hand until a goods receipt is posted.
+        column.accessor('incoming', {
+          header: t('stock.columns.incoming'),
+          enableSorting: false,
+          meta: { align: 'end', card: 'detail' },
+          cell: ({ row }) =>
+            isZeroQuantity(row.original.incoming) ? (
+              <span className="text-ink-3">—</span>
+            ) : (
+              <span className="tabular-nums">
+                {quantity(row.original.incoming, row.original.baseUnitId)}
+              </span>
+            ),
+        }),
         // Step 15b: what confirmed orders still have to deliver from here. Next to "On hand",
         // not taken off it: nothing is held for an order (the hint above the table says so).
         column.accessor('onOrder', {
@@ -267,8 +282,13 @@ export function StockPage() {
         />
       </div>
       {isError && <p className="text-body-sm text-crit">{t('stock.loadFailed')}</p>}
-      <p className="text-caption text-ink-3">
-        {t('stock.columns.onOrder')}: {t('stock.onOrderHint')}
+      <p className="grid gap-0.5 text-caption text-ink-3">
+        <span>
+          {t('stock.columns.incoming')}: {t('stock.incomingHint')}
+        </span>
+        <span>
+          {t('stock.columns.onOrder')}: {t('stock.onOrderHint')}
+        </span>
       </p>
       {items && (
         <DataTable

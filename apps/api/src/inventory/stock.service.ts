@@ -70,6 +70,7 @@ const itemRowSchema = z.object({
   on_hand: z.string(),
   in_transit: z.string(),
   on_order: z.string(),
+  incoming: z.string(),
   low: z.boolean(),
   unit_cost: z.string().nullable(),
   value: z.string().nullable(),
@@ -94,6 +95,7 @@ function toItem(row: z.output<typeof itemRowSchema>, canSee: boolean): StockItem
     onHand: row.on_hand,
     inTransit: row.in_transit,
     onOrder: row.on_order,
+    incoming: row.incoming,
     low: row.low,
     unitCost: canSee ? row.unit_cost : null,
     value: canSee ? row.value : null,
@@ -149,6 +151,7 @@ const reorderRowSchema = z.object({
   warehouse_id: z.uuid(),
   on_hand: z.string(),
   in_transit: z.string(),
+  incoming: z.string(),
   min_quantity: z.string(),
   reorder_quantity: z.string().nullable(),
   sort_key: z.string(),
@@ -669,6 +672,7 @@ export class StockService {
                     JOIN stock_transfers t ON t.tenant_id = l.tenant_id AND t.id = l.transfer_id
                    WHERE l.tenant_id = r.tenant_id AND l.variant_id = r.variant_id
                      AND t.status = 'in_transit' AND t.to_warehouse_id = r.warehouse_id)`)} AS in_transit,
+                 ${incomingTo(sql`r.warehouse_id`)} AS incoming,
                  round(r.min_quantity, 4)::text AS min_quantity,
                  round(r.reorder_quantity, 4)::text AS reorder_quantity,
                  lower(p.name) AS sort_key
@@ -702,6 +706,7 @@ export class StockService {
           warehouseId: row.warehouse_id,
           onHand: row.on_hand,
           inTransit: row.in_transit,
+          incoming: row.incoming,
           minQuantity: row.min_quantity,
           reorderQuantity: row.reorder_quantity,
         })),
@@ -845,6 +850,7 @@ export class StockService {
                  WHERE l.tenant_id = v.tenant_id AND l.product_id = p.id AND l.variant_id = v.id
                    AND o.status = 'confirmed' AND ${inWarehouse(sql`o.warehouse_id`)})`)
                } AS on_order,
+               ${incomingTo(warehouseId === undefined ? null : sql`${warehouseId}::uuid`)} AS incoming,
                ${lowCondition(warehouseId)} AS low,
                round(sv.unit_cost, 4)::text AS unit_cost,
                ${
@@ -876,6 +882,19 @@ export class StockService {
       .where(eq(tenantSettings.tenantId, getTenantId()));
     return todayIn(settings?.timezone ?? 'Asia/Dhaka');
   }
+}
+
+// Step 17b (decision 23): what approved purchase orders still have to bring of the variant `v`
+// (p is its product) to a warehouse (or to any, for null), in the base unit. Each line counts
+// what is left of it, never below zero: a line that came over the order owes nothing, and it does
+// not cancel another line still waiting. l.product_id lets purchase_order_lines_variant_idx find
+// the lines; the order's status and warehouse are purchase_orders_open_idx's.
+function incomingTo(warehouse: SQL | null): SQL<string> {
+  return quantityText(sql`(SELECT sum(greatest(l.base_quantity - l.received_quantity, 0))
+    FROM purchase_order_lines l
+    JOIN purchase_orders o ON o.tenant_id = l.tenant_id AND o.id = l.order_id
+   WHERE l.tenant_id = v.tenant_id AND l.product_id = p.id AND l.variant_id = v.id
+     AND o.status = 'approved' AND ${warehouse === null ? sql`true` : sql`o.warehouse_id = ${warehouse}`})`);
 }
 
 // At or below the reorder level in the chosen warehouse, or in any active warehouse

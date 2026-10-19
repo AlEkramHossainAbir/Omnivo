@@ -4,6 +4,7 @@ import { companyNameSchema } from './auth.js';
 import { errorCode } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
+import { compareQuantity } from './quantities.js';
 
 // base currency — হিসাবের বই কোন মুদ্রায়। বাংলাদেশের কোম্পানির জন্য আইনত BDT; বাকিগুলো পরে বিদেশি
 // টেন্যান্টের জন্য খোলা। ধাপ ১০-এ প্রথম journal পোস্ট হলে এটা আর বদলানো যাবে না
@@ -72,9 +73,27 @@ export const settingsSchema = z.object({
   // VAT. On for a shop that sells at the printed MRP; off (the default) for a distributor that
   // quotes before VAT. Sales lines (step 15b) work the VAT out from here.
   pricesIncludeVat: z.boolean(),
+  // Step 17b: "3.00" lets a goods receipt bring in up to 3% more than the order line. "0.00" (the
+  // default) = never more than ordered.
+  overReceiptPercent: z.string(),
   version: z.number().int(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
+
+// Step 17b: how much more than ordered a goods receipt may bring in, in percent of the order line.
+// Fabric and yarn seldom arrive to the exact metre: a mill sends 1,028 m against an order of 1,000.
+// '' or 0 (the default) = never more than ordered. At most 100, double the order: more than that
+// is a second order, not a tolerance.
+const PERCENT = /^\d{1,3}(?:\.\d{1,2})?$/;
+
+export const overReceiptPercentSchema = z
+  .string()
+  .trim()
+  .transform((value) => (value === '' ? '0' : value))
+  .refine(
+    (value) => PERCENT.test(value) && compareQuantity(value, '100') <= 0,
+    errorCode('over_receipt_percent_format'),
+  );
 
 // PUT: পুরো ফর্ম একসাথে। version = ফর্ম খোলার সময়ের version (optimistic locking)
 export const updateSettingsInputSchema = z.object({
@@ -90,6 +109,7 @@ export const updateSettingsInputSchema = z.object({
   timezone: z.string().refine(isTimeZone, errorCode('timezone_invalid')),
   allowNegativeStock: z.boolean(),
   pricesIncludeVat: z.boolean(),
+  overReceiptPercent: overReceiptPercentSchema,
 });
 export type UpdateSettingsInput = z.infer<typeof updateSettingsInputSchema>;
 

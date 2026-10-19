@@ -17,6 +17,7 @@ const valid = {
   timezone: 'Asia/Dhaka',
   allowNegativeStock: false,
   pricesIncludeVat: false,
+  overReceiptPercent: '',
 } as const;
 
 describe('settings input', () => {
@@ -33,6 +34,26 @@ describe('settings input', () => {
   it('refuses a BIN that is not 13 digits, with a field code', () => {
     const result = updateSettingsInputSchema.safeParse({ ...valid, bin: '12345' });
     expect(result.error?.issues[0]).toMatchObject({ path: ['bin'], message: 'bin_format' });
+  });
+
+  it('reads an empty over-receipt box as 0 and takes up to 100% with 2 decimals', () => {
+    expect(updateSettingsInputSchema.parse(valid).overReceiptPercent).toBe('0');
+    for (const percent of ['3', '2.5', '100', '100.00']) {
+      expect(
+        updateSettingsInputSchema.safeParse({ ...valid, overReceiptPercent: percent }).success,
+      ).toBe(true);
+    }
+    for (const percent of ['100.01', '-1', '2.555', 'five']) {
+      expect(
+        updateSettingsInputSchema.safeParse({ ...valid, overReceiptPercent: percent }).error
+          ?.issues,
+      ).toEqual([
+        expect.objectContaining({
+          path: ['overReceiptPercent'],
+          message: 'over_receipt_percent_format',
+        }),
+      ]);
+    }
   });
 
   it('checks the time zone against Intl', () => {

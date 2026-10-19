@@ -243,7 +243,7 @@ describe("tenant A can't reach tenant B's documents", () => {
     const page = publicDocumentSchema.parse(
       (await as(tenantA, 'GET', `/public/documents/${tokenOfB}`)).json(),
     );
-    expect([page.company, page.customer]).toEqual(['Karim Pharma', 'Lazz Pharma, Kalabagan']);
+    expect([page.company, page.recipient]).toEqual(['Karim Pharma', 'Lazz Pharma, Kalabagan']);
   });
 });
 

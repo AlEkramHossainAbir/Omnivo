@@ -1,7 +1,9 @@
 import { PlusSignIcon, TaskAdd01Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
+  REQUISITION_ORDER_FILTERS,
   REQUISITION_STATUSES,
+  type RequisitionOrderFilter,
   type RequisitionStatus,
   type RequisitionSummary,
 } from '@omnivo/contracts';
@@ -19,14 +21,20 @@ import { useInfiniteQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
-import { RequisitionStatusPill } from '../components/purchase-pills';
+import { RequisitionOrderPill, RequisitionStatusPill } from '../components/purchase-pills';
 import { useIsoDate, useTenantId, useWarehouses, warehouseLabel } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
 import { requisitionsQuery } from '../lib/queries';
 
 const column = dataTableColumns<RequisitionSummary>();
 
-type Show = RequisitionStatus | 'all';
+// Step 17b: "To order" sits with the statuses: it is a kind of approved requisition, the buyer's
+// queue (approved, with a line not ordered in full)
+type Show = RequisitionStatus | RequisitionOrderFilter | 'all';
+
+function isOrderFilter(show: Show): show is RequisitionOrderFilter {
+  return REQUISITION_ORDER_FILTERS.some((filter) => filter === show);
+}
 
 // The purchase requisitions (step 17a), newest date first. Everyone reads them (a store keeper
 // checks whether the yarn was asked for already); writing them needs purchase.requisition.manage.
@@ -39,7 +47,11 @@ export function RequisitionsPage() {
   const [show, setShow] = useState<Show>('all');
   const [warehouseId, setWarehouseId] = useState('');
   const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
-    requisitionsQuery(useTenantId(), { status: show === 'all' ? '' : show, warehouseId }),
+    requisitionsQuery(useTenantId(), {
+      status: show === 'all' || isOrderFilter(show) ? '' : show,
+      warehouseId,
+      order: isOrderFilter(show) ? show : '',
+    }),
   );
   const rows = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
   const loadMore = useCallback(() => {
@@ -94,7 +106,13 @@ export function RequisitionsPage() {
           header: t('requisitions.columns.status'),
           enableSorting: false,
           meta: { card: 'trailing' },
-          cell: ({ getValue }) => <RequisitionStatusPill status={getValue()} />,
+          // Step 17b: how much is ordered, beside the status
+          cell: ({ row }) => (
+            <span className="inline-flex flex-wrap gap-1.5">
+              <RequisitionStatusPill status={row.original.status} />
+              <RequisitionOrderPill state={row.original.orderState} />
+            </span>
+          ),
         }),
       ]),
     [t, format, isoDate, byId],
@@ -136,6 +154,10 @@ export function RequisitionsPage() {
             ...REQUISITION_STATUSES.map((value) => ({
               value,
               label: t(`requisitions.statuses.${value}`),
+            })),
+            ...REQUISITION_ORDER_FILTERS.map((value) => ({
+              value,
+              label: t(`requisitions.orderFilters.${value}`),
             })),
           ]}
           onChange={setShow}
