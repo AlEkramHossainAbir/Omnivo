@@ -63,7 +63,7 @@
 | API latency (p99) | < 500 ms |
 | ফার্স্ট লোড (4G মোবাইল) | < 2.5 s (LCP) |
 | পরের লোড (ক্যাশ থেকে) | < 1 s, অফলাইনেও খুলবে |
-| ইনিশিয়াল JS বান্ডেল | < 200 KB gzipped |
+| ইনিশিয়াল JS বান্ডেল | < 210 KB gzipped |
 | Uptime (SLA) | 99.9% (মাসে ~৪৩ মিনিট ডাউনটাইম), Enterprise-এ 99.95% |
 | RPO (কতটুকু ডেটা হারানো চলবে) | ≤ 5 মিনিট |
 | RTO (কত দ্রুত ফিরে আসবে) | ≤ 1 ঘণ্টা |
@@ -496,7 +496,7 @@ sequenceDiagram
 
 ### ৬.১ ফ্রন্টএন্ড
 
-- **Performance budget CI-তে:** ইনিশিয়াল JS < 200 KB gz, প্রতি মডিউল chunk < 100 KB gz। বাজেট ছাড়ালে PR fail করবে।
+- **Performance budget CI-তে:** ইনিশিয়াল JS < 210 KB gz (সব ইংরেজি শব্দ এখনো প্রথম লোডেই আসে; module ধরে শব্দ ভাগ হলে আবার 200), প্রতি মডিউল chunk < 100 KB gz। বাজেট ছাড়ালে PR fail করবে।
 - **Route-based code splitting:** শুধু Accounting ব্যবহার করে এমন ইউজার যেন Manufacturing-এর কোড ডাউনলোড না করে।
 - **ভারী লাইব্রেরি এড়িয়ে চলুন:** moment.js-এর বদলে `date-fns`/`dayjs`, lodash পুরোটা না নিয়ে নির্দিষ্ট ফাংশন। চার্টের জন্য হালকা লাইব্রেরি (যেমন uPlot বা Recharts, lazy-load করা)।
 - **Virtualization:** সব বড় টেবিল ও লিস্ট virtualized।

@@ -292,7 +292,18 @@ challan, vehicle; "Receive over the order" % (company setting, default 0) পর
 accepted মাল PO-র VAT ছাড়া net দামে stock-এ (moving average), entry Dr Inventory / Cr Goods received not billed
 (2115, stock account `received_not_billed`, warehouse-এর branch-এ)। PO: Partly received → Received, বা Close; Late
 pill; stock ও reorder-এ Incoming।
-**১৭c–১৭d:** bill ও supplier payment, purchase return ও debit note — নিজ নিজ গাইডে।
+**১৭c (supplier bill, supplier payment):** bill supplier-এর নিজের bill থেকে টাইপ করা: তাদের bill নম্বর (দরকারি,
+একই supplier-এ একবারই), Mushak 6.3 নম্বর ও তারিখ (ঐচ্ছিক), due date PO-র বা supplier-এর terms থেকে। bill-এর লাইন
+চার রকম: posted goods receipt-এর পুরো লাইন (শুরুর দাম PO-র), PO-র service লাইন (expense account, Settings-এর
+"Purchased services" থেকে শুরু), PO ছাড়া নিজের লাইন (direct bill: নিজের goods receipt বানায়), আর product ছাড়া
+expense (ভাড়া, বিদ্যুৎ, মেরামত)। প্রথম submit-এ নম্বর (BILL), ১৭a-র approval; শেষ approval-ই post করে, level না
+থাকলে "Post" সাথে সাথে। Post করলে Dr Goods received not billed (receipt-এর branch-এ) / Dr expense / Dr VAT input
+/ Cr Accounts payable; PO-র দামের সাথে পার্থক্য "Purchase price difference"-এ (5180, না থাকলে COGS), লাইন ধরে
+দেখানো। **Supplier payment (PV):** cheque, transfer, bKash বা cash, supplier-এর bank account-এ; bill-এ লাগানো
+(পুরনোটা আগে), বাকিটা advance (PO-র নাম দেওয়া যায়); approval, শেষটা post করে; posted payment আবার apply বা void
+করা যায়; browser-এ voucher print। Goods receipt-এ Not billed / Partly billed / Billed; PO-তে billed পরিমাণ,
+bill আর advance।
+**১৭d:** purchase return ও debit note — নিজের গাইডে।
 
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 
@@ -416,7 +427,7 @@ HR + Payroll → CRM → Expense → **VAT/মূসক কমপ্লায়
 
 ```
 lint → typecheck → unit test → integration test (Testcontainers)
-  → tenant-leak test  → bundle size (initial < 200 KB gz)
+  → tenant-leak test  → bundle size (initial < 210 KB gz)
   → module boundary check (dependency-cruiser)
 ```
 

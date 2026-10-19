@@ -350,7 +350,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `role="group"` labelled "Line 2". On a wide card (`@3xl`) the rows share one grid template with the header and
   the totals row, and each control's label is `sr-only`; on a narrow card the labels show and debit/credit sit
   side by side. Totals row on `subtle` with a `good` "Balanced" or `crit` "Out by" pill.
-- **Sales line editor (quotations, orders, purchase orders):** `SalesLinesEditor`, a card that is a container (`@container`) and
+- **Sales line editor (quotations, orders, purchase orders, bills):** `SalesLinesEditor`, a card that is a container (`@container`) and
   its own lazy chunk. The lines are one controlled form value (a `Controller` on `lines`), so two form types
   share it. On a wide card (`@5xl`) item, unit, quantity, price, discount, VAT rate and amount share one grid
   template with a caption header; on a narrow card each control shows its label. The price column says "Price
@@ -359,8 +359,17 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   was priced for another customer, a text link at the top offers "Use this customer's prices on every line";
   changing the customer never reprices by itself. A purchase order uses the same editor with a supplier's
   `LinePricing`: the hints are "Last price from this supplier", "Last price paid", "From the average cost" and "No
-  earlier price: type one", and the link says "Use this supplier's last prices on every line". Under the lines, a totals block on `subtle` (line discounts
+  earlier price: type one", and the link says "Use this supplier's last prices on every line". A bill uses it with
+  `totals={false}`, because its totals also count the expenses: a line from a goods receipt says "From GRN-… ·
+  PO-…", that the item, unit and quantity are the receipt's, and "Order's price: ৳1,87,500 · ৳1,500 over the order"
+  (12px `ink-3`, the difference `ink-2`/500); a `warn` document notice under the totals gives the sum. Under the
+  lines, a totals block on `subtle` (line discounts
   only when there are any, before VAT, VAT, total at 500) with paisa, and on the left whether prices include VAT.
+- **Expenses card (bills):** `BillExpenses`, a card that is a container (`@container`) under the bill's lines:
+  "Expenses" with "Costs with no product, like rent, electricity or a repair". On a wide card (`@3xl`) account,
+  description, amount, VAT rate and the amount with VAT share one grid template with a caption header on
+  `subtle`; on a narrow card each control shows its label. "Add expense" (secondary `sm`, `PlusSign`) at the
+  bottom; a remove icon button per row. The bill's one totals block sits under both cards.
 - **Sales document statuses:** quotation Open (`brand`, `Clock01`), Accepted (`good`, `CheckmarkCircle02`),
   Declined (neutral, `CancelCircle`), Expired (`warn`, `Hourglass`, worked out by the page: open and past its
   date). Order Draft (neutral, `FileEdit`), Confirmed (`brand`, `Agreement01`), Partly delivered (`brand`,
@@ -389,7 +398,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (`brand`, `Clock01`), Approved (`good`, `CheckmarkCircle02`), Partly received (`brand`, `DeliveryTruck01`, in
   Approved's place), Received (`good`, `PackageReceive`), Closed (neutral, `StopCircle`), Cancelled (neutral,
   `CancelCircle`), plus a second `warn` "Late" pill (`Time04`) for an approved order past its expected date. Goods
-  receipt Draft (neutral, `FileEdit`), Posted (`good`, `CheckmarkCircle02`).
+  receipt Draft (neutral, `FileEdit`), Posted (`good`, `CheckmarkCircle02`). A goods receipt's billing: Not billed
+  (neutral, `Invoice01`), Partly billed (`brand`, `Invoice03`), Billed (`good`, `Invoice02`), also per line. Bill
+  Draft (neutral, `FileEdit`), Waiting for approval (`brand`, `Clock01`), Cancelled (neutral, `CancelCircle`), then
+  by payment like an invoice: Unpaid (`brand`, `Clock01`), Partly paid (`brand`, `Coins01`), Paid (`good`,
+  `CheckmarkCircle02`), plus a second `crit` "Overdue" pill (`Time04`). Supplier payment Draft (neutral,
+  `FileEdit`), Waiting for approval (`brand`, `Clock01`), Posted (`good`, `CheckmarkCircle02`), Voided and
+  Cancelled (both neutral, `CancelCircle`).
 - **Approval card:** a card ("Approval", with a subtitle) on every document that needs an approval. A draft lists
   the levels its amount reaches now ("Purchase manager · from ৳20,000"). A round: "Round 2" (13.5px/500) with its
   pill, a 13px `ink-3` line (who submitted it, when, for how much), then its steps in a 1px `line` box (radius
@@ -397,7 +412,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `<q>`. The waiting step gets a `subtle` box below: "Step 2 waits for you." with Approve (primary `sm`) and
   Reject (secondary `sm`, `ArrowTurnBackward`), "You submitted it, so someone else approves it." for the writer,
   or "Waiting for Purchase manager". Earlier rounds fold into a `<details>` with a `brand` text-link summary.
-  Approve and Reject are on the document's page only, never on a list.
+  Approve and Reject are on the document's page only, never on a list. On a bill or a supplier payment, the last
+  approval posts it, and the dialog and the card say so ("This is the last step: BILL-2026-27-0004 is posted in the
+  books when you do.", "No level applied, so it was posted when it was submitted.").
 - **Approval dialogs:** the dialog. Approve says whether this click finishes the approval or passes it on, with
   an optional comment; Reject needs a comment (it says what to change). Errors that name no box show at the top.
 - **Approval levels (Settings):** one card per kind of document, each its own form. A level is a box (1px `line`,
@@ -405,8 +422,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   select side by side, and a remove icon button. "Add a level" (secondary) and Save (primary) at the bottom, the
   rules in 13px `ink-3` above them; at most five levels. Without `core.settings.manage` the same page is read-only.
 - **Document notice:** a line above a document that says what its state means and what to do next: radius
-  10px, 13.5px text, a 17px icon, `warn-bg` with `warn` text and an `Hourglass` icon for an offer that has ended
-  or a credit note more than 6 months after its invoice, or an `ArrowTurnBackward` icon and the approver's
+  10px, 13.5px text, a 17px icon, `warn-bg` with `warn` text and an `Hourglass` icon
+  for an offer that has ended, a credit note more than 6 months after its invoice, an overdue bill or a bill whose
+  prices differ from its orders, or an `ArrowTurnBackward` icon and the approver's
   comment for a document sent back by an approval,
   `subtle` with `ink-2` text and an `InformationCircle` icon otherwise.
 - **Credit line and credit dialog:** under the customer box on an order or invoice form, a 13px line: "Credit
@@ -415,10 +433,12 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   document over the limit, someone with `sales.credit.override` gets a dialog (what the customer would owe and the
   limit, in paisa; "The audit log records that you went over the limit."; Back and "Confirm anyway" / "Post
   anyway"); everyone else gets the error text under the form with the same amounts.
-- **Allocation table (money receipts):** the invoices the customer still owes on, oldest due date first, in an
+- **Allocation table (money receipts, supplier payments):** the invoices the customer still owes on, oldest due date first, in an
   `overflow-x-auto` box: invoice number (`Geist Mono`) with its dates under it, the total, what is still due
   (500), and a money input for this receipt. Above it "Apply oldest first" and "Clear" (secondary `sm`); below
-  it a `subtle` row with Applied and "Left as advance" (or a `crit` "Over by ৳x" with an `Alert02` icon).
+  it a `subtle` row with Applied and "Left as advance" (or a `crit` "Over by ৳x" with an `Alert02` icon). A
+  supplier payment uses the same table for the supplier's posted bills, with the supplier's own bill number
+  ("Their bill PSM/2026/0412") under ours.
 - **Stock line rows (adjustments, transfers, goods receipts):** a card that is a container (`@container`); one grid template for a
   caption header and every row on a wide card (`@3xl`): item (name, SKU, stock here), unit, quantity (with
   "= 72 pcs" under it), and on a line that brings stock in, the unit cost per unit of the line (a `MoneyInput`
@@ -455,7 +475,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   table head, `line` between rows), no fills, no shadows, no radius. The header has the logo, the company (legal
   name, address lines, BIN, phone) on the left, the document's title (24px) and its details on the right. Lines
   are a real `<table>` whose `<thead>` repeats on every page; rows, blocks, totals and the signature lines use
-  `break-inside-avoid`. Only a numbered document prints (a draft on paper looks real); a voided receipt does not.
+  `break-inside-avoid`. Only a numbered document prints (a draft on paper looks real); a voided receipt or payment does not.
 - **Send menu (document output):** a secondary button "Send" (`Sent` icon, `ArrowDown01` on the right) next to
   Print on a quotation, purchase order, invoice, money receipt and credit note: Download PDF (the customer's language), Download
   PDF in the other language (named in its own script, "বাংলা"), Email, Share on WhatsApp. Without the send
