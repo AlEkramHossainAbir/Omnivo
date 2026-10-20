@@ -2,12 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   billAmountDueOf,
   compareMoney,
+  type ErrorCode,
   overAllocated,
   type PartyRef,
   type SupplierPayment,
   type SupplierPaymentInput,
   type SupplierPaymentStatus,
   type SupplierPaymentSummary,
+  subtractMoney,
   sumMoney,
   type UpdateSupplierPaymentInput,
   type VoidSupplierPaymentInput,
@@ -80,16 +82,27 @@ function overAllocatedError(): AppError {
   );
 }
 
+// Step 17d: the supplier paid some of its advance back. Voiding the payment would leave that
+// refund paying back money that was never paid.
+function hasRefunds(): AppError {
+  return new AppError(
+    409,
+    'payment_has_refunds',
+    'The supplier paid some of this payment back. Void that supplier refund first.',
+  );
+}
+
 // The database's last word, if two writers got past the checks below: a bill paid past its total
-// (bills_paid_check, two payments posted for its last money at the same moment), a payment applied
-// past its amount (supplier_payments_amount_check), or money put on a bill that is not posted
+// (bills_paid_check, two payments, or a payment and a debit note (step 17d), settling its last money
+// at the same moment), a payment applied past its amount less its refunds
+// (supplier_payments_amount_check), or money put on a bill that is not posted
 // (supplier_payment_allocations_bill_check)
 function paymentRace(error: unknown): unknown {
   if (isCheckViolation(error, 'bills_paid_check')) {
     return new AppError(
       409,
       'payment_over_bill',
-      'Another payment paid one of these bills first. Reload and try again.',
+      'Another payment or a debit note settled one of these bills first. Reload and try again.',
     );
   }
   if (isCheckViolation(error, 'supplier_payments_amount_check')) return overAllocatedError();
@@ -111,6 +124,7 @@ function toSummary(
     supplier,
     amount: row.amount,
     applied: row.applied,
+    refunded: row.refunded,
     method: row.method,
     reference: row.reference,
     accountId: row.accountId,
@@ -359,12 +373,16 @@ export class SupplierPaymentsService {
       return await this.withTenant(async (tx) => {
         const row = await this.lock(tx, id, input.version);
         if (row.status !== 'posted') throw notPosted();
-        if (overAllocated(row.amount, input.allocations)) throw overAllocatedError();
+        // Step 17d: what supplier refunds paid back is gone; only the rest can be applied
+        if (overAllocated(subtractMoney(row.amount, row.refunded), input.allocations)) {
+          throw overAllocatedError();
+        }
         const before = await this.allocationsOf(tx, id);
         await checkBillAllocations(tx, {
           supplierId: row.supplierId,
           current: before,
           wanted: input.allocations,
+          errors: PAYMENT_ERRORS,
         });
         await this.replaceAllocations(tx, row, input.allocations);
         await tx
@@ -391,11 +409,23 @@ export class SupplierPaymentsService {
   }
 
   // A bounced cheque or a payment typed by mistake: its money comes off the bills, and its entry is
-  // reversed on the void date. The payment stays, voided, with its number.
-  void(id: string, input: VoidSupplierPaymentInput): Promise<SupplierPayment> {
+  // reversed on the void date. The payment stays, voided, with its number. Step 17d: not while a
+  // supplier refund paid some of it back (the refund locks the payment too, so the two take turns;
+  // supplier_payments_amount_check is the last word).
+  async void(id: string, input: VoidSupplierPaymentInput): Promise<SupplierPayment> {
+    try {
+      return await this.voidLocked(id, input);
+    } catch (error) {
+      if (isCheckViolation(error, 'supplier_payments_amount_check')) throw hasRefunds();
+      throw error;
+    }
+  }
+
+  private voidLocked(id: string, input: VoidSupplierPaymentInput): Promise<SupplierPayment> {
     return this.withTenant(async (tx) => {
       const row = await this.lock(tx, id, input.version);
       if (row.status !== 'posted') throw notPosted();
+      if (compareMoney(row.refunded, '0') > 0) throw hasRefunds();
       if (input.date < row.date) {
         throw new AppError(
           409,
@@ -409,7 +439,12 @@ export class SupplierPaymentsService {
       // The allocations first: the database lets a payment be voided only once nothing of it is
       // applied (supplier_payments_void_check). Their trigger takes the money off the bills.
       const before = await this.allocationsOf(tx, id);
-      await checkBillAllocations(tx, { supplierId: row.supplierId, current: before, wanted: [] });
+      await checkBillAllocations(tx, {
+        supplierId: row.supplierId,
+        current: before,
+        wanted: [],
+        errors: PAYMENT_ERRORS,
+      });
       await this.replaceAllocations(tx, row, []);
       await tx
         .update(supplierPayments)
@@ -460,6 +495,7 @@ export class SupplierPaymentsService {
       supplierId: row.supplierId,
       current: [],
       wanted: await this.allocationsOf(tx, row.id),
+      errors: PAYMENT_ERRORS,
     });
   }
 
@@ -563,7 +599,12 @@ export class SupplierPaymentsService {
         );
       }
     }
-    await checkBillAllocations(tx, { supplierId, current: [], wanted: input.allocations });
+    await checkBillAllocations(tx, {
+      supplierId,
+      current: [],
+      wanted: input.allocations,
+      errors: PAYMENT_ERRORS,
+    });
   }
 
   private fields(supplierId: string, input: SupplierPaymentInput) {
@@ -760,18 +801,33 @@ function asInvoiceNumber(allocation: { billNumber: string | null; amount: string
   return { invoiceNumber: allocation.billNumber, amount: allocation.amount };
 }
 
+// The codes a row's problems get: a payment's here, a debit note's in DebitNotesService (step 17d)
+export interface BillAllocationErrors {
+  // Not a posted bill of the supplier
+  bill: ErrorCode;
+  // More than the bill still owes
+  over: ErrorCode;
+}
+
+const PAYMENT_ERRORS = {
+  bill: 'payment_bill_invalid',
+  over: 'payment_over_bill',
+} as const satisfies BillAllocationErrors;
+
 // Checks `wanted` before it replaces `current` (the payment's rows that bills count now: a posted
 // payment's; a draft's plan counts on no bill, so it passes none). Every bill of both lists is
 // locked FOR NO KEY UPDATE in id order before anything is read, like the invoices of a receipt
 // (allocations.ts): two payments for one bill take turns, and the second sees what the first paid.
-// Each wanted row must name a posted bill of the supplier and fit what it still owes, where this
-// payment's own current row counts as owed again. All problems at once, each under its row.
-async function checkBillAllocations(
+// Each wanted row must name a posted bill of the supplier and fit what it still owes (step 17d:
+// less what debit notes settled), where this document's own current row counts as owed again. All
+// problems at once, each under its row. Step 17d: a debit note's money is applied with it too.
+export async function checkBillAllocations(
   tx: Transaction,
   input: {
     supplierId: string;
     current: readonly Allocation[];
     wanted: readonly Allocation[];
+    errors: BillAllocationErrors;
   },
 ): Promise<void> {
   const billIds = [
@@ -787,6 +843,7 @@ async function checkBillAllocations(
             status: bills.status,
             total: bills.total,
             amountPaid: bills.amountPaid,
+            amountDebited: bills.amountDebited,
           })
           .from(bills)
           .where(and(eq(bills.tenantId, getTenantId()), inArray(bills.id, billIds)))
@@ -798,12 +855,12 @@ async function checkBillAllocations(
   input.wanted.forEach((allocation, index) => {
     const bill = byId.get(allocation.billId);
     if (bill?.supplierId !== input.supplierId || bill.status !== 'posted') {
-      issues.push({ path: allocationPath(index, 'billId'), code: 'payment_bill_invalid' });
+      issues.push({ path: allocationPath(index, 'billId'), code: input.errors.bill });
       return;
     }
     const due = sumMoney([billAmountDueOf(bill), had.get(allocation.billId) ?? '0']);
     if (compareMoney(allocation.amount, due) > 0) {
-      issues.push({ path: allocationPath(index, 'amount'), code: 'payment_over_bill' });
+      issues.push({ path: allocationPath(index, 'amount'), code: input.errors.over });
     }
   });
   if (issues.length > 0) throw linesError(issues);

@@ -29,6 +29,8 @@ import { warehouses } from './warehouses.js';
 // Step 17c: supplier bills. A draft is changed freely; a pending bill waits for its approval and
 // does not change; the last approval posts it, and from then on only what payments paid
 // (amount_paid) moves. The rules on what may change when live in migration 0040.
+// Step 17d adds what debit notes write here: what they applied (amount_debited), what they took off
+// in all (debit_note_total) and per line (debited). Rules in migration 0042.
 export const bills = pgTable(
   'bills',
   {
@@ -64,6 +66,13 @@ export const bills = pgTable(
     // The sum of the allocations of POSTED payments that point here. Kept by migration 0040's
     // triggers, never written by the API. total − amount_paid is still due.
     amountPaid: numeric('amount_paid', { precision: 19, scale: 4 }).notNull().default('0'),
+    // Step 17d: the sum of the debit note allocations that point here, kept by their trigger
+    // (migration 0042) like amount_paid. total − amount_paid − amount_debited is still due
+    // (contracts' billAmountDueOf).
+    amountDebited: numeric('amount_debited', { precision: 19, scale: 4 }).notNull().default('0'),
+    // Step 17d: the totals of the posted debit notes written for this bill, wherever their money
+    // went (the "Debited" pill). Written by a debit note's posting; it only grows.
+    debitNoteTotal: numeric('debit_note_total', { precision: 19, scale: 4 }).notNull().default('0'),
     postedAt: timestamp('posted_at', { withTimezone: true }),
     postedBy: uuid('posted_by'),
   },
@@ -84,13 +93,17 @@ export const bills = pgTable(
     index('bills_supplier_idx').on(table.tenantId, table.supplierId, table.date, table.id),
     // What is still to be paid, oldest due date first: one supplier's (the payment form's list, in
     // the order it suggests paying them) and everyone's (the overdue list). Partial: a paid bill
-    // leaves both.
+    // leaves both, and so does one that debit notes settled (step 17d).
     index('bills_open_supplier_idx')
       .on(table.tenantId, table.supplierId, table.dueDate, table.id)
-      .where(sql`${table.status} = 'posted' AND ${table.amountPaid} < ${table.total}`),
+      .where(
+        sql`${table.status} = 'posted' AND ${table.amountPaid} + ${table.amountDebited} < ${table.total}`,
+      ),
     index('bills_open_due_idx')
       .on(table.tenantId, table.dueDate, table.id)
-      .where(sql`${table.status} = 'posted' AND ${table.amountPaid} < ${table.total}`),
+      .where(
+        sql`${table.status} = 'posted' AND ${table.amountPaid} + ${table.amountDebited} < ${table.total}`,
+      ),
     // No ON DELETE: a supplier with a bill cannot be deleted (supplier_in_use)
     foreignKey({
       name: 'bills_supplier_fk',
@@ -126,11 +139,18 @@ export const bills = pgTable(
       'bills_totals_check',
       sql`${table.discount} >= 0 AND ${table.net} >= 0 AND ${table.vat} >= 0 AND ${table.total} = ${table.net} + ${table.vat}`,
     ),
-    // Never paid past its total, and only a posted bill is paid at all: the last word on
-    // payment_over_bill, whatever the API checked first
+    // Never settled past its total by payments and debit notes together, and only a posted bill is
+    // settled at all: the last word on payment_over_bill and debit_note_over_bill, whatever the API
+    // checked first
     check(
       'bills_paid_check',
-      sql`${table.amountPaid} >= 0 AND ${table.amountPaid} <= ${table.total} AND (${table.status} = 'posted' OR ${table.amountPaid} = 0)`,
+      sql`${table.amountPaid} >= 0 AND ${table.amountDebited} >= 0 AND ${table.amountPaid} + ${table.amountDebited} <= ${table.total} AND (${table.status} = 'posted' OR (${table.amountPaid} = 0 AND ${table.amountDebited} = 0))`,
+    ),
+    // Step 17d: debit notes never take off more than the total, and a bill that is not posted has
+    // none
+    check(
+      'bills_debited_check',
+      sql`${table.debitNoteTotal} >= 0 AND ${table.debitNoteTotal} <= ${table.total} AND (${table.status} = 'posted' OR ${table.debitNoteTotal} = 0)`,
     ),
   ],
 );
@@ -163,9 +183,20 @@ export const billLines = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::text[]`),
+    // Step 17d: the money posted debit note lines took off this line. Written by the debit note's
+    // posting, under a lock on the bill; it only grows (migration 0042).
+    debited: numeric('debited', { precision: 19, scale: 4 }).notNull().default('0'),
   },
   (table) => [
     uniqueIndex('bill_lines_line_idx').on(table.tenantId, table.billId, table.lineNo),
+    // Step 17d: the target of the return line's and the debit note line's FKs: a line of THIS
+    // bill, for THIS item
+    uniqueIndex('bill_lines_variant_target_idx').on(
+      table.tenantId,
+      table.billId,
+      table.id,
+      table.variantId,
+    ),
     index('bill_lines_variant_idx').on(table.tenantId, table.productId, table.variantId),
     // Which bill billed a receipt line (the goods receipt's page), and the FK's check
     index('bill_lines_receipt_line_idx')
@@ -224,6 +255,8 @@ export const billLines = pgTable(
       sql`${table.unitPrice} >= 0 AND ${table.discount} >= 0 AND (${table.discountType} = 'amount' OR ${table.discount} <= 100) AND ${table.net} >= 0 AND ${table.vat} >= 0 AND ${table.total} = ${table.net} + ${table.vat}`,
     ),
     check('bill_lines_tax_rate_check', sql`${table.taxRate} >= 0 AND ${table.taxRate} < 100`),
+    // Step 17d: never debited past what it charged: the last word on debit_note_over_line
+    check('bill_lines_debited_check', sql`${table.debited} BETWEEN 0 AND ${table.total}`),
     // The contract's bill_account_not_allowed and bill_stock_not_allowed: a receipt line's goods
     // came in on the receipt, with their lot, and its value is in "Goods received not billed"; an
     // order's line (a receipt line copies it) takes no lot from the bill. A goods line of its own
@@ -262,9 +295,13 @@ export const billExpenses = pgTable(
     net,
     vat,
     total,
+    // Step 17d: the money posted debit notes took off this expense, like a line's
+    debited: numeric('debited', { precision: 19, scale: 4 }).notNull().default('0'),
   },
   (table) => [
     uniqueIndex('bill_expenses_line_idx').on(table.tenantId, table.billId, table.lineNo),
+    // Step 17d: the target of the debit note expense's FK: an expense of THIS bill
+    uniqueIndex('bill_expenses_bill_id_idx').on(table.tenantId, table.billId, table.id),
     index('bill_expenses_account_idx').on(table.tenantId, table.accountId),
     foreignKey({
       name: 'bill_expenses_bill_fk',
@@ -291,5 +328,6 @@ export const billExpenses = pgTable(
       sql`${table.amount} > 0 AND ${table.net} >= 0 AND ${table.vat} >= 0 AND ${table.total} = ${table.net} + ${table.vat}`,
     ),
     check('bill_expenses_tax_rate_check', sql`${table.taxRate} >= 0 AND ${table.taxRate} < 100`),
+    check('bill_expenses_debited_check', sql`${table.debited} BETWEEN 0 AND ${table.total}`),
   ],
 );

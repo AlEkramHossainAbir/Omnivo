@@ -6,13 +6,16 @@ import {
   type BillExpenseFormValues,
   type BillLineFormValues,
   type BillSummary,
+  compareQuantity,
   defaultLineDescription,
   type DocumentTotals,
   documentTotals,
   expenseLineAmounts,
   type GoodsReceiptLine,
   isMoneyAmount,
+  isWholeQuantity,
   isZeroQuantity,
+  keptQuantity,
   type LineAmounts,
   moneyAccountIds,
   plainQuantity,
@@ -23,7 +26,9 @@ import {
   type PurchaseOrderLine,
   type SalesLineFormValues,
   type StockAccounts,
+  subtractMoney,
   sumMoney,
+  toBaseQuantity,
 } from '@omnivo/contracts';
 
 import { type AllocationRow, factorOf } from './invoices';
@@ -57,6 +62,9 @@ export interface BillLineOrigin {
   // What the goods receipt booked the goods at, the order's price (decision 18); null for a
   // service, which no goods receipt booked
   orderValue: string | null;
+  // Step 17d: what went back on a purchase return before this receipt line was billed, in the base
+  // unit ('0' when nothing did, and for a saved draft, whose lines do not say), like LineOrigin
+  returnedQuantity: string;
 }
 
 // The goods receipt line or order line a bill line bills; null for a line of its own. The form's
@@ -86,12 +94,43 @@ export function billOrderPricing(
 
 // What the goods receipt booked a line's goods at (17b): the order line's net shared by what was
 // accepted, the API's own sum (goods-receipts.service.ts), so the form's difference is the one
-// posting will book
+// posting will book. Step 17d: less what purchase returns put back on goods received not billed
+// before the bill, the share of that value they sent back. Returns count it over everything sent
+// back so far (returnValue() in the API), so their values add up to exactly this share.
 export function receiptOrderValue(
-  line: Pick<GoodsReceiptLine, 'baseQuantity'>,
+  line: Pick<GoodsReceiptLine, 'baseQuantity' | 'returnedQuantity'>,
   orderLine: Pick<PurchaseOrderLine, 'net' | 'baseQuantity'>,
 ): string {
-  return prorateMoney(orderLine.net, line.baseQuantity, orderLine.baseQuantity);
+  const booked = prorateMoney(orderLine.net, line.baseQuantity, orderLine.baseQuantity);
+  return subtractMoney(booked, prorateMoney(booked, line.returnedQuantity, line.baseQuantity));
+}
+
+// The unit and quantity a bill line bills a goods receipt line in (step 17d): what the company
+// kept. Nothing went back: the receipt's own unit and quantity, "16 bag" as it came. Something went
+// back before billing: still the receipt's unit when what is left is a whole number of it (13 of
+// 16 bags), else the base unit (660 kg of 16 bags of 50). The base unit only when it must: a price
+// moved to the base unit is rounded (৳62 a gross is ৳0.4306 a piece), so 500 gross billed as
+// 72,000 pcs come to ৳3.20 more than the order, and posting books that as a price difference.
+export function receiptBilledQuantity(
+  line: Pick<
+    GoodsReceiptLine,
+    'unitId' | 'baseUnitId' | 'units' | 'quantity' | 'baseQuantity' | 'returnedQuantity'
+  >,
+): { unitId: string; quantity: string } {
+  if (isZeroQuantity(line.returnedQuantity)) {
+    return { unitId: line.unitId, quantity: plainQuantity(line.quantity) };
+  }
+  const kept = keptQuantity(line);
+  // What was kept in the receipt's unit: its quantity × kept ÷ its base quantity, to 4 decimals
+  // (prorateMoney is that sum). Used only when it is whole and gives back exactly what was kept,
+  // the API's check (bill_receipt_line_quantity).
+  const inUnit = prorateMoney(line.quantity, kept, line.baseQuantity);
+  const whole =
+    isWholeQuantity(inUnit) &&
+    compareQuantity(toBaseQuantity(inUnit, factorOf(line, line.unitId), 4), kept) === 0;
+  return whole
+    ? { unitId: line.unitId, quantity: plainQuantity(inUnit) }
+    : { unitId: line.baseUnitId, quantity: plainQuantity(kept) };
 }
 
 // The fields a bill line has beside a sales line's, empty: a line of its own, an order's service
@@ -117,15 +156,20 @@ export function ownBillLine(line: SalesLineFormValues): BillLineFormValues {
 // moved to the receipt line's unit (an order of bags received in kg bills per kg), and an amount
 // discount goes with the share of the order this receipt line carries, like an invoice line of a
 // challan (15c). No order line known: an empty price, which the person types.
+// Step 17d: "whole" is what the company kept (keptQuantity: accepted less what went back before
+// billing), in receiptBilledQuantity()'s unit; the API refuses any other quantity
+// (bill_receipt_line_quantity).
 export function receiptLineToBill(
   line: GoodsReceiptLine,
   orderLine: PurchaseOrderLine | undefined,
 ): BillLineFormValues {
+  const { unitId, quantity } = receiptBilledQuantity(line);
+  const kept = keptQuantity(line);
   const fixed = {
     ...NO_SOURCE,
     variantId: line.variantId,
-    unitId: line.unitId,
-    quantity: plainQuantity(line.quantity),
+    unitId,
+    quantity,
     receiptLineId: line.id,
   };
   if (orderLine === undefined) {
@@ -141,7 +185,7 @@ export function receiptLineToBill(
   const discount =
     orderLine.discountType === 'percent'
       ? orderLine.discount
-      : prorateMoney(orderLine.discount, line.baseQuantity, orderLine.baseQuantity);
+      : prorateMoney(orderLine.discount, kept, orderLine.baseQuantity);
   return {
     ...fixed,
     description:
@@ -149,7 +193,7 @@ export function receiptLineToBill(
     unitPrice: priceInUnit(
       orderLine.unitPrice,
       factorOf(line, orderLine.unitId),
-      factorOf(line, line.unitId),
+      factorOf(line, unitId),
     ),
     discountType: orderLine.discountType,
     discount: formDiscount(discount),
@@ -174,15 +218,15 @@ export function itemOfReceiptLine(line: GoodsReceiptLine): SalesItem {
   };
 }
 
-// The lines of a posted goods receipt a bill may still bill: accepted something (a line that
-// turned everything back has nothing to bill, decision 43), not billed by a posted bill, and not on
-// this form already
+// The lines of a posted goods receipt a bill may still bill: kept something (a line that turned
+// everything back has nothing to bill, decision 43; step 17d: nor has one that sent everything back
+// on a return), not billed by a posted bill, and not on this form already
 export function receiptLinesLeft(
   lines: readonly GoodsReceiptLine[],
   onForm: ReadonlySet<string>,
 ): GoodsReceiptLine[] {
   return lines.filter(
-    (line) => !line.billed && !isZeroQuantity(line.baseQuantity) && !onForm.has(line.id),
+    (line) => !line.billed && !isZeroQuantity(keptQuantity(line)) && !onForm.has(line.id),
   );
 }
 
@@ -236,6 +280,7 @@ export function savedBillLines(bill: Pick<Bill, 'supplier' | 'pricesIncludeVat' 
         // A draft is priced the way its orders write prices (the API checked that)
         pricesIncludeVat: line.orderNumber === null ? null : bill.pricesIncludeVat,
         orderValue: line.orderValue,
+        returnedQuantity: '0',
       });
     }
     const own = sourceId === null;

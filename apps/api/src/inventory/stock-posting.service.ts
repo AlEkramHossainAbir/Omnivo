@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   addMoney,
+  compareMoney,
   compareQuantity,
   isZeroMoney,
   type MovementKind,
@@ -52,8 +53,9 @@ export interface StockMove {
   quantity: string;
   serialNumbers: string[];
   // Step 14, for a move IN: what it is worth (a typed cost × quantity, or what a transfer sent).
-  // null or left out = at the variant's average cost now. A move OUT always goes at the average:
-  // its value is worked out here, never handed in.
+  // null or left out = at the variant's average cost now. A move OUT goes at the average, unless
+  // it names what it took in at (step 17d: a purchase return leaves at its goods receipt line's
+  // cost); outflowAt() decides what it really takes.
   value?: string | null;
 }
 
@@ -126,6 +128,19 @@ function outflowValue(state: ValueState, quantity: string): string {
   }
   const beyond = positive ? subtractQuantity(quantity, state.quantity) : quantity;
   return addMoney(positive ? state.value : '0', multiplyMoney(beyond, state.unitCost ?? '0'));
+}
+
+// Step 17d: what a move out that names its value (`given`) takes out of `state`. The named value,
+// so the moving average of what stays is worked out again (a purchase return at what the goods came
+// in at), within two limits that keep the stock's value true: the last of the stock takes all of
+// its value (zero stock is worth zero, as above), and no part takes more than the stock is worth
+// (what stays is never worth less than nothing). With no stock to go by, the named value. The
+// caller books any difference from `given` (StockBooksService.purchaseReturn).
+function outflowAt(state: ValueState, quantity: string, given: string): string {
+  const positive = compareQuantity(state.quantity, '0') > 0;
+  if (!positive) return given;
+  if (compareQuantity(quantity, state.quantity) >= 0) return outflowValue(state, quantity);
+  return compareMoney(given, state.value) > 0 ? state.value : given;
 }
 
 // The new state after a move, like migration 0024's trigger: the average follows the stock while
@@ -265,7 +280,11 @@ export class StockPostingService {
       };
       let value: string;
       if (posting.direction === 'out') {
-        value = outflowValue(state, move.quantity);
+        const given = move.value ?? null;
+        value =
+          given === null
+            ? outflowValue(state, move.quantity)
+            : outflowAt(state, move.quantity, given);
         states.set(
           move.variant.variantId,
           apply(state, negateQuantity(move.quantity), negateMoney(value)),

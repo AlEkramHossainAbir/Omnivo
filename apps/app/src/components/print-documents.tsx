@@ -4,6 +4,7 @@ import {
   amountDueOf,
   amountInWords,
   type CreditNote,
+  type DebitNote,
   type Delivery,
   type DocumentTotals,
   defaultLineDescription,
@@ -11,6 +12,7 @@ import {
   isZeroMoney,
   plainQuantity,
   type PurchaseOrder,
+  type PurchaseReturn,
   type Quotation,
   type Receipt,
   type Refund,
@@ -19,6 +21,7 @@ import {
   type SalesReturn,
   type StockLine,
   type SupplierPayment,
+  type SupplierRefund,
   unappliedOf,
   unappliedPaymentOf,
 } from '@omnivo/contracts';
@@ -28,13 +31,18 @@ import { useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 
 import { settingsQuery } from '../lib/queries';
-import { creditReasonKey, returnReasonKey } from '../lib/returns';
+import {
+  creditReasonKey,
+  debitReasonKey,
+  purchaseReturnReasonKey,
+  returnReasonKey,
+} from '../lib/returns';
 import { variantName } from '../lib/stock';
 import { useIsoDate, useQuantity, useTenantId, useWarehouses } from './stock-parts';
 
 // The printed quotation, order, challan, invoice and money receipt (step 15c), the sales return,
-// credit note and refund (15d), the purchase order (17b) and the supplier payment's voucher (17c):
-// one A4 layout, the browser's own
+// credit note and refund (15d), the purchase order (17b), the supplier payment's voucher (17c), and
+// the purchase return, debit note and supplier refund (17d): one A4 layout, the browser's own
 // Print (or Save as PDF), so it works offline and needs no PDF service. Each page renders its sheet
 // next to itself; PrintSheet keeps it hidden on the screen and alone on paper.
 
@@ -162,6 +170,8 @@ function PricedLines({
   totals,
   pricesIncludeVat,
   after,
+  extra,
+  returnWords = 'creditNotes.fromReturn',
   words = false,
 }: {
   lines: readonly PricedLine[];
@@ -169,6 +179,12 @@ function PricedLines({
   pricesIncludeVat: boolean;
   // Rows under the total: what an invoice was paid and still asks for
   after?: { label: string; value: string }[];
+  // Step 17d: what sits between the lines and the totals, which count it too (a debit note's
+  // expenses)
+  extra?: ReactNode;
+  // Step 17d: how a line names the return its goods went on: "Goods back on SR-…" for a credit
+  // note, "Goods sent back on PRN-…" for a debit note
+  returnWords?: 'creditNotes.fromReturn' | 'debitNotes.fromReturn';
   // Step 16: the total in words, on the money documents only (decision 7)
   words?: boolean;
 }) {
@@ -234,7 +250,7 @@ function PricedLines({
                 : [t('invoices.fromChallan', { number: line.deliveryNumber })]),
               ...(line.returnNumber === null || line.returnNumber === undefined
                 ? []
-                : [t('creditNotes.fromReturn', { number: line.returnNumber })]),
+                : [t(returnWords, { number: line.returnNumber })]),
             ];
             return (
               // break-inside-avoid: a line and its notes stay on one page
@@ -273,6 +289,7 @@ function PricedLines({
           })}
         </tbody>
       </table>
+      {extra}
       <div className="flex break-inside-avoid items-end justify-between gap-6">
         <p className="text-caption text-ink-2">
           {pricesIncludeVat ? t('salesLines.pricesWithVat') : t('salesLines.pricesWithoutVat')}
@@ -905,6 +922,180 @@ export function SupplierPaymentPrint({
         </p>
       )}
       <Note note={payment.note} />
+    </Sheet>
+  );
+}
+
+// Step 17d: the goods-out slip of a purchase return, the paper that goes on the supplier's truck
+// with the goods (decision 7). The sales return's slip the other way round: the supplier's driver
+// signs for what he takes, the store keeper who loaded it, and whoever authorised it. Each line
+// names the goods receipt it came in on, which is how the supplier finds its own challan.
+export function PurchaseReturnPrint({
+  purchaseReturn,
+  warehouse,
+}: {
+  purchaseReturn: PurchaseReturn;
+  warehouse: string;
+}) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  return (
+    <Sheet
+      title={t('print.titles.purchaseReturn')}
+      meta={[
+        { label: t('print.number'), value: purchaseReturn.number ?? '' },
+        { label: t('print.date'), value: isoDate(purchaseReturn.date) },
+        { label: t('print.reason'), value: t(purchaseReturnReasonKey(purchaseReturn.reason)) },
+        { label: t('print.sentFrom'), value: warehouse },
+      ]}
+      signatures={[
+        t('print.signatures.supplier'),
+        t('print.signatures.preparedBy'),
+        t('print.signatures.authorised'),
+      ]}
+    >
+      <PartyBlock
+        label={t('print.supplier')}
+        name={purchaseReturn.supplier.name}
+        code={purchaseReturn.supplier.code}
+      />
+      <StockPrintLines
+        lines={purchaseReturn.lines}
+        note={(line) =>
+          line.receiptNumber === null ? null : `${t('print.goodsReceipt')}: ${line.receiptNumber}`
+        }
+      />
+      <Note note={purchaseReturn.note} />
+    </Sheet>
+  );
+}
+
+// Step 17d: the debit note, the paper the supplier gets (decision 7), laid out like the credit note:
+// the bill it takes money off, with the supplier's own bill number, since that is what their
+// accountant files it against, and their credit note (Mushak 6.7) when they gave one. Its expenses
+// sit under the lines, inside the totals.
+export function DebitNotePrint({ debitNote }: { debitNote: DebitNote }) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  const { bill } = debitNote;
+  const credit = debitNote.supplierCreditNumber;
+  return (
+    <Sheet
+      title={t('print.titles.debitNote')}
+      meta={[
+        { label: t('print.number'), value: debitNote.number ?? '' },
+        { label: t('print.date'), value: isoDate(debitNote.date) },
+        bill === null
+          ? null
+          : {
+              label: t('print.originalBill'),
+              value: `${bill.number} · ${bill.supplierBillNumber}`,
+            },
+        bill === null ? null : { label: t('print.billDate'), value: isoDate(bill.date) },
+        credit === null
+          ? null
+          : {
+              label: t('print.supplierCredit'),
+              value:
+                debitNote.supplierCreditDate === null
+                  ? credit
+                  : `${credit} · ${isoDate(debitNote.supplierCreditDate)}`,
+            },
+        { label: t('print.reason'), value: t(debitReasonKey(debitNote.reason)) },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <PartyBlock
+        label={t('print.supplier')}
+        name={debitNote.supplier.name}
+        code={debitNote.supplier.code}
+      />
+      <PricedLines
+        lines={debitNote.lines}
+        totals={debitNote}
+        pricesIncludeVat={debitNote.pricesIncludeVat}
+        returnWords="debitNotes.fromReturn"
+        words
+        extra={
+          debitNote.expenses.length > 0 && (
+            <PrintBlock label={t('debitNotes.expensesTitle')}>
+              <table className="w-full border-collapse text-caption">
+                <tbody>
+                  {debitNote.expenses.map((expense) => (
+                    <tr key={expense.id} className="break-inside-avoid">
+                      <td className={CELL}>{expense.description}</td>
+                      <td className={cn(CELL, 'text-right whitespace-nowrap')}>
+                        {expense.taxRate.name}
+                      </td>
+                      <td className={cn(CELL, 'text-right whitespace-nowrap tabular-nums')}>
+                        {money(debitNote.pricesIncludeVat ? expense.total : expense.net)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </PrintBlock>
+          )
+        }
+      />
+      <Note note={debitNote.note} />
+    </Sheet>
+  );
+}
+
+// Step 17d: the voucher of money a supplier paid back (decision 7), the money receipt's mirror:
+// who paid, how much in figures and words, how, into which account, and on which debit note or
+// payment
+export function SupplierRefundPrint({
+  refund,
+  account,
+}: {
+  refund: SupplierRefund;
+  // "1121 · Eastern Bank, Gulshan": the account the money came into, as the page names it
+  account: string;
+}) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  return (
+    <Sheet
+      title={t('print.titles.supplierRefund')}
+      meta={[
+        { label: t('print.number'), value: refund.number },
+        { label: t('print.date'), value: isoDate(refund.date) },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.receivedFrom')}
+          name={refund.supplier.name}
+          code={refund.supplier.code}
+        />
+        <PrintBlock label={t('print.amountReceived')}>
+          <p className="text-h2 tabular-nums">{money(refund.amount)}</p>
+        </PrintBlock>
+        <PrintBlock label={t('print.paidBy')}>
+          <p>{t(`receipts.methods.${refund.method}`)}</p>
+        </PrintBlock>
+        {refund.reference !== null && (
+          <PrintBlock label={t('print.reference')}>
+            <p>{refund.reference}</p>
+          </PrintBlock>
+        )}
+        <PrintBlock label={t('print.receivedInto')}>
+          <p>{account}</p>
+        </PrintBlock>
+        <PrintBlock label={t('print.paidBackOn')}>
+          <p>
+            {t(`supplierRefunds.sources.${refund.source.type}`)}{' '}
+            <span className="font-mono tabular-nums">{refund.source.number}</span>
+          </p>
+        </PrintBlock>
+      </div>
+      <InWords amount={refund.amount} />
+      <Note note={refund.note} />
     </Sheet>
   );
 }

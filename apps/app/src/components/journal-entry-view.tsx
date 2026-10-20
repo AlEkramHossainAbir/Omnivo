@@ -156,6 +156,17 @@ function documentLinkOf(entry: JournalEntry) {
   if (entry.source === 'purchase_payment') {
     return { to: '/supplier-payments/$paymentId', params: { paymentId: id } } as const;
   }
+  // Step 17d: the goods a purchase return sent back, the purchase a debit note took off, the money
+  // a supplier refund brought in
+  if (entry.source === 'purchase_return') {
+    return { to: '/purchase-returns/$returnId', params: { returnId: id } } as const;
+  }
+  if (entry.source === 'purchase_debit_note') {
+    return { to: '/debit-notes/$debitNoteId', params: { debitNoteId: id } } as const;
+  }
+  if (entry.source === 'purchase_refund') {
+    return { to: '/supplier-refunds/$refundId', params: { refundId: id } } as const;
+  }
   return null;
 }
 
@@ -292,6 +303,13 @@ export function EntryView({
       )}
       {entry.source === 'purchase_payment' && (
         <p className="text-label text-ink-3">{t('journal.paymentEntryHint')}</p>
+      )}
+      {/* A purchase return is a stock source: stockEntryHint says how to correct it */}
+      {entry.source === 'purchase_debit_note' && (
+        <p className="text-label text-ink-3">{t('journal.debitNoteEntryHint')}</p>
+      )}
+      {entry.source === 'purchase_refund' && (
+        <p className="text-label text-ink-3">{t('journal.supplierRefundEntryHint')}</p>
       )}
       {entry.narration && <p className="text-body text-ink">{entry.narration}</p>}
       {/* A plain table in its own scroll box: four columns, a handful of rows, a totals row */}

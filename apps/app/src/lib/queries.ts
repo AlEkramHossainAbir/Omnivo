@@ -6,6 +6,7 @@ import {
   type BillSummary,
   type BranchStatus,
   type CreditNoteStatus,
+  type DebitNoteStatus,
   type CustomerSort,
   type CustomerStatus,
   type DeliveryInvoiceFilter,
@@ -34,6 +35,7 @@ import {
   type GrnBillFilter,
   type StockFilter,
   type SupplierPaymentStatus,
+  type SupplierRefundStatus,
   type SupplierSort,
   type SupplierStatus,
   type TransferStatus,
@@ -1474,6 +1476,167 @@ export function ordersToPayQuery(tenantId: string, supplierId: string) {
         (order) =>
           order.status === 'approved' || order.status === 'received' || order.status === 'closed',
       ),
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Purchase returns, debit notes and supplier refunds (step 17d), under ['purchase', tenantId] like
+// the rest: posting a return changes its goods receipts (returned), its orders (received) and the
+// bills that bill them; posting a debit note changes its bill and its returns (debited); a refund
+// changes the debit note or payment it takes money back from. One invalidate does it all.
+
+export interface PurchaseReturnListFilter {
+  status: StockDocumentStatus | '';
+  supplierId: string;
+  warehouseId: string;
+}
+
+export function purchaseReturnsQuery(tenantId: string, filter: PurchaseReturnListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'returns', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.purchaseReturns.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
+          ...(filter.warehouseId !== '' && { warehouseId: filter.warehouseId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function purchaseReturnQuery(tenantId: string, returnId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'return', returnId],
+    queryFn: () => call(routes.purchaseReturns.get, { params: { id: returnId } }),
+    retry: false,
+  });
+}
+
+// The return form's "Add from goods receipts": the supplier's posted receipts with a line that
+// still keeps something (the API's ?return=returnable), newest first. 100 at most, like the sales
+// return's challan picker.
+export function returnableReceiptsQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'receipts', 'returnable', supplierId],
+    queryFn: async () =>
+      (
+        await call(routes.goodsReceipts.list, {
+          query: { limit: 100, return: 'returnable', supplierId },
+        })
+      ).items,
+  });
+}
+
+export interface DebitNoteListFilter {
+  status: DebitNoteStatus | '';
+  supplierId: string;
+}
+
+export function debitNotesQuery(tenantId: string, filter: DebitNoteListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'debit-notes', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.debitNotes.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function debitNoteQuery(tenantId: string, debitNoteId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'debit-note', debitNoteId],
+    queryFn: () => call(routes.debitNotes.get, { params: { id: debitNoteId } }),
+    retry: false,
+  });
+}
+
+// The debit note form's bill select: the supplier's posted bills, newest first, like the credit
+// note's postedInvoicesQuery. An older bill is reached from its own page ("Write debit note").
+export function postedBillsQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'bills', 'posted', supplierId],
+    queryFn: async () =>
+      (
+        await call(routes.bills.list, {
+          query: { limit: 100, status: 'posted', supplierId },
+        })
+      ).items,
+  });
+}
+
+// The debit note form's "Add returned goods": the supplier's posted returns, newest first. The
+// list cannot say which ones hold goods of the chosen bill, so the picker opens a return to see.
+export function postedPurchaseReturnsQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'returns', 'posted', supplierId],
+    queryFn: async () =>
+      (
+        await call(routes.purchaseReturns.list, {
+          query: { limit: 100, status: 'posted', supplierId },
+        })
+      ).items,
+  });
+}
+
+export interface SupplierRefundListFilter {
+  status: SupplierRefundStatus | '';
+  supplierId: string;
+}
+
+export function supplierRefundsQuery(tenantId: string, filter: SupplierRefundListFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['purchase', tenantId, 'refunds', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.supplierRefunds.list, {
+        query: {
+          limit: 50,
+          ...(filter.status !== '' && { status: filter.status }),
+          ...(filter.supplierId !== '' && { supplierId: filter.supplierId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function supplierRefundQuery(tenantId: string, refundId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'refund', refundId],
+    queryFn: () => call(routes.supplierRefunds.get, { params: { id: refundId } }),
+    retry: false,
+  });
+}
+
+// The supplier refund form's source select: the supplier's posted debit notes and payments, like
+// the customer refund's refundSourcesQuery (it says why both are read and filtered on the form)
+export function supplierRefundSourcesQuery(tenantId: string, supplierId: string) {
+  return queryOptions({
+    queryKey: ['purchase', tenantId, 'refund-sources', supplierId],
+    queryFn: async () => {
+      const [debitNotes, payments] = await Promise.all([
+        call(routes.debitNotes.list, { query: { limit: 100, status: 'posted', supplierId } }),
+        call(routes.supplierPayments.list, {
+          query: { limit: 100, status: 'posted', supplierId },
+        }),
+      ]);
+      return { debitNotes: debitNotes.items, payments: payments.items };
+    },
   });
 }
 

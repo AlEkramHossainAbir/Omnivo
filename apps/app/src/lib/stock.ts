@@ -107,6 +107,7 @@ export function documentRoute(
   | '/deliveries/$deliveryId'
   | '/sales-returns/$returnId'
   | '/goods-receipts/$receiptId'
+  | '/purchase-returns/$returnId'
   | null {
   if (kind === 'adjustment') return '/stock/adjustments/$adjustmentId';
   if (kind === 'transfer_out' || kind === 'transfer_in') return '/stock/transfers/$transferId';
@@ -118,6 +119,8 @@ export function documentRoute(
   if (kind === 'sales_return') return '/sales-returns/$returnId';
   // Step 17b: goods a supplier's truck brought in, on a goods receipt
   if (kind === 'purchase_receipt') return '/goods-receipts/$receiptId';
+  // Step 17d: goods sent back to a supplier, on a purchase return
+  if (kind === 'purchase_return') return '/purchase-returns/$returnId';
   return null;
 }
 

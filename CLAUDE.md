@@ -362,14 +362,18 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   earlier price: type one", and the link says "Use this supplier's last prices on every line". A bill uses it with
   `totals={false}`, because its totals also count the expenses: a line from a goods receipt says "From GRN-… ·
   PO-…", that the item, unit and quantity are the receipt's, and "Order's price: ৳1,87,500 · ৳1,500 over the order"
-  (12px `ink-3`, the difference `ink-2`/500); a `warn` document notice under the totals gives the sum. Under the
+  (12px `ink-3`, the difference `ink-2`/500); a `warn` document notice under the totals gives the sum. After a
+  return before the bill, a receipt line bills what was kept, in the receipt's unit when that is a whole number of
+  it, else in the base unit, and says "30 m went back before billing: this bills the rest". Under the
   lines, a totals block on `subtle` (line discounts
   only when there are any, before VAT, VAT, total at 500) with paisa, and on the left whether prices include VAT.
 - **Expenses card (bills):** `BillExpenses`, a card that is a container (`@container`) under the bill's lines:
   "Expenses" with "Costs with no product, like rent, electricity or a repair". On a wide card (`@3xl`) account,
   description, amount, VAT rate and the amount with VAT share one grid template with a caption header on
   `subtle`; on a narrow card each control shows its label. "Add expense" (secondary `sm`, `PlusSign`) at the
-  bottom; a remove icon button per row. The bill's one totals block sits under both cards.
+  bottom; a remove icon button per row. The bill's one totals block sits under both cards. A debit note uses the
+  same card for the bill's expenses it takes money off ("Bill expenses to take money off, like a transport charge
+  billed twice"), each row with "৳1,200 of this line can still be taken off" under it.
 - **Sales document statuses:** quotation Open (`brand`, `Clock01`), Accepted (`good`, `CheckmarkCircle02`),
   Declined (neutral, `CancelCircle`), Expired (`warn`, `Hourglass`, worked out by the page: open and past its
   date). Order Draft (neutral, `FileEdit`), Confirmed (`brand`, `Agreement01`), Partly delivered (`brand`,
@@ -388,6 +392,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   invoice that credit notes took money off: Credited (neutral, `Invoice04`) in place of its payment pill when the
   whole total is credited, else Partly credited (neutral, `Invoice04`) beside it. A challan's returns: Partly
   returned (neutral, `DeliveryReturn01`), Returned (neutral, `PackageReceive`); nothing came back = no pill.
+  Purchase return and debit note Draft (neutral, `FileEdit`), Posted (`good`, `CheckmarkCircle02`); supplier refund
+  Posted (`good`, `CheckmarkCircle02`), Voided (neutral, `CancelCircle`). A bill that debit notes took money off:
+  Debited (neutral, `Invoice04`) in place of its payment pill when the whole total is debited, else Partly debited
+  (neutral, `Invoice04`) beside it. A goods receipt's returns: Partly returned (neutral, `TruckReturn`), Returned
+  (neutral, `PackageRemove`); nothing went back = no pill.
 - **Purchase statuses:** requisition Draft (neutral, `FileEdit`), Waiting for approval (`brand`, `Clock01`),
   Approved (`good`, `CheckmarkCircle02`), Cancelled (neutral, `CancelCircle`). An approval round and its steps:
   Waiting (`brand`, `Clock01`), Approved (`good`, `CheckmarkCircle02`), Rejected (`warn`, `ArrowTurnBackward`:
@@ -433,13 +442,14 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   document over the limit, someone with `sales.credit.override` gets a dialog (what the customer would owe and the
   limit, in paisa; "The audit log records that you went over the limit."; Back and "Confirm anyway" / "Post
   anyway"); everyone else gets the error text under the form with the same amounts.
-- **Allocation table (money receipts, supplier payments):** the invoices the customer still owes on, oldest due date first, in an
+- **Allocation table (money receipts, supplier payments, debit notes):** the invoices the customer still owes on, oldest due date first, in an
   `overflow-x-auto` box: invoice number (`Geist Mono`) with its dates under it, the total, what is still due
   (500), and a money input for this receipt. Above it "Apply oldest first" and "Clear" (secondary `sm`); below
   it a `subtle` row with Applied and "Left as advance" (or a `crit` "Over by ৳x" with an `Alert02` icon). A
   supplier payment uses the same table for the supplier's posted bills, with the supplier's own bill number
-  ("Their bill PSM/2026/0412") under ours.
-- **Stock line rows (adjustments, transfers, goods receipts):** a card that is a container (`@container`); one grid template for a
+  ("Their bill PSM/2026/0412") under ours. A debit note's money is applied to the supplier's bills with the same
+  table, in the payment's "Apply money" dialog.
+- **Stock line rows (adjustments, transfers, goods receipts, purchase returns):** a card that is a container (`@container`); one grid template for a
   caption header and every row on a wide card (`@3xl`): item (name, SKU, stock here), unit, quantity (with
   "= 72 pcs" under it), and on a line that brings stock in, the unit cost per unit of the line (a `MoneyInput`
   with 4 decimals, "Cost per case", placeholder "At average cost", "= ৳3,600.00" under it), batch or serial
@@ -447,7 +457,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (search or scan; Enter adds the only match; the dialog stays open). On a goods receipt the quantity is
   "Accepted", with "Ordered 1,000 m · 400 m left on the order · Up to 430 m may come" under it (the last part only
   when the workspace lets more in), then "Rejected" in the line's unit and, once something is rejected, "Why it was
-  rejected".
+  rejected". On a purchase return, a line from a goods receipt says "From GRN-…", that the item and the batch are
+  the receipt's, and "400 m can still go back"; a line on its own says "Not from a goods receipt: it leaves at the
+  average cost".
 - **Stock values:** a value worked out from the books is shown only with `inventory.stock.value`; without it the
   column is left out (lists) or shows a dash (documents). A stock document links its journal entries
   ("JV-2026-27-0042") for people who read the journal, and a stock entry links back ("From ADJ-…").
@@ -475,7 +487,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   table head, `line` between rows), no fills, no shadows, no radius. The header has the logo, the company (legal
   name, address lines, BIN, phone) on the left, the document's title (24px) and its details on the right. Lines
   are a real `<table>` whose `<thead>` repeats on every page; rows, blocks, totals and the signature lines use
-  `break-inside-avoid`. Only a numbered document prints (a draft on paper looks real); a voided receipt or payment does not.
+  `break-inside-avoid`. Only a numbered document prints (a draft on paper looks real); a voided receipt, payment or refund does not.
 - **Send menu (document output):** a secondary button "Send" (`Sent` icon, `ArrowDown01` on the right) next to
   Print on a quotation, purchase order, invoice, money receipt and credit note: Download PDF (the customer's language), Download
   PDF in the other language (named in its own script, "বাংলা"), Email, Share on WhatsApp. Without the send

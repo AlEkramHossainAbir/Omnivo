@@ -2,6 +2,7 @@ import {
   compareMoney,
   compareQuantity,
   CREDIT_NOTE_REASONS,
+  DEBIT_NOTE_REASONS,
   type CreditNoteLine,
   type CreditNoteLineFormValues,
   type CreditNoteSummary,
@@ -41,6 +42,19 @@ export function returnReasonKey(reason: string) {
 export function creditReasonKey(reason: string) {
   const known = CREDIT_NOTE_REASONS.find((item) => item === reason) ?? 'other';
   return `creditNotes.reasons.${known}` as const;
+}
+
+// Step 17d: the purchase return's and the debit note's, here with the sales ones rather than in
+// lib/purchase-returns.ts: the printed pages need them, and every document page loads those, so
+// they must not bring the debit note's sums (lib/bills.ts, lib/invoices.ts) along
+export function purchaseReturnReasonKey(reason: string) {
+  const known = RETURN_REASONS.find((item) => item === reason) ?? 'other';
+  return `purchaseReturns.reasons.${known}` as const;
+}
+
+export function debitReasonKey(reason: string) {
+  const known = DEBIT_NOTE_REASONS.find((item) => item === reason) ?? 'other';
+  return `debitNotes.reasons.${known}` as const;
 }
 
 // What can still come back on a challan line, in the base unit: what left, less what posted

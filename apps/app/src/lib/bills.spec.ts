@@ -84,6 +84,7 @@ function receiptLine(extra: Partial<GoodsReceiptLine> = {}): GoodsReceiptLine {
     rejectionReason: null,
     value: '124000.0000',
     billed: false,
+    returnedQuantity: '0.0000',
     ...extra,
   };
 }
@@ -131,6 +132,7 @@ describe('a goods receipt line on a bill', () => {
           orderNumber: 'PO-2026-27-0003',
           pricesIncludeVat: false,
           orderValue: '124000.0000',
+          returnedQuantity: '0',
         },
       ],
     ]);
@@ -148,8 +150,40 @@ describe('a goods receipt line on a bill', () => {
       // Everything turned back at the gate: nothing to bill (decision 43)
       receiptLine({ id: 'c', quantity: '0.0000', baseQuantity: '0.0000' }),
       receiptLine({ id: 'd' }),
+      // Step 17d: everything went back on a purchase return before a bill came
+      receiptLine({ id: 'e', returnedQuantity: '800.0000' }),
     ];
     expect(receiptLinesLeft(lines, new Set(['d'])).map((line) => line.id)).toEqual(['a']);
+  });
+
+  it('bills what is left after a return, at its share of the order', () => {
+    // 16 bags came in; 3 bags (150 kg) of a bad shade went back before the bill: 13 bags are
+    // left, still a whole number of bags
+    const partly = receiptLine({
+      unitId: 'bag',
+      quantity: '16.0000',
+      returnedQuantity: '150.0000',
+    });
+    expect(receiptLineToBill(partly, orderLine())).toMatchObject({
+      unitId: 'bag',
+      quantity: '13',
+      unitPrice: '7800.0000',
+      // 650 of the order's 2,000 kg carry ৳650 of its ৳2,000 off
+      discount: '650',
+    });
+    // The receipt booked ৳1,24,000; the return took 150 of 800 kg of it (৳23,250) off
+    expect(receiptOrderValue(partly, orderLine())).toBe('100750.0000');
+    // 140 kg went back: 660 kg is 13.2 bags, so the line bills kilograms
+    expect(
+      receiptLineToBill(
+        receiptLine({ unitId: 'bag', quantity: '16.0000', returnedQuantity: '140.0000' }),
+        orderLine(),
+      ),
+    ).toMatchObject({ unitId: 'kg', quantity: '660', unitPrice: '156.0000' });
+    // Nothing went back: the receipt's own unit, as before
+    expect(
+      receiptLineToBill(receiptLine({ unitId: 'bag', quantity: '16.0000' }), orderLine()),
+    ).toMatchObject({ unitId: 'bag', quantity: '16', unitPrice: '7800.0000' });
   });
 });
 
@@ -170,7 +204,13 @@ describe("the bill's prices and totals", () => {
     const origins = new Map([
       [
         'r1',
-        { receiptNumber: 'GRN-1', orderNumber: 'PO-1', pricesIncludeVat: true, orderValue: null },
+        {
+          receiptNumber: 'GRN-1',
+          orderNumber: 'PO-1',
+          pricesIncludeVat: true,
+          orderValue: null,
+          returnedQuantity: '0',
+        },
       ],
     ]);
     const own = ownBillLine({
@@ -284,6 +324,8 @@ describe("a payment's bills", () => {
       vat: '0.0000',
       total,
       amountPaid,
+      amountDebited: '0.0000',
+      debitNoteTotal: '0.0000',
       lineCount: 1,
       postedAt: '2026-09-01T00:00:00.000Z',
       version: 1,

@@ -1,5 +1,12 @@
-import { ArrowTurnBackwardIcon } from '@hugeicons/core-free-icons';
-import { isZeroMoney, routes, type SupplierPayment, unappliedPaymentOf } from '@omnivo/contracts';
+import { ArrowTurnBackwardIcon, MoneyReceiveCircleIcon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import {
+  isZeroMoney,
+  routes,
+  subtractMoney,
+  type SupplierPayment,
+  unappliedPaymentOf,
+} from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
   Button,
@@ -13,7 +20,7 @@ import {
   toast,
 } from '@omnivo/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { lazy, Suspense, useState } from 'react';
 
 import { call } from '../lib/api';
@@ -30,12 +37,13 @@ import { DocumentNotice } from './sales-parts';
 import { useIsoDate, useTenantId } from './stock-parts';
 
 // The two dialogs of a posted payment as a chunk of their own, loaded when one opens: they bring
-// the form library, the money boxes and the date picker, which reading a payment never needs
-const PaymentApplyForm = lazy(async () => ({
-  default: (await import('./payment-dialogs')).PaymentApplyForm,
+// the form library, the money boxes and the date picker, which reading a payment never needs.
+// Step 17d: the debit note and the supplier refund share them.
+const BillApplyForm = lazy(async () => ({
+  default: (await import('./payment-dialogs')).BillApplyForm,
 }));
-const PaymentVoidForm = lazy(async () => ({
-  default: (await import('./payment-dialogs')).PaymentVoidForm,
+const PurchaseVoidForm = lazy(async () => ({
+  default: (await import('./payment-dialogs')).PurchaseVoidForm,
 }));
 
 type Asking = 'reopen' | 'cancel';
@@ -52,13 +60,17 @@ export function SupplierPaymentView({
   today: string;
 }) {
   const { t, format } = useLocale();
+  const navigate = useNavigate();
   const tenantId = useTenantId();
   const queryClient = useQueryClient();
   const isoDate = useIsoDate();
   const refresh = usePurchaseRefresh();
   const accounts = useQuery(accountsQuery(tenantId)).data;
   const branches = useQuery(branchesQuery(tenantId, 'active')).data;
-  const canWrite = useCan()('purchase.payment.manage');
+  const can = useCan();
+  const canWrite = can('purchase.payment.manage');
+  // Step 17d: an advance the supplier pays back is a supplier refund, its own permission
+  const canRefund = can('purchase.refund.manage');
   const [asking, setAsking] = useState<Asking | null>(null);
   const [dialog, setDialog] = useState<'apply' | 'void' | null>(null);
   const money = (value: string) => format.money(value, { decimals: 2 });
@@ -139,6 +151,9 @@ export function SupplierPaymentView({
         </div>
         <Fact label={t('supplierPayments.date')} value={isoDate(payment.date)} />
         <Fact label={t('supplierPayments.amount')} value={money(payment.amount)} />
+        {!isZeroMoney(payment.refunded) && (
+          <Fact label={t('supplierPayments.refunded')} value={money(payment.refunded)} />
+        )}
         <Fact
           label={t('supplierPayments.method')}
           value={t(`receipts.methods.${payment.method}`)}
@@ -260,26 +275,42 @@ export function SupplierPaymentView({
           </Button>
         </div>
       )}
-      {canWrite && posted && (
+      {posted && (canWrite || canRefund) && (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          {/* Away from "Apply money": voiding cannot be undone */}
-          <div className="mr-auto">
+          {/* Away from "Apply money": voiding cannot be undone. A payment the supplier paid some
+              of back cannot be voided (payment_has_refunds): void the refund first. */}
+          {canWrite && isZeroMoney(payment.refunded) && (
+            <div className="mr-auto">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setDialog('void');
+                }}
+              >
+                {t('supplierPayments.void')}
+              </Button>
+            </div>
+          )}
+          {canRefund && !isZeroMoney(unapplied) && (
             <Button
               variant="secondary"
+              onClick={() =>
+                void navigate({ to: '/supplier-refunds/new', search: { paymentId: payment.id } })
+              }
+            >
+              <HugeiconsIcon icon={MoneyReceiveCircleIcon} size={17} strokeWidth={1.5} />
+              {t('supplierPayments.refund')}
+            </Button>
+          )}
+          {canWrite && (
+            <Button
               onClick={() => {
-                setDialog('void');
+                setDialog('apply');
               }}
             >
-              {t('supplierPayments.void')}
+              {t('supplierPayments.apply')}
             </Button>
-          </div>
-          <Button
-            onClick={() => {
-              setDialog('apply');
-            }}
-          >
-            {t('supplierPayments.apply')}
-          </Button>
+          )}
         </div>
       )}
 
@@ -323,17 +354,35 @@ export function SupplierPaymentView({
       >
         <Suspense fallback={null}>
           {dialog === 'apply' && (
-            <PaymentApplyForm
-              payment={payment}
+            <BillApplyForm
+              title={t('supplierPayments.applyDialogTitle', { number })}
+              supplierId={payment.supplier.id}
+              // What supplier refunds paid back cannot go on a bill too (payment_over_allocated)
+              amount={subtractMoney(payment.amount, payment.refunded)}
+              version={version}
+              allocations={payment.allocations}
+              document="supplier_payment"
+              save={async (body) => {
+                const saved = await call(routes.supplierPayments.allocate, {
+                  params: { id },
+                  body,
+                });
+                return t('supplierPayments.allocated', { number: saved.number ?? '' });
+              }}
               onDone={() => {
                 setDialog(null);
               }}
             />
           )}
           {dialog === 'void' && (
-            <PaymentVoidForm
-              payment={payment}
+            <PurchaseVoidForm
+              words="supplierPayments"
+              number={number}
+              version={version}
               today={today}
+              save={async (body) => {
+                await call(routes.supplierPayments.void, { params: { id }, body });
+              }}
               onDone={() => {
                 setDialog(null);
               }}

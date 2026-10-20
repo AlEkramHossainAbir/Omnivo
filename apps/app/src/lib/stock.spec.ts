@@ -101,6 +101,7 @@ describe('stock helpers', () => {
     expect(documentRoute('delivery')).toBe('/deliveries/$deliveryId');
     expect(documentRoute('sales_return')).toBe('/sales-returns/$returnId');
     expect(documentRoute('purchase_receipt')).toBe('/goods-receipts/$receiptId');
+    expect(documentRoute('purchase_return')).toBe('/purchase-returns/$returnId');
     expect(documentRoute('sales_invoice')).toBeNull();
   });
 });

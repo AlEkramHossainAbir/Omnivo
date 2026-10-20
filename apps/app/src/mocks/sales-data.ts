@@ -607,8 +607,17 @@ export function refreshPartyRefs(data: WorkspaceData, saved: PartyRef): void {
   for (const document of salesDocumentsOf(data)) {
     if (document.customer.id === saved.id) document.customer = ref;
   }
-  const { orders, receipts, bills, payments } = data.purchase;
-  for (const document of [...orders, ...receipts, ...bills, ...payments]) {
+  // Step 17d: the purchase returns, debit notes and supplier refunds too
+  const { orders, receipts, bills, payments, returns, debitNotes, refunds } = data.purchase;
+  for (const document of [
+    ...orders,
+    ...receipts,
+    ...bills,
+    ...payments,
+    ...returns,
+    ...debitNotes,
+    ...refunds,
+  ]) {
     if (document.supplier.id === saved.id) document.supplier = ref;
   }
 }

@@ -1,21 +1,27 @@
-import { ArrowTurnBackwardIcon, Payment02Icon } from '@hugeicons/core-free-icons';
+import {
+  ArrowTurnBackwardIcon,
+  InvoiceIcon,
+  NoteRemoveIcon,
+  Payment02Icon,
+} from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  type Account,
   type Bill,
   billAmountDueOf,
   billPaymentStatusOf,
+  canDebitWhole,
+  debitStateOf,
   isBillOverdue,
   isZeroMoney,
   priceDifferenceOf,
   routes,
   subtractMoney,
+  wholeBillDebit,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
   Button,
   Card,
-  CardHeader,
   Dialog,
   DialogClose,
   DialogContent,
@@ -31,27 +37,26 @@ import { call } from '../lib/api';
 import { daysLate } from '../lib/invoices';
 import { useCan } from '../lib/permissions';
 import { accountsQuery, billQuery, branchesQuery } from '../lib/queries';
-import { useRateText } from '../lib/tax-rates';
 import { Fact } from './adjustment-view';
 import { ApprovalCard } from './approval-card';
 import { EntryLinks } from './entry-links';
+import { accountLabel, ExpensesTable } from './expenses-table';
 import { failureOf } from './journal-parts';
 import { PurchaseBackLink, SupplierLink, usePurchaseRefresh } from './purchase-parts';
 import { BillPills } from './purchase-pills';
 import { SalesLinesTable } from './sales-lines-table';
-import { DocumentNotice, LINK_NUMBER, LINK_ROW, LinkList, SalesTotals } from './sales-parts';
+import { DocumentNotice, LINK_NUMBER, LINK_ROW, LinkList } from './sales-parts';
 import { useIsoDate, useTenantId, useWarehouses, warehouseLabel } from './stock-parts';
 
 // What the page asks before it acts: each changes what the approvers see
 type Asking = 'reopen' | 'cancel';
 
-const accountLabel = (account: Account | undefined) =>
-  account ? `${account.code} · ${account.name}` : '—';
-
 // A supplier bill that is no longer a draft on its form (step 17c): waiting for approval, posted
 // or cancelled, or a draft for someone who may not write bills. A posted bill never changes: a debit
 // note corrects it (17d). What it was paid with, the advances that could pay it, and "Pay bill"
 // while something is still owed. The approver reads the price difference here before deciding.
+// Step 17d: what debit notes took off it (each line, each expense, the total), their list, the
+// supplier's debit notes with money left, "Write debit note" and "Debit whole bill".
 export function BillView({ bill, today }: { bill: Bill; today: string }) {
   const { t, format } = useLocale();
   const navigate = useNavigate();
@@ -65,6 +70,7 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
   const can = useCan();
   const canWrite = can('purchase.bill.manage');
   const canPay = can('purchase.payment.manage');
+  const canDebit = can('purchase.debit_note.manage');
   const [asking, setAsking] = useState<Asking | null>(null);
   const money = (value: string) => format.money(value, { decimals: 2 });
   const accountOf = (id: string | null) => accounts?.find((account) => account.id === id);
@@ -81,6 +87,39 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
   // The column only when a line has an order's price to differ from
   const priced = bill.lines.some((line) => line.orderValue !== null);
   const hasExpenses = bill.expenses.length > 0;
+  const debitedOf = (debited: string) =>
+    !isZeroMoney(debited) && (
+      <span className="block text-caption font-normal text-ink-3 tabular-nums">
+        {t('bills.lineDebited', { amount: money(debited) })}
+      </span>
+    );
+
+  // "Debit whole bill" (decision 6): a draft with every line and expense as it was billed, saved in
+  // one click and opened, so the person checks it before posting, like "Credit whole invoice" of
+  // 15d. The lines come from the contracts (wholeBillDebit), the function the API's test uses.
+  const debitWhole = useMutation({
+    mutationFn: () =>
+      call(routes.debitNotes.create, {
+        body: {
+          supplierId: bill.supplier.id,
+          billId: bill.id,
+          date: today,
+          branchId: bill.branchId,
+          pricesIncludeVat: bill.pricesIncludeVat,
+          reason: 'billing_error',
+          supplierCreditNumber: '',
+          supplierCreditDate: '',
+          note: '',
+          ...wholeBillDebit(bill),
+          post: false,
+        },
+      }),
+    onSuccess: async (draft) => {
+      await refresh();
+      toast(t('bills.debitWholeDone'));
+      void navigate({ to: '/debit-notes/$debitNoteId', params: { debitNoteId: draft.id } });
+    },
+  });
 
   const act = useMutation({
     mutationFn: (action: Asking) =>
@@ -173,6 +212,10 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
         {posted && (
           <>
             <Fact label={t('bills.paid')} value={money(bill.amountPaid)} />
+            {/* Step 17d: what debit notes applied, which settles it like a payment */}
+            {!isZeroMoney(bill.amountDebited) && (
+              <Fact label={t('bills.debited')} value={money(bill.amountDebited)} />
+            )}
             <Fact label={t('bills.due')} value={money(billAmountDueOf(bill))} />
           </>
         )}
@@ -202,6 +245,7 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
                   {t('bills.account')}: {accountLabel(accountOf(line.accountId))}
                 </span>
               )}
+              {debitedOf(line.debited)}
             </span>
           )}
           more={
@@ -223,7 +267,17 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
           }
         />
       )}
-      {hasExpenses && <BillExpensesTable bill={bill} accountOf={accountOf} />}
+      {hasExpenses && (
+        <ExpensesTable
+          title={t('bills.expensesTitle')}
+          subtitle={t('bills.expensesSubtitle')}
+          expenses={bill.expenses}
+          totals={bill}
+          pricesIncludeVat={bill.pricesIncludeVat}
+          accountOf={accountOf}
+          detail={(expense) => debitedOf(expense.debited)}
+        />
+      )}
       <ApprovalCard
         document="bill"
         id={id}
@@ -285,6 +339,28 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
             ))}
           </LinkList>
         )}
+        {/* Step 17d: the posted debit notes written for it, wherever their money went */}
+        {posted && (
+          <LinkList
+            title={t('bills.debitNotesTitle')}
+            subtitle={t('bills.debitNotesSubtitle')}
+            empty={bill.debitNotes.length === 0 ? t('bills.noDebitNotes') : undefined}
+          >
+            {bill.debitNotes.map((note) => (
+              <li key={note.id}>
+                <Link
+                  to="/debit-notes/$debitNoteId"
+                  params={{ debitNoteId: note.id }}
+                  className={LINK_ROW}
+                >
+                  <span className={LINK_NUMBER}>{note.number}</span>
+                  <span className="text-ink-3 tabular-nums">{isoDate(note.date)}</span>
+                  <span className="ml-auto font-medium tabular-nums">−{money(note.total)}</span>
+                </Link>
+              </li>
+            ))}
+          </LinkList>
+        )}
         {/* Decision 12: money already paid to this supplier, this bill's orders first. It is
             applied from the payment's page, where the money is. */}
         {bill.advances.length > 0 && (
@@ -304,6 +380,34 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
                   </span>
                   <span className="ml-auto font-medium tabular-nums">
                     {t('bills.advanceLeft', { amount: money(advance.unapplied) })}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </LinkList>
+        )}
+        {/* Step 17d: the supplier's debit notes with money left, which can settle this bill too.
+            Applied from the debit note's page, like an advance from its payment's. */}
+        {bill.openDebitNotes.length > 0 && (
+          <LinkList
+            title={t('bills.openDebitNotesTitle')}
+            subtitle={t('bills.openDebitNotesSubtitle')}
+          >
+            {bill.openDebitNotes.map((note) => (
+              <li key={note.debitNoteId}>
+                <Link
+                  to="/debit-notes/$debitNoteId"
+                  params={{ debitNoteId: note.debitNoteId }}
+                  className={LINK_ROW}
+                >
+                  <span className={LINK_NUMBER}>{note.debitNoteNumber}</span>
+                  <span className="text-ink-3 tabular-nums">
+                    {note.bill === null
+                      ? t('bills.debitNoteNoBill')
+                      : t('bills.debitNoteOn', { number: note.bill.number ?? '' })}
+                  </span>
+                  <span className="ml-auto font-medium tabular-nums">
+                    {t('bills.advanceLeft', { amount: money(note.unapplied) })}
                   </span>
                 </Link>
               </li>
@@ -334,16 +438,41 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
           </Button>
         </div>
       )}
-      {open && canPay && (
-        <div className="flex justify-end">
-          <Button
-            onClick={() =>
-              void navigate({ to: '/supplier-payments/new', search: { billId: bill.id } })
-            }
-          >
-            <HugeiconsIcon icon={Payment02Icon} size={17} strokeWidth={1.5} />
-            {t('bills.pay')}
-          </Button>
+      {debitWhole.error && <FormAlert message={failureOf(debitWhole.error) ?? 'unknown_error'} />}
+      {posted && ((open && canPay) || canDebit) && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {canDebit && canDebitWhole(bill) && (
+            <Button
+              variant="secondary"
+              disabled={debitWhole.isPending}
+              onClick={() => {
+                debitWhole.mutate();
+              }}
+            >
+              <HugeiconsIcon icon={InvoiceIcon} size={17} strokeWidth={1.5} />
+              {t('bills.debitWhole')}
+            </Button>
+          )}
+          {/* Nothing is left to take off once debit notes took the whole total */}
+          {canDebit && debitStateOf(bill) !== 'debited' && (
+            <Button
+              variant="secondary"
+              onClick={() => void navigate({ to: '/debit-notes/new', search: { billId: bill.id } })}
+            >
+              <HugeiconsIcon icon={NoteRemoveIcon} size={17} strokeWidth={1.5} />
+              {t('bills.writeDebitNote')}
+            </Button>
+          )}
+          {open && canPay && (
+            <Button
+              onClick={() =>
+                void navigate({ to: '/supplier-payments/new', search: { billId: bill.id } })
+              }
+            >
+              <HugeiconsIcon icon={Payment02Icon} size={17} strokeWidth={1.5} />
+              {t('bills.pay')}
+            </Button>
+          )}
         </div>
       )}
 
@@ -380,65 +509,5 @@ export function BillView({ bill, today }: { bill: Bill; today: string }) {
         )}
       </Dialog>
     </div>
-  );
-}
-
-// The expenses, read only, with the bill's totals under them: they count the item lines too
-function BillExpensesTable({
-  bill,
-  accountOf,
-}: {
-  bill: Bill;
-  accountOf: (id: string) => Account | undefined;
-}) {
-  const { t, format } = useLocale();
-  const rateText = useRateText();
-  const money = (value: string) => format.money(value, { decimals: 2 });
-  return (
-    <Card className="overflow-hidden">
-      <CardHeader title={t('bills.expensesTitle')} subtitle={t('bills.expensesSubtitle')} />
-      <div className="mt-4 overflow-x-auto">
-        <table className="w-full min-w-[640px] border-collapse text-body-sm">
-          <caption className="sr-only">{t('bills.expensesTitle')}</caption>
-          <thead>
-            <tr className="bg-subtle text-left text-caption font-medium text-ink-3">
-              <th scope="col" className="px-5 py-2.5">
-                {t('bills.expenseDescription')}
-              </th>
-              <th scope="col" className="px-5 py-2.5">
-                {t('bills.expenseAccount')}
-              </th>
-              <th scope="col" className="px-5 py-2.5">
-                {t('bills.expenseVat')}
-              </th>
-              <th scope="col" className="px-5 py-2.5 text-right">
-                {t('salesLines.amount')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {bill.expenses.map((expense) => {
-              const account = accountOf(expense.accountId);
-              return (
-                <tr key={expense.id} className="border-t border-line align-top">
-                  <td className="px-5 py-3 font-medium text-ink">{expense.description}</td>
-                  <td className="px-5 py-3">{accountLabel(account)}</td>
-                  <td className="px-5 py-3 whitespace-nowrap">
-                    {expense.taxRate.name}
-                    <span className="block text-caption text-ink-3 tabular-nums">
-                      {rateText(expense.taxRate.rate)}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3 text-right font-medium whitespace-nowrap tabular-nums">
-                    {money(bill.pricesIncludeVat ? expense.total : expense.net)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <SalesTotals totals={bill} pricesIncludeVat={bill.pricesIncludeVat} />
-    </Card>
   );
 }

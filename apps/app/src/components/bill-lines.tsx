@@ -10,6 +10,7 @@ import {
   type BillLineFormValues,
   draftLineAmounts,
   isZeroMoney,
+  isZeroQuantity,
   MAX_BILL_LINES,
   priceDifferenceOf,
   subtractMoney,
@@ -28,7 +29,7 @@ import { firstMessage } from '../lib/stock';
 import { usePurchasePricing } from './purchase-pricing';
 import { LinesEditor, SalesField } from './sales-line-editor';
 import { SerialNumbersInput } from './serial-numbers-input';
-import { useTenantId } from './stock-parts';
+import { useQuantity, useTenantId } from './stock-parts';
 
 // The item lines of a supplier bill (step 17c): the sales line editor of the purchase order
 // (decision 15), with the invoice's three kinds of line (15c). A goods receipt line and an order's
@@ -90,6 +91,7 @@ export function BillLinesEditor({
 }) {
   const { t, format, errorText } = useLocale();
   const tenantId = useTenantId();
+  const quantityText = useQuantity();
   const rates = useQuery(taxRatesQuery(tenantId)).data;
   const rateOf = (id: string) => rates?.find((rate) => rate.id === id)?.rate ?? null;
   const pricing = usePurchasePricing(supplierId, pricesIncludeVat, t('bills.noLines'));
@@ -162,6 +164,7 @@ export function BillLinesEditor({
     if (value.receiptLineId) {
       const amount = draftLineAmounts(value, rateOf(value.taxRateId), pricesIncludeVat);
       const orderValue = origin?.orderValue ?? null;
+      const returned = origin?.returnedQuantity ?? '0';
       const difference =
         amount && orderValue !== null ? priceDifferenceOf({ ...amount, orderValue }) : null;
       return (
@@ -171,6 +174,14 @@ export function BillLinesEditor({
             {origin?.orderNumber && ` · ${origin.orderNumber}`}
           </span>
           <span>{t('bills.receiptLineHint')}</span>
+          {/* Step 17d: why the quantity is less than the receipt's, and in the base unit */}
+          {!isZeroQuantity(returned) && (
+            <span className="tabular-nums">
+              {t('bills.returnedBeforeBilling', {
+                quantity: quantityText(returned, item.baseUnitId),
+              })}
+            </span>
+          )}
           {/* What the goods receipt booked, and how far this price is from it (decision 8). Before
               VAT, like the books: the difference goes to an account at its net. */}
           {orderValue !== null && (

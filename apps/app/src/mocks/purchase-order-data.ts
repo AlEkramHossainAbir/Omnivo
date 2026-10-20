@@ -11,9 +11,12 @@ import {
   type GoodsReceiptLineInput,
   type GrnBillFilter,
   type GrnBillState,
+  type GrnReturnFilter,
+  type GrnReturnState,
   isQuantity,
   isWholeQuantity,
   isZeroQuantity,
+  keptQuantity,
   negateMoney,
   type PartyRef,
   prorateMoney,
@@ -72,7 +75,9 @@ import type { WorkspaceData } from './workspace-data';
 // not billed, like a stock adjustment (stock-data.ts).
 //
 // Step 17c: bills (bill-data.ts, which imports this file) bill the receipts' lines and the
-// orders' services. This file reads them through the WorkspaceData type only.
+// orders' services. This file reads them through the WorkspaceData type only. Step 17d: so are
+// purchase returns (purchase-return-data.ts), which send a receipt line's goods back
+// (returnedQuantity) and, before a bill, lower its order line's received quantity.
 
 // An order as stored. "Partly received", its line count, its requisitions, its receipts and its
 // approval history are worked out on read, like the API's subqueries. So are its bills, its
@@ -92,10 +97,12 @@ export type MockPurchaseOrder = Omit<
 
 // A receipt as stored, with its order's id: the order's number is looked up on read, like a
 // delivery's order. Step 17c: a receipt a bill made has the bill's id instead (and no order); how
-// far it is billed and by which bills is worked out on read.
+// far it is billed and by which bills is worked out on read. Step 17d: so are how much went back
+// and on which returns; each line's returnedQuantity is stored, like the API's column, and a
+// return's posting adds to it.
 export type MockGoodsReceipt = Omit<
   GoodsReceipt,
-  'order' | 'lineCount' | 'bill' | 'bills' | 'billState'
+  'order' | 'lineCount' | 'bill' | 'bills' | 'billState' | 'returnState' | 'returns'
 > & { orderId: string | null; billId: string | null };
 
 function conflict(code: ErrorCode): MockProblem {
@@ -472,9 +479,36 @@ export function findGoodsReceipt(data: WorkspaceData, id: string): MockGoodsRece
   return found;
 }
 
-// Step 17c: a posted line that accepted something and no posted bill bills yet
+// Step 17c: a posted line that accepted something and no posted bill bills yet. Step 17d: that
+// kept something; goods that all went back before a bill have nothing to bill.
 function toBill(line: GoodsReceiptLine): boolean {
-  return !line.billed && !isZeroQuantity(line.baseQuantity);
+  return !line.billed && !isZeroQuantity(keptQuantity(line));
+}
+
+// Step 17d: the challan's words (15d). Nothing went back, some did, or everything it kept did. A
+// line that turned everything back at the gate kept nothing and never could: it counts for
+// neither. Only posted returns write returnedQuantity, so a draft return changes nothing.
+function returnStateOf(stored: MockGoodsReceipt): GrnReturnState {
+  if (
+    stored.status !== 'posted' ||
+    stored.lines.every((line) => isZeroQuantity(line.returnedQuantity))
+  ) {
+    return 'none';
+  }
+  return stored.lines.some((line) => !isZeroQuantity(keptQuantity(line)))
+    ? 'partly_returned'
+    : 'returned';
+}
+
+// returnable: posted, with a line that still keeps something (what the purchase return form offers)
+function matchesReturnFilter(
+  stored: MockGoodsReceipt,
+  filter: GrnReturnFilter | undefined,
+): boolean {
+  if (filter === undefined) return true;
+  return (
+    stored.status === 'posted' && stored.lines.some((line) => !isZeroQuantity(keptQuantity(line)))
+  );
 }
 
 // Step 17c (decision 21): a draft, or a posted receipt no bill touched, is not billed; one with
@@ -506,6 +540,17 @@ export function toGoodsReceipt(data: WorkspaceData, stored: MockGoodsReceipt): G
       data,
       (line) => line.receiptLineId !== null && lineIds.has(line.receiptLineId),
     ),
+    // Step 17d: the posted returns that sent some of its goods back, oldest first. A draft sent
+    // nothing back yet.
+    returnState: returnStateOf(stored),
+    returns: data.purchase.returns
+      .filter(
+        (item) =>
+          item.status === 'posted' &&
+          item.lines.some((line) => line.receiptLineId !== null && lineIds.has(line.receiptLineId)),
+      )
+      .toSorted((a, b) => a.date.localeCompare(b.date))
+      .map((item) => ({ id: item.id, number: item.number })),
     lineCount: stored.lines.length,
   };
 }
@@ -518,6 +563,7 @@ export function listGoodsReceipts(
     warehouseId?: string | undefined;
     orderId?: string | undefined;
     bill?: GrnBillFilter | undefined;
+    return?: GrnReturnFilter | undefined;
   },
 ): GoodsReceipt[] {
   return newestFirst(data.purchase.receipts)
@@ -527,7 +573,8 @@ export function listGoodsReceipts(
         (query.supplierId === undefined || item.supplier.id === query.supplierId) &&
         (query.warehouseId === undefined || item.warehouseId === query.warehouseId) &&
         (query.orderId === undefined || item.orderId === query.orderId) &&
-        matchesBillFilter(item, query.bill),
+        matchesBillFilter(item, query.bill) &&
+        matchesReturnFilter(item, query.return),
     )
     .map((item) => toGoodsReceipt(data, item));
 }
@@ -638,6 +685,8 @@ export function resolveReceiptLines(
         value: null,
         // Step 17c: a posted bill marks it
         billed: false,
+        // Step 17d: a posted purchase return adds to it
+        returnedQuantity: '0.0000',
       },
     ];
   });

@@ -288,6 +288,20 @@
       "when": 1792383348392,
       "tag": "0040_bills-payments-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792424568836,
+      "tag": "0041_purchase-returns-debit-notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792424582453,
+      "tag": "0042_purchase-returns-debit-notes-rules",
+      "breakpoints": true
     }
   ]
 }

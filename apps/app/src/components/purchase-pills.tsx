@@ -9,12 +9,15 @@ import {
   Invoice01Icon,
   Invoice02Icon,
   Invoice03Icon,
+  Invoice04Icon,
   MinusSignCircleIcon,
   PackageReceiveIcon,
+  PackageRemoveIcon,
   ShoppingCart01Icon,
   ShoppingCartCheck01Icon,
   StopCircleIcon,
   Time04Icon,
+  TruckReturnIcon,
   Undo02Icon,
 } from '@hugeicons/core-free-icons';
 import type { IconSvgElement } from '@hugeicons/react';
@@ -22,7 +25,9 @@ import {
   type ApprovalRoundStatus,
   billPaymentStatusOf,
   type BillStatus,
+  debitStateOf,
   type GrnBillState,
+  type GrnReturnState,
   isBillOverdue,
   type PurchaseOrderStatus,
   type RequisitionOrderState,
@@ -154,9 +159,30 @@ export function GoodsReceiptBillPill({ state }: { state: GrnBillState }) {
   );
 }
 
+// Step 17d: how much of a posted goods receipt went back on purchase returns, like a challan's
+// return pill (15d). Nothing went back shows no pill: the normal case. Neutral: a return is neither
+// a success nor a problem. The icons point out, the challan's point in: the goods leave here.
+const GRN_RETURN_PILLS = {
+  partly_returned: { icon: TruckReturnIcon },
+  returned: { icon: PackageRemoveIcon },
+} as const satisfies Record<Exclude<GrnReturnState, 'none'>, { icon: IconSvgElement }>;
+
+export function GoodsReceiptReturnPill({ state }: { state: GrnReturnState }) {
+  const { t } = useLocale();
+  if (state === 'none') return null;
+  return (
+    <Pill tone="neutral" icon={GRN_RETURN_PILLS[state].icon}>
+      {t(`goodsReceipts.returnStates.${state}`)}
+    </Pill>
+  );
+}
+
 // A supplier bill (step 17c). Before it is posted, its approval status, like an order's; once
 // posted, what was paid, like an invoice's (unpaid and partly paid are brand: money on its way), and
 // beside it Overdue (crit) once its due date has passed, worked out here from the totals and today.
+// Step 17d: a bill debit notes took off in full says Debited (neutral, the invoice's Credited)
+// instead of what was paid; one taken off in part says so beside it. What debit notes applied
+// counts as settled (billPaymentStatusOf, isBillOverdue).
 const BILL_PILLS = {
   draft: { tone: 'neutral', icon: FileEditIcon },
   pending: { tone: 'brand', icon: Clock01Icon },
@@ -176,7 +202,14 @@ export function BillPills({
   bill,
   today,
 }: {
-  bill: { status: BillStatus; dueDate: string; total: string; amountPaid: string };
+  bill: {
+    status: BillStatus;
+    dueDate: string;
+    total: string;
+    amountPaid: string;
+    amountDebited: string;
+    debitNoteTotal: string;
+  };
   today: string;
 }) {
   const { t } = useLocale();
@@ -188,6 +221,14 @@ export function BillPills({
       </Pill>
     );
   }
+  const debit = debitStateOf(bill);
+  if (debit === 'debited') {
+    return (
+      <Pill tone="neutral" icon={Invoice04Icon}>
+        {t('bills.debitStates.debited')}
+      </Pill>
+    );
+  }
   const payment = billPaymentStatusOf(bill);
   const { tone, icon } = BILL_PAYMENT_PILLS[payment];
   return (
@@ -195,6 +236,11 @@ export function BillPills({
       <Pill tone={tone} icon={icon}>
         {t(`bills.payment.${payment}`)}
       </Pill>
+      {debit === 'partly_debited' && (
+        <Pill tone="neutral" icon={Invoice04Icon}>
+          {t('bills.debitStates.partly_debited')}
+        </Pill>
+      )}
       {isBillOverdue(bill, today) && (
         <Pill tone="crit" icon={Time04Icon}>
           {t('bills.overdue')}

@@ -1,4 +1,4 @@
-import { Invoice03Icon } from '@hugeicons/core-free-icons';
+import { Invoice03Icon, TruckReturnIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { type GoodsReceipt, isZeroQuantity } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
@@ -7,10 +7,15 @@ import { Link, useNavigate } from '@tanstack/react-router';
 
 import { receiptLinesLeft } from '../lib/bills';
 import { useCan } from '../lib/permissions';
+import { returnableReceiptLines } from '../lib/purchase-returns';
 import { Fact } from './adjustment-view';
 import { EntryLinks } from './entry-links';
 import { PurchaseBackLink, SupplierLink } from './purchase-parts';
-import { GoodsReceiptBillPill, GoodsReceiptStatusPill } from './purchase-pills';
+import {
+  GoodsReceiptBillPill,
+  GoodsReceiptReturnPill,
+  GoodsReceiptStatusPill,
+} from './purchase-pills';
 import { DocumentNotice, LINK_NUMBER, LINK_ROW, LinkList } from './sales-parts';
 import { StockLinesTable } from './stock-lines-table';
 import { useIsoDate, useQuantity, useWarehouses, warehouseLabel } from './stock-parts';
@@ -21,18 +26,23 @@ const DOCUMENT_LINK =
 // A posted goods receipt (or a draft for someone who may not write receipts), read only, like a
 // posted delivery. A posted receipt never changes: goods that go back to the supplier after it are
 // a purchase return (17d). Step 17c: how much of it is billed, its bills, and "Make bill"; and a
-// receipt a supplier bill made, which has no order (decision 21).
+// receipt a supplier bill made, which has no order (decision 21). Step 17d: how much of it went
+// back, its returns, and "Send goods back".
 export function GoodsReceiptView({ receipt }: { receipt: GoodsReceipt }) {
   const { t, format } = useLocale();
   const navigate = useNavigate();
   const isoDate = useIsoDate();
   const quantity = useQuantity();
   const { byId } = useWarehouses();
-  const canBill = useCan()('purchase.bill.manage');
+  const can = useCan();
+  const canBill = can('purchase.bill.manage');
+  const canReturn = can('purchase.return.manage');
   const posted = receipt.status === 'posted';
   // Lines the bill form would take: accepted something, not billed. A receipt that turned
   // everything back has none (decision 43), and one a bill made was billed by that bill.
   const toBill = posted && receiptLinesLeft(receipt.lines, new Set()).length > 0;
+  // Step 17d: something kept that can still go back (a receipt a bill made too: its goods came in)
+  const toReturn = posted && returnableReceiptLines(receipt.lines, new Set()).length > 0;
   return (
     <div className="grid max-w-6xl grid-cols-1 gap-5">
       <PurchaseBackLink to="/goods-receipts" label={t('goodsReceipts.back')} />
@@ -43,6 +53,7 @@ export function GoodsReceiptView({ receipt }: { receipt: GoodsReceipt }) {
           <>
             <GoodsReceiptStatusPill status={receipt.status} />
             {posted && <GoodsReceiptBillPill state={receipt.billState} />}
+            {posted && <GoodsReceiptReturnPill state={receipt.returnState} />}
           </>
         }
       />
@@ -130,32 +141,77 @@ export function GoodsReceiptView({ receipt }: { receipt: GoodsReceipt }) {
                 {t('goodsReceipts.lineBilled')}
               </span>
             )}
+            {/* Step 17d: what posted purchase returns sent back, in the base unit */}
+            {!isZeroQuantity(line.returnedQuantity) && (
+              <span className="mt-1 block text-caption text-ink-3 tabular-nums">
+                {t('goodsReceipts.lineReturned', {
+                  quantity: quantity(line.returnedQuantity, line.baseUnitId),
+                })}
+              </span>
+            )}
           </>
         )}
       />
       {posted && (
-        <LinkList
-          title={t('goodsReceipts.billsTitle')}
-          subtitle={t('goodsReceipts.billsSubtitle')}
-          empty={receipt.bills.length === 0 ? t('goodsReceipts.notBilledYet') : undefined}
-        >
-          {receipt.bills.map((bill) => (
-            <li key={bill.id}>
-              <Link to="/bills/$billId" params={{ billId: bill.id }} className={LINK_ROW}>
-                <span className={LINK_NUMBER}>{bill.number ?? ''}</span>
-              </Link>
-            </li>
-          ))}
-        </LinkList>
-      )}
-      {canBill && toBill && (
-        <div className="flex justify-end">
-          <Button
-            onClick={() => void navigate({ to: '/bills/new', search: { receiptId: receipt.id } })}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+          <LinkList
+            title={t('goodsReceipts.billsTitle')}
+            subtitle={t('goodsReceipts.billsSubtitle')}
+            empty={receipt.bills.length === 0 ? t('goodsReceipts.notBilledYet') : undefined}
           >
-            <HugeiconsIcon icon={Invoice03Icon} size={17} strokeWidth={1.5} />
-            {t('goodsReceipts.makeBill')}
-          </Button>
+            {receipt.bills.map((bill) => (
+              <li key={bill.id}>
+                <Link to="/bills/$billId" params={{ billId: bill.id }} className={LINK_ROW}>
+                  <span className={LINK_NUMBER}>{bill.number ?? ''}</span>
+                </Link>
+              </li>
+            ))}
+          </LinkList>
+          {/* Step 17d: the posted returns that sent goods of it back; none shows no card */}
+          {receipt.returns.length > 0 && (
+            <LinkList
+              title={t('goodsReceipts.returnsTitle')}
+              subtitle={t('goodsReceipts.returnsSubtitle')}
+            >
+              {receipt.returns.map((purchaseReturn) => (
+                <li key={purchaseReturn.id}>
+                  <Link
+                    to="/purchase-returns/$returnId"
+                    params={{ returnId: purchaseReturn.id }}
+                    className={LINK_ROW}
+                  >
+                    <span className={LINK_NUMBER}>{purchaseReturn.number ?? ''}</span>
+                  </Link>
+                </li>
+              ))}
+            </LinkList>
+          )}
+        </div>
+      )}
+      {((canBill && toBill) || (canReturn && toReturn)) && (
+        <div className="flex flex-wrap justify-end gap-2">
+          {canReturn && toReturn && (
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void navigate({
+                  to: '/purchase-returns/new',
+                  search: { receiptId: receipt.id },
+                })
+              }
+            >
+              <HugeiconsIcon icon={TruckReturnIcon} size={17} strokeWidth={1.5} />
+              {t('goodsReceipts.makeReturn')}
+            </Button>
+          )}
+          {canBill && toBill && (
+            <Button
+              onClick={() => void navigate({ to: '/bills/new', search: { receiptId: receipt.id } })}
+            >
+              <HugeiconsIcon icon={Invoice03Icon} size={17} strokeWidth={1.5} />
+              {t('goodsReceipts.makeBill')}
+            </Button>
+          )}
         </div>
       )}
     </div>

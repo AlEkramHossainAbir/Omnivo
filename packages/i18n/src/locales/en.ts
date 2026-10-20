@@ -89,6 +89,9 @@ export const en = {
     goodsReceipts: 'Goods receipts',
     bills: 'Supplier bills',
     supplierPayments: 'Supplier payments',
+    purchaseReturns: 'Purchase returns',
+    debitNotes: 'Debit notes',
+    supplierRefunds: 'Supplier refunds',
     approvals: 'Approvals',
   },
   auth: {
@@ -269,6 +272,9 @@ export const en = {
         payment: 'Supplier payment',
         supplier: 'Supplier code',
         requisition: 'Purchase requisition',
+        return: 'Purchase return',
+        debit_note: 'Debit note',
+        refund: 'Supplier refund',
       },
       inventory: {
         receipt: 'Goods receipt (GRN)',
@@ -500,6 +506,9 @@ export const en = {
       purchase_receipt: 'Goods receipt',
       purchase_bill: 'Supplier bill',
       purchase_payment: 'Supplier payment',
+      purchase_return: 'Purchase return',
+      purchase_debit_note: 'Debit note',
+      purchase_refund: 'Supplier refund',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
@@ -512,9 +521,13 @@ export const en = {
       'A credit note made this entry. A posted credit note stays as it is, so the entry is not reversed here.',
     refundEntryHint: 'A refund made this entry. To undo it, void the refund on its own page.',
     billEntryHint:
-      'A supplier bill made this entry. A posted bill stays as it is, so the entry is not reversed here.',
+      'A supplier bill made this entry. A posted bill stays as it is: to take money off it, write a debit note on the bill’s page.',
     paymentEntryHint:
       'A supplier payment made this entry. To undo it, void the payment on its own page.',
+    debitNoteEntryHint:
+      'A debit note made this entry. A posted debit note stays as it is, so the entry is not reversed here.',
+    supplierRefundEntryHint:
+      'A supplier refund made this entry. To undo it, void the refund on its own page.',
     draftSaved: 'Draft saved',
     posted: '{{number}} posted',
     deleted: 'Draft deleted',
@@ -1125,6 +1138,7 @@ export const en = {
       delivery: 'Delivered',
       sales_return: 'Came back',
       purchase_receipt: 'Goods receipt',
+      purchase_return: 'Sent back',
     },
     historyEmpty: 'No movement in these dates.',
   },
@@ -2520,9 +2534,10 @@ export const en = {
       terms: 'Payment terms',
       bankAccounts: 'Bank accounts',
     },
-    // What the company owes the supplier, or what the supplier owes back (an advance paid)
+    // What the company owes the supplier, or what the supplier owes back (an advance paid, or a
+    // debit note not applied yet)
     owe: 'You owe {{amount}}',
-    inAdvance: '{{amount}} paid in advance',
+    inAdvance: 'They owe you {{amount}}',
     settled: 'Nothing owed',
     details: 'Details',
     noAddress: 'No address',
@@ -2531,7 +2546,7 @@ export const en = {
     statementSubtitle: 'Posted entries for this supplier, with what you owe after each one',
     statementEmptyTitle: 'No entries in these dates',
     statementEmptyBody:
-      'Pick other dates. Their opening balance, bills and payments show up here once they are posted.',
+      'Pick other dates. Their opening balance, bills, payments, debit notes and refunds show up here once they are posted.',
     statementLoadFailed: "Couldn't load the statement. Refresh the page to try again.",
     // The supplier picker on journal lines and opening balances
     pickerSearch: 'Search suppliers',
@@ -2864,6 +2879,12 @@ export const en = {
     },
     billing: 'Billing',
     billFilters: { to_bill: 'To bill', billed: 'Billed' },
+    // How much of a posted receipt went back on posted purchase returns (goods-receipts.ts → returnState)
+    returnStates: {
+      none: 'Nothing went back',
+      partly_returned: 'Partly returned',
+      returned: 'Returned',
+    },
     columns: {
       number: 'Number',
       date: 'Date',
@@ -2926,6 +2947,10 @@ export const en = {
     billsSubtitle: 'Posted supplier bills for these goods',
     notBilledYet: 'Not billed yet.',
     lineBilled: 'Billed',
+    makeReturn: 'Send goods back',
+    returnsTitle: 'Returns',
+    returnsSubtitle: 'Posted purchase returns that sent goods of this receipt back',
+    lineReturned: '{{quantity}} went back',
     notFound: 'This goods receipt no longer exists. A draft may have been deleted.',
     emptyTitle: 'No goods receipts yet',
     emptyBody:
@@ -2951,6 +2976,12 @@ export const en = {
     payment: { unpaid: 'Unpaid', partly_paid: 'Partly paid', paid: 'Paid' },
     overdue: 'Overdue',
     paymentFilters: { open: 'Not paid', overdue: 'Overdue', paid: 'Paid' },
+    // How much posted debit notes took off (bills.ts → debitStateOf)
+    debitStates: {
+      none: 'Not debited',
+      partly_debited: 'Partly debited',
+      debited: 'Debited',
+    },
     columns: {
       number: 'Number',
       supplier: 'Supplier',
@@ -3011,6 +3042,7 @@ export const en = {
     fromOrder: 'Service on {{number}}',
     ownLine: 'Received by this bill',
     receiptLineHint: 'The item, unit and quantity are the goods receipt’s.',
+    returnedBeforeBilling: '{{quantity}} went back before billing: this bills the rest',
     // A receipt line's price against what the goods receipt booked (orderValue)
     orderValue: 'Order’s price: {{amount}}',
     overOrder: '{{amount}} over the order',
@@ -3092,11 +3124,24 @@ export const en = {
     paymentsSubtitle: 'Supplier payments applied to this bill',
     noPayments: 'Nothing paid yet.',
     pay: 'Pay bill',
+    debited: 'Debited',
+    lineDebited: '{{amount}} debited',
+    debitNotesTitle: 'Debit notes',
+    debitNotesSubtitle: 'Posted debit notes that take money off this bill',
+    noDebitNotes: 'Nothing taken off.',
+    writeDebitNote: 'Write debit note',
+    debitWhole: 'Debit whole bill',
+    debitWholeDone: 'Draft debit note written for every line and expense. Check it, then post it.',
     // Posted payments to the supplier with money not applied yet; this bill's orders first
     advancesTitle: 'Advances to apply',
     advancesSubtitle: 'Money paid to this supplier ahead. Apply it from the payment’s page.',
     advanceFor: 'For {{number}}',
     advanceLeft: '{{amount}} not applied',
+    // Posted debit notes of the supplier with money not applied yet (openDebitNotes)
+    openDebitNotesTitle: 'Debit notes to apply',
+    openDebitNotesSubtitle: 'Money this supplier owes back. Apply it from the debit note’s page.',
+    debitNoteOn: 'On {{number}}',
+    debitNoteNoBill: 'No bill',
     notFound: "This bill doesn't exist, or it was a draft that was deleted.",
     emptyTitle: 'No supplier bills yet',
     emptyBody:
@@ -3220,7 +3265,9 @@ export const en = {
     },
     // The payment's own page
     unappliedNotice:
-      '{{amount}} is not applied to a bill yet. It counts as an advance to the supplier until you apply it.',
+      '{{amount}} is not applied to a bill yet. It counts as an advance to the supplier until you apply it, or until they pay it back.',
+    refunded: 'Paid back',
+    refund: 'Record money back',
     apply: 'Apply money',
     applyDialogTitle: 'Apply {{number}}',
     applySave: 'Save',
@@ -3248,6 +3295,270 @@ export const en = {
     emptyBody:
       'Record what you pay a supplier: a cheque to the spinning mill, a bank transfer, a bKash payment or cash at the gate.',
     loadFailed: "Couldn't load the supplier payments. Refresh the page to try again.",
+  },
+  purchaseReturns: {
+    title: 'Purchase returns',
+    description: 'Goods sent back to suppliers, and the warehouse they left from',
+    new: 'New return',
+    newTitle: 'New purchase return',
+    draftTitle: 'Draft return',
+    back: 'Purchase returns',
+    show: 'Show',
+    all: 'All',
+    statuses: { draft: 'Draft', posted: 'Posted' },
+    // Why the goods went back (sales-returns.ts → RETURN_REASONS, shared). It decides nothing in the books.
+    reasons: {
+      damaged: 'Damaged',
+      expired: 'Expired',
+      wrong_item: 'Wrong item sent',
+      quality: 'Quality problem',
+      unsold: 'Did not sell',
+      other: 'Other',
+    },
+    columns: {
+      number: 'Number',
+      supplier: 'Supplier',
+      reason: 'Reason',
+      warehouse: 'Warehouse',
+      lines: 'Items',
+      status: 'Status',
+    },
+    supplier: 'Supplier',
+    date: 'Date',
+    warehouse: 'Sent from warehouse',
+    warehouseHint:
+      'Every item leaves this warehouse. It starts as the goods receipt’s; pick another one if the goods were moved.',
+    reason: 'Reason',
+    note: 'Note',
+    notePlaceholder:
+      '120 m of denim with a shade problem found at cutting, sent back to the mill on their truck.',
+    // Where each line comes from
+    addReceipts: 'Add from goods receipts',
+    receiptPickerTitle: 'Send back from goods receipts',
+    receiptPickerDescription:
+      'Posted goods receipts of this supplier with goods that can still go back. Each click adds the receipt’s lines; lower each quantity to what goes back.',
+    receiptPickerEmpty: 'Nothing received from this supplier can still go back.',
+    pickSupplierFirst: 'Pick the supplier first.',
+    fromReceipt: 'From {{number}}',
+    leftToReturn: '{{quantity}} can still go back',
+    receiptLineHint: 'The item and the batch are the goods receipt’s.',
+    ownLine: 'Not from a goods receipt: it leaves at the average cost',
+    saveDraft: 'Save draft',
+    post: 'Post return',
+    posting: 'Posting…',
+    posted: '{{number}} posted',
+    draftSaved: 'Draft saved',
+    deleteDraft: 'Delete draft',
+    confirmDelete: 'Delete this draft',
+    deleteWarning: 'A deleted draft cannot be brought back.',
+    deleted: 'Draft deleted',
+    postHint:
+      'Posting takes the goods out of stock at the cost they came in at. Goods not billed yet come off their purchase order, so the supplier can send them again. It moves no money: for goods billed already, write a debit note.',
+    cantWrite:
+      'You can view purchase returns. Ask a workspace owner for the purchase.return.manage permission to write and post them.',
+    postedOn: 'Posted {{date}}',
+    entry: 'Journal entry',
+    noEntry: 'No journal entry: the goods had no cost in the books',
+    // The return's own page
+    receiptsTitle: 'Goods receipts',
+    receiptsSubtitle: 'The goods receipts these goods came in on',
+    lineBilled: 'Billed on {{number}}',
+    lineNotBilled: 'Not billed yet: the bill bills less',
+    lineDebited: '{{quantity}} debited',
+    debitNotice:
+      'Some of these goods were billed already, or came from no goods receipt. Write a debit note to take them off what you owe the supplier.',
+    makeDebitNote: 'Write debit note',
+    debitNotesTitle: 'Debit notes',
+    debitNotesSubtitle: 'Debit notes that take these goods off what you owe',
+    noDebitNotes: 'No debit note yet.',
+    notFound: "This return doesn't exist, or it was a draft that was deleted.",
+    emptyTitle: 'No purchase returns yet',
+    emptyBody:
+      'Send goods back to a supplier from the goods receipt they came in on, like yarn cones that failed the lab test or cartons damaged on the way.',
+    loadFailed: "Couldn't load the purchase returns. Refresh the page to try again.",
+  },
+  debitNotes: {
+    title: 'Debit notes',
+    description: 'What suppliers take back: goods sent back, price cuts and billing mistakes',
+    new: 'New debit note',
+    newTitle: 'New debit note',
+    draftTitle: 'Draft debit note',
+    back: 'Debit notes',
+    show: 'Show',
+    all: 'All',
+    statuses: { draft: 'Draft', posted: 'Posted' },
+    // Why it was written (debit-notes.ts → DEBIT_NOTE_REASONS, the credit note's)
+    reasons: {
+      goods_returned: 'Goods sent back',
+      price_adjustment: 'Price cut',
+      billing_error: 'Billing mistake',
+      other: 'Other',
+    },
+    columns: {
+      number: 'Number',
+      supplier: 'Supplier',
+      bill: 'Bill',
+      total: 'Total',
+      unapplied: 'Not applied',
+      status: 'Status',
+    },
+    supplier: 'Supplier',
+    bill: 'Bill',
+    billOption: '{{number}} · their bill {{supplierBillNumber}} · {{total}}',
+    // A debit note without a bill (decision 9): goods from before Omnivo, sent back on a return
+    billNone: 'No bill: goods that came from no goods receipt',
+    billHint: 'It takes lines off this bill, at the VAT the bill charged.',
+    noBillHint:
+      'Without a bill it debits goods sent back on a return that came from no goods receipt. Type the price and the VAT rate of each line.',
+    billLocked: 'Remove the lines and expenses to pick another bill or supplier.',
+    noBills: 'This supplier has no posted bill.',
+    noBillColumn: 'No bill',
+    pickSupplierFirst: 'Pick the supplier first.',
+    date: 'Date',
+    branch: 'Branch',
+    branchHint: 'Whose purchase it was. Without a bill, the debit note books to this branch.',
+    branchFromBill: 'The bill’s branch',
+    pricesIncludeVat: 'Prices include VAT',
+    pricesIncludeVatHint: 'Off: the prices are before VAT. With a bill, it follows the bill.',
+    reason: 'Reason',
+    // The supplier's own credit note (Mushak 6.7), like a bill's 6.3
+    supplierCreditNumber: 'Supplier’s credit note (Mushak 6.7)',
+    supplierCreditNumberHint: 'The number on the supplier’s credit note, if they gave one',
+    supplierCreditNumberPlaceholder: 'CN/2026/0087',
+    supplierCreditDate: 'Credit note date',
+    note: 'Note',
+    notePlaceholder: 'Price cut of ৳3 a cone, agreed with the spinning mill for the October lot.',
+    // Where each line comes from
+    addBillLines: 'Add bill lines',
+    billLinePickerTitle: 'Take bill lines off',
+    billLinePickerDescription:
+      'Each click adds the line as it was billed; lower it to what is taken off. For a price cut, keep the quantity and type the cut per unit as the price.',
+    billLinePickerEmpty: 'Every line of this bill is taken off in full.',
+    addReturns: 'Add returned goods',
+    returnPickerTitle: 'Debit goods sent back',
+    returnPickerDescription:
+      'Goods of this bill that went back on a posted return and are not debited yet. Each click adds them at the bill’s price.',
+    returnPickerOwnDescription:
+      'Goods sent back on a posted return that came from no goods receipt, not debited yet. Each click adds them; type the price and the VAT rate.',
+    returnPickerEmpty: 'No goods went back that are not debited yet.',
+    addExpenses: 'Add bill expenses',
+    expensePickerTitle: 'Take expenses off',
+    expensePickerDescription:
+      'Each click adds the expense with what is left of it; lower the amount to what is taken off.',
+    expensePickerEmpty: 'This bill has no expense left to take off.',
+    fromBillLine: 'Line {{number}} of the bill',
+    fromReturn: 'Goods sent back on {{number}}',
+    leftToDebit: '{{amount}} of this line can still be taken off',
+    expensesTitle: 'Expenses',
+    expensesSubtitle: 'Bill expenses to take money off, like a transport charge billed twice',
+    removeExpense: 'Remove expense {{number}}',
+    expenseAmount: 'Amount taken off',
+    saveDraft: 'Save draft',
+    post: 'Post debit note',
+    posting: 'Posting…',
+    posted: '{{number}} posted',
+    draftSaved: 'Draft saved',
+    deleteDraft: 'Delete draft',
+    confirmDelete: 'Delete this draft',
+    deleteWarning: 'A deleted draft cannot be brought back.',
+    deleted: 'Draft deleted',
+    postHint:
+      'Posting gives it a number and takes it off what you owe the supplier: the goods, their price difference and the VAT input. Its money comes off the bill first; the rest is money the supplier owes you. A posted debit note never changes.',
+    cantWrite:
+      'You can view debit notes. Ask a workspace owner for the purchase.debit_note.manage permission to write and post them.',
+    postedOn: 'Posted {{date}}',
+    entry: 'Journal entry',
+    noEntry: 'No journal entry: nothing is taken off on this debit note',
+    // The debit note's own page
+    applied: 'Applied',
+    refunded: 'Paid back',
+    left: 'Left for later bills',
+    unappliedNotice:
+      '{{amount}} is not applied to a bill yet. Apply it to another bill of the supplier, or record the money when they pay it back.',
+    apply: 'Apply money',
+    applyDialogTitle: 'Apply {{number}}',
+    allocated: '{{number}} applied',
+    refund: 'Record money back',
+    billsTitle: 'Bills it took money off',
+    noAllocations: 'Not applied to any bill.',
+    notFound: "This debit note doesn't exist, or it was a draft that was deleted.",
+    emptyTitle: 'No debit notes yet',
+    emptyBody:
+      'Write one from a posted bill: for goods sent back to the supplier, or a price cut agreed after the bill.',
+    loadFailed: "Couldn't load the debit notes. Refresh the page to try again.",
+  },
+  supplierRefunds: {
+    title: 'Supplier refunds',
+    description: 'Money suppliers paid back to the company',
+    new: 'Record money back',
+    newTitle: 'Record money a supplier paid back',
+    back: 'Supplier refunds',
+    show: 'Show',
+    all: 'All',
+    statuses: { posted: 'Posted', voided: 'Voided' },
+    // What the money paid back was owed on (supplier-refunds.ts → SUPPLIER_REFUND_SOURCE_TYPES)
+    sources: { debit_note: 'Debit note', supplier_payment: 'Supplier payment' },
+    columns: {
+      number: 'Number',
+      supplier: 'Supplier',
+      source: 'Paid back on',
+      method: 'Paid by',
+      amount: 'Amount',
+      status: 'Status',
+    },
+    supplier: 'Supplier',
+    date: 'Date',
+    source: 'Paid back on',
+    sourcePlaceholder: 'Pick a debit note or a payment',
+    sourceHint: 'A debit note or a supplier payment with money not applied to a bill',
+    sourceOption: '{{number}} · {{amount}} left',
+    pickSupplier: 'Pick the supplier to see what they owe back.',
+    noSources: 'This supplier owes nothing back.',
+    amount: 'Amount',
+    amountHint: 'Up to {{amount}}, what is left of {{number}}',
+    account: 'Received into',
+    accountHint: 'A cash, bank or mobile wallet account',
+    accountPlaceholder: 'Pick an account',
+    method: 'Paid by',
+    reference: 'Reference',
+    // An example for each method, the way money coming in from a supplier is written down
+    referencePlaceholders: {
+      cash: 'Cash from their sales officer at the Gazipur office',
+      bank_transfer: 'BEFTN ref 2026102212345',
+      cheque: 'Their cheque 0078812, Eastern Bank Gulshan',
+      mobile_wallet: 'bKash TrxID 9JK3L2M8NR',
+      card: 'Back to the card ending 4821',
+    },
+    branch: 'Branch',
+    note: 'Note',
+    notePlaceholder: 'The mill paid back the advance for the November yarn they could not spin.',
+    save: 'Save refund',
+    saving: 'Saving…',
+    saved: '{{number}} saved',
+    saveHint:
+      'Saving posts it at once: the money comes into the account, and what the supplier owes back goes down.',
+    // The refund's own page
+    void: 'Void refund',
+    voidTitle: 'Void {{number}}',
+    voidBody:
+      'Its entry is reversed on the void date, and the supplier owes the money again. The refund stays in the list with its number.',
+    voidDate: 'Void date',
+    voidDateHint: 'The day it turned out the money never came, like the day their cheque bounced.',
+    voidReason: 'Reason',
+    voidReasonPlaceholder: 'Their cheque bounced',
+    confirmVoid: 'Void refund',
+    keepRefund: 'Keep the refund',
+    voided: '{{number}} voided',
+    voidedNotice: 'Voided on {{date}}: {{reason}}',
+    entry: 'Journal entry',
+    voidEntry: 'Reversal',
+    cantWrite:
+      'You can view supplier refunds. Ask a workspace owner for the purchase.refund.manage permission to record money paid back.',
+    notFound: "This refund doesn't exist.",
+    emptyTitle: 'No supplier refunds yet',
+    emptyBody:
+      'Record money a supplier pays back: what is left of a debit note, or an advance for an order they could not fill.',
+    loadFailed: "Couldn't load the supplier refunds. Refresh the page to try again.",
   },
   // The approval of any document that needs one: the "Waiting for me" page, the approval card on the
   // document's page, and its two dialogs
@@ -3500,6 +3811,9 @@ export const en = {
       refund: 'Refund',
       purchaseOrder: 'Purchase order',
       supplierPayment: 'Payment voucher',
+      purchaseReturn: 'Purchase return',
+      debitNote: 'Debit note',
+      supplierRefund: 'Supplier refund',
     },
     bin: 'BIN {{bin}}',
     phone: 'Phone {{phone}}',
@@ -3555,11 +3869,20 @@ export const en = {
     billsPaid: 'Bills paid',
     supplierBill: 'Supplier’s bill',
     againstOrder: 'Against order',
+    // A purchase return, a debit note and a supplier refund
+    goodsReceipt: 'Goods receipt',
+    sentFrom: 'Sent from',
+    originalBill: 'Original bill',
+    billDate: 'Bill date',
+    supplierCredit: 'Their credit note',
+    receivedInto: 'Received into',
+    paidBackOn: 'Paid back on',
     signatures: {
       customer: 'Customer’s signature',
       receivedBy: 'Received by',
       preparedBy: 'Prepared by',
       authorised: 'Authorised signature',
+      supplier: 'Supplier’s signature',
     },
     // Under the total of a money document; {{words}} is amountInWords() from @omnivo/contracts
     inWords: 'In words: {{words}}',
@@ -3766,6 +4089,9 @@ export const en = {
       payment: {
         manage: 'Pay suppliers, submit payments for approval, apply them to bills and void them',
       },
+      return: { manage: 'Write and post purchase returns: goods go back to a supplier' },
+      debit_note: { manage: 'Write and post debit notes, and apply them to bills' },
+      refund: { manage: 'Record money suppliers pay back, and void supplier refunds' },
     },
   },
   invite: {
@@ -3832,6 +4158,9 @@ export const en = {
       goods_receipt: 'Goods receipts',
       bill: 'Supplier bills',
       supplier_payment: 'Supplier payments',
+      purchase_return: 'Purchase returns',
+      debit_note: 'Debit notes',
+      supplier_refund: 'Supplier refunds',
     },
     columns: {
       when: 'When',
@@ -4077,6 +4406,23 @@ export const en = {
         voided: 'Voided a supplier payment',
       },
       purchase_accounts: { changed: 'Changed the purchase accounts' },
+      purchase_return: {
+        created: 'Wrote a purchase return',
+        updated: 'Edited a draft purchase return',
+        deleted: 'Deleted a draft purchase return',
+        posted: 'Posted a purchase return',
+      },
+      debit_note: {
+        created: 'Wrote a debit note',
+        updated: 'Edited a draft debit note',
+        deleted: 'Deleted a draft debit note',
+        posted: 'Posted a debit note',
+        allocated: 'Applied a debit note to bills',
+      },
+      supplier_refund: {
+        created: 'Recorded money a supplier paid back',
+        voided: 'Voided a supplier refund',
+      },
       approval: {
         submitted: 'Submitted for approval',
         approved: 'Approved a step',
@@ -4208,6 +4554,8 @@ export const en = {
       mushakNumber: 'Mushak 6.3 number',
       expenses: 'Expenses',
       bills: 'Bills',
+      bill: 'Bill',
+      supplierCreditNumber: 'Supplier’s credit note',
       priceDifference: 'Purchase price difference',
       services: 'Purchased services',
     },
@@ -4531,7 +4879,7 @@ export const en = {
     stock_account_invalid: 'Pick an active account of the right type.',
     stock_account_inventory: 'Pick another account: this one is the inventory account itself.',
     journal_account_stock:
-      'Only stock documents post to this account, like inventory, goods in transit or goods received not billed. Use a stock adjustment, a revaluation, a goods receipt or a supplier bill instead.',
+      'Only stock documents post to this account, like inventory, goods in transit or goods received not billed. Use a stock adjustment, a revaluation, a goods receipt, a purchase return, a supplier bill or a debit note instead.',
     journal_is_stock:
       'A stock document made this entry. Post another stock document to correct it.',
     revaluation_no_stock: 'There is no stock of this item to revalue.',
@@ -4726,7 +5074,8 @@ export const en = {
     purchase_date_required: 'Enter the date.',
     purchase_lines_required: 'Add at least one item.',
     purchase_item_invalid: 'Pick an active product. This one is archived or was deleted.',
-    purchase_not_draft: 'This was submitted, so it cannot change. Reopen it first.',
+    purchase_not_draft:
+      'This is no longer a draft, so it cannot change. Reopen it first if it waits for approval; a posted document stays as it is.',
     purchase_was_submitted:
       'This was submitted once, so its approval history stays. Cancel it instead.',
     purchase_cannot_reopen:
@@ -4813,9 +5162,64 @@ export const en = {
     payment_not_posted:
       'Only a posted payment can be applied again or voided. Change a draft’s bills on its form.',
     payment_void_reason_required: 'Say why it is voided, like "Cheque stopped".',
-    payment_void_date: 'The void date cannot be before the day the money was paid.',
+    payment_void_date: 'The void date cannot be before the payment’s or the refund’s own date.',
     journal_is_purchase:
-      'A purchase document made this entry, so it is not reversed here. Void a supplier payment on its own page; a posted bill stays as it is.',
+      'A purchase document made this entry, so it is not reversed here. Void a supplier payment or a supplier refund on its own page; take money off a posted bill with a debit note.',
+    purchase_return_receipt_line_invalid:
+      'This goods receipt line is not a posted line of this supplier, or its item changed, or a bill billed it while you wrote. Reload, then add it again from the goods receipt.',
+    purchase_return_line_twice:
+      'This goods receipt line is on the return twice. Put what goes back on one line.',
+    purchase_return_batch_not_allowed:
+      'Goods from a goods receipt go back in the receipt’s own batch. Clear the batch.',
+    purchase_return_serial_invalid:
+      'One of these serial numbers did not come in on this goods receipt line, or it went back already. Enter the numbers on the goods that go back.',
+    purchase_return_over_received:
+      'This is more than can still go back from this goods receipt line. Another return may have sent some back: reload and lower the quantity.',
+    purchase_return_cost_unknown:
+      'This item has no cost in the books yet, so it cannot go back on its own. Send it back from its goods receipt, or enter its opening stock first.',
+    debit_note_bill_invalid:
+      'Pick a posted bill of this supplier. A draft, a bill waiting for approval or a cancelled bill has nothing to take off.',
+    debit_note_date: 'A debit note cannot be dated before its bill.',
+    debit_note_line_invalid:
+      'This line does not fit the debit note. With a bill, add it again from the bill’s lines; without a bill, add it from the returned goods.',
+    debit_note_return_required:
+      'Without a bill, each line debits goods sent back on a return. Add it from the returned goods.',
+    debit_note_tax_rate_not_allowed:
+      'A line of the bill keeps the VAT the bill charged. Clear the VAT rate.',
+    debit_note_expense_invalid:
+      'This is not an expense of the chosen bill. Add it again from the bill. A debit note without a bill takes no expenses.',
+    debit_note_expense_twice: 'This expense is on the debit note twice. Remove one of them.',
+    debit_note_over_quantity: 'This is more than the bill line billed. Lower the quantity.',
+    debit_note_over_line:
+      'This takes off more than is left on this line of the bill. Lower the amount, the price or the quantity; if another debit note took some off, reload to see what is left.',
+    debit_note_return_invalid:
+      'Pick goods sent back on a posted return of this supplier: with a bill, goods this bill line billed; without one, goods that came from no goods receipt.',
+    debit_note_return_twice:
+      'These returned goods are on the debit note twice. Remove one of the lines.',
+    debit_note_over_return:
+      'This is more than went back on the return, less what is debited already. Lower the quantity; if another debit note took some, reload.',
+    debit_note_supplier_credit_required:
+      'Enter the number on the supplier’s credit note, or clear its date.',
+    debit_note_not_posted: 'Post the debit note before you apply its money.',
+    debit_note_amount_required: 'Enter an amount above 0.',
+    debit_note_allocation_invalid: 'Pick a posted bill of this supplier.',
+    debit_note_bill_twice: 'This bill is on the list twice. Remove one of them.',
+    debit_note_over_allocated:
+      'This applies more than the debit note has left. Lower the amounts on the bills.',
+    debit_note_over_bill:
+      'This is more than the bill still owes. A payment or another debit note may have settled it: reload and lower the amount.',
+    supplier_refund_amount_required: 'Enter the amount paid back, above 0.',
+    supplier_refund_account_invalid:
+      'Pick an active account that holds money, like Cash in hand or a bank account.',
+    supplier_refund_source:
+      'Pick the debit note or the supplier payment this money is paid back on.',
+    supplier_refund_source_invalid:
+      'Pick a posted debit note or supplier payment of this supplier.',
+    supplier_refund_over_source:
+      'This is more than is left to pay back on it. Another refund or a bill may have used some: reload and lower the amount.',
+    supplier_refund_voided: 'This refund is voided and can no longer change. Reload the page.',
+    payment_has_refunds:
+      'The supplier paid some of this payment back. Void that supplier refund first, then the payment.',
     import_options_without_code:
       'Give rows with options a code: rows with the same code are one product.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',

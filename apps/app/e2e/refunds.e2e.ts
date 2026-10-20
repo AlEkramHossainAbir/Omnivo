@@ -67,7 +67,8 @@ test('pays an advance back from its receipt, and voids the refund', async ({ pag
   await page.keyboard.press('Escape');
 
   // The cash never reached Aarong: void the refund, and the advance is back
-  await openFromNav(page, 'Refunds');
+  // Exact: "Supplier refunds" (step 17d) holds the word too
+  await openFromNav(page, /^Refunds$/);
   await listItem(page, /RF-\d{4}-\d{2}-0001/).click();
   await page.getByRole('button', { name: 'Void refund' }).click();
   const dialog = page.getByRole('dialog');

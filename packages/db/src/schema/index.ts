@@ -46,3 +46,6 @@ export * from './purchase-orders.js';
 export * from './goods-receipts.js';
 export * from './bills.js';
 export * from './supplier-payments.js';
+export * from './purchase-returns.js';
+export * from './debit-notes.js';
+export * from './supplier-refunds.js';

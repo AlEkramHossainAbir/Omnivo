@@ -153,6 +153,15 @@ const RECEIVING = ['purchase.receipt.manage'] as const;
 // approval levels (Settings → Approvals) decide who lets a bill or a payment through.
 const BILLING = ['purchase.bill.manage'] as const;
 const PAYING = ['purchase.payment.manage'] as const;
+// Step 17d. Goods that go back to a supplier are loaded by the people who took them in at the gate
+// (the goods receipt's people): a purchase return moves stock, not money. A debit note lowers what
+// the company owes a supplier and the VAT it claims, so it is the accountant's, next to the bills:
+// the person who signed the goods in does not also write down what the company owes for them. A
+// supplier refund is money a supplier pays back against the payable: the accountant's too, next to
+// the payments.
+const SENDING_BACK = ['purchase.return.manage'] as const;
+const DEBITING = ['purchase.debit_note.manage'] as const;
+const TAKING_REFUNDS = ['purchase.refund.manage'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -184,6 +193,9 @@ const ACCOUNTANT: RoleTemplate = {
     // Step 17c: their bills and the payments
     ...BILLING,
     ...PAYING,
+    // Step 17d: debit notes and the money suppliers pay back
+    ...DEBITING,
+    ...TAKING_REFUNDS,
   ],
 };
 
@@ -200,6 +212,7 @@ const STORE_KEEPER: RoleTemplate = {
     ...RETURNING,
     ...REQUESTING,
     ...RECEIVING,
+    ...SENDING_BACK,
   ],
 };
 
@@ -494,6 +507,7 @@ export const INDUSTRY_TEMPLATES = {
           ...RETURNING,
           ...REQUESTING,
           ...RECEIVING,
+          ...SENDING_BACK,
         ],
       },
       {
@@ -568,6 +582,7 @@ export const INDUSTRY_TEMPLATES = {
           ...RETURNING,
           ...REQUESTING,
           ...RECEIVING,
+          ...SENDING_BACK,
         ],
       },
       {
@@ -686,8 +701,11 @@ export const INDUSTRY_TEMPLATES = {
           ...REQUESTING,
           ...BUYING,
           ...RECEIVING,
+          ...SENDING_BACK,
           ...BILLING,
           ...PAYING,
+          ...DEBITING,
+          ...TAKING_REFUNDS,
         ],
       },
       { name: 'Cashier', description: 'Sells at the counter', permissions: [...COLLECTING] },
@@ -747,8 +765,11 @@ export const INDUSTRY_TEMPLATES = {
           ...REQUESTING,
           ...BUYING,
           ...RECEIVING,
+          ...SENDING_BACK,
           ...BILLING,
           ...PAYING,
+          ...DEBITING,
+          ...TAKING_REFUNDS,
         ],
       },
     ],

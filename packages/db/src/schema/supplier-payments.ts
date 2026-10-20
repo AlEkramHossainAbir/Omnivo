@@ -23,6 +23,8 @@ import { tenants } from './tenants.js';
 // Step 17c: supplier payments and the bills their money is applied to. A money receipt the other
 // way round, with an approval in the middle: draft → pending → posted, and a posted payment is
 // voided, never changed. The rules live in migration 0040.
+// Step 17d adds what supplier refunds take back from a payment's advance (refunded; rules in
+// migration 0042).
 
 export const supplierPayments = pgTable(
   'supplier_payments',
@@ -42,6 +44,10 @@ export const supplierPayments = pgTable(
     // (decision 23); only a posted payment's allocations count on the bills. amount − applied is
     // the advance.
     applied: numeric('applied', { precision: 19, scale: 4 }).notNull().default('0'),
+    // Step 17d: what posted supplier refunds took back out of the advance, kept by their trigger
+    // (migration 0042). amount − applied − refunded is the advance that is left
+    // (contracts' unappliedPaymentOf).
+    refunded: numeric('refunded', { precision: 19, scale: 4 }).notNull().default('0'),
     // The cash or bank account it is paid from (a money account: the API checks that)
     accountId: uuid('account_id').notNull(),
     method: text('method', { enum: PAYMENT_METHODS }).notNull(),
@@ -74,10 +80,13 @@ export const supplierPayments = pgTable(
       table.id,
     ),
     // A supplier's money not applied yet (advances): what the bill and payment pages offer to
-    // apply. Partial: once applied in full, a payment leaves it.
+    // apply, and the supplier refund form. Partial: once applied or taken back in full, a payment
+    // leaves it.
     index('supplier_payments_unapplied_idx')
       .on(table.tenantId, table.supplierId, table.date, table.id)
-      .where(sql`${table.status} = 'posted' AND ${table.applied} < ${table.amount}`),
+      .where(
+        sql`${table.status} = 'posted' AND ${table.applied} + ${table.refunded} < ${table.amount}`,
+      ),
     // An order's advances (its page), and the order FK's check
     index('supplier_payments_order_idx')
       .on(table.tenantId, table.orderId)
@@ -117,11 +126,13 @@ export const supplierPayments = pgTable(
       'supplier_payments_posted_check',
       sql`(${table.status} IN ('posted', 'voided')) = (${table.postedAt} IS NOT NULL)`,
     ),
-    // A payment of ৳0 moves no money, and its money is never applied twice over (the plan of a
-    // draft included: payment_over_allocated)
+    // A payment of ৳0 moves no money, and its money is never used twice over: applied (the plan
+    // of a draft included) and taken back together, never more than the amount
+    // (payment_over_allocated, supplier_refund_over_source). Only a posted payment's advance is
+    // taken back.
     check(
       'supplier_payments_amount_check',
-      sql`${table.amount} > 0 AND ${table.applied} >= 0 AND ${table.applied} <= ${table.amount}`,
+      sql`${table.amount} > 0 AND ${table.applied} >= 0 AND ${table.refunded} >= 0 AND ${table.applied} + ${table.refunded} <= ${table.amount} AND (${table.status} = 'posted' OR ${table.refunded} = 0)`,
     ),
     // Voided ⇔ a void date and a reason (200 = the contract's limit). A voided payment pays
     // nothing: its allocations are removed before it is voided.

@@ -3,8 +3,10 @@ import {
   type Bill,
   type BillAdvance,
   billAmountDueOf,
+  type BillDebitNote,
   type BillInput,
   type BillLine,
+  type BillOpenDebitNote,
   type BillPaymentFilter,
   billPaymentStatusOf,
   type BillStatus,
@@ -19,6 +21,7 @@ import {
   expenseLineAmounts,
   isBillOverdue,
   isZeroMoney,
+  keptQuantity,
   type LineAmounts,
   moneyAccountIds,
   overAllocated,
@@ -31,8 +34,11 @@ import {
   type SupplierPaymentInput,
   type SupplierPaymentStatus,
   type SupplierPaymentSummary,
+  type SupplierRefundSourceType,
   toBaseQuantity,
   todayIn,
+  unappliedOf,
+  unappliedPaymentOf,
 } from '@omnivo/contracts';
 
 import { refOf, side } from './invoice-data';
@@ -64,6 +70,10 @@ import type { WorkspaceData } from './workspace-data';
 // 17a engine (requisition-data.ts), and the last approval posts them (decision 7). The mock signs
 // in as the Owner, whose own documents are approved at once, so "Post" and "Submit" post at once
 // here; the waiting bill is the seed's.
+//
+// Step 17d: purchase returns, debit notes and supplier refunds (purchase-return-data.ts, which
+// imports this file). This file reads them through the WorkspaceData type only: what debit notes
+// settled on a bill, what went back before a bill billed it, what refunds paid back of a payment.
 
 // A bill line as stored. The receipt's and the order's numbers and what the goods receipt booked
 // (orderValue) are looked up on read, like the API's joins. A receipt line's lot and serial numbers
@@ -72,10 +82,16 @@ export type MockBillLine = Omit<BillLine, 'receiptNumber' | 'orderNumber' | 'ord
 
 // A bill as stored. What payments paid on it, its line count, its price difference, its receipts,
 // orders, payments, advances and approval history are worked out on read: a payment posted a
-// second ago shows on the bill at once.
+// second ago shows on the bill at once. Step 17d: so are what debit notes settled and debited,
+// the debit notes written for it and the supplier's open ones. Each line's `debited` is stored,
+// like the API's column: a debit note's posting adds to it.
 export type MockBill = Omit<
   Bill,
   | 'amountPaid'
+  | 'amountDebited'
+  | 'debitNoteTotal'
+  | 'debitNotes'
+  | 'openDebitNotes'
   | 'lineCount'
   | 'lines'
   | 'priceDifference'
@@ -92,11 +108,11 @@ export interface MockBillAllocation {
 }
 
 // A payment as stored: the bills it pays (or, while a draft, plans to pay), its order and the
-// supplier's bank account by id. What it applied, the bills' numbers and the bank account's details
-// are looked up on read.
+// supplier's bank account by id. What it applied, what refunds paid back (step 17d), the bills'
+// numbers and the bank account's details are looked up on read.
 export type MockSupplierPayment = Omit<
   SupplierPayment,
-  'applied' | 'allocations' | 'supplierBankAccount' | 'order' | 'approval'
+  'applied' | 'refunded' | 'allocations' | 'supplierBankAccount' | 'order' | 'approval'
 > & {
   allocations: MockBillAllocation[];
   supplierBankAccountId: string | null;
@@ -127,26 +143,27 @@ function moveTo(
   Object.assign(target, { status, version: target.version + 1, updatedAt: now() });
 }
 
-// An active branch, with the purchase documents' own code (the API's assertBranch)
-function assertBranch(data: WorkspaceData, branchId: string): void {
+// An active branch, with the purchase documents' own code (the API's assertBranch). Exported for
+// step 17d's debit notes and refunds, like the next three.
+export function assertBranch(data: WorkspaceData, branchId: string): void {
   const branch = data.branches.find((item) => item.id === branchId);
   if (branch?.archivedAt !== null) throw fieldProblem('purchase_branch_invalid', 'branchId');
 }
 
-function assertPeriodOpen(data: WorkspaceData, date: string): void {
+export function assertPeriodOpen(data: WorkspaceData, date: string): void {
   if (data.journal.lockDate !== null && date <= data.journal.lockDate) {
     throw fieldProblem('journal_period_locked', 'date');
   }
 }
 
-function purposeAccount(data: WorkspaceData, purpose: string): string {
+export function purposeAccount(data: WorkspaceData, purpose: string): string {
   const id = data.accounts.find((account) => account.purpose === purpose)?.id;
   if (id === undefined) throw new Error(`The mock chart has no ${purpose} account`);
   return id;
 }
 
 // A goods receipt line, with its receipt
-function receiptLineOf(data: WorkspaceData, receiptLineId: string) {
+export function receiptLineOf(data: WorkspaceData, receiptLineId: string) {
   for (const receipt of data.purchase.receipts) {
     const line = receipt.lines.find((item) => item.id === receiptLineId);
     if (line) return { receipt, line };
@@ -183,8 +200,80 @@ function paidOn(data: WorkspaceData, billId: string): string {
   );
 }
 
-function dueOn(data: WorkspaceData, bill: MockBill): string {
-  return billAmountDueOf({ total: bill.total, amountPaid: paidOn(data, bill.id) });
+// Step 17d: what posted debit notes applied to it, whichever debit note's money it was. Only a
+// posted debit note has allocations.
+function debitedOn(data: WorkspaceData, billId: string): string {
+  return sumMoney(
+    data.purchase.debitNotes
+      .flatMap((debitNote) => debitNote.allocations)
+      .filter((allocation) => allocation.billId === billId)
+      .map((allocation) => allocation.amount),
+  );
+}
+
+// The posted debit notes written for it, oldest first: the API's debit_note_total adds up their
+// totals, wherever their money went
+function debitNotesFor(data: WorkspaceData, billId: string): BillDebitNote[] {
+  return data.purchase.debitNotes
+    .filter((debitNote) => debitNote.status === 'posted' && debitNote.bill?.id === billId)
+    .toSorted(
+      (a, b) => a.date.localeCompare(b.date) || (a.number ?? '').localeCompare(b.number ?? ''),
+    )
+    .flatMap((debitNote) =>
+      debitNote.number === null
+        ? []
+        : [
+            {
+              id: debitNote.id,
+              number: debitNote.number,
+              date: debitNote.date,
+              total: debitNote.total,
+            },
+          ],
+    );
+}
+
+// What it still owes: less what payments paid and what debit notes settled (step 17d). Exported
+// for the debit note's posting, which applies its money up to this.
+export function dueOn(data: WorkspaceData, bill: MockBill): string {
+  return billAmountDueOf({
+    total: bill.total,
+    amountPaid: paidOn(data, bill.id),
+    amountDebited: debitedOn(data, bill.id),
+  });
+}
+
+// What posted supplier refunds paid back from a debit note or a payment (step 17d): the API's
+// debit_notes.refunded and supplier_payments.refunded, kept by a trigger. A voided refund gave it
+// back.
+export function refundedFrom(
+  data: WorkspaceData,
+  type: SupplierRefundSourceType,
+  id: string,
+): string {
+  return sumMoney(
+    data.purchase.refunds
+      .filter(
+        (refund) =>
+          refund.status === 'posted' && refund.source.type === type && refund.source.id === id,
+      )
+      .map((refund) => refund.amount),
+  );
+}
+
+// Step 17d: receipt line → what posted purchase returns sent back from it before a bill billed it
+// (their line names no bill line): the value those returns took back off goods received not
+// billed, and their serial numbers. The bill bills what was kept, at what the receipt booked less
+// this. The API's returnedBeforeBilling().
+function returnedBeforeBilling(data: WorkspaceData, receiptLineId: string) {
+  const lines = data.purchase.returns
+    .filter((purchaseReturn) => purchaseReturn.status === 'posted')
+    .flatMap((purchaseReturn) => purchaseReturn.lines)
+    .filter((line) => line.receiptLineId === receiptLineId && line.billLineId === null);
+  return {
+    value: sumMoney(lines.map((line) => line.value ?? '0')),
+    serialNumbers: new Set(lines.flatMap((line) => line.serialNumbers)),
+  };
 }
 
 export function billSummaryOf(data: WorkspaceData, stored: MockBill): BillSummary {
@@ -203,6 +292,8 @@ export function billSummaryOf(data: WorkspaceData, stored: MockBill): BillSummar
     vat: stored.vat,
     total: stored.total,
     amountPaid: paidOn(data, stored.id),
+    amountDebited: debitedOn(data, stored.id),
+    debitNoteTotal: sumMoney(debitNotesFor(data, stored.id).map((debitNote) => debitNote.total)),
     lineCount: stored.lines.length,
     postedAt: stored.postedAt,
     version: stored.version,
@@ -223,7 +314,8 @@ function advancesFor(
     .filter((payment) => payment.supplier.id === supplierId && payment.status === 'posted')
     .toSorted((a, b) => a.date.localeCompare(b.date))
     .flatMap((payment): BillAdvance[] => {
-      const unapplied = subtractMoney(payment.amount, appliedOf(payment));
+      // Step 17d: what a supplier refund paid back is not there to apply
+      const unapplied = unappliedPaymentOf(paymentSummaryOf(data, payment));
       if (payment.number === null || compareMoney(unapplied, '0') <= 0) return [];
       const order = data.purchase.orders.find((item) => item.id === payment.orderId);
       return [
@@ -239,6 +331,35 @@ function advancesFor(
     .toSorted((a, b) => linked(b) - linked(a));
 }
 
+// Step 17d: the supplier's posted debit notes with money not applied or paid back yet, oldest
+// first: money the supplier owes the company, which the bill's page offers next to the advances.
+// The API's openDebitNotesOf().
+function openDebitNotesFor(data: WorkspaceData, supplierId: string): BillOpenDebitNote[] {
+  return data.purchase.debitNotes
+    .filter((debitNote) => debitNote.supplier.id === supplierId && debitNote.status === 'posted')
+    .toSorted((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+    .flatMap((debitNote): BillOpenDebitNote[] => {
+      const unapplied = unappliedOf({
+        amount: debitNote.total,
+        applied: sumMoney(debitNote.allocations.map((allocation) => allocation.amount)),
+        refunded: refundedFrom(data, 'debit_note', debitNote.id),
+      });
+      if (debitNote.number === null || compareMoney(unapplied, '0') <= 0) return [];
+      return [
+        {
+          debitNoteId: debitNote.id,
+          debitNoteNumber: debitNote.number,
+          date: debitNote.date,
+          bill:
+            debitNote.bill === null
+              ? null
+              : { id: debitNote.bill.id, number: debitNote.bill.number },
+          unapplied,
+        },
+      ];
+    });
+}
+
 export function toBill(data: WorkspaceData, stored: MockBill): Bill {
   const receipts = new Map<string, MockGoodsReceipt>();
   const orders = new Map<string, MockPurchaseOrder>();
@@ -249,18 +370,24 @@ export function toBill(data: WorkspaceData, stored: MockBill): Bill {
     if (fromReceipt) receipts.set(fromReceipt.receipt.id, fromReceipt.receipt);
     if (fromOrder) orders.set(fromOrder.order.id, fromOrder.order);
     const received = fromReceipt?.line;
+    // Step 17d: goods that went back before the bill were never billed: their value is not in
+    // what the receipt booked for it, and their serial numbers are not printed on it
+    const back = received ? returnedBeforeBilling(data, received.id) : undefined;
+    // What a receipt from an order booked; a receipt a bill made has no order price
+    const booked = received?.orderLineId === null ? null : (received?.value ?? null);
     return {
       ...line,
       receiptNumber: fromReceipt?.receipt.number ?? null,
       orderNumber: fromOrder?.order.number ?? null,
-      // What a receipt from an order booked; a receipt a bill made has no order price
-      orderValue: received && received.orderLineId !== null ? received.value : null,
+      orderValue: booked === null ? null : subtractMoney(booked, back?.value ?? '0'),
       // What the goods came with: the receipt line's, else what a line of its own will bring in
       batchId: received?.batchId ?? null,
       lotNumber: received ? received.lotNumber : line.lotNumber,
       expiresOn: received ? received.expiresOn : line.expiresOn,
       manufacturedOn: received ? received.manufacturedOn : line.manufacturedOn,
-      serialNumbers: received ? received.serialNumbers : line.serialNumbers,
+      serialNumbers: (received ? received.serialNumbers : line.serialNumbers).filter(
+        (serial) => back?.serialNumbers.has(serial) !== true,
+      ),
     };
   });
   const payments = data.purchase.payments
@@ -296,6 +423,8 @@ export function toBill(data: WorkspaceData, stored: MockBill): Bill {
       .map((order): DocumentRef => ({ id: order.id, number: order.number })),
     payments,
     advances: owing ? advancesFor(data, stored.supplier.id, new Set(orders.keys())) : [],
+    debitNotes: debitNotesFor(data, stored.id),
+    openDebitNotes: owing ? openDebitNotesFor(data, stored.supplier.id) : [],
     approval: historyOf(data, 'bill', stored.id),
   };
 }
@@ -382,8 +511,9 @@ function billedElsewhere(data: WorkspaceData, billId: string | null, orderLineId
 }
 
 // The API's checkSources(): a receipt line is on a posted goods receipt of this supplier that a
-// person made from an order (a receipt a bill made is that bill's), of the same item, accepted
-// something, is billed whole (in any unit of the item) and is not billed yet; an order line is a
+// person made from an order (a receipt a bill made is that bill's), of the same item, kept
+// something (step 17d: what was accepted less what posted returns sent back), is billed whole,
+// that is all it kept (in any unit of the item), and is not billed yet; an order line is a
 // service line of an approved, received or closed order of this supplier, billed whole, and not
 // billed by another posted bill. The orders behind the lines must read prices the same way. Run
 // at save, at submit and at posting: a draft holds nothing (decision 29), so another bill may have
@@ -418,10 +548,10 @@ function checkSources(
         found.receipt.status !== 'posted' ||
         found.receipt.billId !== null ||
         found.line.variantId !== line.variantId ||
-        compareQuantity(found.line.baseQuantity, '0') === 0
+        compareQuantity(keptQuantity(found.line), '0') === 0
       ) {
         at('receiptLineId', 'bill_receipt_line_invalid');
-      } else if (base === null || compareQuantity(base, found.line.baseQuantity) !== 0) {
+      } else if (base === null || compareQuantity(base, keptQuantity(found.line)) !== 0) {
         at('quantity', 'bill_receipt_line_quantity');
       } else if (found.line.billed) {
         at('receiptLineId', 'bill_receipt_line_billed');
@@ -750,6 +880,8 @@ export function saveBill(data: WorkspaceData, input: BillFields, existing?: Mock
       accountId: own.accounts[index] ?? null,
       batchId: null,
       ...(own.stock[index] ?? NO_STOCK),
+      // Step 17d: a debit note's posting adds to it, on a posted bill
+      debited: '0.0000',
     };
   });
   const saved: MockBill = {
@@ -783,6 +915,7 @@ export function saveBill(data: WorkspaceData, input: BillFields, existing?: Mock
       net: expense.amounts.net,
       vat: expense.amounts.vat,
       total: expense.amounts.total,
+      debited: '0.0000',
     })),
     entry: null,
     postedAt: null,
@@ -837,8 +970,9 @@ export function submitBill(data: WorkspaceData, target: MockBill): number {
   return steps;
 }
 
-// A journal amount before the lines are summed: + debit, − credit
-interface Amount {
+// A journal amount before the lines are summed: + debit, − credit. Exported with summed() and
+// priceDifferenceAccount() for step 17d's debit notes, which book on the same accounts.
+export interface Amount {
   accountId: string;
   branchId: string;
   partyId: string | null;
@@ -847,7 +981,7 @@ interface Amount {
 
 // Summed per account, branch and party: a bill of 300 receipt lines is a five-line entry. Zero
 // sums drop out.
-function summed(amounts: readonly Amount[]) {
+export function summed(amounts: readonly Amount[]) {
   const sums = new Map<string, Amount>();
   for (const item of amounts) {
     const key = `${item.accountId}|${item.branchId}|${item.partyId ?? ''}`;
@@ -871,7 +1005,7 @@ function summed(amounts: readonly Amount[]) {
 
 // Settings → Purchase's price difference account, or Cost of goods sold when none is chosen
 // (decision 17). Asked for only when a line differs from its order.
-function priceDifferenceAccount(data: WorkspaceData): string {
+export function priceDifferenceAccount(data: WorkspaceData): string {
   const chosen = data.purchaseAccounts.priceDifference;
   if (chosen === null) return purposeAccount(data, 'cost_of_goods_sold');
   const account = data.accounts.find((item) => item.id === chosen);
@@ -941,8 +1075,11 @@ export function postBill(data: WorkspaceData, bill: MockBill): void {
       if (!found) return [];
       const branchId =
         ownBranch.get(line.id) ?? branchOf(data, found.receipt.warehouseId) ?? bill.branchId;
-      // A line of its own came in at its net: no price difference
-      const orderValue = ownBranch.has(line.id) ? line.net : (found.line.value ?? '0');
+      // A line of its own came in at its net: no price difference. Step 17d: what the receipt
+      // booked less what returns took back before this bill (the line bills what was kept).
+      const orderValue = ownBranch.has(line.id)
+        ? line.net
+        : subtractMoney(found.line.value ?? '0', returnedBeforeBilling(data, found.line.id).value);
       return [
         { branchId, orderValue, difference: priceDifferenceOf({ net: line.net, orderValue }) },
       ];
@@ -1052,6 +1189,7 @@ export function paymentSummaryOf(
     supplier: stored.supplier,
     amount: stored.amount,
     applied: appliedOf(stored),
+    refunded: refundedFrom(data, 'supplier_payment', stored.id),
     method: stored.method,
     reference: stored.reference,
     accountId: stored.accountId,
@@ -1064,10 +1202,14 @@ export function paymentSummaryOf(
   };
 }
 
-// The bills it pays (or plans to), oldest due date first: the order the form suggested them in.
-// Money is put only on posted bills, so each has a number.
-function allocationRefs(data: WorkspaceData, payment: MockSupplierPayment): PaymentAllocation[] {
-  return payment.allocations
+// The bills some money pays (or plans to), oldest due date first: the order the form suggested
+// them in. Money is put only on posted bills, so each has a number. A payment's, and a debit
+// note's (step 17d).
+export function allocationRefs(
+  data: WorkspaceData,
+  allocations: readonly MockBillAllocation[],
+): PaymentAllocation[] {
+  return allocations
     .flatMap((allocation) => {
       const bill = data.purchase.bills.find((item) => item.id === allocation.billId);
       const number = bill?.number ?? null;
@@ -1100,7 +1242,7 @@ export function toSupplierPayment(
     ...paymentSummaryOf(data, stored),
     note: stored.note,
     supplierBankAccount: bankAccount ?? null,
-    allocations: allocationRefs(data, stored),
+    allocations: allocationRefs(data, stored.allocations),
     entry: stored.entry,
     voidEntry: stored.voidEntry,
     voidDate: stored.voidDate,
@@ -1131,16 +1273,32 @@ export function listPayments(
 
 type PaymentFields = Omit<SupplierPaymentInput, 'submit'>;
 
+// The codes a row's problems get: a payment's here, a debit note's in purchase-return-data.ts
+// (step 17d)
+export interface BillAllocationErrors {
+  // Not a posted bill of the supplier
+  bill: ErrorCode;
+  // More than the bill still owes
+  over: ErrorCode;
+}
+
+const PAYMENT_ERRORS = {
+  bill: 'payment_bill_invalid',
+  over: 'payment_over_bill',
+} as const satisfies BillAllocationErrors;
+
 // The API's checkBillAllocations(): `wanted` before it replaces `current` (the rows the bills count
 // now: a posted payment's; a draft's plan counts on no bill, so it passes none). Each row names a
-// posted bill of the supplier and fits what it still owes, where this payment's own current row
-// counts as owed again. Every problem at once, under its row.
-function checkBillAllocations(
+// posted bill of the supplier and fits what it still owes (less what debit notes settled, step
+// 17d), where this document's own current row counts as owed again. Every problem at once, under
+// its row. Step 17d: a debit note's money is applied with it too, with its own codes.
+export function checkBillAllocations(
   data: WorkspaceData,
   input: {
     supplierId: string;
     current: readonly MockBillAllocation[];
     wanted: readonly MockBillAllocation[];
+    errors: BillAllocationErrors;
   },
 ): void {
   const had = new Map(input.current.map((allocation) => [allocation.billId, allocation.amount]));
@@ -1151,17 +1309,17 @@ function checkBillAllocations(
     };
     const bill = data.purchase.bills.find((item) => item.id === allocation.billId);
     if (bill?.supplier.id !== input.supplierId || bill.status !== 'posted') {
-      at('billId', 'payment_bill_invalid');
+      at('billId', input.errors.bill);
       return;
     }
     const due = addMoney(dueOn(data, bill), had.get(bill.id) ?? '0');
-    if (compareMoney(allocation.amount, due) > 0) at('amount', 'payment_over_bill');
+    if (compareMoney(allocation.amount, due) > 0) at('amount', input.errors.over);
   });
   if (issues.length > 0) throw issuesError(issues);
 }
 
 // "2500" → "2500.0000", like the API's NUMERIC(19,4)
-function asStored(allocations: readonly MockBillAllocation[]): MockBillAllocation[] {
+export function asStored(allocations: readonly MockBillAllocation[]): MockBillAllocation[] {
   return allocations.map((allocation) => ({
     billId: allocation.billId,
     amount: addMoney(allocation.amount, '0'),
@@ -1190,7 +1348,12 @@ function checkPayment(data: WorkspaceData, supplierId: string, input: PaymentFie
       throw fieldProblem('payment_order_invalid', 'orderId');
     }
   }
-  checkBillAllocations(data, { supplierId, current: [], wanted: input.allocations });
+  checkBillAllocations(data, {
+    supplierId,
+    current: [],
+    wanted: input.allocations,
+    errors: PAYMENT_ERRORS,
+  });
 }
 
 // Create (no `existing`) or change a draft; the plan is saved with it. A numbered draft keeps its
@@ -1255,6 +1418,7 @@ function recheckPayment(data: WorkspaceData, payment: MockSupplierPayment): void
     supplierId: payment.supplier.id,
     current: [],
     wanted: payment.allocations,
+    errors: PAYMENT_ERRORS,
   });
 }
 
@@ -1331,7 +1495,9 @@ export function allocatePayment(
   allocations: readonly MockBillAllocation[],
 ): void {
   assertPosted(payment);
-  if (overAllocated(payment.amount, allocations)) {
+  // Step 17d: what supplier refunds paid back is gone; only the rest can be applied
+  const left = subtractMoney(payment.amount, refundedFrom(data, 'supplier_payment', payment.id));
+  if (overAllocated(left, allocations)) {
     throw new MockProblem(409, 'payment_over_allocated', {
       allocations: ['payment_over_allocated'],
     });
@@ -1340,6 +1506,7 @@ export function allocatePayment(
     supplierId: payment.supplier.id,
     current: payment.allocations,
     wanted: allocations,
+    errors: PAYMENT_ERRORS,
   });
   Object.assign(payment, {
     allocations: asStored(allocations),
@@ -1349,13 +1516,17 @@ export function allocatePayment(
 }
 
 // A bounced cheque: its money comes off the bills, and its entry is reversed on the void date.
-// The payment stays, voided, with its number.
+// The payment stays, voided, with its number. Step 17d: not while a supplier refund paid some of
+// it back: that refund would pay back money that was never paid. Void the refund first.
 export function voidPayment(
   data: WorkspaceData,
   payment: MockSupplierPayment,
   input: { date: string; reason: string },
 ): void {
   assertPosted(payment);
+  if (!isZeroMoney(refundedFrom(data, 'supplier_payment', payment.id))) {
+    throw conflict('payment_has_refunds');
+  }
   if (input.date < payment.date) throw fieldProblem('payment_void_date', 'date');
   if (payment.entry === null) throw new Error(`Supplier payment ${payment.id} has no entry`);
   const reversal = reverseEntry(data, findEntry(data, payment.entry.id), input.date, {

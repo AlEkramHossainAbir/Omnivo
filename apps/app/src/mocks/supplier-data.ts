@@ -420,16 +420,23 @@ export function makeCustomer(data: WorkspaceData, saved: MockSupplier): MockCust
 // supplier-only party is used by any line that names it (journal_lines_party_fk). Step 17b: a
 // purchase order or a goods receipt, drafts too, uses it either way (purchase_orders_supplier_fk,
 // goods_receipts_supplier_fk). Step 17c: a bill or a supplier payment too (bills_supplier_fk,
-// supplier_payments_supplier_fk).
+// supplier_payments_supplier_fk). Step 17d: a purchase return, a debit note or a supplier refund
+// too (purchase_returns_supplier_fk, debit_notes_supplier_fk, supplier_refunds_supplier_fk).
 export function removeSupplier(data: WorkspaceData, target: MockSupplier): void {
   const lines = data.journal.entries.flatMap((entry) => entry.lines);
   const used = target.isCustomer
     ? lines.some((line) => line.party?.id === target.id && isPayable(data, line.accountId))
     : lines.some((line) => line.party?.id === target.id);
-  const { orders, receipts, bills, payments } = data.purchase;
-  const ordered = [...orders, ...receipts, ...bills, ...payments].some(
-    (document) => document.supplier.id === target.id,
-  );
+  const { orders, receipts, bills, payments, returns, debitNotes, refunds } = data.purchase;
+  const ordered = [
+    ...orders,
+    ...receipts,
+    ...bills,
+    ...payments,
+    ...returns,
+    ...debitNotes,
+    ...refunds,
+  ].some((document) => document.supplier.id === target.id);
   if (used || ordered) throw new MockProblem(409, 'supplier_in_use');
   data.suppliers.suppliers = data.suppliers.suppliers.filter((item) => item.id !== target.id);
   const customer = data.sales.customers.find((item) => item.id === target.id);

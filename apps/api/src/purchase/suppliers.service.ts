@@ -107,6 +107,10 @@ const SUPPLIER_IN_USE = [
   // step 17c
   'bills_supplier_fk',
   'supplier_payments_supplier_fk',
+  // step 17d
+  'purchase_returns_supplier_fk',
+  'debit_notes_supplier_fk',
+  'supplier_refunds_supplier_fk',
 ] as const;
 
 // Suppliers (step 17a): the same parties table as the customers, with is_supplier set. This

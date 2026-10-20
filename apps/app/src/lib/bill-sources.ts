@@ -66,6 +66,7 @@ export async function receiptBillLines(
             orderNumber: order?.number ?? null,
             pricesIncludeVat: order?.pricesIncludeVat ?? null,
             orderValue: orderLine ? receiptOrderValue(line, orderLine) : null,
+            returnedQuantity: line.returnedQuantity,
           },
         ],
       };
@@ -93,6 +94,7 @@ export function orderServiceLines(
         orderNumber: order.number,
         pricesIncludeVat: order.pricesIncludeVat,
         orderValue: null,
+        returnedQuantity: '0',
       },
     ],
   }));

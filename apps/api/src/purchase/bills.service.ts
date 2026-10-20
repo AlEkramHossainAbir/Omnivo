@@ -8,6 +8,7 @@ import {
   type BillSummary,
   billAmountDueOf,
   compareMoney,
+  keptQuantity,
   compareQuantity,
   documentTotals,
   dueDateOf,
@@ -23,12 +24,15 @@ import {
   sumMoney,
   toBaseQuantity,
   todayIn,
+  unappliedOf,
+  unappliedPaymentOf,
   type UpdateBillInput,
 } from '@omnivo/contracts';
 import {
   billExpenses,
   billLines,
   bills,
+  debitNotes,
   goodsReceiptLines,
   goodsReceipts,
   ledgerAccounts,
@@ -36,6 +40,8 @@ import {
   products,
   purchaseOrderLines,
   purchaseOrders,
+  purchaseReturnLines,
+  purchaseReturns,
   supplierPaymentAllocations,
   supplierPayments,
   taxRates,
@@ -43,6 +49,7 @@ import {
   warehouses,
 } from '@omnivo/db';
 import { and, asc, desc, eq, inArray, isNull, ne, type SQL, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -83,6 +90,9 @@ type ExpenseRow = typeof billExpenses.$inferSelect;
 
 const cursorSchema = z.tuple([z.iso.date(), z.uuid()]);
 
+// Step 17d: the bill an open debit note was written for, read next to this bill
+const debitedBill = alias(bills, 'debited_bill');
+
 // By the table's name: inside this subquery a bare "id" would be the line's own
 const lineCount = sql<number>`(
   SELECT count(*)::int FROM bill_lines l
@@ -90,8 +100,9 @@ const lineCount = sql<number>`(
 )`;
 
 // Posted and not paid in full: what a payment can still be applied to. The same condition as the
-// two partial indexes (bills_open_supplier_idx, bills_open_due_idx), so they are used.
-const isOpen = sql`${bills.status} = 'posted' AND ${bills.amountPaid} < ${bills.total}`;
+// two partial indexes (bills_open_supplier_idx, bills_open_due_idx), so they are used. Step 17d:
+// money debit notes applied settles a bill like money paid.
+const isOpen = sql`${bills.status} = 'posted' AND ${bills.amountPaid} + ${bills.amountDebited} < ${bills.total}`;
 
 // What a line names, as the form sends it and as the database keeps it. A stored receipt line has
 // both ids (it keeps a copy of its order line), so a receipt line is recognised first.
@@ -111,7 +122,8 @@ interface LineSource {
 }
 
 // A goods receipt line a bill line bills, as the posting needs it: what the receipt booked and
-// where (the branch of its warehouse)
+// where (the branch of its warehouse). Step 17d: what it booked less what purchase returns took
+// back off goods received not billed before the bill.
 interface ReceiptLineInfo {
   orderValue: string;
   warehouseId: string;
@@ -233,6 +245,8 @@ function toSummary(row: BillRow, supplier: PartyRef, lines: number): BillSummary
     vat: row.vat,
     total: row.total,
     amountPaid: row.amountPaid,
+    amountDebited: row.amountDebited,
+    debitNoteTotal: row.debitNoteTotal,
     lineCount: lines,
     postedAt: row.postedAt?.toISOString() ?? null,
     version: row.version,
@@ -240,8 +254,8 @@ function toSummary(row: BillRow, supplier: PartyRef, lines: number): BillSummary
   };
 }
 
-// What a line comes to in its item's base unit: a receipt line is billed whole, in any unit of the
-// item. null when the unit is not one of the item's.
+// What a line comes to in its item's base unit: a receipt line is billed whole (what was kept of
+// it, step 17d), in any unit of the item. null when the unit is not one of the item's.
 function baseQuantityOf(
   line: { unitId: string; quantity: string },
   variant: VariantInfo | undefined,
@@ -800,8 +814,9 @@ export class BillsService {
 
   // What each line bills, checked against the goods receipts and orders it names (decision 4): a
   // receipt line must be on a posted goods receipt of this supplier that a person made from an
-  // order (a receipt a bill made is that bill's), of the same item, accepted something, billed
-  // whole (in any unit of the item) and not billed yet by a posted bill; an order line must be a
+  // order (a receipt a bill made is that bill's), of the same item, kept something (step 17d: what
+  // was accepted less what posted returns sent back), billed whole, that is all it kept (in any
+  // unit of the item), and not billed yet by a posted bill; an order line must be a
   // service line of an approved, received or closed order of this supplier, billed whole, and not
   // billed by another posted bill. A draft bill holds nothing (decision 29). All problems come
   // back at once, under each line.
@@ -824,6 +839,9 @@ export class BillsService {
       line.receiptLineId === null && line.orderLineId !== null ? [line.orderLineId] : [],
     );
     const receiptLines = await this.receiptLines(tx, receiptLineIds, lock);
+    // Step 17d: what posted returns took back off goods received not billed before a bill. Read
+    // after the lock at posting: a return of these lines locks them too (PurchaseReturnsService).
+    const returned = await returnedBeforeBilling(tx, [...receiptLines.keys()]);
     const orderLineIds = [
       ...new Set([
         ...serviceLineIds,
@@ -866,16 +884,19 @@ export class BillsService {
           receipt.status !== 'posted' ||
           receipt.billId !== null ||
           receipt.variantId !== line.variantId ||
-          isZeroQuantity(receipt.baseQuantity)
+          isZeroQuantity(keptQuantity(receipt))
         ) {
           at('receiptLineId', 'bill_receipt_line_invalid');
-        } else if (base === null || compareQuantity(base, receipt.baseQuantity) !== 0) {
+        } else if (base === null || compareQuantity(base, keptQuantity(receipt)) !== 0) {
           at('quantity', 'bill_receipt_line_quantity');
         } else if (receipt.billed) {
           at('receiptLineId', 'bill_receipt_line_billed');
         } else if (receipt.value !== null) {
           found.set(line.receiptLineId, {
-            orderValue: receipt.value,
+            orderValue: subtractMoney(
+              receipt.value,
+              returned.get(line.receiptLineId)?.value ?? '0',
+            ),
             warehouseId: receipt.warehouseId,
           });
         }
@@ -931,7 +952,7 @@ export class BillsService {
   }
 
   // The goods receipt lines a bill names, with their receipt. At posting the lines are locked FOR
-  // NO KEY UPDATE in id order, then read: `billed` is read after the lock.
+  // NO KEY UPDATE in id order, then read: `billed` and `returned_quantity` are read after the lock.
   private async receiptLines(tx: Transaction, ids: readonly string[], lock: 'share' | 'update') {
     const tenantId = getTenantId();
     if (ids.length === 0) return new Map<string, never>();
@@ -940,6 +961,7 @@ export class BillsService {
         id: goodsReceiptLines.id,
         variantId: goodsReceiptLines.variantId,
         baseQuantity: goodsReceiptLines.baseQuantity,
+        returnedQuantity: goodsReceiptLines.returnedQuantity,
         orderLineId: goodsReceiptLines.orderLineId,
         billed: goodsReceiptLines.billed,
         value: goodsReceiptLines.value,
@@ -1321,7 +1343,7 @@ export class BillsService {
     today: string | null,
   ): SQL | undefined {
     if (payment === 'paid') {
-      return sql`${bills.status} = 'posted' AND ${bills.amountPaid} >= ${bills.total}`;
+      return sql`${bills.status} = 'posted' AND ${bills.amountPaid} + ${bills.amountDebited} >= ${bills.total}`;
     }
     if (payment === 'open') return isOpen;
     if (payment === 'overdue') return sql`${isOpen} AND ${bills.dueDate} < ${today}::date`;
@@ -1450,6 +1472,10 @@ export class BillsService {
         .orderBy(asc(supplierPayments.date), asc(supplierPayments.number)),
     ]);
     const receiptLine = new Map(receiptLines.map((line) => [line.id, line]));
+    // Step 17d: goods that went back before the bill were never billed: their value is not in what
+    // the receipt booked for the bill, and their serial numbers are not printed on it. Those that
+    // went back later were billed (a debit note takes their money off), so they stay.
+    const returned = await returnedBeforeBilling(tx, receiptLineIds);
     const batches = await batchesOf(
       tx,
       receiptLines.map((line) => line.batchId),
@@ -1476,8 +1502,9 @@ export class BillsService {
           ? undefined
           : batches.get(receipt.batchId);
       // The order's price is what a receipt from an order booked; a receipt a bill made has none
-      const orderValue =
-        receipt !== undefined && receipt.orderLineId !== null ? receipt.value : null;
+      const back = line.receiptLineId === null ? undefined : returned.get(line.receiptLineId);
+      const booked = receipt?.orderLineId === null ? null : (receipt?.value ?? null);
+      const orderValue = booked === null ? null : subtractMoney(booked, back?.value ?? '0');
       return {
         ...toSalesLine(line, variant),
         receiptLineId: line.receiptLineId,
@@ -1493,21 +1520,43 @@ export class BillsService {
         lotNumber: batch?.lotNumber ?? line.lotNumber,
         expiresOn: batch?.expiresOn ?? line.expiresOn,
         manufacturedOn: batch?.manufacturedOn ?? line.manufacturedOn,
-        serialNumbers: receipt?.serialNumbers ?? line.serialNumbers,
+        serialNumbers: (receipt?.serialNumbers ?? line.serialNumbers).filter(
+          (serial) => back?.serialNumbers.has(serial) !== true,
+        ),
+        debited: line.debited,
       };
     });
     const priceDifference = sumMoney(
       billLinesOut.map((line) => priceDifferenceOf({ net: line.net, orderValue: line.orderValue })),
     );
     const due = billAmountDueOf(row);
-    const [advances, entry, approval] = await Promise.all([
-      row.status === 'posted' && compareMoney(due, '0') > 0
+    const owes = row.status === 'posted' && compareMoney(due, '0') > 0;
+    const [advances, openDebitNotes, debits, entry, approval] = await Promise.all([
+      owes
         ? this.advancesFor(
             tx,
             row.supplierId,
             orderRefs.map((order) => order.id),
           )
         : [],
+      owes ? this.openDebitNotesOf(tx, row.supplierId) : [],
+      // Step 17d: the posted debit notes written for it, oldest first
+      tx
+        .select({
+          id: debitNotes.id,
+          number: debitNotes.number,
+          date: debitNotes.date,
+          total: debitNotes.total,
+        })
+        .from(debitNotes)
+        .where(
+          and(
+            eq(debitNotes.tenantId, tenantId),
+            eq(debitNotes.billId, id),
+            eq(debitNotes.status, 'posted'),
+          ),
+        )
+        .orderBy(asc(debitNotes.date), asc(debitNotes.number)),
       row.status === 'posted' ? this.books.entryOf(tx, id, 'purchase_bill') : null,
       this.approvals.history(tx, 'bill', id),
     ]);
@@ -1532,6 +1581,7 @@ export class BillsService {
         net: expense.net,
         vat: expense.vat,
         total: expense.total,
+        debited: expense.debited,
       })),
       priceDifference,
       receipts: receiptRefs.map((receipt) => ({ id: receipt.id, number: receipt.number })),
@@ -1542,7 +1592,12 @@ export class BillsService {
           ? []
           : [{ ...payment, paymentNumber: payment.paymentNumber }],
       ),
+      // Posted, so each has a number
+      debitNotes: debits.flatMap((debit) =>
+        debit.number === null ? [] : [{ ...debit, number: debit.number }],
+      ),
       advances,
+      openDebitNotes,
       entry,
       approval,
     };
@@ -1558,6 +1613,7 @@ export class BillsService {
         date: supplierPayments.date,
         amount: supplierPayments.amount,
         applied: supplierPayments.applied,
+        refunded: supplierPayments.refunded,
         orderId: purchaseOrders.id,
         orderNumber: purchaseOrders.number,
       })
@@ -1574,7 +1630,8 @@ export class BillsService {
           eq(supplierPayments.tenantId, getTenantId()),
           eq(supplierPayments.supplierId, supplierId),
           eq(supplierPayments.status, 'posted'),
-          sql`${supplierPayments.applied} < ${supplierPayments.amount}`,
+          // Step 17d: what a supplier refund paid back is not there to apply
+          sql`${supplierPayments.applied} + ${supplierPayments.refunded} < ${supplierPayments.amount}`,
         ),
       )
       .orderBy(asc(supplierPayments.date), asc(supplierPayments.id));
@@ -1589,7 +1646,7 @@ export class BillsService {
                 paymentNumber: row.paymentNumber,
                 date: row.date,
                 order: row.orderId === null ? null : { id: row.orderId, number: row.orderNumber },
-                unapplied: subtractMoney(row.amount, row.applied),
+                unapplied: unappliedPaymentOf(row),
               },
             ],
       )
@@ -1598,6 +1655,50 @@ export class BillsService {
           Number(b.order !== null && linked.has(b.order.id)) -
           Number(a.order !== null && linked.has(a.order.id)),
       );
+  }
+
+  // Step 17d: the supplier's posted debit notes with money not applied or paid back yet
+  // (debit_notes_unapplied_idx), oldest first: money the supplier owes the company, which the bill's
+  // page offers next to the advances
+  private async openDebitNotesOf(tx: Transaction, supplierId: string) {
+    const rows = await tx
+      .select({
+        debitNoteId: debitNotes.id,
+        debitNoteNumber: debitNotes.number,
+        date: debitNotes.date,
+        amount: debitNotes.total,
+        applied: debitNotes.applied,
+        refunded: debitNotes.refunded,
+        billId: debitedBill.id,
+        billNumber: debitedBill.number,
+      })
+      .from(debitNotes)
+      .leftJoin(
+        debitedBill,
+        and(eq(debitedBill.tenantId, debitNotes.tenantId), eq(debitedBill.id, debitNotes.billId)),
+      )
+      .where(
+        and(
+          eq(debitNotes.tenantId, getTenantId()),
+          eq(debitNotes.supplierId, supplierId),
+          eq(debitNotes.status, 'posted'),
+          sql`${debitNotes.applied} + ${debitNotes.refunded} < ${debitNotes.total}`,
+        ),
+      )
+      .orderBy(asc(debitNotes.date), asc(debitNotes.id));
+    return rows.flatMap((row) =>
+      row.debitNoteNumber === null
+        ? []
+        : [
+            {
+              debitNoteId: row.debitNoteId,
+              debitNoteNumber: row.debitNoteNumber,
+              date: row.date,
+              bill: row.billId === null ? null : { id: row.billId, number: row.billNumber },
+              unapplied: unappliedOf(row),
+            },
+          ],
+    );
   }
 
   private async supplierOf(tx: Transaction, supplierId: string): Promise<PartyRef> {
@@ -1624,6 +1725,53 @@ export class BillsService {
       expenses,
     };
   }
+}
+
+// Step 17d: receipt line → what posted purchase returns sent back from it before a bill billed it
+// (their line names no bill line, decision 28): the value those returns took back off goods
+// received not billed, and their serial numbers
+async function returnedBeforeBilling(
+  tx: Transaction,
+  receiptLineIds: readonly string[],
+): Promise<Map<string, { value: string; serialNumbers: Set<string> }>> {
+  if (receiptLineIds.length === 0) return new Map();
+  const rows = await tx
+    .select({
+      receiptLineId: purchaseReturnLines.receiptLineId,
+      value: purchaseReturnLines.value,
+      serialNumbers: purchaseReturnLines.serialNumbers,
+    })
+    .from(purchaseReturnLines)
+    .innerJoin(
+      purchaseReturns,
+      and(
+        eq(purchaseReturns.tenantId, purchaseReturnLines.tenantId),
+        eq(purchaseReturns.id, purchaseReturnLines.returnId),
+      ),
+    )
+    .where(
+      and(
+        eq(purchaseReturnLines.tenantId, getTenantId()),
+        inArray(purchaseReturnLines.receiptLineId, [...receiptLineIds]),
+        isNull(purchaseReturnLines.billLineId),
+        eq(purchaseReturns.status, 'posted'),
+      ),
+    );
+  const byLine = new Map<string, { values: string[]; serialNumbers: Set<string> }>();
+  for (const row of rows) {
+    if (row.receiptLineId === null) continue;
+    const sums = byLine.get(row.receiptLineId) ?? { values: [], serialNumbers: new Set() };
+    // A posted return line always has its value (purchase_returns_value_check)
+    sums.values.push(row.value ?? '0');
+    for (const serial of row.serialNumbers) sums.serialNumbers.add(serial);
+    byLine.set(row.receiptLineId, sums);
+  }
+  return new Map(
+    [...byLine].map(([id, sums]) => [
+      id,
+      { value: sumMoney(sums.values), serialNumbers: sums.serialNumbers },
+    ]),
+  );
 }
 
 // A goods line of its own as resolveReceiptLines() takes it: everything accepted, nothing rejected

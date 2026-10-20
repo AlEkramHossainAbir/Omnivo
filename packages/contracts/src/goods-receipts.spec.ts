@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   goodsReceiptInputSchema,
   type GoodsReceiptLineFormValues,
+  keptQuantity,
   receivedOf,
   updateGoodsReceiptInputSchema,
 } from './goods-receipts.js';
@@ -112,5 +113,15 @@ describe('goods receipt input', () => {
   it('keeps its order: the edit form sends no order', () => {
     const parsed = updateGoodsReceiptInputSchema.parse({ ...receipt(), version: 2 });
     expect('orderId' in parsed).toBe(false);
+  });
+});
+
+describe('kept quantity', () => {
+  it('is what was accepted less what purchase returns sent back', () => {
+    expect(keptQuantity({ baseQuantity: '600.0000', returnedQuantity: '0.0000' })).toBe('600.0000');
+    expect(keptQuantity({ baseQuantity: '600.0000', returnedQuantity: '20.0000' })).toBe(
+      '580.0000',
+    );
+    expect(keptQuantity({ baseQuantity: '600.0000', returnedQuantity: '600.0000' })).toBe('0.0000');
   });
 });

@@ -6,7 +6,7 @@ import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { INVOICE_PAYMENT_FILTERS, type PaymentStatus } from './invoices.js';
 import { entryRefSchema, partyRefSchema } from './journal.js';
-import { compareMoney, isZeroMoney, subtractMoney } from './money.js';
+import { addMoney, compareMoney, isZeroMoney, subtractMoney } from './money.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 import { positiveAmountSchema } from './receipts.js';
 import {
@@ -33,11 +33,13 @@ import {
 // posting it books what the company owes: Dr Goods received not billed (for goods a goods receipt
 // already brought in) / Dr the expense account (for services and other costs) / Dr VAT input /
 // Cr Accounts payable (with the supplier). A posted bill is never changed or deleted: a debit note
-// corrects it (17d), and the bill keeps its number and its entry.
+// corrects it (debit-notes.ts, step 17d), and the bill keeps its number and its entry.
 //
 // Each line bills one of these (the same three as a sales invoice, plus costs with no product):
 //   a receipt line   receiptLineId: goods accepted on a posted goods receipt (step 17b). Billed
-//                    whole and once, in any unit of the item. Its price starts at the order's and
+//                    whole and once, in any unit of the item: what the company kept of it
+//                    (keptQuantity, goods-receipts.ts), since goods sent back before the bill
+//                    (step 17d) are never billed. Its price starts at the order's and
 //                    may differ (you chose this): the difference goes to the "Purchase price
 //                    difference" account, never into the stock's value, because the goods receipt
 //                    already took them in at the order's price.
@@ -70,22 +72,36 @@ export const MAX_BILL_LINES = MAX_STOCK_LINES;
 // Costs without a product on one bill: a utility bill has a few, a contractor's bill a few dozen
 export const MAX_BILL_EXPENSES = 100;
 
-// What the company still owes on a bill: its total less what payments applied. Worked out, never
-// stored, like an invoice's amountDueOf. Debit notes (17d) will settle it the same way.
+// What the company still owes on a bill: its total less what payments and debit notes (step 17d)
+// applied. Worked out, never stored, like an invoice's amountDueOf: money a debit note took off
+// settles a bill the same way money paid does.
 interface BillAmounts {
   total: string;
   amountPaid: string;
+  amountDebited: string;
 }
 
 export function billAmountDueOf(bill: BillAmounts): string {
-  return subtractMoney(bill.total, bill.amountPaid);
+  return subtractMoney(bill.total, addMoney(bill.amountPaid, bill.amountDebited));
 }
 
 // unpaid / partly_paid / paid, the invoice's words (invoices.ts → PAYMENT_STATUSES)
 export function billPaymentStatusOf(bill: BillAmounts): PaymentStatus {
+  const settled = addMoney(bill.amountPaid, bill.amountDebited);
   // A ৳0 bill (a free sample billed for the record) owes nothing
-  if (compareMoney(bill.amountPaid, bill.total) >= 0) return 'paid';
-  return isZeroMoney(bill.amountPaid) ? 'unpaid' : 'partly_paid';
+  if (compareMoney(settled, bill.total) >= 0) return 'paid';
+  return isZeroMoney(settled) ? 'unpaid' : 'partly_paid';
+}
+
+// How much of it posted debit notes took off (step 17d), whatever their money was applied to, like
+// an invoice's CREDIT_STATES. debited = every taka of the total; the bill keeps its number and its
+// entry (you chose this: there is no bill void).
+export const DEBIT_STATES = ['none', 'partly_debited', 'debited'] as const;
+export type DebitState = (typeof DEBIT_STATES)[number];
+
+export function debitStateOf(bill: { total: string; debitNoteTotal: string }): DebitState {
+  if (isZeroMoney(bill.debitNoteTotal)) return 'none';
+  return compareMoney(bill.debitNoteTotal, bill.total) >= 0 ? 'debited' : 'partly_debited';
 }
 
 // Overdue: posted, not paid in full, and its due date is before today (the workspace's today). On
@@ -153,8 +169,13 @@ export const billSummarySchema = z.object({
   vat: z.string(),
   // What the company owes the supplier for it, and what the approval levels are chosen by
   total: z.string(),
-  // What posted payments applied to it. billAmountDueOf() is what is still owed.
+  // What posted payments applied to it, and what posted debit notes applied to it (step 17d).
+  // billAmountDueOf() is what is still owed.
   amountPaid: z.string(),
+  amountDebited: z.string(),
+  // The totals of the posted debit notes written for it (step 17d), wherever their money went:
+  // debitStateOf() reads it for the "Debited" pill
+  debitNoteTotal: z.string(),
   lineCount: z.number().int(),
   postedAt: z.iso.datetime().nullable(),
   version: z.number().int(),
@@ -174,8 +195,10 @@ export const billLineSchema = salesLineSchema.extend({
   orderNumber: z.string().nullable(),
   // A service line's expense account; null on a goods line
   accountId: z.uuid().nullable(),
-  // What the goods receipt booked the line's goods at: the order's price (step 17b). null when no
-  // order priced it (a service, a line of its own). net − orderValue is the price difference.
+  // What the goods receipt booked the line's goods at: the order's price (step 17b), less what
+  // purchase returns sent back before the bill took off goods received not billed (step 17d). null
+  // when no order priced it (a service, a line of its own). net − orderValue is the price
+  // difference.
   orderValue: z.string().nullable(),
   // The lot and serial numbers the goods came with: the receipt line's, or what a line of its own
   // brought in
@@ -184,6 +207,9 @@ export const billLineSchema = salesLineSchema.extend({
   expiresOn: z.iso.date().nullable(),
   manufacturedOn: z.iso.date().nullable(),
   serialNumbers: z.array(z.string()),
+  // The totals of the posted debit note lines that debit it (step 17d). A debit note never takes
+  // off more than total − debited.
+  debited: z.string(),
 });
 export type BillLine = z.infer<typeof billLineSchema>;
 
@@ -199,6 +225,8 @@ export const billExpenseSchema = z.object({
   net: z.string(),
   vat: z.string(),
   total: z.string(),
+  // What posted debit notes took off it (step 17d), like a line's
+  debited: z.string(),
 });
 export type BillExpense = z.infer<typeof billExpenseSchema>;
 
@@ -223,6 +251,27 @@ export const billAdvanceSchema = z.object({
 });
 export type BillAdvance = z.infer<typeof billAdvanceSchema>;
 
+// A posted debit note written for this bill (step 17d), and its total
+export const billDebitNoteSchema = z.object({
+  id: z.uuid(),
+  number: z.string(),
+  date: z.iso.date(),
+  total: z.string(),
+});
+export type BillDebitNote = z.infer<typeof billDebitNoteSchema>;
+
+// A posted debit note of the same supplier with money not applied yet (step 17d): money the
+// supplier owes the company, which the person may put on this bill next to the advances
+export const billOpenDebitNoteSchema = z.object({
+  debitNoteId: z.uuid(),
+  debitNoteNumber: z.string(),
+  date: z.iso.date(),
+  // The bill it was written for; null for a debit note without a bill
+  bill: documentRefSchema.nullable(),
+  unapplied: z.string(),
+});
+export type BillOpenDebitNote = z.infer<typeof billOpenDebitNoteSchema>;
+
 export const billSchema = billSummarySchema.extend({
   // The orders' setting when the bill bills orders, else the bill's own
   pricesIncludeVat: z.boolean(),
@@ -239,8 +288,11 @@ export const billSchema = billSummarySchema.extend({
   receipts: z.array(documentRefSchema),
   orders: z.array(documentRefSchema),
   payments: z.array(billPaymentSchema),
+  // The posted debit notes written for it (step 17d)
+  debitNotes: z.array(billDebitNoteSchema),
   // Only while it is posted and not paid in full; empty otherwise
   advances: z.array(billAdvanceSchema),
+  openDebitNotes: z.array(billOpenDebitNoteSchema),
   // What it booked; null until posted, and for a bill of ৳0
   entry: entryRefSchema.nullable(),
   // Every time it was submitted, newest first

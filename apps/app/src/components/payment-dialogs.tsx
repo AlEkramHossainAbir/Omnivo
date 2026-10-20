@@ -2,11 +2,13 @@ import { Calendar03Icon } from '@hugeicons/core-free-icons';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   contractErrorMap,
+  debitNoteAllocationsInputSchema,
+  type PaymentAllocation,
   type PaymentAllocationsFormValues,
+  type PaymentAllocationsInput,
   paymentAllocationsInputSchema,
   plainQuantity,
-  routes,
-  type SupplierPayment,
+  type VoidSupplierPaymentInput,
   voidSupplierPaymentInputSchema,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
@@ -20,45 +22,72 @@ import {
   TextField,
   toast,
 } from '@omnivo/ui';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { lazy, Suspense, useMemo } from 'react';
 import { Controller, type Path, useForm } from 'react-hook-form';
 
-import { call } from '../lib/api';
 import { billAllocationRows } from '../lib/bills';
 import { applyApiError } from '../lib/field-errors';
 import { rowPath } from '../lib/products';
-import { openBillsQuery, supplierPaymentQuery } from '../lib/queries';
+import { openBillsQuery } from '../lib/queries';
 import { AllocationTable, BILL_SIDE } from './allocation-table';
 import { usePurchaseRefresh } from './purchase-parts';
 import { useTenantId } from './stock-parts';
 
-// The dialogs of a posted supplier payment (step 17c), a lazy chunk of their own like the money
-// receipt's (money-dialogs.tsx): "Apply money" and "Void payment". Here, not in money-dialogs.tsx:
-// those refresh the sales documents and check the receipt's error codes; these refresh the
-// purchase documents and check the payment's.
+// The dialogs of the purchase money documents (step 17c), a lazy chunk of their own like the money
+// receipt's (money-dialogs.tsx): "Apply money" on a supplier payment and (step 17d) on a debit note,
+// and "Void" on a supplier payment and (17d) on a supplier refund. Here, not in money-dialogs.tsx:
+// those refresh the sales documents and check the receipt's error codes; these refresh the purchase
+// documents. Step 17d: each document passes what differs (its route, its error codes, its words),
+// so one dialog serves both, as money-dialogs.tsx has done since 15d.
 
 const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
-// "Apply money": where a posted payment's money goes, the whole list at once (decision 23: no
-// approval, the money left already). An advance paid before its bill came is applied here.
-export function PaymentApplyForm({
-  payment,
+// Each document's own error codes for "Apply money": the shape is the same. Here, not on the
+// document's page: a resolver brings the form library, which reading a document never needs.
+const ALLOCATION_RESOLVERS = {
+  supplier_payment: zodResolver(paymentAllocationsInputSchema, { error: contractErrorMap }),
+  debit_note: zodResolver(debitNoteAllocationsInputSchema, { error: contractErrorMap }),
+};
+
+// The void's schema is the payment's for both: voidSupplierRefundInputSchema is the same one
+const voidResolver = zodResolver(voidSupplierPaymentInputSchema, { error: contractErrorMap });
+
+// "Apply money": where a posted document's money goes, the whole list at once (decision 23: no
+// approval, the money left already). An advance paid before its bill came is applied here, and
+// (17d) what a debit note keeps for later bills.
+export function BillApplyForm({
+  title,
+  supplierId,
+  amount,
+  version,
+  allocations,
+  document,
+  save,
   onDone,
 }: {
-  payment: SupplierPayment;
+  title: string;
+  supplierId: string;
+  // What the money can cover: the payment's amount or the debit note's total, less what supplier
+  // refunds paid back (the server's cap; the table's "Left as advance" counts from it)
+  amount: string;
+  version: number;
+  allocations: readonly PaymentAllocation[];
+  // Whose error codes the form checks with
+  document: keyof typeof ALLOCATION_RESOLVERS;
+  // Sends the new list; answers the toast's words
+  save: (body: PaymentAllocationsInput) => Promise<string>;
   onDone: () => void;
 }) {
   const { t } = useLocale();
   const tenantId = useTenantId();
-  const queryClient = useQueryClient();
   const refresh = usePurchaseRefresh();
-  const { data: open } = useQuery(openBillsQuery(tenantId, payment.supplier.id));
-  // Posted: its own amounts are in the bills' amountPaid, so they count back in, and a bill it
-  // paid in full stays on the list
+  const { data: open } = useQuery(openBillsQuery(tenantId, supplierId));
+  // Posted: its own amounts are in the bills' amountPaid (a payment) or amountDebited (a debit
+  // note), so they count back in, and a bill it settled in full stays on the list
   const rows = useMemo(
-    () => billAllocationRows(open ?? [], payment.allocations, true),
-    [open, payment.allocations],
+    () => billAllocationRows(open ?? [], allocations, true),
+    [open, allocations],
   );
   const {
     control,
@@ -66,11 +95,11 @@ export function PaymentApplyForm({
     setError,
     getValues,
     formState: { errors, isSubmitting },
-  } = useForm({
-    resolver: zodResolver(paymentAllocationsInputSchema, { error: contractErrorMap }),
+  } = useForm<PaymentAllocationsFormValues, unknown, PaymentAllocationsInput>({
+    resolver: ALLOCATION_RESOLVERS[document],
     defaultValues: {
-      version: payment.version,
-      allocations: payment.allocations.map((allocation) => ({
+      version,
+      allocations: allocations.map((allocation) => ({
         billId: allocation.billId,
         amount: plainQuantity(allocation.amount),
       })),
@@ -79,13 +108,9 @@ export function PaymentApplyForm({
 
   const onSubmit = handleSubmit(async (values) => {
     try {
-      const saved = await call(routes.supplierPayments.allocate, {
-        params: { id: payment.id },
-        body: values,
-      });
-      queryClient.setQueryData(supplierPaymentQuery(tenantId, saved.id).queryKey, saved);
+      const done = await save(values);
       await refresh();
-      toast(t('supplierPayments.allocated', { number: saved.number ?? '' }));
+      toast(done);
       onDone();
     } catch (error) {
       const count = getValues('allocations').length;
@@ -102,7 +127,7 @@ export function PaymentApplyForm({
 
   return (
     <DialogContent
-      title={t('supplierPayments.applyDialogTitle', { number: payment.number ?? '' })}
+      title={title}
       description={t('supplierPayments.applySubtitle')}
       footer={
         <>
@@ -128,7 +153,7 @@ export function PaymentApplyForm({
                 rows={rows}
                 value={field.value}
                 onChange={field.onChange}
-                amount={payment.amount}
+                amount={amount}
                 errors={{
                   list: errors.allocations?.root?.message ?? errors.allocations?.message,
                   row: (index) =>
@@ -145,22 +170,26 @@ export function PaymentApplyForm({
   );
 }
 
-// "Void payment": the date the money turned out not to have gone (a stopped cheque, a transfer the
-// bank sent back), and why. Its entry is reversed on that date and its money comes off the bills.
-export function PaymentVoidForm({
-  payment,
+// "Void": the date the money turned out not to have moved (a stopped cheque, a transfer the bank
+// sent back, a supplier's cheque that bounced), and why. Its entry is reversed on that date.
+export function PurchaseVoidForm({
+  words,
+  number,
+  version,
   today,
+  save,
   onDone,
 }: {
-  payment: SupplierPayment;
+  // The document's words: both sections have the same void keys
+  words: 'supplierPayments' | 'supplierRefunds';
+  number: string;
+  version: number;
   today: string;
+  save: (body: VoidSupplierPaymentInput) => Promise<void>;
   onDone: () => void;
 }) {
   const { t } = useLocale();
-  const tenantId = useTenantId();
-  const queryClient = useQueryClient();
   const refresh = usePurchaseRefresh();
-  const number = payment.number ?? '';
   const {
     register,
     control,
@@ -168,19 +197,15 @@ export function PaymentVoidForm({
     setError,
     formState: { errors, isSubmitting },
   } = useForm({
-    resolver: zodResolver(voidSupplierPaymentInputSchema, { error: contractErrorMap }),
-    defaultValues: { version: payment.version, date: today, reason: '' },
+    resolver: voidResolver,
+    defaultValues: { version, date: today, reason: '' },
   });
 
   const onSubmit = handleSubmit(async (values) => {
     try {
-      const saved = await call(routes.supplierPayments.void, {
-        params: { id: payment.id },
-        body: values,
-      });
-      queryClient.setQueryData(supplierPaymentQuery(tenantId, saved.id).queryKey, saved);
+      await save(values);
       await refresh();
-      toast(t('supplierPayments.voided', { number }));
+      toast(t(`${words}.voided`, { number }));
       onDone();
     } catch (error) {
       applyApiError(error, ['date', 'reason'], setError);
@@ -189,21 +214,25 @@ export function PaymentVoidForm({
 
   return (
     <DialogContent
-      title={t('supplierPayments.voidTitle', { number })}
-      description={t('supplierPayments.voidBody')}
+      title={t(`${words}.voidTitle`, { number })}
+      description={t(`${words}.voidBody`)}
       footer={
         <>
           <DialogClose asChild>
-            <Button variant="secondary">{t('supplierPayments.keepPayment')}</Button>
+            <Button variant="secondary">
+              {words === 'supplierPayments'
+                ? t('supplierPayments.keepPayment')
+                : t('supplierRefunds.keepRefund')}
+            </Button>
           </DialogClose>
-          <Button type="submit" form="payment-void-form" disabled={isSubmitting}>
-            {t('supplierPayments.confirmVoid')}
+          <Button type="submit" form="purchase-void-form" disabled={isSubmitting}>
+            {t(`${words}.confirmVoid`)}
           </Button>
         </>
       }
     >
       <form
-        id="payment-void-form"
+        id="purchase-void-form"
         noValidate
         onSubmit={(event) => void onSubmit(event)}
         className="grid gap-5"
@@ -212,8 +241,8 @@ export function PaymentVoidForm({
         <FormField
           control={control}
           name="date"
-          label={t('supplierPayments.voidDate')}
-          hint={t('supplierPayments.voidDateHint')}
+          label={t(`${words}.voidDate`)}
+          hint={t(`${words}.voidDateHint`)}
         >
           {(field) => (
             <Suspense fallback={<Input id={field.id} icon={Calendar03Icon} disabled />}>
@@ -222,8 +251,8 @@ export function PaymentVoidForm({
           )}
         </FormField>
         <TextField
-          label={t('supplierPayments.voidReason')}
-          placeholder={t('supplierPayments.voidReasonPlaceholder')}
+          label={t(`${words}.voidReason`)}
+          placeholder={t(`${words}.voidReasonPlaceholder`)}
           {...register('reason')}
           error={errors.reason?.message}
         />

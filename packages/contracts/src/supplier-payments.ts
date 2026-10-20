@@ -1,17 +1,18 @@
 import { z } from 'zod';
 
 import { documentApprovalSchema } from './approvals.js';
-import { errorCode } from './errors.js';
+import { type ErrorCode, errorCode } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { entryRefSchema, partyRefSchema } from './journal.js';
-import { isMoneyAmount, subtractMoney } from './money.js';
+import { isMoneyAmount } from './money.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 import {
   MAX_RECEIPT_ALLOCATIONS,
   overAllocated,
   PAYMENT_METHODS,
   positiveAmountSchema,
+  unappliedOf,
 } from './receipts.js';
 import { documentRefSchema } from './sales.js';
 import { optionalIdSchema } from './stock.js';
@@ -30,8 +31,12 @@ import { supplierBankAccountSchema } from './suppliers.js';
 // against (you chose this): the order's page shows it, and that order's bills offer it first. It
 // is applied later, from the payment's page or the bill's.
 //
+// What the supplier gives back of an advance is a supplier refund (supplier-refunds.ts, step 17d):
+// that money is used up, so it is never also applied to a bill.
+//
 // A posted payment is not edited. A cheque that bounced or a typing mistake is undone by voiding
-// it: its entry is reversed on the void date and its money comes off the bills again.
+// it: its entry is reversed on the void date and its money comes off the bills again. A payment a
+// supplier refund paid back from is not voided (payment_has_refunds): void the refund first.
 //   draft      being written, or sent back by a rejection or a reopen
 //   pending    submitted, waiting for an approval
 //   posted     in the books
@@ -47,9 +52,14 @@ export const SUPPLIER_PAYMENT_STATUSES = [
 ] as const;
 export type SupplierPaymentStatus = (typeof SUPPLIER_PAYMENT_STATUSES)[number];
 
-// What is left of a payment's money to apply: the amount less what is applied to bills
-export function unappliedPaymentOf(payment: { amount: string; applied: string }): string {
-  return subtractMoney(payment.amount, payment.applied);
+// What is left of a payment's money to apply or to get back: the amount less what is applied to
+// bills and what supplier refunds paid back (step 17d). receipts.ts's unappliedOf, by its own name.
+export function unappliedPaymentOf(payment: {
+  amount: string;
+  applied: string;
+  refunded: string;
+}): string {
+  return unappliedOf(payment);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -62,9 +72,11 @@ export const supplierPaymentSummarySchema = z.object({
   date: z.iso.date(),
   supplier: partyRefSchema,
   amount: z.string(),
-  // What is applied to bills; unappliedPaymentOf() is what is left. A draft's allocations are
-  // what the person planned, applied only when it is posted.
+  // What is applied to bills, and what supplier refunds paid back (step 17d);
+  // unappliedPaymentOf() is what is left. A draft's allocations are what the person planned,
+  // applied only when it is posted.
   applied: z.string(),
+  refunded: z.string(),
   // The receipt's methods: cash, bank_transfer, cheque, mobile_wallet, card
   method: z.enum(PAYMENT_METHODS),
   // The cheque number, the BEFTN reference, the bKash TrxID
@@ -114,34 +126,58 @@ export type SupplierPayment = z.infer<typeof supplierPaymentSchema>;
 // ---------------------------------------------------------------------------------------------
 // What the form sends
 
-const allocationsSchema = z
-  .array(
-    z.object({
-      billId: z.uuid(errorCode('payment_bill_invalid')),
-      amount: positiveAmountSchema('payment_amount_required'),
-    }),
-  )
-  .max(MAX_RECEIPT_ALLOCATIONS);
+// The bills some money is applied to: a payment's here, a debit note's in debit-notes.ts (step
+// 17d). Each document names its own error codes, like receipts.ts's AllocationCodes for invoices.
+export interface BillAllocationCodes {
+  // No bill chosen in a row
+  bill: ErrorCode;
+  // An empty or zero amount in a row
+  required: ErrorCode;
+  // The same bill in two rows
+  twice: ErrorCode;
+}
+
+export function billAllocationsSchemaFor(codes: BillAllocationCodes) {
+  return z
+    .array(
+      z.object({
+        billId: z.uuid(errorCode(codes.bill)),
+        amount: positiveAmountSchema(codes.required),
+      }),
+    )
+    .max(MAX_RECEIPT_ALLOCATIONS);
+}
 
 interface AllocationFields {
   allocations: readonly { billId: string; amount: string }[];
 }
 
 // A bill once: two rows for one bill is a slip. Whether each amount fits what the bill still owes
-// only the server knows (payment_over_bill).
-function allocationRules<T extends AllocationFields>(input: T, ctx: z.RefinementCtx<T>): void {
-  const seen = new Set<string>();
-  input.allocations.forEach((allocation, index) => {
-    if (seen.has(allocation.billId)) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['allocations', index, 'billId'],
-        message: errorCode('payment_bill_twice'),
-      });
-    }
-    seen.add(allocation.billId);
-  });
+// only the server knows (payment_over_bill, debit_note_over_bill).
+export function uniqueBillRules(twice: ErrorCode) {
+  return <T extends AllocationFields>(input: T, ctx: z.RefinementCtx<T>): void => {
+    const seen = new Set<string>();
+    input.allocations.forEach((allocation, index) => {
+      if (seen.has(allocation.billId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['allocations', index, 'billId'],
+          message: errorCode(twice),
+        });
+      }
+      seen.add(allocation.billId);
+    });
+  };
 }
+
+const PAYMENT_ALLOCATION_CODES = {
+  bill: 'payment_bill_invalid',
+  required: 'payment_amount_required',
+  twice: 'payment_bill_twice',
+} as const satisfies BillAllocationCodes;
+
+const allocationsSchema = billAllocationsSchemaFor(PAYMENT_ALLOCATION_CODES);
+const allocationRules = uniqueBillRules(PAYMENT_ALLOCATION_CODES.twice);
 
 const supplierPaymentFieldsSchema = z.object({
   supplierId: z.uuid(errorCode('purchase_supplier_required')),
@@ -193,7 +229,8 @@ export type UpdateSupplierPaymentInput = z.infer<typeof updateSupplierPaymentInp
 export type SupplierPaymentFormValues = z.input<typeof updateSupplierPaymentInputSchema>;
 
 // Apply a posted payment's money again: the whole list, as the person left it. The amount is not
-// sent, so the server checks the total against the payment's own (payment_over_allocated).
+// sent, so the server checks the total against the payment's own, less what supplier refunds paid
+// back (payment_over_allocated).
 export const paymentAllocationsInputSchema = z
   .object({ version: versionSchema, allocations: allocationsSchema })
   .superRefine(allocationRules);

@@ -22,7 +22,11 @@ import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
 import { SupplierFilter } from '../components/purchase-parts';
-import { GoodsReceiptBillPill, GoodsReceiptStatusPill } from '../components/purchase-pills';
+import {
+  GoodsReceiptBillPill,
+  GoodsReceiptReturnPill,
+  GoodsReceiptStatusPill,
+} from '../components/purchase-pills';
 import { useIsoDate, useTenantId, useWarehouses, warehouseLabel } from '../components/stock-parts';
 import { useCan } from '../lib/permissions';
 import { goodsReceiptsQuery } from '../lib/queries';
@@ -132,7 +136,11 @@ export function GoodsReceiptsPage() {
             <span className="inline-flex flex-wrap gap-1.5">
               <GoodsReceiptStatusPill status={row.original.status} />
               {row.original.status === 'posted' && (
-                <GoodsReceiptBillPill state={row.original.billState} />
+                <>
+                  <GoodsReceiptBillPill state={row.original.billState} />
+                  {/* Step 17d: nothing went back shows nothing, like a challan's */}
+                  <GoodsReceiptReturnPill state={row.original.returnState} />
+                </>
               )}
             </span>
           ),

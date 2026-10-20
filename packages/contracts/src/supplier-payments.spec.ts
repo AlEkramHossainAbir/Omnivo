@@ -82,9 +82,12 @@ describe('supplier payment input', () => {
     ]);
   });
 
-  it('says what is left to apply', () => {
-    expect(unappliedPaymentOf({ amount: '150000.0000', applied: '100000.0000' })).toBe(
-      '50000.0000',
-    );
+  it('says what is left to apply, less what supplier refunds paid back', () => {
+    expect(
+      unappliedPaymentOf({ amount: '150000.0000', applied: '100000.0000', refunded: '0.0000' }),
+    ).toBe('50000.0000');
+    expect(
+      unappliedPaymentOf({ amount: '150000.0000', applied: '100000.0000', refunded: '20000.0000' }),
+    ).toBe('30000.0000');
   });
 });

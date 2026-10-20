@@ -28,6 +28,8 @@ import { warehouses } from './warehouses.js';
 // (migration 0038). Always made from an approved purchase order (decision 8).
 // Step 17c: or by a bill's own goods lines, with no order (decision 21; rules in migration 0040).
 // Bills mark the lines they bill (billed).
+// Step 17d: purchase returns count what went back from a line (returned_quantity; rules in
+// migration 0042).
 export const goodsReceipts = pgTable(
   'goods_receipts',
   {
@@ -135,6 +137,12 @@ export const goodsReceiptLines = pgTable(
     // Step 17c: a posted bill billed it. Set by the bill's posting, false → true and never back
     // (migration 0040), so one line is never billed twice.
     billed: boolean('billed').notNull().default(false),
+    // Step 17d: in the base unit, what posted purchase returns sent back. Written by the return's
+    // posting, under a lock on the line; it only grows (migration 0042). Until a bill bills the
+    // line, the bill bills base_quantity − returned_quantity (contracts' keptQuantity).
+    returnedQuantity: numeric('returned_quantity', { precision: 19, scale: 4 })
+      .notNull()
+      .default('0'),
   },
   (table) => [
     uniqueIndex('goods_receipt_lines_line_idx').on(table.tenantId, table.receiptId, table.lineNo),
@@ -146,10 +154,11 @@ export const goodsReceiptLines = pgTable(
       table.variantId,
     ),
     // Step 17c: the receipts with something left to bill (the to_bill filter, the bill form).
-    // Partial: once billed, a line leaves it.
+    // Partial: once billed, a line leaves it. A line that all went back before it was billed has
+    // nothing to bill, so it leaves too (step 17d).
     index('goods_receipt_lines_to_bill_idx')
       .on(table.tenantId, table.receiptId)
-      .where(sql`NOT ${table.billed} AND ${table.quantity} > 0`),
+      .where(sql`NOT ${table.billed} AND ${table.returnedQuantity} < ${table.baseQuantity}`),
     // An order line's receipts, and the order line FK's check
     index('goods_receipt_lines_order_line_idx').on(
       table.tenantId,
@@ -217,5 +226,12 @@ export const goodsReceiptLines = pgTable(
       sql`(${table.orderId} IS NULL) = (${table.orderLineId} IS NULL)`,
     ),
     check('goods_receipt_lines_billed_check', sql`NOT ${table.billed} OR ${table.quantity} > 0`),
+    // Step 17d: never more back than was accepted (what was turned back at the gate never came
+    // in): the last word on purchase_return_over_received, also when two returns of one line are
+    // posted at the same moment
+    check(
+      'goods_receipt_lines_returned_check',
+      sql`${table.returnedQuantity} BETWEEN 0 AND ${table.baseQuantity}`,
+    ),
   ],
 );

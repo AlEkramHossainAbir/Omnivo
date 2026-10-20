@@ -247,6 +247,52 @@ export class StockBooksService {
     ]);
   }
 
+  // A purchase return (step 17d): goods received not billed takes back what each line's goods
+  // receipt put on it (Dr, the receipt line's cost, with the branch of the receipt's warehouse, so
+  // that account clears branch by branch), and the goods leave the inventory account at what the
+  // stock gave up (Cr, with the return warehouse's branch). The two differ only when the stock
+  // could not give the receipt's cost (StockPostingService's outflowAt: the last of the stock, or
+  // stock worth less now); the difference goes to the purchase price difference account, which the
+  // caller names only then. A line on its own names the return warehouse and its average cost for
+  // both, so it never differs.
+  async purchaseReturn(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: {
+      warehouseId: string;
+      lines: readonly { receiptWarehouseId: string; value: string; moved: string }[];
+      differenceAccountId: string | null;
+    },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [
+      { warehouseId: input.warehouseId, value: '0' },
+      ...input.lines.map((line) => ({ warehouseId: line.receiptWarehouseId, value: line.value })),
+    ]);
+    const inventoryBranch = branchOf(input.warehouseId);
+    const difference = sumMoney(input.lines.map((line) => subtractMoney(line.moved, line.value)));
+    if (!isZeroMoney(difference) && input.differenceAccountId === null) {
+      throw new Error('A purchase return that differs from its receipts needs an account');
+    }
+    return this.write(tx, document, 'purchase_return', `Purchase return ${document.number}`, [
+      ...input.lines.map((line) => ({
+        accountId: accounts.use('received_not_billed'),
+        branchId: branchOf(line.receiptWarehouseId),
+        amount: line.value,
+      })),
+      ...input.lines.map((line) => ({
+        accountId: accounts.inventory,
+        branchId: inventoryBranch,
+        amount: negateMoney(line.moved),
+      })),
+      ...(isZeroMoney(difference) || input.differenceAccountId === null
+        ? []
+        : [
+            { accountId: input.differenceAccountId, branchId: inventoryBranch, amount: difference },
+          ]),
+    ]);
+  }
+
   // The posted entries of a document, oldest first: an adjustment has at most one, a transfer two
   async entriesOf(tx: Transaction, documentId: string): Promise<EntryRef[]> {
     const rows = await tx

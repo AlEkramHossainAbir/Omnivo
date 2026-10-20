@@ -101,7 +101,19 @@ describe('number series endpoints', () => {
   it('lists every document type with its next number, without using it up', async () => {
     const today = periodOf(todayIn('Asia/Dhaka'), 'fiscal', 7);
     const { items } = numberSeriesListSchema.parse((await send('GET', '/number-series')).json());
-    expect(items.map((series) => series.documentType)).toHaveLength(20);
+    expect(items.map((series) => series.documentType)).toHaveLength(23);
+    // Purchase returns, debit notes and supplier refunds (step 17d): numbered by fiscal year. A
+    // return and a debit note take their number when posted, a refund when saved (it has no draft).
+    for (const [documentType, prefix] of [
+      ['purchase.return', 'PRN'],
+      ['purchase.debit_note', 'DN'],
+      ['purchase.refund', 'SRF'],
+    ] as const) {
+      expect(items.find((series) => series.documentType === documentType)).toMatchObject({
+        prefix,
+        nextNumber: `${prefix}-${today}-0001`,
+      });
+    }
     // Bills and supplier payments (step 17c): numbered by fiscal year when first submitted
     expect(items.find((series) => series.documentType === 'purchase.bill')).toMatchObject({
       prefix: 'BILL',

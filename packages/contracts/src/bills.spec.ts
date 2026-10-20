@@ -5,6 +5,7 @@ import {
   billInputSchema,
   type BillLineFormValues,
   billPaymentStatusOf,
+  debitStateOf,
   expenseLineAmounts,
   isBillOverdue,
   priceDifferenceOf,
@@ -205,7 +206,12 @@ describe('bill amounts', () => {
   });
 
   it('is paid by what payments applied, and overdue only after its due date', () => {
-    const posted = { status: 'posted', dueDate: '2026-11-19', total: '221350.0000' };
+    const posted = {
+      status: 'posted',
+      dueDate: '2026-11-19',
+      total: '221350.0000',
+      amountDebited: '0.0000',
+    };
     expect(billPaymentStatusOf({ ...posted, amountPaid: '0.0000' })).toBe('unpaid');
     expect(billPaymentStatusOf({ ...posted, amountPaid: '100000.0000' })).toBe('partly_paid');
     expect(billAmountDueOf({ ...posted, amountPaid: '100000.0000' })).toBe('121350.0000');
@@ -213,5 +219,27 @@ describe('bill amounts', () => {
     expect(isBillOverdue({ ...posted, amountPaid: '0.0000' }, '2026-11-19')).toBe(false);
     expect(isBillOverdue({ ...posted, amountPaid: '0.0000' }, '2026-11-20')).toBe(true);
     expect(isBillOverdue({ ...posted, amountPaid: '221350.0000' }, '2026-11-20')).toBe(false);
+  });
+
+  it('owes less by what debit notes applied, like money paid (step 17d)', () => {
+    // 20 m of torn jersey went back: a debit note of ৳7,245 applied to the bill
+    const posted = {
+      status: 'posted',
+      dueDate: '2026-11-19',
+      total: '221350.0000',
+      amountDebited: '7245.0000',
+    };
+    expect(billAmountDueOf({ ...posted, amountPaid: '0.0000' })).toBe('214105.0000');
+    expect(billPaymentStatusOf({ ...posted, amountPaid: '0.0000' })).toBe('partly_paid');
+    expect(billPaymentStatusOf({ ...posted, amountPaid: '214105.0000' })).toBe('paid');
+    expect(isBillOverdue({ ...posted, amountPaid: '214105.0000' }, '2026-11-20')).toBe(false);
+  });
+
+  it('is debited by the posted debit notes written for it, wherever their money went', () => {
+    expect(debitStateOf({ total: '221350.0000', debitNoteTotal: '0.0000' })).toBe('none');
+    expect(debitStateOf({ total: '221350.0000', debitNoteTotal: '7245.0000' })).toBe(
+      'partly_debited',
+    );
+    expect(debitStateOf({ total: '221350.0000', debitNoteTotal: '221350.0000' })).toBe('debited');
   });
 });

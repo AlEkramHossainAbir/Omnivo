@@ -3,6 +3,7 @@ import {
   addQuantity,
   type AdjustmentLine,
   type BatchStock,
+  compareMoney,
   compareQuantity,
   defaultNumberFormat,
   type ErrorCode,
@@ -169,6 +170,16 @@ function outflowValue(state: ValueState, quantity: string): string {
   }
   const beyond = positive ? subtractQuantity(quantity, state.quantity) : quantity;
   return addMoney(positive ? state.value : '0', multiplyMoney(beyond, state.unitCost ?? '0'));
+}
+
+// Step 17d, the API's outflowAt(): what a move out that names its value takes. The named value,
+// so the average of what stays is worked out again, within two limits that keep the stock's value
+// true: the last of the stock takes all of its value, and no part takes more than the stock is
+// worth. With no stock to go by, the named value. The caller books any difference.
+function outflowAt(state: ValueState, quantity: string, given: string): string {
+  if (compareQuantity(state.quantity, '0') <= 0) return given;
+  if (compareQuantity(quantity, state.quantity) >= 0) return outflowValue(state, quantity);
+  return compareMoney(given, state.value) > 0 ? state.value : given;
 }
 
 function now(): string {
@@ -755,7 +766,9 @@ interface Move {
   batchId: string | null;
   quantity: string;
   serialNumbers: string[];
-  // An "in" move's value; null = at the average cost (step 14)
+  // An "in" move's value; null = at the average cost (step 14). Step 17d: an "out" move may name
+  // one too (a purchase return leaves at its goods receipt line's cost); outflowAt() decides what
+  // it really takes.
   value?: string | null;
 }
 
@@ -825,7 +838,11 @@ export function postMoves(
     const state = states.get(variantId) ?? valueOf(stock, variantId);
     let value: string;
     if (posting.direction === 'out') {
-      value = outflowValue(state, move.quantity);
+      const given = move.value ?? null;
+      value =
+        given === null
+          ? outflowValue(state, move.quantity)
+          : outflowAt(state, move.quantity, given);
       states.set(variantId, applyValue(state, negateQuantity(move.quantity), negateMoney(value)));
     } else {
       const given = move.value ?? null;

@@ -40,6 +40,9 @@ export const PERMISSION_KEYS = [
   'purchase.receipt.manage',
   'purchase.bill.manage',
   'purchase.payment.manage',
+  'purchase.return.manage',
+  'purchase.debit_note.manage',
+  'purchase.refund.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -101,4 +104,7 @@ export const PERMISSION_GROUP_OF = {
   'purchase.receipt.manage': 'purchase',
   'purchase.bill.manage': 'purchase',
   'purchase.payment.manage': 'purchase',
+  'purchase.return.manage': 'purchase',
+  'purchase.debit_note.manage': 'purchase',
+  'purchase.refund.manage': 'purchase',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

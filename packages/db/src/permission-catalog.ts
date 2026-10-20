@@ -49,6 +49,9 @@ const DESCRIPTIONS = {
   'purchase.receipt.manage': 'Write and post goods receipts, which bring stock in',
   'purchase.bill.manage': 'Write, submit, reopen and cancel supplier bills',
   'purchase.payment.manage': 'Write, submit, apply and void supplier payments',
+  'purchase.return.manage': 'Write and post purchase returns, which send stock back to suppliers',
+  'purchase.debit_note.manage': 'Write and post debit notes, and apply their money to bills',
+  'purchase.refund.manage': 'Record money suppliers paid back, and void supplier refunds',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

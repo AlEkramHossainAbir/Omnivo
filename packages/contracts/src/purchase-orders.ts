@@ -23,7 +23,9 @@ import { optionalDateSchema, optionalIdSchema } from './stock.js';
 //   draft      being written, or sent back by a rejection or a reopen
 //   pending    submitted, waiting for an approval
 //   approved   may be sent and received; partlyReceived says whether some of it came already
-//   received   every goods line came in full (set by the goods receipt that finished it)
+//   received   every goods line came in full (set by the goods receipt that finished it). A
+//              purchase return before the bill (step 17d) takes it back to approved, partly
+//              received, so the supplier can send the goods again on the same order.
 //   closed     partly received, and the rest will not come: the mill delivered 900 of 1,000 m
 //   cancelled  will not be bought: a draft that was submitted once, or an approved order before
 //              anything was received
@@ -87,9 +89,11 @@ export type RequisitionLineRef = z.infer<typeof requisitionLineRefSchema>;
 // this), so the order shows the totals the supplier's bill will show
 export const purchaseOrderLineSchema = salesLineSchema.extend({
   requisitionLine: requisitionLineRefSchema.nullable(),
-  // In the base unit, by posted goods receipts: what came in and was accepted. It may pass the
-  // ordered quantity by the workspace's tolerance (settings.ts). A service line stays at zero: it
-  // is never received, the bill (17c) takes it straight from the order.
+  // In the base unit, by posted goods receipts: what came in and was accepted, less what posted
+  // purchase returns sent back before a bill billed it (step 17d; after the bill the order is not
+  // touched). It may pass the ordered quantity by the workspace's tolerance (settings.ts). A
+  // service line stays at zero: it is never received, the bill (17c) takes it straight from the
+  // order.
   receivedQuantity: z.string(),
   // In the base unit, by posted goods receipts: what came and was turned back at the gate. It
   // does not count as received; the supplier still owes it.

@@ -24,8 +24,10 @@ import {
   Logout01Icon,
   MoneyExchange01Icon,
   MoneyReceive02Icon,
+  MoneyReceiveCircleIcon,
   MoneySend02Icon,
   Note01Icon,
+  NoteRemoveIcon,
   Notebook02Icon,
   PackageIcon,
   PackageOutOfStockIcon,
@@ -43,6 +45,7 @@ import {
   TaskAdd01Icon,
   TaskEdit01Icon,
   TextIcon,
+  TruckReturnIcon,
   UnfoldMoreIcon,
   UserCheck01Icon,
   UserCircleIcon,
@@ -377,6 +380,18 @@ export function AppShell() {
             </NavLink>
             <NavLink to="/supplier-payments" icon={Payment02Icon}>
               {t('nav.supplierPayments')}
+            </NavLink>
+            {/* Step 17d: what goes back, what comes off the bill, and what the supplier pays back,
+                after the payments like the sales side's returns after its receipts. Their own
+                icons, not the sales return's and credit note's, for the same reason as above. */}
+            <NavLink to="/purchase-returns" icon={TruckReturnIcon}>
+              {t('nav.purchaseReturns')}
+            </NavLink>
+            <NavLink to="/debit-notes" icon={NoteRemoveIcon}>
+              {t('nav.debitNotes')}
+            </NavLink>
+            <NavLink to="/supplier-refunds" icon={MoneyReceiveCircleIcon}>
+              {t('nav.supplierRefunds')}
             </NavLink>
             <NavLink
               to="/approvals"

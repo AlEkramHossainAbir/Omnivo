@@ -19,6 +19,7 @@ import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js
 import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
+import { debitNoteRoutes } from './debit-notes.js';
 import { deliveryRoutes } from './deliveries.js';
 import { documentOutputRoutes, publicDocumentRoutes } from './document-output.js';
 import { goodsReceiptRoutes } from './goods-receipts.js';
@@ -29,6 +30,7 @@ import { productRoutes } from './products.js';
 import { purchaseCostRoutes } from './purchase.js';
 import { purchaseAccountRoutes } from './purchase-accounts.js';
 import { purchaseOrderRoutes } from './purchase-orders.js';
+import { purchaseReturnRoutes } from './purchase-returns.js';
 import { quotationRoutes } from './quotations.js';
 import { receiptRoutes } from './receipts.js';
 import { refundRoutes } from './refunds.js';
@@ -46,6 +48,7 @@ import { stockRevaluationRoutes } from './stock-revaluations.js';
 import { stockTransferRoutes } from './stock-transfers.js';
 import { stockRoutes } from './stock.js';
 import { supplierPaymentRoutes } from './supplier-payments.js';
+import { supplierRefundRoutes } from './supplier-refunds.js';
 import { supplierGroupRoutes, supplierRoutes } from './suppliers.js';
 import { taxRateRoutes } from './tax-rates.js';
 import { unitRoutes } from './units.js';
@@ -125,4 +128,7 @@ export const routes = {
   bills: billRoutes,
   supplierPayments: supplierPaymentRoutes,
   purchaseAccounts: purchaseAccountRoutes,
+  purchaseReturns: purchaseReturnRoutes,
+  debitNotes: debitNoteRoutes,
+  supplierRefunds: supplierRefundRoutes,
 };

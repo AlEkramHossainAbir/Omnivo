@@ -4,12 +4,14 @@ import { errorCode } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { entryRefSchema, partyRefSchema } from './journal.js';
+import { DELIVERY_RETURN_STATES } from './deliveries.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 import {
   addQuantity,
   isQuantityOrZero,
   isZeroQuantity,
   receivedQuantitySchema,
+  subtractQuantity,
 } from './quantities.js';
 import { documentRefSchema } from './sales.js';
 import { STOCK_DOCUMENT_STATUSES } from './stock-adjustments.js';
@@ -40,9 +42,22 @@ import {
 
 // How much of a posted receipt the supplier's bills bill (step 17c). A bill bills each of its lines
 // whole, so a receipt is partly billed only when a bill left some of its lines out. A draft is
-// not_billed. A line that accepted nothing has nothing to bill and does not count either way.
+// not_billed. A line that accepted nothing, or whose goods all went back before a bill billed them
+// (step 17d), has nothing to bill and does not count either way.
 export const GRN_BILL_STATES = ['not_billed', 'partly_billed', 'billed'] as const;
 export type GrnBillState = (typeof GRN_BILL_STATES)[number];
+
+// How much of a posted receipt went back to the supplier on posted purchase returns (step 17d), the
+// challan's words: nothing, some of it, all it accepted
+export const GRN_RETURN_STATES = DELIVERY_RETURN_STATES;
+export type GrnReturnState = (typeof GRN_RETURN_STATES)[number];
+
+// What the company kept of a line, in the base unit: what was accepted less what purchase returns
+// sent back (step 17d). It is what can still go back, and, while no bill billed the line, what a
+// bill bills: a return before the bill means the supplier is never billed for those goods.
+export function keptQuantity(line: { baseQuantity: string; returnedQuantity: string }): string {
+  return subtractQuantity(line.baseQuantity, line.returnedQuantity);
+}
 
 // What came off the truck for a line: what was accepted (and goes into stock) plus what was turned
 // back. The form shows it under the two boxes; a person counting at the gate thinks in it.
@@ -73,6 +88,7 @@ export const goodsReceiptSummarySchema = z.object({
   note: z.string().nullable(),
   lineCount: z.number().int(),
   billState: z.enum(GRN_BILL_STATES),
+  returnState: z.enum(GRN_RETURN_STATES),
   postedAt: z.iso.datetime().nullable(),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),
@@ -94,6 +110,9 @@ export const goodsReceiptLineSchema = stockLineSchema.extend({
   value: z.string().nullable(),
   // Billed by a posted bill (step 17c)
   billed: z.boolean(),
+  // What went back on posted purchase returns, in the base unit (step 17d), before the bill or
+  // after it. keptQuantity() is what stayed.
+  returnedQuantity: z.string(),
 });
 export type GoodsReceiptLine = z.infer<typeof goodsReceiptLineSchema>;
 
@@ -104,6 +123,8 @@ export const goodsReceiptSchema = goodsReceiptSummarySchema.extend({
   entry: entryRefSchema.nullable(),
   // The posted bills that bill its lines (step 17c); a receipt a bill made has that one
   bills: z.array(documentRefSchema),
+  // The posted purchase returns that sent some of its goods back (step 17d)
+  returns: z.array(documentRefSchema),
 });
 export type GoodsReceipt = z.infer<typeof goodsReceiptSchema>;
 
@@ -190,10 +211,15 @@ export const deleteGoodsReceiptQuerySchema = z.object({
   version: z.coerce.number<number>().int().min(1),
 });
 
-// to_bill: posted, with a line that accepted something and no posted bill bills yet — what the
-// bill form offers (step 17c). billed: every such line billed.
+// to_bill: posted, with a line that kept something (keptQuantity) and no posted bill bills yet —
+// what the bill form offers (step 17c). billed: every such line billed.
 export const GRN_BILL_FILTERS = ['to_bill', 'billed'] as const;
 export type GrnBillFilter = (typeof GRN_BILL_FILTERS)[number];
+
+// returnable: posted, with a line that still keeps something — what the purchase return form
+// offers (step 17d), the challan's filter of 15d
+export const GRN_RETURN_FILTERS = ['returnable'] as const;
+export type GrnReturnFilter = (typeof GRN_RETURN_FILTERS)[number];
 
 export const goodsReceiptListQuerySchema = pageQuerySchema.extend({
   status: z.enum(STOCK_DOCUMENT_STATUSES).optional(),
@@ -201,6 +227,7 @@ export const goodsReceiptListQuerySchema = pageQuerySchema.extend({
   warehouseId: z.uuid().optional(),
   orderId: z.uuid().optional(),
   bill: z.enum(GRN_BILL_FILTERS).optional(),
+  return: z.enum(GRN_RETURN_FILTERS).optional(),
 });
 export type GoodsReceiptListQuery = z.input<typeof goodsReceiptListQuerySchema>;
 

@@ -31,6 +31,11 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // Inventory / Cr Goods received not billed). A stock document like a delivery.
 // purchase_bill, purchase_payment (step 17c): a supplier's bill (goods received not billed or the
 // expense, VAT input, the payable) and a supplier payment (the payable, a cash or bank account).
+// purchase_return (step 17d): goods sent back to a supplier leave stock at what they came in at (Dr
+// Goods received not billed / Cr Inventory). A stock document like a goods receipt.
+// purchase_debit_note, purchase_refund (step 17d): a debit note takes money off what the company
+// owes a supplier (the payable, goods received not billed, the price difference, VAT input), and a
+// supplier refund is money a supplier paid back into a cash or bank account.
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -48,6 +53,9 @@ export const JOURNAL_SOURCES = [
   'purchase_receipt',
   'purchase_bill',
   'purchase_payment',
+  'purchase_return',
+  'purchase_debit_note',
+  'purchase_refund',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -63,6 +71,7 @@ export const STOCK_JOURNAL_SOURCES = [
   'sales_delivery',
   'sales_return',
   'purchase_receipt',
+  'purchase_return',
 ] as const satisfies readonly JournalSource[];
 export type StockJournalSource = (typeof STOCK_JOURNAL_SOURCES)[number];
 
@@ -86,11 +95,13 @@ export function isSalesJournalSource(value: string): value is SalesJournalSource
 }
 
 // The sources a purchase document posts (step 17c). Like the sales ones, the journal's Reverse
-// refuses them (journal_is_purchase): a bill is corrected by a debit note (17d), a payment by
-// voiding it on its own page.
+// refuses them (journal_is_purchase): a bill is corrected by a debit note (17d), a payment or a
+// supplier refund by voiding it on its own page. A debit note is never undone.
 export const PURCHASE_JOURNAL_SOURCES = [
   'purchase_bill',
   'purchase_payment',
+  'purchase_debit_note',
+  'purchase_refund',
 ] as const satisfies readonly JournalSource[];
 export type PurchaseJournalSource = (typeof PURCHASE_JOURNAL_SOURCES)[number];
 

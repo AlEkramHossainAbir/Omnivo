@@ -364,14 +364,16 @@ export class AccountsService {
       }
       // Journal lines point at it (a draft's too): the history must keep its account
       // Money receipts and refunds name it too (steps 15c, 15d), though each one's entry already does,
-      // and so do a bill's lines and expenses and a supplier payment (step 17c), even as a draft
+      // and so do a bill's lines and expenses and a supplier payment (step 17c), even as a draft,
+      // and a supplier refund (step 17d)
       if (
         isForeignKeyViolation(error, 'journal_lines_account_fk') ||
         isForeignKeyViolation(error, 'receipts_account_fk') ||
         isForeignKeyViolation(error, 'refunds_account_fk') ||
         isForeignKeyViolation(error, 'bill_lines_account_fk') ||
         isForeignKeyViolation(error, 'bill_expenses_account_fk') ||
-        isForeignKeyViolation(error, 'supplier_payments_account_fk')
+        isForeignKeyViolation(error, 'supplier_payments_account_fk') ||
+        isForeignKeyViolation(error, 'supplier_refunds_account_fk')
       ) {
         throw new AppError(409, 'account_in_use', 'Archive this account instead: entries use it.');
       }

@@ -5,6 +5,7 @@ import {
   isZeroMoney,
   negateMoney,
   type PurchaseJournalSource,
+  subtractMoney,
   sumMoney,
 } from '@omnivo/contracts';
 import {
@@ -50,6 +51,21 @@ export interface BillPosting {
   costs: readonly { accountId: string; net: string }[];
 }
 
+// What a debit note's entry is made of (step 17d), as DebitNotesService works it out
+export interface DebitNotePosting {
+  supplierId: string;
+  // The bill's branch, or the one a debit note without a bill names
+  branchId: string;
+  vat: string;
+  total: string;
+  // Each goods line: its net, and what it takes off goods received not billed when it names a
+  // return line (that return line's share of what the return put there, with the branch it put it
+  // on); the rest of the net is the price difference
+  goods: readonly { net: string; receivedNotBilled: { branchId: string; value: string } | null }[];
+  // Each service line and expense: the account the bill charged, and the net taken off
+  costs: readonly { accountId: string; net: string }[];
+}
+
 function missing(what: string): AppError {
   return new AppError(
     409,
@@ -80,7 +96,10 @@ export class PurchaseBooksService {
   // bill of ৳0 has no entry, like an invoice of ৳0.
   async bill(tx: Transaction, document: DocumentRef, input: BillPosting): Promise<EntryRef | null> {
     if (isZeroMoney(input.total)) return null;
-    const accounts = await this.billAccounts(tx, input);
+    const accounts = await this.billAccounts(tx, {
+      receivedNotBilled: input.goods.length > 0,
+      priceDifference: input.goods.some((line) => !isZeroMoney(line.difference)),
+    });
     const amounts: Amount[] = [
       ...input.goods.flatMap((line) => [
         {
@@ -117,6 +136,137 @@ export class PurchaseBooksService {
       },
     ];
     return this.write(tx, document, 'purchase_bill', `Bill ${document.number}`, summed(amounts));
+  }
+
+  // A debit note (step 17d), the bill's entry the other way round (decision 1):
+  //   Dr Accounts payable              the total, with the supplier
+  //   Cr Goods received not billed     for goods that went back: what their return put on it, each
+  //                                    with that branch, so the account is zero again for them
+  //   Cr / Dr Purchase price diff.     the rest of each goods line's net (decision 22)
+  //   Cr each expense account          a service line's or an expense's net
+  //   Cr VAT input                     the VAT (decision 8)
+  // All with the debit note's branch but the goods received not billed lines. A debit note of ৳0
+  // has no entry.
+  async debitNote(
+    tx: Transaction,
+    document: DocumentRef,
+    input: DebitNotePosting,
+  ): Promise<EntryRef | null> {
+    if (isZeroMoney(input.total)) return null;
+    const differences = input.goods.map((line) =>
+      subtractMoney(line.net, line.receivedNotBilled?.value ?? '0'),
+    );
+    // A price cut alone needs no goods received not billed account
+    const accounts = await this.billAccounts(tx, {
+      receivedNotBilled: input.goods.some((line) => line.receivedNotBilled !== null),
+      priceDifference: differences.some((difference) => !isZeroMoney(difference)),
+    });
+    const amounts: Amount[] = [
+      {
+        accountId: accounts.payable,
+        branchId: input.branchId,
+        partyId: input.supplierId,
+        amount: input.total,
+      },
+      ...input.goods.flatMap((line, index) => {
+        const difference = differences[index] ?? '0';
+        return [
+          ...(line.receivedNotBilled === null
+            ? []
+            : [
+                {
+                  accountId: accounts.receivedNotBilled(),
+                  branchId: line.receivedNotBilled.branchId,
+                  partyId: null,
+                  amount: negateMoney(line.receivedNotBilled.value),
+                },
+              ]),
+          ...(isZeroMoney(difference)
+            ? []
+            : [
+                {
+                  accountId: accounts.priceDifference(),
+                  branchId: input.branchId,
+                  partyId: null,
+                  amount: negateMoney(difference),
+                },
+              ]),
+        ];
+      }),
+      ...input.costs.map((cost) => ({
+        accountId: cost.accountId,
+        branchId: input.branchId,
+        partyId: null,
+        amount: negateMoney(cost.net),
+      })),
+      {
+        accountId: accounts.vatInput,
+        branchId: input.branchId,
+        partyId: null,
+        amount: negateMoney(input.vat),
+      },
+    ];
+    return this.write(
+      tx,
+      document,
+      'purchase_debit_note',
+      `Debit note ${document.number}`,
+      summed(amounts),
+    );
+  }
+
+  // A supplier refund (step 17d): money the supplier paid back. Dr the cash, bank or wallet account
+  // / Cr Accounts payable (the supplier), both with the refund's branch: the payable goes back up by
+  // what the debit note or the advance had taken off it.
+  async refund(
+    tx: Transaction,
+    document: DocumentRef,
+    input: { supplierId: string; branchId: string; accountId: string; amount: string },
+  ): Promise<EntryRef> {
+    const payable = await this.purposeAccount(tx, 'accounts_payable');
+    const entry = await this.write(
+      tx,
+      document,
+      'purchase_refund',
+      `Supplier refund ${document.number}`,
+      [
+        {
+          accountId: input.accountId,
+          branchId: input.branchId,
+          partyId: null,
+          description: null,
+          debit: input.amount,
+          credit: '0',
+        },
+        {
+          accountId: payable,
+          branchId: input.branchId,
+          partyId: input.supplierId,
+          description: null,
+          debit: '0',
+          credit: input.amount,
+        },
+      ],
+    );
+    if (entry === null) throw new Error('A supplier refund entry has no lines');
+    return entry;
+  }
+
+  // Step 17d: the account a purchase return books what the stock could not give back on
+  // (StockBooksService.purchaseReturn): the price difference account, else Cost of goods sold, as
+  // a bill's
+  async priceDifferenceAccountId(tx: Transaction): Promise<string> {
+    const [costOfGoodsSold] = await tx
+      .select({ id: ledgerAccounts.id })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.tenantId, getTenantId()),
+          eq(ledgerAccounts.purpose, 'cost_of_goods_sold'),
+        ),
+      )
+      .for('share');
+    return this.priceDifferenceAccount(tx, costOfGoodsSold?.id);
   }
 
   // A supplier payment: Dr Accounts payable (the supplier) / Cr the cash, bank or wallet account,
@@ -180,7 +330,8 @@ export class PurchaseBooksService {
     return toRef(posted);
   }
 
-  // The posted entry a document made with this source: a bill or a payment makes one at most
+  // The posted entry a document made with this source: a bill, a payment, a debit note or a refund
+  // makes one at most
   async entryOf(
     tx: Transaction,
     documentId: string,
@@ -228,12 +379,15 @@ export class PurchaseBooksService {
     return toRef(entry);
   }
 
-  // The accounts a bill posts to. The payable and VAT input by their purpose (every chart has
-  // them). "Goods received not billed" from Settings → Inventory (step 17b) and the price difference
-  // account from Settings → Purchase, else Cost of goods sold (decision 17), each asked for only
-  // when a line needs it: a utility bill posts without either. FOR SHARE, like every posting:
-  // nobody archives them before we commit.
-  private async billAccounts(tx: Transaction, input: BillPosting) {
+  // The accounts a bill posts to (and a debit note, step 17d). The payable and VAT input by their
+  // purpose (every chart has them). "Goods received not billed" from Settings → Inventory (step 17b)
+  // and the price difference account from Settings → Purchase, else Cost of goods sold (decision
+  // 17), each asked for only when a line needs it: a utility bill posts without either. FOR SHARE,
+  // like every posting: nobody archives them before we commit.
+  private async billAccounts(
+    tx: Transaction,
+    needs: { receivedNotBilled: boolean; priceDifference: boolean },
+  ) {
     const tenantId = getTenantId();
     const purposes = await tx
       .select({ id: ledgerAccounts.id, purpose: ledgerAccounts.purpose })
@@ -253,10 +407,9 @@ export class PurchaseBooksService {
     if (payable === undefined || vatInput === undefined) {
       throw new Error('The chart has no payable or VAT input account yet');
     }
-    const needsDifference = input.goods.some((line) => !isZeroMoney(line.difference));
     const [receivedNotBilled, priceDifference] = await Promise.all([
-      input.goods.length === 0 ? null : this.receivedNotBilled(tx),
-      needsDifference ? this.priceDifferenceAccount(tx, idOf('cost_of_goods_sold')) : null,
+      needs.receivedNotBilled ? this.receivedNotBilled(tx) : null,
+      needs.priceDifference ? this.priceDifferenceAccount(tx, idOf('cost_of_goods_sold')) : null,
     ]);
     return {
       payable,

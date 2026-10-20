@@ -303,7 +303,16 @@ expense (ভাড়া, বিদ্যুৎ, মেরামত)। প্�
 (পুরনোটা আগে), বাকিটা advance (PO-র নাম দেওয়া যায়); approval, শেষটা post করে; posted payment আবার apply বা void
 করা যায়; browser-এ voucher print। Goods receipt-এ Not billed / Partly billed / Billed; PO-তে billed পরিমাণ,
 bill আর advance।
-**১৭d:** purchase return ও debit note — নিজের গাইডে।
+**১৭d (purchase return, debit note, supplier refund):** **Purchase return (PRN)** — goods receipt থেকে (একই lot ও
+serial, receipt-এর দামে) বা নিজের লাইন (Omnivo-র আগের মাল, সেদিনের average cost-এ); Dr Goods received not billed
+/ Cr Inventory। bill-এর আগে ফেরত দিলে bill শুধু রাখা মালের bill করে, আর PO-র received কমে (Received → Partly
+received), supplier একই PO-তে আবার পাঠাতে পারে। **Debit note (DN)** — একটা posted bill থেকে টাকা কমায় (ফেরত মাল বা
+দামের ছাড়), bill-এর VAT rate-এ: Dr Accounts payable / Cr Goods received not billed / Cr Purchase price difference /
+Cr VAT input; আগে নিজের bill-এ লাগে, বাকিটা supplier-এর কাছে পাওনা, পরের bill-এ লাগানো যায়। "Debit whole bill" এক
+ক্লিকে পুরো draft; bill ছাড়া debit note Omnivo-র আগের মালের জন্য; supplier-এর credit note (Mushak 6.7) নম্বর ও
+তারিখ ঐচ্ছিক। approval নেই, Draft → Post। **Supplier refund (SRF)** — debit note-এর বা payment-এর advance-এর টাকা
+supplier ফেরত দিলে: Dr Cash/Bank / Cr Accounts payable; ভুল হলে void। তিনটাই browser-এ print। Goods receipt-এ
+Partly returned / Returned, bill-এ Partly debited / Debited।
 
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 

@@ -40,7 +40,10 @@ export function PurchaseBackLink({
     | '/purchase-orders'
     | '/goods-receipts'
     | '/bills'
-    | '/supplier-payments';
+    | '/supplier-payments'
+    | '/purchase-returns'
+    | '/debit-notes'
+    | '/supplier-refunds';
   label: string;
 }) {
   return (

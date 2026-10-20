@@ -13,7 +13,9 @@ export function readOnlyItem(page: Page, text: string | RegExp): Locator {
 
 // পেজ reload করলে MSW-এর mock ডেটা শুরুতে ফেরে — তাই পেজ বদলানো সবসময় nav-এর লিংকে ক্লিক করে
 // (client-side), page.goto দিয়ে না। ফোনে nav একটা আড়াআড়ি scroll-এর সারি; Playwright নিজেই scroll করে
-export async function openFromNav(page: Page, name: string): Promise<void> {
+// Step 17d: a string matches part of the name; a RegExp when another item holds it too ("Refunds" and
+// "Supplier refunds", step 17d).
+export async function openFromNav(page: Page, name: string | RegExp): Promise<void> {
   await page.getByRole('navigation').getByRole('link', { name }).click();
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
 }

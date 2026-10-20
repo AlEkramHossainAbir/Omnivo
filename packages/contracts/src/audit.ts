@@ -184,6 +184,18 @@ export const AUDIT_ACTIONS = [
   // The price difference and purchased services accounts in Settings → Purchase. The entity is the
   // workspace, like settings.
   'purchase_accounts.changed',
+  // step 17d. None of the three needs an approval.
+  'purchase_return.created',
+  'purchase_return.updated',
+  'purchase_return.deleted',
+  'purchase_return.posted',
+  'debit_note.created',
+  'debit_note.updated',
+  'debit_note.deleted',
+  'debit_note.posted',
+  'debit_note.allocated',
+  'supplier_refund.created',
+  'supplier_refund.voided',
   // The approval steps of any document that needs one. The entity is that document (a requisition,
   // a purchase order; a bill and a payment from 17c), so its history reads in one place.
   'approval.submitted',
@@ -238,6 +250,9 @@ export const AUDIT_ENTITY_TYPES = [
   'goods_receipt',
   'bill',
   'supplier_payment',
+  'purchase_return',
+  'debit_note',
+  'supplier_refund',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

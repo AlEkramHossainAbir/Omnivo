@@ -32,6 +32,7 @@ import {
   shiftIsoDate,
   subtractQuantity,
   sumQuantity,
+  type SupplierRefund,
   toBaseQuantity,
   todayIn,
   unitCostOf,
@@ -43,6 +44,7 @@ import { MockProblem } from './mock';
 import { newestFirst, seriesNumber } from './sales-document-data';
 import type { MockBill, MockSupplierPayment } from './bill-data';
 import type { MockGoodsReceipt, MockPurchaseOrder } from './purchase-order-data';
+import type { MockDebitNote, MockPurchaseReturn } from './purchase-return-data';
 import { averageCostOf, decimalsOf, findVariant, issuesError, refOf } from './stock-data';
 import type { WorkspaceData } from './workspace-data';
 
@@ -100,9 +102,23 @@ export interface MockPurchase {
   // Step 17c, new ones first (bill-data.ts)
   bills: MockBill[];
   payments: MockSupplierPayment[];
+  // Step 17d, new ones first (purchase-return-data.ts)
+  returns: MockPurchaseReturn[];
+  debitNotes: MockDebitNote[];
+  refunds: SupplierRefund[];
   // The last number given from the 'purchase.requisition', 'purchase.order',
-  // 'inventory.receipt', 'purchase.bill' and 'purchase.payment' series
-  counters: { requisition: number; order: number; receipt: number; bill: number; payment: number };
+  // 'inventory.receipt', 'purchase.bill', 'purchase.payment', and (step 17d) 'purchase.return',
+  // 'purchase.debit_note' and 'purchase.refund' series
+  counters: {
+    requisition: number;
+    order: number;
+    receipt: number;
+    bill: number;
+    payment: number;
+    return: number;
+    debitNote: number;
+    refund: number;
+  };
 }
 
 export function emptyPurchase(): MockPurchase {
@@ -120,7 +136,19 @@ export function emptyPurchase(): MockPurchase {
     receipts: [],
     bills: [],
     payments: [],
-    counters: { requisition: 0, order: 0, receipt: 0, bill: 0, payment: 0 },
+    returns: [],
+    debitNotes: [],
+    refunds: [],
+    counters: {
+      requisition: 0,
+      order: 0,
+      receipt: 0,
+      bill: 0,
+      payment: 0,
+      return: 0,
+      debitNote: 0,
+      refund: 0,
+    },
   };
 }
 

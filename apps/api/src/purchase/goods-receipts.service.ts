@@ -7,6 +7,8 @@ import {
   type GoodsReceipt,
   type GrnBillFilter,
   type GrnBillState,
+  type GrnReturnFilter,
+  type GrnReturnState,
   type GoodsReceiptInput,
   type GoodsReceiptLineInput,
   type GoodsReceiptSummary,
@@ -32,6 +34,8 @@ import {
   products,
   purchaseOrderLines,
   purchaseOrders,
+  purchaseReturnLines,
+  purchaseReturns,
   tenantSettings,
   warehouses,
 } from '@omnivo/db';
@@ -72,11 +76,12 @@ const lineCount = sql<number>`(
 )`;
 
 // Step 17c: a posted line that accepted something and no posted bill bills yet (the partial index
-// goods_receipt_lines_to_bill_idx), and a line a posted bill billed
+// goods_receipt_lines_to_bill_idx), and a line a posted bill billed. Step 17d: "accepted
+// something" is "kept something": goods that all went back before a bill have nothing to bill.
 const hasLineToBill = sql`EXISTS (
   SELECT 1 FROM goods_receipt_lines l
    WHERE l.tenant_id = goods_receipts.tenant_id AND l.receipt_id = goods_receipts.id
-     AND NOT l.billed AND l.quantity > 0
+     AND NOT l.billed AND l.returned_quantity < l.base_quantity
 )`;
 const hasBilledLine = sql`EXISTS (
   SELECT 1 FROM goods_receipt_lines l
@@ -95,6 +100,32 @@ function billFilter(filter: GrnBillFilter | undefined): SQL | undefined {
   if (filter === undefined) return undefined;
   if (filter === 'to_bill') return and(eq(goodsReceipts.status, 'posted'), hasLineToBill);
   return and(eq(goodsReceipts.status, 'posted'), hasBilledLine, sql`NOT ${hasLineToBill}`);
+}
+
+// Step 17d: did some of a line go back, and can some still go back (it kept something)? Only
+// posted returns write returned_quantity, so a draft return changes neither. A line that turned
+// everything back at the gate kept nothing and never could: it counts for neither.
+const hasReturnedLine = sql`EXISTS (
+  SELECT 1 FROM goods_receipt_lines l
+   WHERE l.tenant_id = goods_receipts.tenant_id AND l.receipt_id = goods_receipts.id
+     AND l.returned_quantity > 0
+)`;
+const hasReturnableLine = sql`EXISTS (
+  SELECT 1 FROM goods_receipt_lines l
+   WHERE l.tenant_id = goods_receipts.tenant_id AND l.receipt_id = goods_receipts.id
+     AND l.returned_quantity < l.base_quantity
+)`;
+
+// The challan's words (15d): nothing went back, some did, everything it kept did
+const returnState = sql<GrnReturnState>`CASE
+  WHEN goods_receipts.status <> 'posted' OR NOT ${hasReturnedLine} THEN 'none'
+  WHEN ${hasReturnableLine} THEN 'partly_returned'
+  ELSE 'returned' END`;
+
+// returnable: what the purchase return form offers
+function returnFilter(filter: GrnReturnFilter | undefined): SQL | undefined {
+  if (filter === undefined) return undefined;
+  return and(eq(goodsReceipts.status, 'posted'), hasReturnableLine);
 }
 
 // A receipt line as resolveReceiptLines() takes it: the form's line, or a stored one again. The
@@ -154,7 +185,12 @@ function notDraft(): AppError {
 function toSummary(
   row: ReceiptRow,
   supplier: PartyRef,
-  refs: { order: DocumentRef | null; bill: DocumentRef | null; billState: GrnBillState },
+  refs: {
+    order: DocumentRef | null;
+    bill: DocumentRef | null;
+    billState: GrnBillState;
+    returnState: GrnReturnState;
+  },
   lines: number,
 ): GoodsReceiptSummary {
   return {
@@ -165,6 +201,7 @@ function toSummary(
     order: refs.order,
     bill: refs.bill,
     billState: refs.billState,
+    returnState: refs.returnState,
     warehouseId: row.warehouseId,
     status: row.status,
     supplierChallan: row.supplierChallan,
@@ -296,7 +333,8 @@ interface OrderLineInfo {
 // the accepted goods into stock at the order's price, books them (Dr Inventory / Cr Goods received
 // not billed) and counts them on the order's lines. All in one transaction. Step 17c: a bill's goods
 // lines of its own come in on a receipt too, with no order (receiveForBill), and a bill's posting
-// marks the lines it bills (`billed`).
+// marks the lines it bills (`billed`). Step 17d: a purchase return's posting counts what went back
+// on the lines (`returnedQuantity`, PurchaseReturnsService).
 @Injectable()
 export class GoodsReceiptsService {
   constructor(
@@ -315,6 +353,7 @@ export class GoodsReceiptsService {
     warehouseId?: string | undefined;
     orderId?: string | undefined;
     bill?: GrnBillFilter | undefined;
+    return?: GrnReturnFilter | undefined;
   }): Promise<{ items: GoodsReceiptSummary[]; nextCursor: string | null }> {
     const after = decodeCursor(query.cursor, cursorSchema);
     return this.withTenant(async (tx) => {
@@ -330,6 +369,7 @@ export class GoodsReceiptsService {
             : eq(goodsReceipts.warehouseId, query.warehouseId),
           query.orderId === undefined ? undefined : eq(goodsReceipts.orderId, query.orderId),
           billFilter(query.bill),
+          returnFilter(query.return),
           after === undefined
             ? undefined
             : sql`(${goodsReceipts.date}, ${goodsReceipts.id}) < (${after[0]}::date, ${after[1]}::uuid)`,
@@ -889,6 +929,7 @@ export class GoodsReceiptsService {
         order: { id: purchaseOrders.id, number: purchaseOrders.number },
         bill: { id: bills.id, number: bills.number },
         billState,
+        returnState,
         lineCount,
       })
       .from(goodsReceipts)
@@ -917,7 +958,7 @@ export class GoodsReceiptsService {
     if (!found) throw notFound('Goods receipt');
     const { receipt: row } = found;
     const lines = await this.linesOf(tx, id);
-    const [canSee, entries, variants, batches, billRefs] = await Promise.all([
+    const [canSee, entries, variants, batches, billRefs, returnRefs] = await Promise.all([
       this.access.canSee(),
       this.books.entriesOf(tx, id),
       loadVariants(
@@ -947,6 +988,33 @@ export class GoodsReceiptsService {
           ),
         )
         .orderBy(asc(bills.date), asc(bills.id)),
+      // Step 17d: the posted purchase returns that sent some of its goods back, oldest first. A
+      // draft sent nothing back yet.
+      tx
+        .selectDistinct({
+          id: purchaseReturns.id,
+          number: purchaseReturns.number,
+          date: purchaseReturns.date,
+        })
+        .from(purchaseReturnLines)
+        .innerJoin(
+          purchaseReturns,
+          and(
+            eq(purchaseReturns.tenantId, purchaseReturnLines.tenantId),
+            eq(purchaseReturns.id, purchaseReturnLines.returnId),
+          ),
+        )
+        .where(
+          and(
+            eq(purchaseReturnLines.tenantId, getTenantId()),
+            eq(purchaseReturns.status, 'posted'),
+            inArray(
+              purchaseReturnLines.receiptLineId,
+              lines.map((line) => line.id),
+            ),
+          ),
+        )
+        .orderBy(asc(purchaseReturns.date), asc(purchaseReturns.id)),
     ]);
     return {
       ...toSummary(row, found.supplier, found, found.lineCount),
@@ -966,6 +1034,7 @@ export class GoodsReceiptsService {
             rejectedBaseQuantity: line.rejectedBaseQuantity,
             rejectionReason: line.rejectionReason,
             billed: line.billed,
+            returnedQuantity: line.returnedQuantity,
             // The order's price is on the order for everyone; what the stock was booked at is
             // worked out from the books and needs inventory.stock.value (step 14)
             value: canSee ? line.value : null,
@@ -973,6 +1042,7 @@ export class GoodsReceiptsService {
         ];
       }),
       bills: billRefs.map((bill) => ({ id: bill.id, number: bill.number })),
+      returns: returnRefs.map((back) => ({ id: back.id, number: back.number })),
       entry: entries[0] ?? null,
     };
   }

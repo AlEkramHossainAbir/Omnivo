@@ -174,6 +174,29 @@ import {
   toPurchaseOrder,
 } from './purchase-order-data';
 import {
+  allocateDebitNote,
+  assertDebitNotePosted,
+  assertSupplierRefundNotVoided,
+  createSupplierRefund,
+  findDebitNote,
+  findPurchaseReturn,
+  findSupplierRefund,
+  listDebitNotes,
+  listPurchaseReturns,
+  listSupplierRefunds,
+  type MockDebitNote,
+  type MockPurchaseReturn,
+  postDebitNote,
+  postPurchaseReturn,
+  removeDebitNote,
+  removePurchaseReturn,
+  saveDebitNote,
+  savePurchaseReturn,
+  toDebitNote,
+  toPurchaseReturn,
+  voidSupplierRefund,
+} from './purchase-return-data';
+import {
   assertCustomerUnused,
   assertGroupNameFree,
   assertPriceListNameFree,
@@ -449,15 +472,18 @@ function assertNotPurchaseAccount(data: WorkspaceData, id: string): void {
 }
 
 // Step 17c: a bill line, an expense or a payment that names it keeps it, drafts too (the API's
-// foreign keys, mapped to account_in_use)
+// foreign keys, mapped to account_in_use). Step 17d: a supplier refund too
+// (supplier_refunds_account_fk).
 function usedByPurchase(data: WorkspaceData, id: string): boolean {
-  const { bills, payments } = data.purchase;
+  const { bills, payments, refunds } = data.purchase;
   return (
     bills.some(
       (bill) =>
         bill.lines.some((line) => line.accountId === id) ||
         bill.expenses.some((expense) => expense.accountId === id),
-    ) || payments.some((payment) => payment.accountId === id)
+    ) ||
+    payments.some((payment) => payment.accountId === id) ||
+    refunds.some((refund) => refund.accountId === id)
   );
 }
 
@@ -531,6 +557,30 @@ onApproved('supplier_payment', (data, id) => {
   postPayment(data, payment);
   recordPaymentPosted(data, payment);
 });
+
+// Posting a purchase return or a debit note, with the API's audit row (step 17d). A debit note's
+// row says what its posting applied to its own bill.
+function postPurchaseReturnAndRecord(data: WorkspaceData, draft: MockPurchaseReturn) {
+  postPurchaseReturn(data, draft);
+  record(
+    data,
+    'purchase_return.posted',
+    'purchase_return',
+    draft.id,
+    diff({}, { number: draft.number, entry: draft.entry?.number ?? null }),
+  );
+}
+
+function postDebitNoteAndRecord(data: WorkspaceData, draft: MockDebitNote) {
+  const applied = postDebitNote(data, draft);
+  record(
+    data,
+    'debit_note.posted',
+    'debit_note',
+    draft.id,
+    diff({}, { number: draft.number, entry: draft.entry?.number ?? null, applied }),
+  );
+}
 
 // What the audit log shows of a bill and a payment: the header and the size, not every line
 function billSnapshot(bill: MockBill) {
@@ -4585,6 +4635,264 @@ export const handlers = [
       });
       await delay();
       return reply(routes.supplierPayments.void, toSupplierPayment(data, target));
+    }),
+  ),
+
+  // --- Step 17d: purchase returns, debit notes and supplier refunds (purchase-return-data.ts) -----
+  // No approval (decision 5): "Post" posts. Like the sales returns of 15d, every save that also
+  // posts, and every void, runs in a transaction().
+
+  mock(routes.purchaseReturns.list, ({ request }) => {
+    const query = readQuery(routes.purchaseReturns.list.query, request);
+    return reply(routes.purchaseReturns.list, pageOf(listPurchaseReturns(current(), query), query));
+  }),
+
+  mock(
+    routes.purchaseReturns.get,
+    guarded(({ params }) => {
+      const { id } = routes.purchaseReturns.get.params.parse(params);
+      const data = current();
+      return reply(
+        routes.purchaseReturns.get,
+        toPurchaseReturn(data, findPurchaseReturn(data, id)),
+      );
+    }),
+  ),
+
+  mock(
+    routes.purchaseReturns.create,
+    guarded(async ({ request }) => {
+      const { post, ...input } = await readBody(routes.purchaseReturns.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const draft = savePurchaseReturn(data, input);
+        record(data, 'purchase_return.created', 'purchase_return', draft.id);
+        if (post) postPurchaseReturnAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.purchaseReturns.create, toPurchaseReturn(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.purchaseReturns.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.purchaseReturns.update.params.parse(params);
+      const { post, version, ...input } = await readBody(
+        routes.purchaseReturns.update.body,
+        request,
+      );
+      const data = current();
+      const target = findPurchaseReturn(data, id);
+      checkVersion(target.version, version);
+      const saved = transaction(data, () => {
+        const draft = savePurchaseReturn(data, input, target);
+        record(data, 'purchase_return.updated', 'purchase_return', id);
+        if (post) postPurchaseReturnAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.purchaseReturns.update, toPurchaseReturn(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.purchaseReturns.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.purchaseReturns.remove.params.parse(params);
+      const { version } = readQuery(routes.purchaseReturns.remove.query, request);
+      const data = current();
+      const target = findPurchaseReturn(data, id);
+      checkVersion(target.version, version);
+      removePurchaseReturn(data, target);
+      record(data, 'purchase_return.deleted', 'purchase_return', id);
+      return reply(routes.purchaseReturns.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.purchaseReturns.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.purchaseReturns.post.params.parse(params);
+      const { version } = await readBody(routes.purchaseReturns.post.body, request);
+      const data = current();
+      const target = findPurchaseReturn(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        postPurchaseReturnAndRecord(data, target);
+      });
+      return reply(routes.purchaseReturns.post, toPurchaseReturn(data, target));
+    }),
+  ),
+
+  mock(routes.debitNotes.list, ({ request }) => {
+    const query = readQuery(routes.debitNotes.list.query, request);
+    return reply(routes.debitNotes.list, pageOf(listDebitNotes(current(), query), query));
+  }),
+
+  mock(
+    routes.debitNotes.get,
+    guarded(({ params }) => {
+      const { id } = routes.debitNotes.get.params.parse(params);
+      const data = current();
+      return reply(routes.debitNotes.get, toDebitNote(data, findDebitNote(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.debitNotes.create,
+    guarded(async ({ request }) => {
+      const { post, ...input } = await readBody(routes.debitNotes.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const draft = saveDebitNote(data, input);
+        record(data, 'debit_note.created', 'debit_note', draft.id);
+        if (post) postDebitNoteAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.debitNotes.create, toDebitNote(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.debitNotes.update,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.debitNotes.update.params.parse(params);
+      const { post, version, ...input } = await readBody(routes.debitNotes.update.body, request);
+      const data = current();
+      const target = findDebitNote(data, id);
+      checkVersion(target.version, version);
+      const saved = transaction(data, () => {
+        const draft = saveDebitNote(data, input, target);
+        record(data, 'debit_note.updated', 'debit_note', id);
+        if (post) postDebitNoteAndRecord(data, draft);
+        return draft;
+      });
+      await delay();
+      return reply(routes.debitNotes.update, toDebitNote(data, saved));
+    }),
+  ),
+
+  mock(
+    routes.debitNotes.remove,
+    guarded(({ request, params }) => {
+      const { id } = routes.debitNotes.remove.params.parse(params);
+      const { version } = readQuery(routes.debitNotes.remove.query, request);
+      const data = current();
+      const target = findDebitNote(data, id);
+      checkVersion(target.version, version);
+      removeDebitNote(data, target);
+      record(data, 'debit_note.deleted', 'debit_note', id);
+      return reply(routes.debitNotes.remove, undefined);
+    }),
+  ),
+
+  mock(
+    routes.debitNotes.post,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.debitNotes.post.params.parse(params);
+      const { version } = await readBody(routes.debitNotes.post.body, request);
+      const data = current();
+      const target = findDebitNote(data, id);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        postDebitNoteAndRecord(data, target);
+      });
+      return reply(routes.debitNotes.post, toDebitNote(data, target));
+    }),
+  ),
+
+  mock(
+    routes.debitNotes.allocate,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.debitNotes.allocate.params.parse(params);
+      const { version, allocations } = await readBody(routes.debitNotes.allocate.body, request);
+      const data = current();
+      const target = findDebitNote(data, id);
+      assertDebitNotePosted(target);
+      checkVersion(target.version, version);
+      const before = toDebitNote(data, target).applied;
+      allocateDebitNote(data, target, allocations);
+      record(
+        data,
+        'debit_note.allocated',
+        'debit_note',
+        id,
+        diff({ applied: before }, { applied: toDebitNote(data, target).applied }),
+      );
+      await delay();
+      return reply(routes.debitNotes.allocate, toDebitNote(data, target));
+    }),
+  ),
+
+  mock(routes.supplierRefunds.list, ({ request }) => {
+    const query = readQuery(routes.supplierRefunds.list.query, request);
+    return reply(routes.supplierRefunds.list, pageOf(listSupplierRefunds(current(), query), query));
+  }),
+
+  mock(
+    routes.supplierRefunds.get,
+    guarded(({ params }) => {
+      const { id } = routes.supplierRefunds.get.params.parse(params);
+      return reply(routes.supplierRefunds.get, findSupplierRefund(current(), id));
+    }),
+  ),
+
+  mock(
+    routes.supplierRefunds.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.supplierRefunds.create.body, request);
+      const data = current();
+      const saved = transaction(data, () => {
+        const refund = createSupplierRefund(data, body);
+        record(
+          data,
+          'supplier_refund.created',
+          'supplier_refund',
+          refund.id,
+          diff(
+            {},
+            {
+              number: refund.number,
+              amount: refund.amount,
+              source: refund.source.number,
+              entry: refund.entry.number,
+            },
+          ),
+        );
+        return refund;
+      });
+      await delay();
+      return reply(routes.supplierRefunds.create, saved);
+    }),
+  ),
+
+  mock(
+    routes.supplierRefunds.void,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.supplierRefunds.void.params.parse(params);
+      const { version, ...input } = await readBody(routes.supplierRefunds.void.body, request);
+      const data = current();
+      const target = findSupplierRefund(data, id);
+      assertSupplierRefundNotVoided(target);
+      checkVersion(target.version, version);
+      transaction(data, () => {
+        voidSupplierRefund(data, target, input);
+        record(
+          data,
+          'supplier_refund.voided',
+          'supplier_refund',
+          id,
+          diff(
+            {},
+            { date: input.date, reason: input.reason, reversal: target.voidEntry?.number ?? null },
+          ),
+        );
+      });
+      await delay();
+      return reply(routes.supplierRefunds.void, target);
     }),
   ),
 

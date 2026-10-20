@@ -740,6 +740,81 @@ const supplierPaymentRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/supplier-payment'), 'SupplierPaymentPage'),
 });
 
+// Step 17d: purchase returns ("Send goods back" on a goods receipt comes with ?receiptId=), debit
+// notes ("Write debit note" on a bill comes with ?billId=, on a return with ?returnId=) and supplier
+// refunds ("Record money back" on a debit note comes with ?debitNoteId=, on a payment with
+// ?paymentId=)
+const purchaseReturnsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/purchase-returns',
+  component: lazyRouteComponent(() => import('./routes/purchase-returns'), 'PurchaseReturnsPage'),
+});
+
+const newPurchaseReturnRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/purchase-returns/new',
+  validateSearch: (search: Record<string, unknown>): { receiptId?: string } => ({
+    ...(typeof search.receiptId === 'string' &&
+      UUID.test(search.receiptId) && { receiptId: search.receiptId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/purchase-return'), 'NewPurchaseReturnPage'),
+});
+
+const purchaseReturnRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/purchase-returns/$returnId',
+  component: lazyRouteComponent(() => import('./routes/purchase-return'), 'PurchaseReturnPage'),
+});
+
+const debitNotesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/debit-notes',
+  component: lazyRouteComponent(() => import('./routes/debit-notes'), 'DebitNotesPage'),
+});
+
+const newDebitNoteRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/debit-notes/new',
+  validateSearch: (search: Record<string, unknown>): { billId?: string; returnId?: string } => ({
+    ...(typeof search.billId === 'string' && UUID.test(search.billId) && { billId: search.billId }),
+    ...(typeof search.returnId === 'string' &&
+      UUID.test(search.returnId) && { returnId: search.returnId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/debit-note'), 'NewDebitNotePage'),
+});
+
+const debitNoteRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/debit-notes/$debitNoteId',
+  component: lazyRouteComponent(() => import('./routes/debit-note'), 'DebitNotePage'),
+});
+
+const supplierRefundsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/supplier-refunds',
+  component: lazyRouteComponent(() => import('./routes/supplier-refunds'), 'SupplierRefundsPage'),
+});
+
+const newSupplierRefundRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/supplier-refunds/new',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { debitNoteId?: string; paymentId?: string } => ({
+    ...(typeof search.debitNoteId === 'string' &&
+      UUID.test(search.debitNoteId) && { debitNoteId: search.debitNoteId }),
+    ...(typeof search.paymentId === 'string' &&
+      UUID.test(search.paymentId) && { paymentId: search.paymentId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/supplier-refund'), 'NewSupplierRefundPage'),
+});
+
+const supplierRefundRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/supplier-refunds/$refundId',
+  component: lazyRouteComponent(() => import('./routes/supplier-refund'), 'SupplierRefundPage'),
+});
+
 const customFieldsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/custom-fields',
@@ -878,6 +953,15 @@ const routeTree = rootRoute.addChildren([
     supplierPaymentsRoute,
     newSupplierPaymentRoute,
     supplierPaymentRoute,
+    purchaseReturnsRoute,
+    newPurchaseReturnRoute,
+    purchaseReturnRoute,
+    debitNotesRoute,
+    newDebitNoteRoute,
+    debitNoteRoute,
+    supplierRefundsRoute,
+    newSupplierRefundRoute,
+    supplierRefundRoute,
     customFieldsRoute,
     teamRoute,
     rolesRoute,

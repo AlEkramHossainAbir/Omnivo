@@ -277,8 +277,13 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
   const oldWork = entry.source === 'reversal' || entry.source === 'year_close';
   checkLines(data, entry.lines.map(asInput), {
     allowArchived: oldWork,
-    // Step 17c: a bill clears "goods received not billed", like the API's allowStock
-    allowStock: oldWork || isStockJournalSource(entry.source) || entry.source === 'purchase_bill',
+    // Step 17c: a bill clears "goods received not billed", like the API's allowStock. Step 17d: so
+    // does a debit note, for goods that went back.
+    allowStock:
+      oldWork ||
+      isStockJournalSource(entry.source) ||
+      entry.source === 'purchase_bill' ||
+      entry.source === 'purchase_debit_note',
     // A reversal of an entry posted before step 15a: its receivable line had no customer
     allowMissingParty: entry.source === 'reversal',
   });
