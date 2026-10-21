@@ -70,11 +70,20 @@ export async function switchTenant(tenantId: string): Promise<void> {
 }
 
 export async function logout(): Promise<void> {
+  const me = sessionStore.getState().me;
   try {
     await call(authRoutes.logout);
   } finally {
     // নেটওয়ার্ক ব্যর্থ হলেও এই ট্যাবে লগআউট দেখাতে হবে, আর আগের ইউজারের ক্যাশ মুছতে হবে
     queryClient.clear();
     sessionStore.getState().signOut();
+    // Step 18a: the copy of the workspace's data on this device goes too (decision 41). import():
+    // local-session brings Dexie, which the first page load must not carry. A browser that refuses
+    // to delete it changes nothing for the sign-out.
+    if (me) {
+      void import('./local-session')
+        .then(({ deleteLocalData }) => deleteLocalData(me.tenant.id, me.user.id))
+        .catch(() => undefined);
+    }
   }
 }

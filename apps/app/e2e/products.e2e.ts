@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, waitForCopy } from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -19,6 +19,8 @@ async function newProduct(page: Page) {
 }
 
 test('finds a product by name or by a scanned barcode, and opens it', async ({ page }) => {
+  // The list reads the device's copy (step 18a): all 10,000 styles first
+  await waitForCopy(page);
   await openFromNav(page, 'Products');
   const search = page.getByRole('searchbox', { name: 'Search products' });
   await search.fill('pique');

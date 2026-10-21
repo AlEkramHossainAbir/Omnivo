@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll } from './helpers.js';
+import { expect, expectNoSideScroll, test } from './helpers.js';
 
 // The mock starts signed in (as the Rahman Garments owner). Sign out through the menu — client-side,
 // so the mock keeps its state — then create a new workspace from the sign-up page.

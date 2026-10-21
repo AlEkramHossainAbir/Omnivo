@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15b: deliveries (challans) against the seeded confirmed orders. Garments: H&M's
 // SO-…-0001, 5 dozen polo shirts in M and in L (Navy blue), from the Main store, which holds 120

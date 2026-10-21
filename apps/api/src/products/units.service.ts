@@ -12,7 +12,7 @@ import { WITH_TENANT } from '../infra/tokens.js';
 
 type UnitRow = typeof units.$inferSelect;
 
-function toUnit(row: UnitRow): Unit {
+export function toUnit(row: UnitRow): Unit {
   return {
     id: row.id,
     code: row.code,

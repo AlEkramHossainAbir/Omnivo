@@ -77,6 +77,12 @@ export class CustomersController {
     return this.ledgers.statement(params.id, query);
   }
 
+  // Step 18a: what the customers on the device's list owe, online only
+  @Endpoint(routes.customers.balances)
+  balances({ query }: RouteInput<Routes['balances']>): Promise<RouteResponse<Routes['balances']>> {
+    return this.customers.balances(query.ids);
+  }
+
   // Step 15c: also sales.customer.balance — the numbers say what the customer owes
   @Endpoint(routes.customers.credit)
   credit({ params }: RouteInput<Routes['credit']>): Promise<RouteResponse<Routes['credit']>> {

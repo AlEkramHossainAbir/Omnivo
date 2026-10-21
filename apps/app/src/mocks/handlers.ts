@@ -201,6 +201,7 @@ import {
   assertGroupNameFree,
   assertPriceListNameFree,
   assertProductTaxRate,
+  balanceOf,
   createTaxRate,
   customerSummaryOf,
   dropStalePrices,
@@ -302,6 +303,7 @@ import {
   toSupplier,
   toSupplierGroup,
 } from './supplier-data';
+import { pull, registerDevice } from './sync-data';
 import {
   assertCodeFree,
   checkVersion,
@@ -612,6 +614,11 @@ function paymentSnapshot(payment: MockSupplierPayment) {
 // UI-র প্রতিটা পথ দেখার জন্য: লগইনে পাসওয়ার্ড "wrong-password" → invalid_credentials,
 // সাইনআপে ঠিকানা "rahman-garments" → slug_taken
 export const handlers = [
+  // Step 18a: an offline browser (Playwright's context.setOffline, DevTools' "Offline") gets what a
+  // dead network gives, a failed fetch. MSW runs these handlers inside the page, so without this
+  // the mock would answer every request with the network off. undefined = on to the next handler.
+  http.all(`${API_URL}/*`, () => (navigator.onLine ? undefined : HttpResponse.error())),
+
   mock(routes.health.check, () => reply(routes.health.check, { status: 'ok' })),
 
   mock(routes.auth.refresh, () =>
@@ -2630,6 +2637,18 @@ export const handlers = [
       return reply(routes.customers.statement, statementOf(current(), id, query));
     }),
   ),
+
+  // The balances of the rows the customer list shows (step 18a): archived customers too, an id
+  // that is no customer here left out
+  mock(routes.customers.balances, ({ request }) => {
+    const { ids } = readQuery(routes.customers.balances.query, request);
+    const data = current();
+    const known = new Set(data.sales.customers.map((customer) => customer.id));
+    const items = ids
+      .filter((id) => known.has(id))
+      .map((id) => ({ id, balance: balanceOf(data, id) }));
+    return reply(routes.customers.balances, { items });
+  }),
 
   // The credit line on the order and invoice forms (step 15c)
   mock(
@@ -4940,6 +4959,32 @@ export const handlers = [
         ),
       );
       return reply(routes.purchaseAccounts.update, data.purchaseAccounts);
+    }),
+  ),
+
+  // Step 18a: the device and its pulls (sync-data.ts). The mock's person is always the owner.
+  mock(
+    routes.sync.registerDevice,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.sync.registerDevice.body, request);
+      const data = current();
+      const { device, branchCode } = registerDevice(data, OWNER.id, body);
+      // The API's audit row, for a new device only
+      if (branchCode !== null) {
+        record(data, 'device.registered', 'device', device.id, {
+          name: { from: null, to: device.name },
+          branch: { from: null, to: branchCode },
+        });
+      }
+      return reply(routes.sync.registerDevice, device);
+    }),
+  ),
+
+  mock(
+    routes.sync.pull,
+    guarded(({ request }) => {
+      const query = readQuery(routes.sync.pull.query, request);
+      return reply(routes.sync.pull, pull(current(), workspace.tenantId, OWNER.id, query));
     }),
   ),
 ];

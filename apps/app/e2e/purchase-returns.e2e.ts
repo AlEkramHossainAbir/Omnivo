@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 17d in the mock garments workspace, where the signed-in person is the Owner. 17b's
 // PO-…-0001 orders 1,000 gross of shirt buttons from Unitex at ৳62 a gross before VAT (15%);

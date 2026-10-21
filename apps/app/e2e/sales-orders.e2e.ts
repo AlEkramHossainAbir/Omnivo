@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15b in the mock garments workspace: SO-…-0001 is H&M's confirmed export order (5 dozen
 // polo shirts in M and in L, nothing delivered yet), and Aarong has a draft order without a

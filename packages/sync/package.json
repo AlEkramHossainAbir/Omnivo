@@ -1,0 +1,31 @@
+{
+  "name": "@omnivo/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@omnivo/contracts": "workspace:*",
+    "dexie": "^4.4.6",
+    "uuidv7": "^1.2.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@omnivo/config": "workspace:*",
+    "fake-indexeddb": "^6.2.6",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.1"
+  }
+}

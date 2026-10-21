@@ -13,14 +13,13 @@ import {
   productBarcodes,
   productCategories,
   products,
-  productUnits,
   productVariants,
   stockMovements,
   taxRates,
   tenantSettings,
   units,
 } from '@omnivo/db';
-import { and, asc, eq, inArray, notInArray, type SQL, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -32,6 +31,7 @@ import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.j
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { NumberingService } from '../numbering/numbering.service.js';
+import { productsOf } from './product-read.js';
 import {
   barcodeRows,
   checkProduct,
@@ -535,72 +535,16 @@ export class ProductsService {
     return row;
   }
 
-  // The whole product: its row, variants, units and barcodes, in four small queries
+  // The whole product: its row, then its variants, units and barcodes (productsOf)
   private async read(tx: Transaction, id: string): Promise<Product> {
-    const tenantId = getTenantId();
     const [row] = await tx
       .select()
       .from(products)
-      .where(and(eq(products.tenantId, tenantId), eq(products.id, id)));
+      .where(and(eq(products.tenantId, getTenantId()), eq(products.id, id)));
     if (!row) throw notFound('Product');
-    const [variants, packs, barcodes] = await Promise.all([
-      tx
-        .select()
-        .from(productVariants)
-        .where(and(eq(productVariants.tenantId, tenantId), eq(productVariants.productId, id)))
-        .orderBy(asc(productVariants.position)),
-      tx
-        .select()
-        .from(productUnits)
-        .where(and(eq(productUnits.tenantId, tenantId), eq(productUnits.productId, id)))
-        .orderBy(asc(productUnits.position)),
-      tx
-        .select()
-        .from(productBarcodes)
-        .where(and(eq(productBarcodes.tenantId, tenantId), eq(productBarcodes.productId, id))),
-    ]);
-    const variantBarcode = new Map(
-      barcodes.flatMap((barcode) =>
-        barcode.unitId === null ? [[barcode.variantId, barcode.code]] : [],
-      ),
-    );
-    const packBarcode = new Map(
-      barcodes.flatMap((barcode) =>
-        barcode.unitId === null ? [] : [[barcode.unitId, barcode.code]],
-      ),
-    );
-    return {
-      id: row.id,
-      code: row.code,
-      name: row.name,
-      type: row.type,
-      categoryId: row.categoryId,
-      description: row.description,
-      baseUnitId: row.baseUnitId,
-      salesUnitId: packs.find((pack) => pack.isSalesDefault)?.unitId ?? null,
-      purchaseUnitId: packs.find((pack) => pack.isPurchaseDefault)?.unitId ?? null,
-      tracking: row.tracking,
-      hasExpiry: row.hasExpiry,
-      taxRateId: row.taxRateId,
-      options: row.options,
-      variants: variants.map((variant) => ({
-        id: variant.id,
-        sku: variant.sku,
-        optionValues: variant.optionValues,
-        barcode: variantBarcode.get(variant.id) ?? null,
-        salePrice: variant.salePrice,
-        archivedAt: variant.archivedAt?.toISOString() ?? null,
-      })),
-      units: packs.map((pack) => ({
-        unitId: pack.unitId,
-        factor: pack.factor,
-        barcode: packBarcode.get(pack.unitId) ?? null,
-      })),
-      customFields: row.customFields,
-      archivedAt: row.archivedAt?.toISOString() ?? null,
-      version: row.version,
-      updatedAt: row.updatedAt.toISOString(),
-    };
+    const [product] = await productsOf(tx, [row]);
+    if (!product) throw new Error('productsOf returned no product');
+    return product;
   }
 
   private async snapshot(tx: Transaction, product: Product): Promise<Snapshot> {

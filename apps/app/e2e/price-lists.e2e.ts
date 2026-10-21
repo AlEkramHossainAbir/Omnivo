@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { expectNoSideScroll, listItem, openFromNav } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
 
 // Step 15a in the mock garments workspace: "Export FOB" (the polo shirt's six versions, per piece
 // and per dozen) and "Local wholesale" (the crew-neck T-shirt per piece, poly mailers per carton)

@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { expectNoSideScroll, openFromNav, readOnlyItem } from './helpers.js';
+import { expect, expectNoSideScroll, openFromNav, readOnlyItem, test } from './helpers.js';
 
 // The mock garments workspace has last fiscal year in four entries (sales 38,50,000, interest
 // 54,000, cost of goods 21,00,000, salaries 9,00,000: profit 9,04,000, not closed yet) and this

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './helpers.js';
 
 // mocks/people-data.ts-এর DEMO_TOKENS — ইমেইল ছাড়াই join পেজ
 test('joins with a new account from the email link', async ({ page }) => {

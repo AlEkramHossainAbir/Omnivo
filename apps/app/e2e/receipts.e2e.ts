@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15c: money receipts in the mock garments workspace. Aarong buys the crew-neck T-shirt at
 // ৳290 a piece plus 15% VAT, so 10 of them are a ৳3,335 invoice. The chart's money accounts are

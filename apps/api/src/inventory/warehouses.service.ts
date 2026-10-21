@@ -17,7 +17,7 @@ import { WITH_TENANT } from '../infra/tokens.js';
 
 type WarehouseRow = typeof warehouses.$inferSelect;
 
-function toWarehouse(row: WarehouseRow): Warehouse {
+export function toWarehouse(row: WarehouseRow): Warehouse {
   return {
     id: row.id,
     branchId: row.branchId,

@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 17b in the mock garments workspace, where the signed-in person is the Owner. Orders from
 // ৳50,000 with VAT need the Purchase manager (Kamal Uddin), and an Owner's own orders are approved

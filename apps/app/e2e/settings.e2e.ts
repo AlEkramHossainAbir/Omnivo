@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { expectNoSideScroll, openFromNav } from './helpers.js';
+import { expect, expectNoSideScroll, openFromNav, test } from './helpers.js';
 
 // ১×১ px PNG
 const PNG = Buffer.from(

@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { expectNoSideScroll, listItem, openFromNav } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');

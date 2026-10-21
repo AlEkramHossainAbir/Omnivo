@@ -1,6 +1,4 @@
-import { expect, test } from '@playwright/test';
-
-import { expectNoSideScroll } from './helpers.js';
+import { expect, expectNoSideScroll, test } from './helpers.js';
 
 // The mock's Rahman Garments owner has three unread notifications (step 17a added a requisition
 // waiting for approval) and one read one

@@ -50,6 +50,7 @@ import { stockRoutes } from './stock.js';
 import { supplierPaymentRoutes } from './supplier-payments.js';
 import { supplierRefundRoutes } from './supplier-refunds.js';
 import { supplierGroupRoutes, supplierRoutes } from './suppliers.js';
+import { syncRoutes } from './sync.js';
 import { taxRateRoutes } from './tax-rates.js';
 import { unitRoutes } from './units.js';
 import { warehouseRoutes } from './warehouses.js';
@@ -131,4 +132,5 @@ export const routes = {
   purchaseReturns: purchaseReturnRoutes,
   debitNotes: debitNoteRoutes,
   supplierRefunds: supplierRefundRoutes,
+  sync: syncRoutes,
 };

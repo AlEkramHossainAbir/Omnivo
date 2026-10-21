@@ -1,14 +1,17 @@
 import { UserIcon } from '@hugeicons/core-free-icons';
 import type { PartyRef, PartyRole } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
+import { findCustomers, type SyncDatabase } from '@omnivo/sync';
 import { Combobox, type ComboboxOption } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
-import { type Ref, useMemo, useState } from 'react';
+import { type Ref, useCallback, useMemo, useState } from 'react';
 
 import { partyLabel } from '../lib/customers';
-import { customerSearchQuery, supplierSearchQuery } from '../lib/queries';
+import { useLocalData, useLocalQuery } from '../lib/local-data';
+import { supplierSearchQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { useDebounced } from '../lib/use-debounced';
+import { useLocalStateText } from './local-state';
 
 export interface PartyPickerProps {
   id: string;
@@ -51,8 +54,9 @@ const WORDS = {
 } as const satisfies Record<PartyRole, Record<string, string>>;
 
 // The party box of a journal line and of the opening balances (step 15a's customer box, step 17a
-// for both sides): ui's Combobox with the search on the server. Active parties only, like the API
-// takes them on a new line. A receivable line picks a customer, a payable line a supplier
+// for both sides): ui's Combobox. Active parties only, like the API takes them on a new line.
+// Step 18a: a customer is searched on the device (decision 5), online or not; a supplier is not on
+// the device, so it is still searched on the server. A receivable line picks a customer, a payable line a supplier
 // (partyRoleOf in the contracts).
 // `...box`: id, name, onBlur, ref and the aria props go to the Combobox as they came. Spread, not
 // one by one: with exactOptionalPropertyTypes, `name={name}` would pass an explicit undefined.
@@ -68,18 +72,22 @@ export function PartyPicker({
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const [search, setSearch] = useState('');
   const settled = useDebounced(search.trim(), 250);
-  // Both hooks, each enabled for its side only: a hook cannot be called conditionally, and the two
-  // queries return different types, so one useQuery over a choice of options would not type-check
-  const customers = useQuery({
-    ...customerSearchQuery(tenantId, settled),
-    enabled: role === 'customer',
-  });
+  // Both reads, each for its side only: a hook cannot be called conditionally
+  const { view } = useLocalData();
+  const stateText = useLocalStateText();
+  const find = useCallback((db: SyncDatabase) => findCustomers(db, settled), [settled]);
+  const customers = useLocalQuery(role === 'customer' && view.kind === 'ready' ? find : null);
   const suppliers = useQuery({
     ...supplierSearchQuery(tenantId, settled),
     enabled: role === 'supplier',
   });
-  const found = role === 'customer' ? customers : suppliers;
-  const matches: PartyMatch[] | undefined = found.data;
+  const matches: PartyMatch[] | undefined = role === 'customer' ? customers : suppliers.data;
+  // A customer box on a device without a copy says why it is empty ("This device is not set up
+  // yet"), instead of "No active customer matches"
+  const emptyText =
+    role === 'customer' && view.kind !== 'ready'
+      ? (stateText(view) ?? t(WORDS.customer.empty))
+      : t(WORDS[role].empty);
   // The label of what was picked here. A row keeps its own picker (React's key), so a removed row
   // never hands its label to the next one.
   const [picked, setPicked] = useState<{ value: string; label: string } | null>(null);
@@ -119,12 +127,13 @@ export function PartyPicker({
         setPicked({ value: next, label: party ? partyLabel(party) : option.label });
         onChange(next);
       }}
-      // Searching for the next word: the old matches stay, marked busy
-      loading={found.isFetching}
+      // Searching the server for the next word: the old matches stay, marked busy. The device
+      // answers within a frame, so there is nothing to show for a customer.
+      loading={role === 'supplier' && suppliers.isFetching}
       icon={UserIcon}
       placeholder={allLabel ?? t(WORDS[role].placeholder)}
       searchPlaceholder={t(WORDS[role].search)}
-      emptyText={t(WORDS[role].empty)}
+      emptyText={emptyText}
     />
   );
 }

@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 
-import { type Download, expect, type Page, test } from '@playwright/test';
+import type { Download, Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 16 in the mock garments workspace. Aarong reads its documents in Bangla, has no email
 // address and a mobile number; its open quotation is QT-…-0003. H&M reads English; its declined

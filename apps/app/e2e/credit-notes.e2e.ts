@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15d: credit notes in the mock garments workspace. H&M's order SO-…-0001 bills 10 dozen polo
 // shirts at ৳6,900 a dozen, zero-rated (৳69,000). Aarong buys the crew-neck T-shirt at ৳290 a piece

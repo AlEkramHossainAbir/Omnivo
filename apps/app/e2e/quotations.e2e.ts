@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15b in the mock garments workspace: three quotations. QT-…-0001 (H&M) was declined,
 // QT-…-0002 (Primark) is open but its date has passed, QT-…-0003 (Aarong) is open. Aarong buys

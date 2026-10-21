@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { listItem, openFromNav, readOnlyItem } from './helpers.js';
+import { expect, listItem, openFromNav, readOnlyItem, test } from './helpers.js';
 
 // ডেস্কটপে সাইডবারের নিচে নিজের নাম, ফোনে টপ বারের "Account" আইকন — একই মেনু। কোনটা, সেটা
 // viewport-এর চওড়া দেখে (৮৬০px-এর নিচে ফোনের layout), isVisible() দিয়ে না: পেজ আঁকা শেষ হওয়ার আগে

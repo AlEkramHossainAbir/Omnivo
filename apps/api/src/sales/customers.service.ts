@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
   type Customer,
+  type CustomerBalances,
   type CustomerInput,
   type CustomerPage,
   type CustomerSort,
@@ -26,7 +27,7 @@ import {
   salesReturns,
   tenantSettings,
 } from '@omnivo/db';
-import { and, asc, eq, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -39,6 +40,7 @@ import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { NumberingService } from '../numbering/numbering.service.js';
 import { BalanceAccess } from './balance-access.js';
+import { customersOf } from './customer-read.js';
 
 type PartyRow = typeof parties.$inferSelect;
 
@@ -197,6 +199,27 @@ export class CustomersService {
             ? encodeCursor([last.sortKey, last.party.id])
             : null,
       };
+    });
+  }
+
+  // Step 18a (decision 10): the balances of the rows the customer list shows, which it reads from
+  // the device. The route needs sales.customer.balance, so there is no canSee() here. Archived
+  // customers count (the device may still show one archived a minute ago); an id that is not a
+  // customer of this workspace is left out. The same `balance` subquery as the list and the page,
+  // so the three never disagree.
+  balances(ids: string[]): Promise<CustomerBalances> {
+    return this.withTenant(async (tx) => {
+      const rows = await tx
+        .select({ id: parties.id, balance })
+        .from(parties)
+        .where(
+          and(
+            eq(parties.tenantId, getTenantId()),
+            inArray(parties.id, ids),
+            eq(parties.isCustomer, true),
+          ),
+        );
+      return { items: rows };
     });
   }
 
@@ -570,46 +593,16 @@ export class CustomersService {
   }
 
   private async read(tx: Transaction, id: string, canSeeBalance: boolean): Promise<Customer> {
-    const tenantId = getTenantId();
     const [row] = await tx
       .select({ party: parties, balance: canSeeBalance ? balance : sql<null>`NULL` })
       .from(parties)
-      .where(and(eq(parties.tenantId, tenantId), eq(parties.id, id), eq(parties.isCustomer, true)));
+      .where(
+        and(eq(parties.tenantId, getTenantId()), eq(parties.id, id), eq(parties.isCustomer, true)),
+      );
     if (!row) throw notFound('Customer');
-    const { party } = row;
-    const addresses = await tx
-      .select()
-      .from(partyAddresses)
-      .where(and(eq(partyAddresses.tenantId, tenantId), eq(partyAddresses.partyId, id)))
-      // The billing address first, then the shipping ones in the order the person put them
-      .orderBy(sql`${partyAddresses.kind} = 'billing' DESC`, asc(partyAddresses.position));
-    return {
-      id: party.id,
-      code: party.code,
-      name: party.name,
-      groupId: party.customerGroupId,
-      contactPerson: party.contactPerson,
-      phone: party.phone,
-      email: party.email,
-      documentLanguage: party.documentLanguage,
-      bin: party.bin,
-      paymentTermsDays: party.paymentTermsDays,
-      creditLimit: party.creditLimit,
-      priceListId: party.priceListId,
-      notes: party.notes,
-      addresses: addresses.map((address) => ({
-        id: address.id,
-        kind: address.kind,
-        label: address.label,
-        address: address.address,
-        phone: address.phone,
-      })),
-      isSupplier: party.isSupplier,
-      balance: row.balance,
-      archivedAt: party.archivedAt?.toISOString() ?? null,
-      version: party.version,
-      updatedAt: party.updatedAt.toISOString(),
-    };
+    const [customer] = await customersOf(tx, [row.party]);
+    if (!customer) throw new Error('customersOf returned no customer');
+    return { ...customer, balance: row.balance };
   }
 
   private async snapshot(tx: Transaction, customer: Customer): Promise<Snapshot> {

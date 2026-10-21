@@ -2,8 +2,8 @@ import {
   CUSTOM_FIELD_COLUMN_PREFIX,
   type CustomFieldDefinition,
   PRODUCT_IMPORT_COLUMNS,
-  type ProductCategory,
   type ProductVariantInput,
+  type SyncCategory,
 } from '@omnivo/contracts';
 import { buildTree, flattenTree, type TreeNode } from '@omnivo/ui';
 
@@ -11,7 +11,9 @@ import { buildTree, flattenTree, type TreeNode } from '@omnivo/ui';
 
 const byName = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
 
-export function categoryTree(categories: readonly ProductCategory[]): TreeNode<ProductCategory>[] {
+// Generic: the categories page passes the server's rows (with their product counts), the products
+// page the device's (step 18a, without them)
+export function categoryTree<T extends SyncCategory>(categories: readonly T[]): TreeNode<T>[] {
   return buildTree(categories, {
     id: (category) => category.id,
     parentId: (category) => category.parentId,
@@ -19,10 +21,7 @@ export function categoryTree(categories: readonly ProductCategory[]): TreeNode<P
   });
 }
 
-function withoutBranch(
-  nodes: readonly TreeNode<ProductCategory>[],
-  id: string | undefined,
-): TreeNode<ProductCategory>[] {
+function withoutBranch<T>(nodes: readonly TreeNode<T>[], id: string | undefined): TreeNode<T>[] {
   return nodes.flatMap((node) =>
     node.id === id ? [] : [{ ...node, children: withoutBranch(node.children, id) }],
   );
@@ -31,7 +30,7 @@ function withoutBranch(
 // The categories in tree order, indented with em spaces for a native <select>. `moving` leaves out
 // a category and everything under it: it cannot go inside itself (the API refuses that too).
 export function categoryOptions(
-  categories: readonly ProductCategory[],
+  categories: readonly SyncCategory[],
   moving?: string,
 ): { value: string; label: string }[] {
   return flattenTree(withoutBranch(categoryTree(categories), moving)).map(({ node, depth }) => ({
@@ -41,7 +40,7 @@ export function categoryOptions(
 }
 
 // "Finished garments › T-shirts": where a product sits, for its row in the list
-export function categoryPath(categories: readonly ProductCategory[], id: string | null): string {
+export function categoryPath(categories: readonly SyncCategory[], id: string | null): string {
   const byId = new Map(categories.map((category) => [category.id, category]));
   const names: string[] = [];
   for (let current = id === null ? undefined : byId.get(id); current;) {
@@ -51,6 +50,23 @@ export function categoryPath(categories: readonly ProductCategory[], id: string 
     current = current.parentId === null ? undefined : byId.get(current.parentId);
   }
   return names.join(' › ');
+}
+
+// A category and every category under it: the products list's filter, like the server's
+// (products.service.ts). Step 18a: the list is filtered on the device, so it needs the same rule.
+export function categoryAndBelow(categories: readonly SyncCategory[], id: string): Set<string> {
+  const found = new Set([id]);
+  // Each pass adds the children of what was found; a broken chain (a cycle) adds nothing new
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const category of categories) {
+      if (category.parentId !== null && found.has(category.parentId) && !found.has(category.id)) {
+        found.add(category.id);
+        grew = true;
+      }
+    }
+  }
+  return found;
 }
 
 // "S, M, L,, m" → ['S', 'M', 'L']: what an option's values box holds. Empty parts and repeats (in

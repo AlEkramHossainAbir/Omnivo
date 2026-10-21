@@ -36,7 +36,7 @@ import {
   type MockDocumentOutput,
   seedDocumentOutput,
 } from './document-output-data';
-import { OWNER, type Workspace } from './fixtures';
+import { HEAD_OFFICES, OWNER, type Workspace } from './fixtures';
 import { emptyBilling, type MockBilling } from './invoice-data';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
@@ -54,6 +54,7 @@ import {
 } from './sales-document-data';
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
 import { emptySuppliers, type MockSuppliers, seedSuppliers } from './supplier-data';
+import { emptySync, type MockSync } from './sync-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
 // নিয়মগুলো আসল API-র মতো (version, অনন্য কোড, শেষ চালু ব্রাঞ্চ) — UI-র error-পথ mock দিয়েও দেখা যায়
@@ -97,15 +98,23 @@ export interface WorkspaceData {
   // Approval levels and rounds, and requisitions (step 17a); purchase orders and goods receipts
   // (step 17b)
   purchase: MockPurchase;
+  // The devices and what their pulls left them with (step 18a)
+  sync: MockSync;
 }
 
 function now(): string {
   return new Date().toISOString();
 }
 
-function branch(code: string, name: string, address: string, archived = false): Branch {
+function branch(
+  code: string,
+  name: string,
+  address: string,
+  archived = false,
+  id: string = crypto.randomUUID(),
+): Branch {
   return {
-    id: crypto.randomUUID(),
+    id,
     code,
     name,
     phone: '+880 1711-000000',
@@ -138,12 +147,26 @@ function seed(workspace: Workspace): WorkspaceData {
     },
     branches: garments
       ? [
-          branch('HO', 'Head office', 'House 42, Road 11, Banani, Dhaka 1213'),
+          branch(
+            'HO',
+            'Head office',
+            'House 42, Road 11, Banani, Dhaka 1213',
+            false,
+            HEAD_OFFICES[workspace.slug],
+          ),
           branch('GZP', 'Gazipur factory', 'BSCIC Industrial Area, Konabari, Gazipur 1751'),
           branch('CTG', 'Chattogram depot', 'Port Connecting Road, Chattogram 4100'),
           branch('NGJ', 'Narayanganj dyeing unit', 'Fatullah, Narayanganj 1421', true),
         ]
-      : [branch('HO', 'Head office', 'Tejgaon Industrial Area, Dhaka 1208')],
+      : [
+          branch(
+            'HO',
+            'Head office',
+            'Tejgaon Industrial Area, Dhaka 1208',
+            false,
+            HEAD_OFFICES[workspace.slug],
+          ),
+        ],
     series: new Map(),
     audit: [],
     people: seedPeople(workspace),
@@ -166,6 +189,7 @@ function seed(workspace: Workspace): WorkspaceData {
     documentOutput: emptyDocumentOutput(),
     suppliers: emptySuppliers(),
     purchase: emptyPurchase(),
+    sync: emptySync(),
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   data.salesAccounts = seedSalesAccounts(data.accounts);

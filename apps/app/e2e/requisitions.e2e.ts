@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 17a in the mock garments workspace, where the signed-in person is the Owner. Requisitions
 // from ৳20,000 need the Purchase manager (Kamal Uddin), from ৳1,00,000 a Director as well, a role

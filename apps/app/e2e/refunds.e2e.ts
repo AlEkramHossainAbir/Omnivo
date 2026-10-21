@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15d: refunds, and the sales returns account. Garments: Aarong pays ৳5,000 for an order that
 // is then cancelled, or is billed 10 T-shirts (৳3,335) that are paid and then credited in full;

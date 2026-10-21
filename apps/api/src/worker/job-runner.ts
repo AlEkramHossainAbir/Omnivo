@@ -17,6 +17,7 @@ import { runWithRequest } from '../common/request/request-context.js';
 import { runWithTenant } from '../common/tenant/tenant-context.js';
 import type { WorkerConfig } from '../config.js';
 import { CONFIG } from '../infra/tokens.js';
+import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { OutboxRelay } from './outbox-relay.js';
 import {
@@ -43,6 +44,7 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     private readonly handlers: EventHandlers,
     private readonly queues: Queues,
     private readonly relay: OutboxRelay,
+    private readonly syncLog: SyncLogCleanup,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -70,6 +72,9 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     if (job.name === OUTBOX_CLEANUP) {
       const deleted = await this.relay.deletePublished();
       this.logger.log(`outbox cleanup: ${String(deleted)} old rows deleted`);
+      // Step 18a: the same hour, the sync change log's lines older than 30 days
+      const pruned = await this.syncLog.deleteOld();
+      this.logger.log(`sync log cleanup: ${String(pruned)} old lines deleted`);
       return;
     }
     // A job we cannot read will never become readable: no retries

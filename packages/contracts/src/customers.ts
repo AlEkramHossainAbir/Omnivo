@@ -195,6 +195,27 @@ export const customerCreditSchema = z.object({
 });
 export type CustomerCredit = z.infer<typeof customerCreditSchema>;
 
+// Step 18a (decision 10): the customer list reads its rows from the device, and the balances of
+// the rows it shows from here, a page of the list at a time. A comma-separated list in the query,
+// not a body: it is a read, and a GET stays a GET in the OpenAPI document and in the browser cache.
+export const MAX_BALANCE_IDS = 100;
+
+export const customerBalancesQuerySchema = z.object({
+  ids: z
+    .string()
+    .transform((value) => value.split(','))
+    .pipe(z.array(z.uuid()).min(1).max(MAX_BALANCE_IDS)),
+});
+export type CustomerBalancesQuery = z.input<typeof customerBalancesQuerySchema>;
+
+// One row per id asked for that is a customer of this workspace, archived or not. An id the
+// workspace does not know is left out, never an error: the device may hold a customer that was
+// deleted a minute ago.
+export const customerBalancesSchema = z.object({
+  items: z.array(z.object({ id: z.uuid(), balance: z.string() })),
+});
+export type CustomerBalances = z.infer<typeof customerBalancesSchema>;
+
 const customerParamsSchema = z.object({ id: z.uuid() });
 
 // Reading needs no permission, like products: every sales document picks a customer. The balance
@@ -299,6 +320,18 @@ export const customerRoutes = {
     params: customerParamsSchema,
     query: ledgerQuerySchema,
     response: ledgerPageSchema,
+  }),
+  // The same balance as the customer's own, for many customers at once (step 18a). Its own path,
+  // not /customers/balances: that one would be read as a customer called "balances".
+  balances: defineRoute({
+    method: 'GET',
+    path: '/customer-balances',
+    summary: 'What each of up to 100 customers owes now',
+    auth: 'bearer',
+    permission: 'sales.customer.balance',
+    status: 200,
+    query: customerBalancesQuerySchema,
+    response: customerBalancesSchema,
   }),
   // What the forms show under the customer (step 15c), with the same numbers the credit check uses
   credit: defineRoute({

@@ -19,6 +19,7 @@ export const AUDIT_ACTIONS = [
   'branch.archived',
   'branch.restored',
   'number_series.updated',
+  'device.registered',
   'member.invited',
   'member.invitation_resent',
   'member.invitation_revoked',
@@ -253,6 +254,7 @@ export const AUDIT_ENTITY_TYPES = [
   'purchase_return',
   'debit_note',
   'supplier_refund',
+  'device',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

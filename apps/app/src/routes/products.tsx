@@ -3,12 +3,12 @@ import {
   PackageIcon,
   PlusSignIcon,
   Search01Icon,
+  WifiDisconnected02Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   isTrackingMode,
   PRODUCT_STATUSES,
-  type ProductSort,
   type ProductStatus,
   type ProductSummary,
 } from '@omnivo/contracts';
@@ -24,20 +24,40 @@ import {
   Select,
   type SortingState,
 } from '@omnivo/ui';
+import {
+  allRows,
+  type LocalProductSort,
+  productPage,
+  productSummaryOf,
+  type SyncDatabase,
+} from '@omnivo/sync';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
+import { LocalState, SyncNotice } from '../components/local-state';
+import { useLocalData, useLocalQuery } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
-import { categoryOptions, categoryPath } from '../lib/products';
+import { categoryAndBelow, categoryOptions, categoryPath } from '../lib/products';
 import { productCategoriesQuery, productListQuery, unitsQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { useDebounced } from '../lib/use-debounced';
+import { useOnline } from '../lib/use-online';
 
 const column = dataTableColumns<ProductSummary>();
 
-// The table's sort → the API's. Two sortable columns; the server keeps a stable order on each.
-function sortOf(state: SortingState): ProductSort {
+// Step 18a: the active products are read from the device, this many more each time the list is
+// scrolled to its end. The first screen reads a hundred rows, not the whole catalog.
+const PAGE = 100;
+
+// The small lists of the rows' categories and units, whole. Outside the component: a read must be
+// one stable function (useLocalQuery).
+const readCategories = (db: SyncDatabase) => allRows(db.productCategories);
+const readUnits = (db: SyncDatabase) => allRows(db.units);
+
+// The table's sort → the list's. Two sortable columns, each with an index on the device and a
+// stable order on the server.
+function sortOf(state: SortingState): LocalProductSort {
   const [first] = state;
   if (first?.id === 'code') return first.desc ? '-code' : 'code';
   if (first?.id === 'name') return first.desc ? '-name' : 'name';
@@ -54,18 +74,62 @@ export function ProductsPage() {
   const [status, setStatus] = useState<ProductStatus>('active');
   const [sorting, setSorting] = useState<SortingState>([{ id: 'name', desc: false }]);
   const settled = useDebounced(search.trim());
-  const filter = { search: settled, categoryId, status, sort: sortOf(sorting) };
-  const { data, isError, hasNextPage, isFetchingNextPage, fetchNextPage } = useInfiniteQuery(
-    productListQuery(tenantId, filter),
-  );
-  const categories = useQuery(productCategoriesQuery(tenantId)).data;
-  const units = useQuery(unitsQuery(tenantId)).data;
-  const products = useMemo(() => data?.pages.flatMap((page) => page.items), [data]);
+  const sort = sortOf(sorting);
+  const archived = status === 'archived';
+  const online = useOnline();
+  const { view, notice } = useLocalData();
+  const hasCopy = view.kind === 'ready';
+
+  // The categories and units of the rows: from the device, or from the server while the device
+  // has no copy (the archived tab works without one)
+  const localCategories = useLocalQuery(readCategories);
+  const localUnits = useLocalQuery(readUnits);
+  const serverCategories = useQuery({
+    ...productCategoriesQuery(tenantId),
+    enabled: !hasCopy,
+  }).data;
+  const serverUnits = useQuery({ ...unitsQuery(tenantId), enabled: !hasCopy }).data;
+  const categories = hasCopy ? localCategories : serverCategories;
+  const units = hasCopy ? localUnits : serverUnits;
   const unitCode = useMemo(() => new Map(units?.map((unit) => [unit.id, unit.code])), [units]);
 
+  // How far the list has been scrolled, for this filter only: a new search or sort starts at the
+  // top again. Kept with its filter instead of reset in an effect, so there is no render with
+  // the old length.
+  const filterKey = JSON.stringify([settled, categoryId, sort]);
+  const [grown, setGrown] = useState({ key: filterKey, limit: PAGE });
+  const limit = grown.key === filterKey ? grown.limit : PAGE;
+  const categoryIds = useMemo(
+    () => (categoryId === '' ? null : categoryAndBelow(categories ?? [], categoryId)),
+    [categories, categoryId],
+  );
+  // The active tab (decision 5): a live query, so a pull that changes a product changes its row
+  const readPage = useCallback(
+    (db: SyncDatabase) => productPage(db, { search: settled, categoryIds, sort, limit }),
+    [settled, categoryIds, sort, limit],
+  );
+  const local = useLocalQuery(archived ? null : readPage);
+  // The archived tab: the server's pages, as before, online only (decision 11)
+  const server = useInfiniteQuery({
+    ...productListQuery(tenantId, { search: settled, categoryId, status, sort }),
+    enabled: archived && online,
+  });
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = server;
+
+  const products = useMemo(
+    () =>
+      archived
+        ? server.data?.pages.flatMap((page) => page.items)
+        : local?.rows.map(productSummaryOf),
+    [archived, server.data, local],
+  );
+
+  const more = local?.more ?? false;
   const loadMore = useCallback(() => {
-    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
+    if (!archived) {
+      if (more) setGrown({ key: filterKey, limit: limit + PAGE });
+    } else if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [archived, more, filterKey, limit, hasNextPage, isFetchingNextPage, fetchNextPage, setGrown]);
 
   const columns = useMemo(
     () =>
@@ -144,7 +208,7 @@ export function ProductsPage() {
         title={t('products.noMatchTitle', { query: settled })}
         description={t('products.noMatchBody')}
       />
-    ) : status === 'archived' ? (
+    ) : archived ? (
       <EmptyState
         icon={PackageIcon}
         title={t('products.archivedEmptyTitle')}
@@ -227,8 +291,19 @@ export function ProductsPage() {
         />
       </div>
       {!canManage && <p className="text-body-sm text-ink-3">{t('products.readOnly')}</p>}
-      {isError && <p className="text-body-sm text-crit">{t('products.loadFailed')}</p>}
-      {products && (
+      {notice !== null && <SyncNotice code={notice} />}
+      {archived && server.isError && (
+        <p className="text-body-sm text-crit">{t('products.loadFailed')}</p>
+      )}
+      {!archived && view.kind !== 'ready' && <LocalState view={view} />}
+      {archived && !online && (
+        <EmptyState
+          icon={WifiDisconnected02Icon}
+          title={t('sync.needsConnectionTitle')}
+          description={t('products.archivedOfflineBody')}
+        />
+      )}
+      {products && (archived ? online : view.kind === 'ready') && (
         <DataTable
           label={t('products.title')}
           data={products}

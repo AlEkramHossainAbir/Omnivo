@@ -334,6 +334,43 @@ export const en = {
       'Ask a workspace owner for the core.branch.manage permission to add or change branches.',
     loadFailed: "Couldn't load the branches. Refresh the page to try again.",
   },
+  devices: {
+    // The name a device gets without a question (decision 12), like "Chrome on Windows". Browser
+    // and system names are product names: the app fills them in as they are
+    defaultName: '{{browser}} on {{os}}',
+    fallbackName: 'Web browser',
+    branchTitle: 'Which branch is this device in?',
+    branchDescription:
+      "Omnivo keeps a copy of the products, prices, customers and this branch's stock on this device, so they open at once and keep working when the internet drops.",
+    branch: 'Branch',
+    branchPlaceholder: 'Pick a branch',
+    branchHint: 'The branch where this computer or phone is used, like the Chattogram depot.',
+    useBranch: 'Use this branch',
+    later: 'Not now',
+    registered: 'This device is set up for {{branch}}',
+  },
+  sync: {
+    notSetUpTitle: 'This device is not set up yet',
+    notSetUpBody:
+      'Products and customers are read from a copy on this device. Choose its branch to make the copy.',
+    setUp: 'Choose the branch',
+    firstPullTitle: 'Copying the data to this device…',
+    firstPullBody: 'This happens once. After that, only the changes come over.',
+    // count picks the plural; formatted = the number in the page's language (1,250 / ১,২৫০)
+    firstPullCount_one: '{{formatted}} item copied so far',
+    firstPullCount_other: '{{formatted}} items copied so far',
+    firstPullFailedTitle: "Couldn't copy the data to this device",
+    firstPullFailedBody:
+      'Check the internet connection. Omnivo tries again by itself every minute, or you can try now.',
+    offlineEmptyTitle: 'Not on this device yet',
+    offlineEmptyBody:
+      'This device has no copy of the data yet. Connect to the internet once to make it.',
+    needsConnectionTitle: 'Needs a connection',
+    revokedTitle: 'This device was removed',
+    storageFailedTitle: "This browser can't keep the data",
+    storageFailedBody:
+      "Omnivo keeps its copy in the browser's storage. Leave private browsing or free some space on the device, then reload the page.",
+  },
   accounts: {
     title: 'Chart of accounts',
     description: 'The groups and accounts your books are kept in',
@@ -747,6 +784,8 @@ export const en = {
     noMatchBody: 'Check the spelling, or search by code, SKU or barcode.',
     archivedEmptyTitle: 'No archived products',
     archivedEmptyBody: 'A product you archive shows up here. Archive what you no longer sell.',
+    archivedOfflineBody:
+      'Archived products are not kept on this device. Connect to the internet to see them.',
     loadFailed: "Couldn't load the products. Refresh the page to try again.",
     readOnly:
       'You can see the products. To change them, ask for the inventory.product.manage permission.',
@@ -1488,6 +1527,10 @@ export const en = {
     archivedEmptyTitle: 'No archived customers',
     archivedEmptyBody:
       'A customer you archive shows up here. Their history and what they owe stay.',
+    archivedOfflineBody:
+      'Archived customers are not kept on this device. Connect to the internet to see them.',
+    balancesOffline: 'Balances need a connection',
+    balancesFailed: "Couldn't load the balances. Refresh the page to try again.",
     loadFailed: "Couldn't load the customers. Refresh the page to try again.",
     readOnly:
       'You can see the customers. To change them, ask for the sales.customer.manage permission.',
@@ -4161,6 +4204,7 @@ export const en = {
       purchase_return: 'Purchase returns',
       debit_note: 'Debit notes',
       supplier_refund: 'Supplier refunds',
+      device: 'Devices',
     },
     columns: {
       when: 'When',
@@ -4193,6 +4237,7 @@ export const en = {
         restored: 'Restored a branch',
       },
       number_series: { updated: 'Changed a numbering format' },
+      device: { registered: 'Set up a device' },
       member: {
         invited: 'Invited someone',
         invitation_resent: 'Resent an invitation',
@@ -5222,6 +5267,13 @@ export const en = {
       'The supplier paid some of this payment back. Void that supplier refund first, then the payment.',
     import_options_without_code:
       'Give rows with options a code: rows with the same code are one product.',
+    device_id_invalid: "This device's id is already taken. Reload the page to set it up again.",
+    device_name_required: 'Give this device a name, like Counter 1.',
+    device_branch_invalid: 'Pick an active branch.',
+    device_not_found: "This device isn't set up in this workspace. Reload the page to set it up.",
+    device_revoked:
+      'This device was removed from the workspace and no longer syncs. Ask a workspace owner about it.',
+    sync_protocol_mismatch: 'Omnivo was updated. Reload the page to keep syncing.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',
     version_conflict:
       'Someone else saved changes while you were editing. Reload to see them, then make your change again.',

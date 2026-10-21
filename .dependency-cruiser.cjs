@@ -22,8 +22,8 @@ module.exports = {
       name: 'browser-packages-not-to-server',
       severity: 'error',
       comment:
-        'ui and i18n ship to the browser. Importing db or auth would bundle server code and secrets handling into the app.',
-      from: { path: '^packages/(ui|i18n)/' },
+        'ui, i18n and sync ship to the browser. Importing db or auth would bundle server code and secrets handling into the app.',
+      from: { path: '^packages/(ui|i18n|sync)/' },
       to: { path: ['^packages/(db|auth)/', 'node_modules/(better-auth|drizzle-orm|postgres)/'] },
     },
     {

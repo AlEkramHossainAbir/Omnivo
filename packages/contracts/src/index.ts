@@ -56,6 +56,7 @@ export * from './stock-transfers.js';
 export * from './supplier-payments.js';
 export * from './supplier-refunds.js';
 export * from './suppliers.js';
+export * from './sync.js';
 export * from './tax-rates.js';
 export * from './units.js';
 export * from './warehouses.js';

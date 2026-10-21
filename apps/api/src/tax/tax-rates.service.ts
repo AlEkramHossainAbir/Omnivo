@@ -12,7 +12,7 @@ import { WITH_TENANT } from '../infra/tokens.js';
 
 type TaxRateRow = typeof taxRates.$inferSelect;
 
-function toTaxRate(row: TaxRateRow): TaxRate {
+export function toTaxRate(row: TaxRateRow): TaxRate {
   return {
     id: row.id,
     name: row.name,

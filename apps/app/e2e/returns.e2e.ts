@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15d: sales returns. Garments: H&M's confirmed order SO-…-0001 asks for 5 dozen polo shirts
 // in M and in L (Navy blue) at ৳6,900 a dozen; they leave the Main store at ৳410 a piece. Pharma:

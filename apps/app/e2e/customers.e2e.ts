@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
 
 // Step 15a in the mock garments workspace: five customers (C-00001 to C-00005, the last one
 // archived). H&M owes ৳38,50,000 from last year's export sale, Primark ৳24,50,000 from this

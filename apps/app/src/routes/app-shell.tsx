@@ -78,7 +78,7 @@ import {
 } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createLink, Outlet, useNavigate } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 
 import { NotificationBell } from '../components/notification-bell';
 import { savePreference } from '../lib/preferences';
@@ -87,6 +87,12 @@ import { useCan } from '../lib/permissions';
 import { waitingCountQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { isTheme } from '../lib/theme';
+
+// Step 18a: the device and its copy of the data (Dexie, the sync engine, the branch dialog) in a
+// chunk of their own. The shell draws at once; the copy starts a moment later.
+const LocalDataHost = lazy(async () => ({
+  default: (await import('../components/local-data-host')).LocalDataHost,
+}));
 
 // ui-র সাধারণ <a> → TanStack-এর টাইপ-চেকড লিংক: to="/kitchn-sink" লিখলে compile error,
 // আর সক্রিয় রুটে Link নিজেই aria-current="page" বসায়
@@ -529,6 +535,10 @@ export function AppShell() {
       }
     >
       <Outlet />
+      {/* No fallback: the host draws nothing until a branch dialog is needed */}
+      <Suspense fallback={null}>
+        <LocalDataHost />
+      </Suspense>
     </Shell>
   );
 }

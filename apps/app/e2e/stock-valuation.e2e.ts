@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
 
 // Step 14 in the mock garments workspace. Its opening stock was posted with costs (7,200 shirt
 // buttons at ৳0.45 = ৳3,240) as JV-…-0007, and the truck to the Chattogram depot as JV-…-0008.

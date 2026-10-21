@@ -150,5 +150,24 @@ export async function call(route: RouteDef, input: RequestParts = {}): Promise<u
     response = await send(route, input, session.accessToken);
   }
 
-  return read(route, response);
+  const result = await read(route, response);
+  if (route.method !== 'GET') notifyWrite();
+  return result;
+}
+
+// Step 18a: a save on this device pulls its change onto the device at once, instead of up to a
+// minute later. Every write goes through call(), so one listener here covers the product form,
+// the customer form, a stock posting and every other save. The sync code subscribes; this file
+// does not import it, so the first page load stays without Dexie.
+const writeListeners = new Set<() => void>();
+
+export function onApiWrite(listener: () => void): () => void {
+  writeListeners.add(listener);
+  return () => {
+    writeListeners.delete(listener);
+  };
+}
+
+function notifyWrite(): void {
+  for (const listener of writeListeners) listener();
 }

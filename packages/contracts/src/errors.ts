@@ -471,6 +471,15 @@ export const ERROR_CODES = [
   // Void refused while a supplier refund paid back some of the payment's advance
   'payment_has_refunds',
   'journal_is_purchase',
+  // Step 18a: devices and the sync. device_not_found also answers another person's device: the
+  // app then registers this browser again.
+  'device_id_invalid',
+  'device_name_required',
+  'device_branch_invalid',
+  'device_not_found',
+  'device_revoked',
+  // The app was built for another version of the sync (SYNC_PROTOCOL): reload it
+  'sync_protocol_mismatch',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

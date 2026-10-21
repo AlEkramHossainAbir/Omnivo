@@ -21,6 +21,7 @@ import { StockAccountsHandler } from '../setup/stock-accounts.handler.js';
 import { TaxRatesHandler } from '../setup/tax-rates.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 import { StorageService } from '../storage/storage.service.js';
+import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { JobRunner } from './job-runner.js';
 import { OutboxRelay } from './outbox-relay.js';
@@ -71,6 +72,8 @@ export class WorkerModule implements OnApplicationShutdown {
         DocumentFileMaker,
         DocumentFileHandler,
         DocumentEmailHandler,
+        // Step 18a: the hourly job also prunes the sync change log, on the relay's pool
+        SyncLogCleanup,
       ],
     };
   }

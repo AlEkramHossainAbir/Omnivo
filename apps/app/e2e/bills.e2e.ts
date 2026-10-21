@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav, toastShown } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 17c in the mock garments workspace, where the signed-in person is the Owner. Bills from
 // ৳1,00,000 with VAT need the Purchase manager, payments from ৳2,00,000 a Director, and an Owner's

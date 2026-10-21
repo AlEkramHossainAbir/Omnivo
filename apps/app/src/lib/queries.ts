@@ -628,17 +628,18 @@ export function customerListQuery(tenantId: string, filter: CustomerFilter) {
   });
 }
 
-// The customer picker: the first 20 active customers that match. keepPreviousData: the old
-// matches stay in the list while the next word is searched, so the list does not flash empty.
-export function customerSearchQuery(tenantId: string, search: string) {
+// Step 18a: what the customers on screen owe (decision 10). The rows come from the device; the
+// balances, which change with every invoice and receipt, from the server, up to 100 at a time.
+// Under ['customers', tenantId], so every sales save that moves a balance refreshes them too.
+export function customerBalancesQuery(tenantId: string, ids: readonly string[]) {
   return queryOptions({
-    queryKey: ['customers', tenantId, 'search', search],
+    queryKey: ['customers', tenantId, 'balances', ids],
     queryFn: async () =>
-      (
-        await call(routes.customers.list, {
-          query: { limit: 20, status: 'active', ...(search !== '' && { search }) },
-        })
-      ).items,
+      new Map(
+        (await call(routes.customers.balances, { query: { ids: ids.join(',') } })).items.map(
+          (item) => [item.id, item.balance],
+        ),
+      ),
     placeholderData: keepPreviousData,
   });
 }

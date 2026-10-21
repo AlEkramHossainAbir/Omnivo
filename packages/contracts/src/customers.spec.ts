@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { type CustomerFormValues, customerInputSchema } from './customers.js';
+import {
+  type CustomerFormValues,
+  customerBalancesQuerySchema,
+  customerInputSchema,
+  MAX_BALANCE_IDS,
+} from './customers.js';
 import { setPriceListItemsInputSchema } from './price-lists.js';
 
 function customer(extra: Partial<CustomerFormValues> = {}): CustomerFormValues {
@@ -64,6 +69,23 @@ describe('customer input', () => {
     expect(
       customerInputSchema.safeParse(customer({ bin: '12345' })).error?.issues[0]?.message,
     ).toBe('bin_format');
+  });
+});
+
+describe('customer balances query', () => {
+  const id = (n: number) => `0192f1c4-0000-7000-8000-${String(n).padStart(12, '0')}`;
+
+  it('reads the comma-separated ids of the rows a page shows', () => {
+    expect(customerBalancesQuerySchema.parse({ ids: `${id(1)},${id(2)}` })).toEqual({
+      ids: [id(1), id(2)],
+    });
+  });
+
+  it('refuses an empty list, more than a page, and a part that is not an id', () => {
+    const many = Array.from({ length: MAX_BALANCE_IDS + 1 }, (_, n) => id(n)).join(',');
+    for (const ids of ['', many, `${id(1)},,${id(2)}`, `${id(1)},C-00042`]) {
+      expect(customerBalancesQuerySchema.safeParse({ ids }).success).toBe(false);
+    }
   });
 });
 

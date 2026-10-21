@@ -6,11 +6,13 @@ import {
   type Customer,
   type CustomerFormValues,
   customerGroupListSchema,
+  customerBalancesSchema,
   customerGroupSchema,
   customerPageSchema,
   customerSchema,
   journalEntrySchema,
   ledgerPageSchema,
+  MAX_BALANCE_IDS,
   memberPageSchema,
   openingBalancesSchema,
   priceListSchema,
@@ -20,6 +22,7 @@ import {
 } from '@omnivo/contracts';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import {
   createTestApp,
@@ -588,6 +591,53 @@ describe('customers in the books', () => {
     const statement = await send('GET', `/customers/${buyer.id}/statement`, undefined, seller);
     expect(statement.statusCode).toBe(403);
     expect(problemOf(statement).params).toEqual({ permissions: 'sales.customer.balance' });
+  });
+
+  // Step 18a: the customer list reads its rows from the device, and their balances from here
+  it('give the balances of the rows on screen, many at once', async () => {
+    const supplier = await send('POST', '/suppliers', {
+      code: '',
+      name: 'Chittagong Dyeing Works',
+      groupId: '',
+      contactPerson: '',
+      phone: '',
+      email: '',
+      documentLanguage: 'en',
+      bin: '',
+      paymentTermsDays: 30,
+      address: '',
+      bankAccounts: [],
+      notes: '',
+    });
+    expect(supplier.statusCode, supplier.body).toBe(201);
+    const supplierId = z.object({ id: z.uuid() }).parse(supplier.json()).id;
+
+    // The archived customer counts (the device may still show it); the supplier and an id this
+    // workspace does not know are left out, without an error
+    const unknown = '01939d1c-0000-7000-8000-000000000000';
+    const ids = [buyer.id, gone.id, supplierId, unknown].join(',');
+    const res = await send('GET', `/customer-balances?ids=${ids}`);
+    expect(res.statusCode, res.body).toBe(200);
+    const items = customerBalancesSchema.parse(res.json()).items;
+    expect(items.sort((x, y) => x.id.localeCompare(y.id))).toEqual(
+      [
+        { id: buyer.id, balance: '480000.0000' },
+        { id: gone.id, balance: '0.0000' },
+      ].sort((x, y) => x.id.localeCompare(y.id)),
+    );
+
+    // Like the statement: not for the salesperson
+    const theirs = await send('GET', `/customer-balances?ids=${buyer.id}`, undefined, seller);
+    expect(theirs.statusCode).toBe(403);
+    expect(problemOf(theirs).params).toEqual({ permissions: 'sales.customer.balance' });
+
+    // At most a page of the list at a time, and only ids
+    const tooMany = Array.from({ length: MAX_BALANCE_IDS + 1 }, () => buyer.id).join(',');
+    for (const query of [tooMany, '', 'Aarhus']) {
+      const bad = await send('GET', `/customer-balances?ids=${query}`);
+      expect(bad.statusCode, query.slice(0, 20)).toBe(400);
+      expect(Object.keys(problemOf(bad).fieldErrors ?? {})[0]).toMatch(/^ids/);
+    }
   });
 
   it('give a statement like a ledger: opening balance, running balance, pages', async () => {

@@ -302,6 +302,20 @@
       "when": 1792424582453,
       "tag": "0042_purchase-returns-debit-notes-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792491362893,
+      "tag": "0043_sync-devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792491363789,
+      "tag": "0044_sync-devices-rules",
+      "breakpoints": true
     }
   ]
 }

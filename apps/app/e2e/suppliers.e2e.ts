@@ -1,6 +1,6 @@
-import { expect, type Page, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 
-import { expectNoSideScroll, listItem, openFromNav } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
 
 // Step 17a in the mock garments workspace: three suppliers, S-00001 to S-00003. The company owes
 // Meghna Spinning Mills ৳21,00,000 from last year's yarn (a payable line of the seeded journal).
