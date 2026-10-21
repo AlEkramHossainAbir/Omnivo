@@ -7,6 +7,7 @@ import {
   auditPageSchema,
   type Customer,
   customerCreditSchema,
+  DEFAULT_SETTINGS,
   customerSchema,
   type Delivery,
   deliveryPageSchema,
@@ -41,6 +42,7 @@ import {
   stockPageSchema,
   type TaxRate,
   taxRateListSchema,
+  todayIn,
   type Unit,
   unitListSchema,
   type Warehouse,
@@ -1029,7 +1031,17 @@ describe('invoices', () => {
       'INV-2026-27-0005',
     ];
     expect(await invoiceNumbers('payment=open')).toEqual(open);
-    expect(await invoiceNumbers('payment=overdue')).toEqual(['INV-2026-27-0003']);
+    // Overdue: the open ones due before today. The API compares with the real today in the
+    // workspace's time zone, so the expected list comes from it too: a list typed in stops
+    // matching the day a due date passes (0006 was due 20 Oct, 0001 is due 5 Nov)
+    const today = todayIn(DEFAULT_SETTINGS.timezone);
+    const openPage = invoicePageSchema.parse((await send('GET', '/invoices?payment=open')).json());
+    const overdue = await invoiceNumbers('payment=overdue');
+    expect(overdue).toEqual(
+      openPage.items.filter((item) => item.dueDate < today).map((item) => item.number),
+    );
+    // 0003 (due 6 Oct) is the oldest, always first
+    expect(overdue[0]).toBe('INV-2026-27-0003');
     expect(await invoiceNumbers('payment=paid')).toEqual(['INV-2026-27-0007']);
 
     const posted = ['0007', '0006', '0005', '0004', '0003', '0002', '0001'].map(

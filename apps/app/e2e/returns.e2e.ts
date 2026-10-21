@@ -106,12 +106,13 @@ test('bills only what is left of a challan line that partly came back', async ({
   await page.getByRole('link', { name: /^DC-\d{4}-\d{2}-0001$/ }).click();
   await page.getByRole('button', { name: 'Make invoice' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'New invoice' })).toBeVisible();
-  // The M line in pieces: 60 left, 12 came back, 48 to bill at ৳575 a piece (৳6,900 a dozen)
+  // The M line: 5 dozen left, 1 dozen came back, 4 dozen to bill at the order's ৳6,900 a dozen.
+  // What is left is a whole number of dozens, so the line keeps the challan's unit
   await expect(
     line(page, 1).getByText('12 pcs came back before billing: this bills the rest'),
   ).toBeVisible();
   // The challan's own quantity is text, not a box: the invoice bills it whole
-  await expect(line(page, 1)).toContainText(/Unit\s*pcs\s*Quantity\s*48/);
+  await expect(line(page, 1)).toContainText(/Unit\s*dozen\s*Quantity\s*4/);
   // ৳27,600 for the M shirts + ৳34,500 for the L shirts
   await expect(page.getByText('৳62,100.00').first()).toBeVisible();
   await page.getByRole('button', { name: 'Post invoice' }).click();

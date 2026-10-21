@@ -9,7 +9,7 @@ import type { QueryClient } from '@tanstack/react-query';
 
 import { call } from './api';
 import {
-  billedUnitOf,
+  challanBilledQuantity,
   challanLinesLeft,
   challanLineToInvoice,
   chargesLeft,
@@ -40,7 +40,8 @@ function sourceKey(): string {
 // The challan's lines not billed yet and not on the form (`onForm`). With an order, the order's
 // prices (read through the query cache: a second challan of the same order asks nothing again);
 // without one, the price lookup for this customer, like a new order line. Step 15d: the lookup asks
-// for the unit the line will bill in (billedUnitOf), the base unit when something came back.
+// for the unit the line will bill in (challanBilledQuantity), the base unit when what came back
+// leaves part of the challan's unit.
 export async function challanLines(
   queryClient: QueryClient,
   tenantId: string,
@@ -61,7 +62,10 @@ export async function challanLines(
     const answer = await call(routes.salesPrices.lookup, {
       body: {
         customerId: delivery.customer.id,
-        items: unpriced.map((line) => ({ variantId: line.variantId, unitId: billedUnitOf(line) })),
+        items: unpriced.map((line) => ({
+          variantId: line.variantId,
+          unitId: challanBilledQuantity(line).unitId,
+        })),
       },
     });
     for (const item of answer.items) prices.set(`${item.variantId}:${item.unitId}`, item);
@@ -70,7 +74,9 @@ export async function challanLines(
     order,
     lines: left.map((line) => {
       const orderLine = line.orderLineId === null ? undefined : orderLines.get(line.orderLineId);
-      const price = orderLine ? undefined : prices.get(`${line.variantId}:${billedUnitOf(line)}`);
+      const price = orderLine
+        ? undefined
+        : prices.get(`${line.variantId}:${challanBilledQuantity(line).unitId}`);
       return {
         line: challanLineToInvoice(line, orderLine, price),
         meta: {

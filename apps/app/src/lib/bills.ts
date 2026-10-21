@@ -6,14 +6,12 @@ import {
   type BillExpenseFormValues,
   type BillLineFormValues,
   type BillSummary,
-  compareQuantity,
   defaultLineDescription,
   type DocumentTotals,
   documentTotals,
   expenseLineAmounts,
   type GoodsReceiptLine,
   isMoneyAmount,
-  isWholeQuantity,
   isZeroQuantity,
   keptQuantity,
   type LineAmounts,
@@ -28,10 +26,9 @@ import {
   type StockAccounts,
   subtractMoney,
   sumMoney,
-  toBaseQuantity,
 } from '@omnivo/contracts';
 
-import { type AllocationRow, factorOf } from './invoices';
+import { type AllocationRow, billedQuantityOf, factorOf } from './invoices';
 import {
   draftAmounts,
   formDiscount,
@@ -106,31 +103,16 @@ export function receiptOrderValue(
 }
 
 // The unit and quantity a bill line bills a goods receipt line in (step 17d): what the company
-// kept. Nothing went back: the receipt's own unit and quantity, "16 bag" as it came. Something went
-// back before billing: still the receipt's unit when what is left is a whole number of it (13 of
-// 16 bags), else the base unit (660 kg of 16 bags of 50). The base unit only when it must: a price
-// moved to the base unit is rounded (৳62 a gross is ৳0.4306 a piece), so 500 gross billed as
-// 72,000 pcs come to ৳3.20 more than the order, and posting books that as a price difference.
+// kept (accepted less what went back before billing), in billedQuantityOf()'s unit: "16 bag" as it
+// came, 13 bags of 16, or 660 kg of 16 bags of 50. A price moved to the base unit when it need not
+// be would book a false price difference at posting.
 export function receiptBilledQuantity(
   line: Pick<
     GoodsReceiptLine,
     'unitId' | 'baseUnitId' | 'units' | 'quantity' | 'baseQuantity' | 'returnedQuantity'
   >,
 ): { unitId: string; quantity: string } {
-  if (isZeroQuantity(line.returnedQuantity)) {
-    return { unitId: line.unitId, quantity: plainQuantity(line.quantity) };
-  }
-  const kept = keptQuantity(line);
-  // What was kept in the receipt's unit: its quantity × kept ÷ its base quantity, to 4 decimals
-  // (prorateMoney is that sum). Used only when it is whole and gives back exactly what was kept,
-  // the API's check (bill_receipt_line_quantity).
-  const inUnit = prorateMoney(line.quantity, kept, line.baseQuantity);
-  const whole =
-    isWholeQuantity(inUnit) &&
-    compareQuantity(toBaseQuantity(inUnit, factorOf(line, line.unitId), 4), kept) === 0;
-  return whole
-    ? { unitId: line.unitId, quantity: plainQuantity(inUnit) }
-    : { unitId: line.baseUnitId, quantity: plainQuantity(kept) };
+  return billedQuantityOf(line, keptQuantity(line));
 }
 
 // The fields a bill line has beside a sales line's, empty: a line of its own, an order's service

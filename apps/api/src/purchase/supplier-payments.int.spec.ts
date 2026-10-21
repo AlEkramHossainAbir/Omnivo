@@ -9,6 +9,7 @@ import {
   type BillFormValues,
   billPageSchema,
   billSchema,
+  DEFAULT_SETTINGS,
   journalEntrySchema,
   journalPageSchema,
   memberPageSchema,
@@ -29,6 +30,7 @@ import {
   supplierSchema,
   type TaxRate,
   taxRateListSchema,
+  todayIn,
   type Unit,
   unitListSchema,
   type Warehouse,
@@ -266,6 +268,17 @@ async function openBills(supplier: Supplier, filter: 'open' | 'overdue' | 'paid'
   return page.items.map((item) => item.supplierBillNumber);
 }
 
+// The open bills due before today, the ones the overdue filter must list. The API compares with
+// the real today in the workspace's time zone, so the test works it out the same way: a list typed
+// in stops matching the day a due date passes (B, due 4 Nov, is overdue from 5 Nov).
+async function pastDue(supplier: Supplier) {
+  const today = todayIn(DEFAULT_SETTINGS.timezone);
+  const page = billPageSchema.parse(
+    (await send('GET', `/bills?payment=open&supplierId=${supplier.id}`)).json(),
+  );
+  return page.items.filter((item) => item.dueDate < today).map((item) => item.supplierBillNumber);
+}
+
 function paymentForm(
   amount: string,
   allocations: { bill: Bill; amount: string }[],
@@ -491,8 +504,10 @@ describe('supplier payments', () => {
       '11500.0000',
     ]);
     expect(await openBills(yarn)).toEqual(['PYT-0931', 'PYT-0957', 'PYT-0978']);
-    // Overdue in the workspace's time zone: the day after its due date
-    expect(await openBills(yarn, 'overdue')).toEqual(['PYT-0931']);
+    // Overdue in the workspace's time zone: the day after its due date. A (due 15 Oct) is always
+    // among them; B and C join once their dates pass
+    expect(await openBills(yarn, 'overdue')).toEqual(await pastDue(yarn));
+    expect((await openBills(yarn, 'overdue'))[0]).toBe('PYT-0931');
     expect(await openBills(yarn, 'paid')).toEqual([]);
   });
 
@@ -524,7 +539,7 @@ describe('supplier payments', () => {
     ]);
     // ...but not on the bills: nothing is paid until it is posted
     expect(await paidOf(billA)).toEqual(['0.0000', []]);
-    expect(await openBills(yarn, 'overdue')).toEqual(['PYT-0931']);
+    expect((await openBills(yarn, 'overdue'))[0]).toBe('PYT-0931');
     // So a second draft may plan the same money: it holds nothing either
     late = await paid(
       paymentForm('20000', [{ bill: billA, amount: '20000' }], { method: 'bank_transfer' }),
@@ -802,7 +817,7 @@ describe('a posted payment', () => {
     // A is owed again, and overdue; the voided payment is not among what it was paid
     expect(await paidOf(billA)).toEqual(['0.0000', []]);
     expect(await paidOf(billB)).toEqual(['0.0000', []]);
-    expect(await openBills(yarn, 'overdue')).toEqual(['PYT-0931']);
+    expect((await openBills(yarn, 'overdue'))[0]).toBe('PYT-0931');
     const again = await send(
       'POST',
       `/supplier-payments/${cheque.id}/void`,
@@ -888,7 +903,9 @@ describe('two payments at the same moment', () => {
     expect(await paymentNow(loser.id)).toMatchObject({ status: 'draft', number: null });
     const [amountPaid] = await paidOf(billA);
     expect(amountPaid).toBe('46000.0000');
-    expect(await openBills(yarn, 'overdue')).toEqual([]);
+    // A is paid, so it is overdue no more; B and C stay on the list once their dates pass
+    expect(await openBills(yarn, 'overdue')).toEqual(await pastDue(yarn));
+    expect(await openBills(yarn, 'overdue')).not.toContain('PYT-0931');
   });
 
   it('keep the payable equal to what the bills owe less the advances', async () => {

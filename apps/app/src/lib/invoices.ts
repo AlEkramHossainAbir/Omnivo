@@ -9,6 +9,7 @@ import {
   type InvoiceLineFormValues,
   type InvoiceSummary,
   isMoneyAmount,
+  isWholeQuantity,
   isZeroMoney,
   isZeroQuantity,
   plainQuantity,
@@ -19,6 +20,7 @@ import {
   type SalesOrderLine,
   subtractMoney,
   sumMoney,
+  toBaseQuantity,
 } from '@omnivo/contracts';
 
 import {
@@ -105,13 +107,48 @@ export function factorOf(
   return pack.factor;
 }
 
-// The unit an invoice line bills a challan line in (step 15d). Nothing came back: the challan's own
-// unit, "2 case" as it left. Something came back before billing: the base unit, because what is
-// left (42 pcs of 2 cases of 24) is seldom a whole number of the challan's unit.
-export function billedUnitOf(
-  line: Pick<DeliveryLine, 'unitId' | 'baseUnitId' | 'returnedQuantity'>,
-): string {
-  return isZeroQuantity(line.returnedQuantity) ? line.unitId : line.baseUnitId;
+// The unit and quantity a line bills what is left of a challan line or a goods receipt line in
+// (`left`, in the base unit). Nothing came back: the line's own unit and quantity, "2 case" as it
+// left. Something came back before billing: still the line's unit when what is left is a whole
+// number of it (1 of 2 cases), else the base unit (42 pcs of 2 cases of 24). The base unit only
+// when it must: a price moved to the base unit is rounded (৳62 a gross is ৳0.4306 a piece), so 500
+// gross billed as 72,000 pcs come to ৳3.20 more than the order. Bills found this in step 17d;
+// invoices (step 15d) use the same rule, so a customer is not billed more than the order.
+export function billedQuantityOf(
+  line: {
+    unitId: string;
+    baseUnitId: string;
+    units: readonly { unitId: string; factor: string }[];
+    quantity: string;
+    baseQuantity: string;
+    returnedQuantity: string;
+  },
+  left: string,
+): { unitId: string; quantity: string } {
+  if (isZeroQuantity(line.returnedQuantity)) {
+    return { unitId: line.unitId, quantity: plainQuantity(line.quantity) };
+  }
+  // What is left in the line's unit: its quantity × left ÷ its base quantity, to 4 decimals
+  // (prorateMoney is that sum). Used only when it is whole and gives back exactly what is left,
+  // the API's check (invoice_delivery_line_invalid, bill_receipt_line_quantity).
+  const inUnit = prorateMoney(line.quantity, left, line.baseQuantity);
+  const whole =
+    isWholeQuantity(inUnit) &&
+    compareQuantity(toBaseQuantity(inUnit, factorOf(line, line.unitId), 4), left) === 0;
+  return whole
+    ? { unitId: line.unitId, quantity: plainQuantity(inUnit) }
+    : { unitId: line.baseUnitId, quantity: plainQuantity(left) };
+}
+
+// The unit and quantity an invoice line bills a challan line in (step 15d): what left less what
+// came back before billing (billableQuantity), in billedQuantityOf()'s unit
+export function challanBilledQuantity(
+  line: Pick<
+    DeliveryLine,
+    'unitId' | 'baseUnitId' | 'units' | 'quantity' | 'baseQuantity' | 'returnedQuantity'
+  >,
+): { unitId: string; quantity: string } {
+  return billedQuantityOf(line, billableQuantity(line));
 }
 
 // A challan line as an invoice line. It bills the line whole: the item, unit and quantity are the
@@ -120,18 +157,18 @@ export function billedUnitOf(
 // piece, not ৳504), and an amount discount goes with the share of the order this challan line
 // carries. Without an order, the price lookup's price for this customer, as on a new order line.
 // Step 15d: "whole" is what left less what came back before billing (billableQuantity), in
-// billedUnitOf()'s unit; the API refuses any other quantity.
+// challanBilledQuantity()'s unit; the API refuses any other quantity.
 export function challanLineToInvoice(
   line: DeliveryLine,
   orderLine: SalesOrderLine | undefined,
   price: PriceLookupItem | undefined,
 ): InvoiceLineFormValues {
-  const unitId = billedUnitOf(line);
+  const { unitId, quantity } = challanBilledQuantity(line);
   const billable = billableQuantity(line);
   const fixed = {
     variantId: line.variantId,
     unitId,
-    quantity: plainQuantity(unitId === line.unitId ? line.quantity : billable),
+    quantity,
     deliveryLineId: line.id,
     // The API reads the order line from the challan line; the contract refuses both on one line
     orderLineId: '',

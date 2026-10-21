@@ -559,9 +559,15 @@ flowchart LR
 ১. **App Shell ক্যাশ (Service Worker/Workbox):** HTML, JS, CSS, ফন্ট ক্যাশ হবে, তাই নেট ছাড়াও অ্যাপ খুলবে।
 
 ২. **Pull (সার্ভার থেকে ক্লায়েন্টে):**
-   - প্রতিটা syncable টেবিলে `updated_at` আর একটা monotonic `version` (বা টেন্যান্ট-ভিত্তিক change log sequence) থাকবে।
+   - প্রতিটা syncable টেবিলে trigger একটা change log-এ (`sync_changes`) লাইন লেখে: কোন entity, কোন key, আর যে
+     transaction লিখেছে তার `xid8`। cursor একটা transaction watermark: সার্ভার শুধু সেই transaction-গুলোর
+     পরিবর্তন দেয় যেগুলো এখনো চলা সবচেয়ে পুরনো transaction-এর আগে শেষ হয়েছে। সাধারণ sequence number দেরিতে commit
+     হওয়া transaction-কে হারিয়ে ফেলে; watermark কখনো হারায় না, বড়জোর এক pull পরে আনে। ডিলিট বা ডেটা-সেট থেকে বেরিয়ে
+     যাওয়া (archive, স্টক শূন্য) = delete। log ৩০ দিন থাকে; এর চেয়ে পুরনো cursor-এ পুরো pull।
    - ক্লায়েন্ট বলবে "আমার কাছে version 1520 পর্যন্ত আছে", সার্ভার দেবে এর পরের সব পরিবর্তন (ডিলিট হলে tombstone সহ)।
-   - শুধু দরকারি ডেটা ক্লায়েন্টে যাবে: ইউজারের ব্রাঞ্চ, সক্রিয় প্রোডাক্ট, সাম্প্রতিক কাস্টমার। পুরো ডাটাবেস না।
+   - শুধু "POS-ready" ডেটা ক্লায়েন্টে যাবে: সক্রিয় প্রোডাক্ট (variant, pack, barcode সহ), price list ও দাম, VAT
+     rate, সক্রিয় কাস্টমার ও group, ডিভাইসের ব্রাঞ্চের warehouse ও তার স্টক, আর সেটিংসের দরকারি অংশ। balance আর
+     stock value না (permission লাগে, প্রতি posting-এ বদলায়)। প্রতিটা ব্রাউজার একটা device, একটা ব্রাঞ্চে।
 
 ৩. **Push (ক্লায়েন্ট থেকে সার্ভারে): Outbox প্যাটার্ন**
    - অফলাইনে প্রতিটা কাজ একটা **command** হিসেবে লোকাল outbox-এ জমা হবে:

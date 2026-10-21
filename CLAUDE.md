@@ -290,7 +290,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   table becomes a list of cards: each column opts in with `meta.card` (`title`,
   `subtitle`, `trailing`, `detail`), and columns without it are hidden on phones.
   Paged lists sort on the server (`sorting` prop) and load the next page with
-  `onEndReached`.
+  `onEndReached`. A list whose rows are on the device (the active products and customers) searches, filters and
+  sorts in the browser and shows 100 more rows at its end (`onEndReached`); its Archived tab stays a paged server
+  list, online only.
 - **Tree list:** `TreeList` from `@omnivo/ui`, for lists with a parent (chart of accounts, product categories).
   A card (`surface`, 1px `line`, radius 14px, `shadow-sm`) of nested lists; rows 44px high with a 1px `line`
   rule, hover `subtle`, indented 16px per level. Each group has a 28px show/hide button (`ArrowRight01` closed,
@@ -306,6 +308,18 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Empty state:** centered, a 40px `brand-soft`/`brand` icon tile (radius 8px), a
   15px/600 title, a 13.5px `ink-2` description that says what to do to fill the view,
   and an optional action button.
+- **Device copy states:** `LocalState` (`apps/app/src/components/local-state.tsx`), what a list read from the
+  device shows in its place while the copy is not ready, as an empty state: not set up (`ComputerPhoneSync`, a
+  "Choose the branch" button), copying (`CloudDownload`, a 12px `ink-3` `tabular-nums` `role="status"` count, "1,250
+  items copied so far"), copy failed (`CloudOff`, Retry), offline with no copy (`WifiDisconnected02`), storage
+  refused (`HardDrive`), device removed (`ComputerRemove`). A picker shows only the title, as its status line. A
+  problem that needs a reload (`sync_protocol_mismatch`) is a neutral document notice above the list, which still
+  shows the copy, with a Reload text link. A server-backed tab offline is the empty state "Needs a connection"
+  (`WifiDisconnected02`).
+- **Device branch dialog:** after sign-in, when the workspace has more than one active branch: the dialog, "Which
+  branch is this device in?", a select that starts empty ("Pick a branch", active branches only), "Not now"
+  (secondary) and "Use this branch" (primary), then the toast "This device is set up for Chattogram depot". Closing
+  it any way is "Not now".
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -344,8 +358,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   box on top and the matches below: 13.5px label, a 12px `ink-3` detail line (code · phone), highlighted
   `subtle`, the chosen one with a `brand` `Tick02` icon. "Searching…" and "Nothing matches" (or the page's own
   text, "No active customer matches") are a `role="status"` line. The focus stays in the search box (the ARIA
-  combobox pattern). The page owns the search and runs it on the server; use a native select for short fixed
-  lists.
+  combobox pattern). The page owns the search and runs it on the server, or on the device for the customer box
+  (step 18a); use a native select for short fixed lists.
 - **Line editor (journal lines, opening balances):** a card that is a container (`@container`); each row is a
   `role="group"` labelled "Line 2". On a wide card (`@3xl`) the rows share one grid template with the header and
   the totals row, and each control's label is `sr-only`; on a narrow card the labels show and debit/credit sit
@@ -364,7 +378,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   PO-…", that the item, unit and quantity are the receipt's, and "Order's price: ৳1,87,500 · ৳1,500 over the order"
   (12px `ink-3`, the difference `ink-2`/500); a `warn` document notice under the totals gives the sum. After a
   return before the bill, a receipt line bills what was kept, in the receipt's unit when that is a whole number of
-  it, else in the base unit, and says "30 m went back before billing: this bills the rest". Under the
+  it, else in the base unit, and says "30 m went back before billing: this bills the rest". An invoice line from a
+  challan follows the same rule after a return before billing ("12 pcs came back before billing: this bills the
+  rest", then 4 of 5 dozen; 42 pcs of 2 cases of 24 bill in pcs), so the order's price is not rounded. Under the
   lines, a totals block on `subtle` (line discounts
   only when there are any, before VAT, VAT, total at 500) with paisa, and on the left whether prices include VAT.
 - **Expenses card (bills):** `BillExpenses`, a card that is a container (`@container`) under the bill's lines:
@@ -530,7 +546,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   stock card's KPIs show whole taka; documents, the stock card's history and the journal show paisa.
 - **A customer's balance:** "Owes ৳1,15,000" when the customer owes the company, "৳20,000 in advance" when the
   company owes the customer (an advance or an overpayment), "Nothing owed" at zero. Shown only with
-  `sales.customer.balance`; without it the balance column is left out.
+  `sales.customer.balance`; without it the balance column is left out. Offline the column shows a dash, and the
+  list says "Balances need a connection".
 - **VAT rates:** a rate is shown with its name and percent ("VAT 15% · 15%", "Exempt · 0%"). Zero-rated and
   exempt are different rates, even though both are 0%.
 - **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. In Bangla, `২৩ সেপ, ২০২৬`

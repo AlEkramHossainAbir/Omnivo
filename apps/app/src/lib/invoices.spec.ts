@@ -12,6 +12,7 @@ import {
   allocationRows,
   appliedOf,
   challanLinesLeft,
+  billedQuantityOf,
   challanLineToInvoice,
   chargesLeft,
   daysLate,
@@ -138,6 +139,56 @@ describe('challanLineToInvoice', () => {
       // ৳504 a case is ৳21 a piece, and the 42 pieces carry 42/48 of the ৳96 off
       unitPrice: '21.0000',
       discount: '84',
+    });
+  });
+
+  // 2 cases left, one whole case came back: the rest is still a whole number of cases
+  it("keeps the challan's unit when what is left is a whole number of it", () => {
+    const line = challanLineToInvoice(
+      challanLine({
+        unitId: 'case',
+        quantity: '2.0000',
+        baseQuantity: '48.0000',
+        returnedQuantity: '24.0000',
+      }),
+      orderLine({ discountType: 'amount', discount: '96.0000' }),
+      undefined,
+    );
+    // The order's own price, not one moved to pieces and rounded
+    expect(line).toMatchObject({
+      unitId: 'case',
+      quantity: '1',
+      unitPrice: '504.0000',
+      discount: '48',
+    });
+  });
+});
+
+describe('billedQuantityOf', () => {
+  const gross = {
+    unitId: 'gross',
+    baseUnitId: 'pcs',
+    units: [{ unitId: 'gross', factor: '144.000000' }],
+    quantity: '600.0000',
+    baseQuantity: '86400.0000',
+  };
+
+  it('bills the line as it left when nothing came back', () => {
+    expect(billedQuantityOf({ ...gross, returnedQuantity: '0.0000' }, '86400.0000')).toEqual({
+      unitId: 'gross',
+      quantity: '600',
+    });
+  });
+
+  // ৳62 a gross is ৳0.4306 a piece: 500 gross billed as 72,000 pcs would come to ৳3.20 more
+  it('keeps the unit for a whole number of it, and moves to the base unit only when it must', () => {
+    expect(billedQuantityOf({ ...gross, returnedQuantity: '14400.0000' }, '72000.0000')).toEqual({
+      unitId: 'gross',
+      quantity: '500',
+    });
+    expect(billedQuantityOf({ ...gross, returnedQuantity: '100.0000' }, '86300.0000')).toEqual({
+      unitId: 'pcs',
+      quantity: '86300',
     });
   });
 });

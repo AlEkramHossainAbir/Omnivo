@@ -324,7 +324,12 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
 
 #### ধাপ ১৮: `packages/sync` — সিঙ্ক ইঞ্জিন · ~৪ সপ্তাহ
 
-- **Pull:** প্রতি syncable টেবিলে `updated_at` + টেন্যান্ট-ভিত্তিক monotonic `change_seq`। `GET /sync/pull?since=1520` → পরিবর্তন + tombstone। শুধু দরকারি ডেটা (ইউজারের ব্রাঞ্চ, সক্রিয় প্রোডাক্ট, সাম্প্রতিক কাস্টমার), পুরো ডাটাবেস না।
+**তিনটা গাইডে:** ১৮a pull, ১৮b push, ১৮c conflict + device list + sync status।
+
+- **Pull (১৮a):** `sync_changes` change log (trigger) + `xid8` watermark cursor, `GET /sync/pull` (পুরো বা শুধু
+  পরিবর্তন, পাতায় পাতায়), `POST /sync/devices` (ব্রাউজার = device, একটা ব্রাঞ্চে)। "POS-ready" ডেটা Dexie-তে;
+  products ও customers পাতা, customer box আর "Add items" সবসময় device থেকে পড়ে, অনলাইন বা অফলাইন। balance
+  সার্ভার থেকে, শুধু স্ক্রিনের সারিগুলোর।
 - **Push:** ক্লায়েন্টে Dexie-তে outbox, প্রতিটা কাজ একটা **command** (`{id: uuidv7, type: 'pos.sale.create', payload, device_id}`)। `POST /sync/push` — সার্ভার `id` দেখে idempotency নিশ্চিত করবে এবং **সব business rule আবার যাচাই করবে**।
 - **Conflict:** ডেটার ধরন অনুযায়ী আলাদা নীতি (লেনদেন = append-only তাই conflict নেই; মাস্টার ডেটা = field-level LWW; দাম/ক্রেডিট লিমিট = server-wins)।
 
