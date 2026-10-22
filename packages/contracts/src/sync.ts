@@ -1,11 +1,19 @@
 import { z } from 'zod';
 
-import { customerGroupSchema, customerSchema } from './customers.js';
-import { errorCode } from './errors.js';
+import {
+  customerAddressInputSchema,
+  customerGroupSchema,
+  customerInputSchema,
+  customerSchema,
+  MAX_CUSTOMER_ADDRESSES,
+} from './customers.js';
+import { errorCode, problemSchema } from './errors.js';
+import { versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { priceListSchema } from './price-lists.js';
 import { productCategorySchema } from './product-categories.js';
 import { productSchema } from './products.js';
+import { salesOrderDraftInputSchema } from './sales-orders.js';
 import { settingsSchema } from './settings.js';
 import { taxRateSchema } from './tax-rates.js';
 import { unitSchema } from './units.js';
@@ -211,6 +219,207 @@ export const syncPullSchema = z.object({
 export type SyncPull = z.infer<typeof syncPullSchema>;
 
 // ---------------------------------------------------------------------------------------------
+// The push (step 18b): work done on a device without a connection, sent later as commands.
+//
+//   POST /sync/push {deviceId, protocol, commands}   → one result per command, in the same order
+//
+// A command is one thing the person did ("added the customer Rahman Pharmacy", "wrote an order
+// for Tasnim Traders"), kept on the device in its outbox until the server took it. The server runs
+// the commands in the order sent, each in its own transaction, with the person's roles of now:
+// one refused command does not stop the ones after it. The device sends the outbox oldest first,
+// and never puts a command in a batch before the commands it needs are accepted (an order for a
+// customer made on the device waits for that customer).
+//
+// Every command has an id of its own, made by the device. The server keeps each command's answer
+// (sync_commands, step 18b.2), so a batch sent again after a lost answer gets the same answers
+// and changes nothing twice. A refused command is kept as refused: the person changes it and the
+// device sends it again under a new id.
+
+// The most commands one push sends. A sales officer back from a day in the field may have 30.
+export const MAX_PUSH_COMMANDS = 50;
+
+// And the most JSON one push sends: the API takes bodies up to 1 MiB (Fastify's default). An order
+// of 300 lines is about 60 KB, so the device stops a batch before it passes this, and a single
+// command always fits on its own.
+export const MAX_PUSH_BYTES = 512 * 1024;
+
+// An address a device adds: its id is made on the device too, because an order written on the
+// same device may already point at it (shippingAddressId) before the server has seen either
+const newAddressSchema = customerAddressInputSchema.extend({ id: z.uuidv7() });
+export type NewAddressInput = z.input<typeof newAddressSchema>;
+
+// A new customer: the form's input, with the device's ids for the customer and every address.
+// An empty code gets the next number of the C- series on the server, when the command arrives.
+export const syncCustomerInputSchema = customerInputSchema.safeExtend({
+  addresses: z.array(newAddressSchema).max(MAX_CUSTOMER_ADDRESSES),
+});
+export type SyncCustomerInput = z.infer<typeof syncCustomerInputSchema>;
+
+// One field of a customer changed on the device: the value the device had (as the API sends it,
+// so the server can compare it with its own) and the new one (as the form sends it)
+function changeOf<From extends z.ZodType, To extends z.ZodType>(from: From, to: To) {
+  return z.object({ from, to });
+}
+
+const row = customerSchema.shape;
+const input = customerInputSchema.shape;
+
+// Only the fields the person changed (decision 4): a field that is not here stays as the server
+// has it, so two people changing different fields of one customer both keep their change
+export const customerChangesSchema = z
+  .object({
+    code: changeOf(row.code, input.code),
+    name: changeOf(row.name, input.name),
+    groupId: changeOf(row.groupId, input.groupId),
+    contactPerson: changeOf(row.contactPerson, input.contactPerson),
+    phone: changeOf(row.phone, input.phone),
+    email: changeOf(row.email, input.email),
+    documentLanguage: changeOf(row.documentLanguage, input.documentLanguage),
+    bin: changeOf(row.bin, input.bin),
+    paymentTermsDays: changeOf(row.paymentTermsDays, input.paymentTermsDays),
+    creditLimit: changeOf(row.creditLimit, input.creditLimit),
+    priceListId: changeOf(row.priceListId, input.priceListId),
+    notes: changeOf(row.notes, input.notes),
+  })
+  .partial();
+export type CustomerChanges = z.infer<typeof customerChangesSchema>;
+export type CustomerField = keyof CustomerChanges;
+
+// The fields where the server wins (decision 4). They decide what a customer may buy on credit and
+// at what price, and the head office sets them: if one was changed on the server since the device
+// read it (the server's value is not the change's `from`), the server keeps its value and the
+// answer says so (a kept_server_value notice). Any other field: the change that reaches the
+// server last wins, whatever the server had.
+export const SERVER_WINS_CUSTOMER_FIELDS = [
+  'creditLimit',
+  'paymentTermsDays',
+  'priceListId',
+  'groupId',
+] as const satisfies readonly CustomerField[];
+
+// The addresses, one by one, by id (you chose this in 18b): an address added, one taken away, and
+// the fields changed in one. The same field of the same address changed in two places: the later
+// arrival wins. An address the server no longer has is not changed again.
+const addressChangeSchema = customerAddressInputSchema
+  .omit({ id: true })
+  .partial()
+  .extend({ id: z.uuid() });
+
+export const customerAddressChangesSchema = z.object({
+  add: z.array(newAddressSchema).max(MAX_CUSTOMER_ADDRESSES),
+  remove: z.array(z.uuid()).max(MAX_CUSTOMER_ADDRESSES),
+  change: z.array(addressChangeSchema).max(MAX_CUSTOMER_ADDRESSES),
+});
+export type CustomerAddressChanges = z.infer<typeof customerAddressChangesSchema>;
+
+export const SYNC_COMMAND_TYPES = [
+  'customer.create',
+  'customer.update',
+  'sales_order.create_draft',
+] as const;
+export type SyncCommandType = (typeof SYNC_COMMAND_TYPES)[number];
+
+export const customerCreateCommandSchema = z.object({
+  id: z.uuidv7(),
+  type: z.literal('customer.create'),
+  // The new customer's id, made on the device: its orders on the same device point at it
+  customerId: z.uuidv7(),
+  input: syncCustomerInputSchema,
+});
+
+export const customerUpdateCommandSchema = z.object({
+  id: z.uuidv7(),
+  type: z.literal('customer.update'),
+  customerId: z.uuid(),
+  // The version of the customer the device changed. Not checked against the server's: offline
+  // there is no "someone else saved first, reload" (decision 4). When it is still the server's
+  // version, nobody changed the customer since, and the changes apply as they are.
+  baseVersion: versionSchema,
+  changes: customerChangesSchema,
+  addresses: customerAddressChangesSchema,
+});
+
+export const salesOrderDraftCommandSchema = z.object({
+  id: z.uuidv7(),
+  type: z.literal('sales_order.create_draft'),
+  // The order's id, made on the device. It has no number until someone confirms it online.
+  orderId: z.uuidv7(),
+  input: salesOrderDraftInputSchema,
+});
+
+export const syncCommandSchema = z.discriminatedUnion('type', [
+  customerCreateCommandSchema,
+  customerUpdateCommandSchema,
+  salesOrderDraftCommandSchema,
+]);
+export type SyncCommand = z.infer<typeof syncCommandSchema>;
+export type SyncCommandInput = z.input<typeof syncCommandSchema>;
+
+// What the request holds per command: an id and a type, and the rest unread. The server reads each
+// command with syncCommandSchema on its own, so one it cannot read is refused alone, with its
+// field errors, and the commands after it still run. If the whole batch were checked here, one
+// bad command would refuse every push of that device, and its outbox would never empty.
+const pushedCommandSchema = z.looseObject({ id: z.uuid(), type: z.string().max(60) });
+
+export const syncPushInputSchema = z.object({
+  deviceId: z.uuid(),
+  // SYNC_PROTOCOL of the client, as in the pull
+  protocol: z.number().int(),
+  commands: z.array(pushedCommandSchema).min(1).max(MAX_PUSH_COMMANDS),
+});
+export type SyncPushInput = z.input<typeof syncPushInputSchema>;
+
+// Something the person should know about an accepted command. kept_server_value: these fields
+// (SERVER_WINS_CUSTOMER_FIELDS) were changed on the server since the device read them, so the
+// server kept its values. z.string() like an error code: the app shows the ones it knows.
+export const SYNC_NOTICE_CODES = ['kept_server_value'] as const;
+export type SyncNoticeCode = (typeof SYNC_NOTICE_CODES)[number];
+
+export const syncNoticeSchema = z.object({
+  code: z.string(),
+  fields: z.array(z.string()),
+});
+export type SyncNotice = z.infer<typeof syncNoticeSchema>;
+
+// Why a command was refused: the same code, params and field errors as an API error. A field's
+// path is the path in the form the command came from: inside `input` for a new customer or an
+// order ("name", "lines.2.quantity"); a customer field for a change ("creditLimit"), and an
+// address by its id, not its place ("addresses.<id>.kind").
+export const syncCommandErrorSchema = problemSchema.pick({
+  code: true,
+  params: true,
+  fieldErrors: true,
+});
+export type SyncCommandError = z.infer<typeof syncCommandErrorSchema>;
+
+export const syncResultSchema = z.discriminatedUnion('status', [
+  z.object({
+    // The command's id
+    id: z.uuid(),
+    status: z.literal('accepted'),
+    notices: z.array(syncNoticeSchema),
+    // The rows the command changed, as they are now, for the device to write at once instead of
+    // waiting for its next pull: the customer for a customer command, nothing for an order (orders
+    // are not on the device). Read when the answer is made, also for a command sent again, so an
+    // old answer never puts an older row back on the device.
+    changes: z.array(syncChangeSchema),
+  }),
+  z.object({
+    id: z.uuid(),
+    status: z.literal('rejected'),
+    error: syncCommandErrorSchema,
+  }),
+]);
+export type SyncResult = z.infer<typeof syncResultSchema>;
+
+export const syncPushSchema = z.object({
+  // One per command sent, in the same order
+  results: z.array(syncResultSchema),
+  serverTime: z.iso.datetime(),
+});
+export type SyncPush = z.infer<typeof syncPushSchema>;
+
+// ---------------------------------------------------------------------------------------------
 // Devices. Step 18a registers one; step 18c lists them, renames them, moves them to another
 // branch and revokes them.
 
@@ -265,5 +474,17 @@ export const syncRoutes = {
     status: 200,
     query: syncPullQuerySchema,
     response: syncPullSchema,
+  }),
+  // No permission for the route: each command needs the permission its API route needs
+  // (sales.customer.manage, sales.order.manage), checked per command with the roles of now. A
+  // person whose role lost it since gets that command refused with permission_missing.
+  push: defineRoute({
+    method: 'POST',
+    path: '/sync/push',
+    summary: 'Run the commands a device saved without a connection, in order',
+    auth: 'bearer',
+    status: 200,
+    body: syncPushInputSchema,
+    response: syncPushSchema,
   }),
 };

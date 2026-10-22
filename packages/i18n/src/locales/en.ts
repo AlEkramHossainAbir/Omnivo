@@ -93,6 +93,7 @@ export const en = {
     debitNotes: 'Debit notes',
     supplierRefunds: 'Supplier refunds',
     approvals: 'Approvals',
+    sync: 'Sync',
   },
   auth: {
     workspace: 'Workspace',
@@ -370,6 +371,97 @@ export const en = {
     storageFailedTitle: "This browser can't keep the data",
     storageFailedBody:
       "Omnivo keeps its copy in the browser's storage. Leave private browsing or free some space on the device, then reload the page.",
+    // The sidebar line and the Sync page (step 18b): work saved on the device, sent later.
+    // count picks the plural; formatted = the number in the page's language (3 / ৩)
+    online: 'Online',
+    offline: 'Offline',
+    syncing: 'Syncing…',
+    allSynced: 'All changes synced',
+    waiting_one: '{{formatted}} change waiting',
+    waiting_other: '{{formatted}} changes waiting',
+    needsAttention_one: '{{formatted}} change needs attention',
+    needsAttention_other: '{{formatted}} changes need attention',
+    title: 'Sync',
+    description: 'Work saved on this device, and when it last reached the server',
+    syncNow: 'Sync now',
+    syncNowOffline: 'Connect to the internet to sync.',
+    lastSynced: 'Last synced {{time}}',
+    neverSynced: 'Not synced yet',
+    changesTitle: 'Changes on this device',
+    changesSubtitle: 'Sent to the server oldest first, as soon as there is a connection',
+    emptyTitle: 'Everything is synced',
+    emptyBody: 'A customer or an order saved while offline waits here until it reaches the server.',
+    // One per SYNC_COMMAND_TYPES entry, so the app can write t(`sync.commands.${type}`)
+    commands: {
+      customer: {
+        create: 'New customer {{name}}',
+        update: 'Changes to {{name}}',
+      },
+      sales_order: {
+        create_draft: 'Draft order for {{name}}',
+      },
+    },
+    savedAt: 'Saved {{time}}',
+    // fields = the form's own labels, joined in the page's language ("Phone and Credit limit")
+    changedFields: 'Changed: {{fields}}',
+    orderLines_one: '{{formatted}} line · {{total}}',
+    orderLines_other: '{{formatted}} lines · {{total}}',
+    statuses: {
+      waiting: 'Waiting',
+      sending: 'Sending',
+      failed: 'Needs attention',
+    },
+    // A command that needs one not accepted yet (decision 13), like an order for a new customer
+    waitsFor: 'Waits for {{name}} to sync first',
+    fixHint: 'Open it, fix what is marked, and save it again.',
+    edit: 'Edit',
+    discard: 'Discard',
+    discardTitle: 'Discard this change?',
+    discardBody:
+      'It is removed from this device and never reaches the server. This cannot be undone.',
+    discardDependents_one: 'The {{formatted}} change that needs it is discarded too.',
+    discardDependents_other: 'The {{formatted}} changes that need it are discarded too.',
+    discardConfirm: 'Discard change',
+    discarded: 'Change discarded',
+    // kept_server_value notices: a head-office field changed on the server since the device read it
+    noticesTitle: 'Kept from the server',
+    noticesSubtitle:
+      'The head office changed these while you were offline, so their value stays as it is',
+    keptFields: 'Not changed: {{fields}}',
+    dismiss: 'Dismiss',
+    synced_one: '{{formatted}} change synced',
+    synced_other: '{{formatted}} changes synced',
+    someFailed: 'Some changes need attention. Open Sync to fix them.',
+    someKept: 'Some fields kept the value the server had. Open Sync to see which.',
+    // The customer and order forms offline (decision 2)
+    saveOnDevice: 'Save on this device',
+    savedOnDevice: 'Saved on this device. It syncs when the connection is back.',
+    saveFailed: "Couldn't save on this device. Free some space, then try again.",
+    offlineNotice:
+      "You're offline. This is saved on this device and sent when the connection is back.",
+    orderOfflineNotice:
+      "You're offline. The order is saved on this device as a draft. Confirm it once it has synced.",
+    waitingNotice:
+      'This customer has changes on this device that have not synced yet, so this change is saved after them.',
+    codeOfflineHint: 'Leave empty for the next number. It is given when the customer syncs.',
+    notSynced: 'Not synced',
+    noNumberYet: 'No number yet',
+    unsyncedTitle: 'On this device · not synced',
+    unsyncedSubtitle: 'Drafts saved while offline. They move to the list below once they sync.',
+    // Signing out deletes the device's copy (18a, decision 41), and the changes with it
+    signOutTitle: 'Sign out and lose the changes?',
+    signOutBody_one:
+      '{{formatted}} change on this device has not synced. Signing out removes it for good.',
+    signOutBody_other:
+      '{{formatted}} changes on this device have not synced. Signing out removes them for good.',
+    signOutAnyway: 'Sign out anyway',
+    stay: 'Stay signed in',
+    // Added in 18b.6, for the screens: a waiting command that is on its way to the server cannot
+    // be changed, and the server's orders cannot be read offline
+    busy: 'This change is being sent now. Try again in a moment.',
+    orderOffline: 'This order is on the server. Connect to the internet to open it.',
+    ordersOffline:
+      'The orders on the server need a connection. Drafts saved on this device are listed above.',
   },
   accounts: {
     title: 'Chart of accounts',
@@ -1627,6 +1719,8 @@ export const en = {
       over: 'Over the credit limit by {{amount}}',
       noLimit: 'No credit limit',
       cashOnly: 'Cash only: no credit',
+      // Offline: what the customer owes is on the server only
+      offline: 'Credit left needs a connection. It is checked when the order is confirmed.',
     },
     newInvoice: 'New invoice',
     recordPayment: 'Record payment',
@@ -4213,6 +4307,8 @@ export const en = {
       changes: 'Changes',
     },
     system: 'System',
+    // The line under the person's name when the change came from a device's outbox (step 18b)
+    fromDevice: '{{time}} · from {{device}}',
     noChanges: 'No field changed',
     emptyTitle: 'Nothing here yet',
     emptyBody:
@@ -5274,6 +5370,12 @@ export const en = {
     device_revoked:
       'This device was removed from the workspace and no longer syncs. Ask a workspace owner about it.',
     sync_protocol_mismatch: 'Omnivo was updated. Reload the page to keep syncing.',
+    sync_id_taken:
+      'Something on the server already has the id of this change. Discard it and enter it again.',
+    sync_command_invalid:
+      "The server can't read this change. Reload the page, and discard the change if it is still refused.",
+    sync_customer_gone:
+      'This customer was deleted, or is no longer a customer. Discard the change.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',
     version_conflict:
       'Someone else saved changes while you were editing. Reload to see them, then make your change again.',

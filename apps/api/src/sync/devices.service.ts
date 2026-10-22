@@ -74,8 +74,9 @@ export class DevicesService {
     });
   }
 
-  // The pull's check, inside its transaction: the device is this person's, and not revoked
-  async forPull(tx: Transaction, id: string): Promise<DeviceRow> {
+  // The pull's and the push's check, inside a transaction: the device is this person's, and not
+  // revoked
+  async forSync(tx: Transaction, id: string): Promise<DeviceRow> {
     const [row] = await tx
       .select()
       .from(devices)

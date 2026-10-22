@@ -1,20 +1,30 @@
 import { type Device, routes } from '@omnivo/contracts';
-import { i18n } from '@omnivo/i18n';
+import { formatNumber, i18n, isLanguage } from '@omnivo/i18n';
 import {
+  allRows,
+  customerCommands,
   databaseName,
   deleteLocalDatabase,
   type DeviceIdentity,
   deviceNameParts,
+  localCustomer,
+  lookUpPrices,
   newDeviceId,
+  outboxCounts,
+  type PushOutcome,
   readDevice,
   saveDevice,
   SyncDatabase,
   SyncEngine,
   watch,
 } from '@omnivo/sync';
+import { toast } from '@omnivo/ui';
 
 import { ApiRequestError, call, onApiWrite } from './api';
+import { setDeviceReads } from './device-reads';
 import { localDataStore } from './local-data';
+import { queryClient } from './query-client';
+import { NO_SUMMARY, syncSummaryStore } from './sync-summary';
 
 // Step 18a: this browser as a device, and its copy of the data, for the person signed in now.
 // This module brings Dexie, so only lazy code imports it: the AppShell's host
@@ -88,6 +98,7 @@ export function stopLocalData(): void {
   runCleanup(current);
   current = null;
   set({ device: { kind: 'starting' }, asking: false });
+  syncSummaryStore.setState(NO_SUMMARY);
 }
 
 // The copy is the workspace's data: signing out deletes it (decision 41). The device's id stays
@@ -137,7 +148,7 @@ function retry(session: Session): void {
   if (session.stopped) return;
   const { device } = localDataStore.getState();
   if (device.kind === 'ready') {
-    void device.engine.pullNow();
+    void device.engine.syncNow();
     return;
   }
   runCleanup(session);
@@ -149,6 +160,26 @@ function retry(session: Session): void {
 function deviceName(): string {
   const parts = deviceNameParts(navigator.userAgent);
   return parts ? i18n.t('devices.defaultName', parts) : i18n.t('devices.fallbackName');
+}
+
+// Step 18b: after a push that sent something. The screens that show customers read them again (a
+// customer page, the credit line, a form's customer box), and one toast says what happened. A
+// refusal comes first: it is the one the person must act on, and the sidebar count leads there
+// too, for someone who misses the toast.
+function pushed(session: Session, outcome: PushOutcome): void {
+  void queryClient.invalidateQueries({ queryKey: ['customers', session.tenantId] });
+  void queryClient.invalidateQueries({ queryKey: ['sales', session.tenantId, 'orders'] });
+  const language = isLanguage(i18n.language) ? i18n.language : 'en';
+  if (outcome.rejected > 0) toast(i18n.t('sync.someFailed'));
+  else if (outcome.kept > 0) toast(i18n.t('sync.someKept'));
+  else {
+    toast(
+      i18n.t('sync.synced', {
+        count: outcome.accepted,
+        formatted: formatNumber(outcome.accepted, language),
+      }),
+    );
+  }
 }
 
 function registerDevice(session: Session, branchId: string): Promise<Device> {
@@ -206,6 +237,10 @@ async function open(session: Session): Promise<void> {
     db,
     deviceId: session.identity.id,
     pull: (query) => call(routes.sync.pull, { query }),
+    push: (body) => call(routes.sync.push, { body }),
+    onPushed: (outcome) => {
+      if (!session.stopped) pushed(session, outcome);
+    },
     codeOf,
     registerAgain: async () => {
       const { branchId } = session.identity;
@@ -230,11 +265,43 @@ async function open(session: Session): Promise<void> {
       void revoke(session);
     },
   });
+  // Step 18b: the queries read the copy offline through these (device-reads.ts). The balance is the
+  // server's only, so a customer from the device has none.
+  setDeviceReads({
+    units: () => allRows(db.units),
+    taxRates: () => allRows(db.taxRates),
+    warehouses: () => allRows(db.warehouses),
+    customer: async (customerId) => {
+      const local = await localCustomer(db, customerId);
+      return local && { ...local, balance: null };
+    },
+    hasCommands: async (customerId) => (await customerCommands(db, customerId)).length > 0,
+    settings: async () => (await allRows(db.settings))[0] ?? null,
+    prices: async (customerId, items) => {
+      const customer = customerId === '' ? null : await localCustomer(db, customerId);
+      return lookUpPrices(db, customer?.priceListId ?? null, items);
+    },
+  });
   session.cleanup.push(
     // A save on this device: pull its change now (api.ts)
     onApiWrite(() => {
       engine.request();
     }),
+    // Step 18b: the sidebar's numbers (sync-summary.ts), live: a save, a push or another tab
+    // changes the outbox, and the count follows
+    watch(
+      () => outboxCounts(db),
+      (counts) => {
+        syncSummaryStore.setState({ waiting: counts.total, failed: counts.failed });
+      },
+      () => undefined,
+    ),
+    engine.subscribe(() => {
+      syncSummaryStore.setState({ syncing: engine.getStatus().syncing });
+    }),
+    () => {
+      setDeviceReads(null);
+    },
     () => {
       engine.stop();
     },

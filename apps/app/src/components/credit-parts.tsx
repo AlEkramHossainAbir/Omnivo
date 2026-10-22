@@ -17,15 +17,26 @@ import { useTenantId } from './stock-parts';
 // "Credit left: ৳35,000 of ৳2,00,000 · ৳40,000 on confirmed orders", under the customer box. The
 // same numbers the API checks with (GET /customers/:id/credit). Only for someone who may see what
 // a customer owes (sales.customer.balance), like the customer's balance itself.
-export function CreditLine({ customerId }: { customerId: string }) {
+// Step 18b: an order saved on the device (offline, or for a customer whose changes wait) has no
+// credit to show: what the customer owes is on the server, and a draft is checked when it is
+// confirmed online. The line says so instead of numbers that may be wrong.
+export function CreditLine({
+  customerId,
+  onDevice = false,
+}: {
+  customerId: string;
+  onDevice?: boolean;
+}) {
   const { t, format } = useLocale();
   const tenantId = useTenantId();
   const canSee = useCan()('sales.customer.balance');
   const { data: credit } = useQuery({
     ...customerCreditQuery(tenantId, customerId),
-    enabled: canSee && customerId !== '',
+    enabled: canSee && customerId !== '' && !onDevice,
   });
-  if (!canSee || customerId === '' || !credit) return null;
+  if (!canSee || customerId === '') return null;
+  if (onDevice) return <p className="text-label text-ink-3">{t('customers.credit.offline')}</p>;
+  if (!credit) return null;
   const money = (value: string) => format.money(value);
   const over = credit.available !== null && isNegativeMoney(credit.available);
   const main =

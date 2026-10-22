@@ -3,16 +3,20 @@ import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 
 import { applyPage } from './apply.js';
+import { saveCustomer } from './outbox.js';
 import {
   customerPage,
   customerSummaryOf,
   findCustomers,
   findProducts,
+  localCustomer,
   productPage,
   productSummaryOf,
 } from './queries.js';
 import {
   customer,
+  customerInput,
+  inputOf,
   newDatabase,
   page,
   product,
@@ -174,5 +178,62 @@ describe('customerPage', () => {
     const [first] = (await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 1 }))
       .rows;
     expect(first && customerSummaryOf(first).balance).toBeNull();
+  });
+});
+
+describe('the outbox on top of the copy', () => {
+  const SAVED = '2026-10-21T15:00:00.000Z';
+
+  it('shows a customer made on the device in its place, and a renamed one in its new place', async () => {
+    const db = await loaded();
+    await saveCustomer(db, {
+      base: null,
+      input: customerInput({ name: 'Chowdhury Medicine Corner' }),
+      savedAt: SAVED,
+    });
+    const all = await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 10 });
+    expect(names(all.rows)).toEqual([
+      'Anwar Pharmacy',
+      'Bismillah Store',
+      'Chowdhury Medicine Corner',
+      'Rahman Traders',
+    ]);
+    const made = all.rows.find((row) => row.name === 'Chowdhury Medicine Corner');
+    expect(made).toMatchObject({ code: '', version: 0 });
+    expect(made && all.pending.has(made.id)).toBe(true);
+    expect(names(await findCustomers(db, 'chowdhury'))).toEqual(['Chowdhury Medicine Corner']);
+
+    const anwar = all.rows.find((row) => row.name === 'Anwar Pharmacy');
+    if (!anwar) throw new Error('no Anwar');
+    await saveCustomer(db, {
+      base: anwar,
+      input: { ...inputOf(anwar), name: 'Zaman Pharmacy' },
+      savedAt: SAVED,
+    });
+    const after = await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 10 });
+    expect(names(after.rows).at(-1)).toBe('Zaman Pharmacy');
+    // The server's row in the database is unchanged; only the screens see the change
+    expect((await db.customers.get(anwar.id))?.data.name).toBe('Anwar Pharmacy');
+    expect((await localCustomer(db, anwar.id))?.name).toBe('Zaman Pharmacy');
+  });
+
+  it('keeps the page size and says there is more with the outbox merged in', async () => {
+    const db = await loaded();
+    await saveCustomer(db, {
+      base: null,
+      input: customerInput({ name: 'Aarong Dairy Depot' }),
+      savedAt: SAVED,
+    });
+    const first = await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 2 });
+    expect(names(first.rows)).toEqual(['Aarong Dairy Depot', 'Anwar Pharmacy']);
+    expect(first.more).toBe(true);
+    const last = await customerPage(db, { search: '', groupId: '', sort: '-name', limit: 4 });
+    expect(names(last.rows)).toEqual([
+      'Rahman Traders',
+      'Bismillah Store',
+      'Anwar Pharmacy',
+      'Aarong Dairy Depot',
+    ]);
+    expect(last.more).toBe(false);
   });
 });

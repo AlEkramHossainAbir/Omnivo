@@ -1,8 +1,9 @@
-import type { SalesLineFormValues, SalesOrderLine } from '@omnivo/contracts';
+import type { Product, SalesLineFormValues, SalesOrderLine } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
   baseByOrderLine,
+  draftLines,
   fillFromOrder,
   formDiscount,
   formTotals,
@@ -154,5 +155,77 @@ describe('sales helpers', () => {
       vat: '136.0800',
       total: '1043.2800',
     });
+  });
+});
+
+describe('draftLines', () => {
+  const juice: Product = {
+    id: 'juice-product',
+    code: 'BEV-0001',
+    name: 'Mango juice 250 ml',
+    type: 'goods',
+    categoryId: null,
+    description: null,
+    baseUnitId: 'pcs',
+    salesUnitId: 'case',
+    purchaseUnitId: null,
+    tracking: 'none',
+    hasExpiry: false,
+    taxRateId: null,
+    options: [],
+    variants: [
+      {
+        id: 'juice',
+        sku: 'BEV-0001',
+        optionValues: [],
+        barcode: null,
+        salePrice: '21.0000',
+        archivedAt: null,
+      },
+    ],
+    units: [{ unitId: 'case', factor: '24', barcode: null }],
+    customFields: {},
+    archivedAt: null,
+    version: 1,
+    updatedAt: '2026-10-21T04:00:00.000Z',
+  };
+  const line = {
+    variantId: 'juice',
+    unitId: 'case',
+    quantity: '2',
+    description: null,
+    unitPrice: '480',
+    discountType: 'percent' as const,
+    discount: '0',
+    taxRateId: 'vat-15',
+  };
+
+  it('puts a waiting draft’s lines back into the boxes, with their products from the device', () => {
+    const { values, meta } = draftLines([line], new Map([['juice', juice]]), 'rahman');
+    expect(values).toEqual([
+      {
+        variantId: 'juice',
+        unitId: 'case',
+        quantity: '2',
+        description: '',
+        unitPrice: '480',
+        discountType: 'percent',
+        discount: '',
+        taxRateId: 'vat-15',
+      },
+    ]);
+    expect(meta[0]).toMatchObject({
+      item: { productName: 'Mango juice 250 ml', units: [{ unitId: 'case', factor: '24' }] },
+      pricedFor: 'rahman',
+    });
+  });
+
+  it('keeps a line whose product is no longer on the device, under its description', () => {
+    const { meta } = draftLines(
+      [{ ...line, description: 'Mango juice, old pack' }],
+      new Map(),
+      'rahman',
+    );
+    expect(meta[0]?.item).toMatchObject({ productName: 'Mango juice, old pack', units: [] });
   });
 });

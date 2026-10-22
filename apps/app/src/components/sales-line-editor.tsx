@@ -27,6 +27,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import type { FieldErrors } from 'react-hook-form';
 
 import { call } from '../lib/api';
+import { deviceReads } from '../lib/device-reads';
 import {
   formTotals,
   isServiceLine,
@@ -92,18 +93,25 @@ export interface LinePricing {
 export const linePriceKey = keyOf;
 
 // The quotation's, the order's and the invoice's pricing: the customer's price list, else the
-// product's price, in the selling unit
-export function useSalesPricing(customerId: string): LinePricing {
+// product's price, in the selling unit. Step 18b: an order saved on the device prices its lines
+// from the device's copy, with the same rule (startingPrice in the contracts, decision 19), and
+// with the customer as the outbox has it: a customer made offline is not on the server yet.
+export function useSalesPricing(customerId: string, onDevice = false): LinePricing {
   const { t } = useLocale();
   return {
     partyId: customerId,
     unitOf: (product) => product.salesUnitId ?? product.baseUnitId,
     lookUp: async (items) => {
-      const answer = await call(routes.salesPrices.lookup, {
-        body: { customerId: customerId === '' ? null : customerId, items: [...items] },
-      });
+      const device = onDevice ? deviceReads() : null;
+      const answer = device
+        ? await device.prices(customerId, items)
+        : (
+            await call(routes.salesPrices.lookup, {
+              body: { customerId: customerId === '' ? null : customerId, items: [...items] },
+            })
+          ).items;
       return new Map(
-        answer.items.map((item) => [
+        answer.map((item) => [
           keyOf(item.variantId, item.unitId),
           { price: item.price, source: item.source, taxRateId: item.taxRateId },
         ]),
@@ -212,12 +220,16 @@ export interface LinesEditorProps<L extends SalesLineFormValues> {
 const sameLine = (line: SalesLineFormValues): SalesLineFormValues => line;
 
 // The quotation's and the order's editor: a product added is a plain sales line, priced for the
-// customer
+// customer. onDevice (step 18b): an order saved into the outbox, priced from the device.
 export function SalesLinesEditor({
   customerId,
+  onDevice = false,
   ...props
-}: Omit<LinesEditorProps<SalesLineFormValues>, 'newLine' | 'pricing'> & { customerId: string }) {
-  const pricing = useSalesPricing(customerId);
+}: Omit<LinesEditorProps<SalesLineFormValues>, 'newLine' | 'pricing'> & {
+  customerId: string;
+  onDevice?: boolean;
+}) {
+  const pricing = useSalesPricing(customerId, onDevice);
   return <LinesEditor {...props} pricing={pricing} newLine={sameLine} />;
 }
 

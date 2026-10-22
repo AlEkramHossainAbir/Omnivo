@@ -10,8 +10,16 @@ import {
 
 import type { Table } from 'dexie';
 
-import type { CustomerRecord, ProductRecord, Stored, SyncDatabase } from './database.js';
-import { customerMatches, needleOf, productMatches } from './records.js';
+import type {
+  CustomerRecord,
+  OutboxEntry,
+  ProductRecord,
+  Stored,
+  SyncDatabase,
+  SyncNoticeRecord,
+} from './database.js';
+import { projectCustomer } from './overlay.js';
+import { customerMatches, customerRecord, needleOf, productMatches } from './records.js';
 
 // The reads of the products and customers pages and of the pickers. Each is a plain async
 // function of the database, so the app runs it inside Dexie's liveQuery (useLiveQuery), and it
@@ -69,24 +77,77 @@ export interface LocalCustomerFilter {
   limit: number;
 }
 
+// The customers the outbox changes (step 18b, decision 34), as the screens show them: the
+// server's row with the waiting commands on top, or a customer made on this device. null = the
+// device does not have it (a change to a customer archived meanwhile). A handful at most: the
+// outbox of one person.
+async function pendingCustomers(db: SyncDatabase): Promise<Map<string, SyncCustomer | null>> {
+  const entries = await db.outbox.toArray();
+  const ids = new Set(
+    entries.flatMap((entry) =>
+      entry.command.type === 'sales_order.create_draft' ? [] : [entry.customerId],
+    ),
+  );
+  const pending = new Map<string, SyncCustomer | null>();
+  for (const id of ids) {
+    const row = await db.customers.get(id);
+    pending.set(id, projectCustomer(id, row?.data ?? null, entries));
+  }
+  return pending;
+}
+
+// The server's order: lower(name), then the id. Plain `<` compares strings by code unit, the
+// way IndexedDB orders its index.
+function byName(a: CustomerRecord, b: CustomerRecord): number {
+  if (a.sortName !== b.sortName) return a.sortName < b.sortName ? -1 : 1;
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+}
+
+// `pending`: the ids the outbox changes, for the "Not synced" pill
+export interface LocalCustomerPage extends LocalPage<SyncCustomer> {
+  pending: ReadonlySet<string>;
+}
+
+// The walk of the index skips the customers the outbox changes, and their projected rows are put
+// back in their place. There are only a few, so the first `limit` of the two lists merged are the
+// first `limit` of all: every row past the walk's limit + 1 comes after all of them.
 export async function customerPage(
   db: SyncDatabase,
   filter: LocalCustomerFilter,
-): Promise<LocalPage<SyncCustomer>> {
+): Promise<LocalCustomerPage> {
   const needle = needleOf(filter.search);
+  const pending = await pendingCustomers(db);
+  const matches = (record: CustomerRecord) =>
+    (filter.groupId === '' || record.data.groupId === filter.groupId) &&
+    customerMatches(record, needle);
   const ordered = db.customers.orderBy('sortName');
-  const found = await (filter.sort === '-name' ? ordered.reverse() : ordered)
-    .filter(
-      (record: CustomerRecord) =>
-        (filter.groupId === '' || record.data.groupId === filter.groupId) &&
-        customerMatches(record, needle),
-    )
+  const walked = await (filter.sort === '-name' ? ordered.reverse() : ordered)
+    .filter((record: CustomerRecord) => !pending.has(record.key) && matches(record))
     .limit(filter.limit + 1)
     .toArray();
+  const projected = [...pending.values()]
+    .flatMap((row) => (row?.archivedAt !== null ? [] : [customerRecord(row.id, 0, row)]))
+    .filter(matches);
+  const direction = filter.sort === '-name' ? -1 : 1;
+  const found = [...walked, ...projected].sort((a, b) => direction * byName(a, b));
   return {
     rows: found.slice(0, filter.limit).map((record) => record.data),
     more: found.length > filter.limit,
+    pending: new Set(pending.keys()),
   };
+}
+
+// One customer as the screens show it: the server's row with the outbox on top (step 18b). null =
+// not on this device.
+export async function localCustomer(
+  db: SyncDatabase,
+  customerId: string,
+): Promise<SyncCustomer | null> {
+  const [row, entries] = await Promise.all([
+    db.customers.get(customerId),
+    db.outbox.where('customerId').equals(customerId).sortBy('seq'),
+  ]);
+  return projectCustomer(customerId, row?.data ?? null, entries);
 }
 
 // The pickers: the first 20 that match, by name, like the server's search
@@ -152,4 +213,36 @@ export function customerSummaryOf(customer: SyncCustomer): CustomerSummary {
     archivedAt: customer.archivedAt,
     updatedAt: customer.updatedAt,
   };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The outbox (step 18b)
+
+// Every waiting command, oldest first (the primary key is the seq)
+export function outboxEntries(db: SyncDatabase): Promise<OutboxEntry[]> {
+  return db.outbox.toArray();
+}
+
+// The commands of one customer or one order: a form opens its waiting command by its key, and a
+// customer with commands is changed through the outbox, even online (decision 2)
+export function outboxOf(db: SyncDatabase, key: string): Promise<OutboxEntry[]> {
+  return db.outbox.where('key').equals(key).sortBy('seq');
+}
+
+export function customerCommands(db: SyncDatabase, customerId: string): Promise<OutboxEntry[]> {
+  return db.outbox.where('customerId').equals(customerId).sortBy('seq');
+}
+
+// What the sidebar counts: every command on the device, and the refused ones among them
+export async function outboxCounts(db: SyncDatabase): Promise<{ total: number; failed: number }> {
+  const entries = await db.outbox.toArray();
+  return {
+    total: entries.length,
+    failed: entries.filter((entry) => entry.status === 'failed').length,
+  };
+}
+
+// The kept-from-the-server notices, newest first
+export async function syncNotices(db: SyncDatabase): Promise<SyncNoticeRecord[]> {
+  return (await db.notices.toArray()).sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 }

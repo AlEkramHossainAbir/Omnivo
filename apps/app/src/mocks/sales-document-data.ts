@@ -526,17 +526,19 @@ function openQuotation(data: WorkspaceData, quotationId: string, customerId: str
   return quotation;
 }
 
+// Step 18b: an order written on a device comes with the id the device made (push-data.ts)
 export function createOrder(
   data: WorkspaceData,
   input: OrderFields,
   quotationId: string | null,
+  id: string = crypto.randomUUID(),
 ): MockOrder {
   const customer = customerOf(data, input.customerId, null);
   const quotation = quotationId === null ? null : openQuotation(data, quotationId, customer.id);
   // An order made from a quotation reads its prices the way the quotation did
   const pricesIncludeVat = quotation?.pricesIncludeVat ?? data.settings.pricesIncludeVat;
   const created: MockOrder = {
-    id: crypto.randomUUID(),
+    id,
     number: null,
     status: 'draft',
     confirmedAt: null,

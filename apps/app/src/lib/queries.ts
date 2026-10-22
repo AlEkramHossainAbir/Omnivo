@@ -45,6 +45,27 @@ import {
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
 
 import { call } from './api';
+import { type DeviceReads, deviceReads } from './device-reads';
+
+// Step 18b (decision 35): without a connection, the small lists a sales form needs (units, VAT
+// rates, warehouses) and a customer come from the device's copy, so the order and customer
+// forms work offline, down to the components deep inside them that read these queries. Online,
+// nothing changes. networkMode 'always': TanStack would otherwise pause a query while the browser
+// is offline, and never call the function that knows about the device.
+function offline(): DeviceReads | null {
+  return navigator.onLine ? null : deviceReads();
+}
+
+// The device's copy of the settings (its time zone, prices with VAT), for when the server's were
+// never loaded. null while the copy has none. Under ['settings', tenant], so a settings save
+// refreshes it with the server's.
+export function deviceSettingsQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['settings', tenantId, 'device'],
+    queryFn: async () => (await deviceReads()?.settings()) ?? null,
+    networkMode: 'always',
+  });
+}
 
 // কয়েকটা পেজ একই settings চায় (টাইমজোন, অর্থবছর) — key আর আনার নিয়ম এক জায়গায়, তাই একবার আনা
 // ডেটা সবাই ক্যাশ থেকে পায়, আর সেভের পরে এক জায়গায় হালনাগাদ করলেই সব পেজে নতুন মান
@@ -263,7 +284,11 @@ export function reportExportsQuery(tenantId: string) {
 export function unitsQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['products', tenantId, 'units'],
-    queryFn: async () => (await call(routes.units.list)).items,
+    queryFn: async () => {
+      const device = offline();
+      return device ? device.units() : (await call(routes.units.list)).items;
+    },
+    networkMode: 'always',
     refetchInterval: (query) => (query.state.data?.length === 0 ? 3_000 : false),
   });
 }
@@ -348,7 +373,14 @@ export function productImportQuery(tenantId: string, importId: string) {
 export function warehousesQuery(tenantId: string, status: WarehouseStatus) {
   return queryOptions({
     queryKey: ['warehouses', tenantId, status],
-    queryFn: async () => (await call(routes.warehouses.list, { query: { status } })).items,
+    // The device has the active warehouses of its branch only: offline, an order is written for
+    // one of them (decision 8), and no archived one is known
+    queryFn: async () => {
+      const device = offline();
+      if (device) return status === 'active' ? device.warehouses() : [];
+      return (await call(routes.warehouses.list, { query: { status } })).items;
+    },
+    networkMode: 'always',
   });
 }
 
@@ -587,7 +619,11 @@ export function stockAccountsQuery(tenantId: string) {
 export function taxRatesQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['tax-rates', tenantId],
-    queryFn: async () => (await call(routes.taxRates.list)).items,
+    queryFn: async () => {
+      const device = offline();
+      return device ? device.taxRates() : (await call(routes.taxRates.list)).items;
+    },
+    networkMode: 'always',
   });
 }
 
@@ -647,7 +683,18 @@ export function customerBalancesQuery(tenantId: string, ids: readonly string[]) 
 export function customerQuery(tenantId: string, customerId: string) {
   return queryOptions({
     queryKey: ['customers', tenantId, 'customer', customerId],
-    queryFn: () => call(routes.customers.get, { params: { id: customerId } }),
+    // A customer with commands waiting is read from the device online too: the server does not
+    // have a customer made offline yet, and has an older one when it was changed offline. The
+    // balance is the server's only (null). The session refreshes this key after every push.
+    queryFn: async () => {
+      const device = deviceReads();
+      if (device && (!navigator.onLine || (await device.hasCommands(customerId)))) {
+        const local = await device.customer(customerId);
+        if (local) return local;
+      }
+      return call(routes.customers.get, { params: { id: customerId } });
+    },
+    networkMode: 'always',
     retry: false,
   });
 }

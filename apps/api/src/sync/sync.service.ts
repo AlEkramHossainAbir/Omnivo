@@ -63,7 +63,7 @@ export class SyncService {
     // last page's last_sync_at, so it has no transaction id of its own while it reads: it never
     // holds back its own watermark, or anyone else's.
     return this.withTenant(async (tx) => {
-      const device = await this.devices.forPull(tx, query.deviceId);
+      const device = await this.devices.forSync(tx, query.deviceId);
       const clock = await readClock(tx);
       const scope = await this.scopeOf(tx, device.branchId);
 

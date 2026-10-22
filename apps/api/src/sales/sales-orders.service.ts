@@ -4,6 +4,7 @@ import {
   type OrderStatus,
   type PartyRef,
   type SalesOrder,
+  type SalesOrderDraftInput,
   type SalesOrderInput,
   type SalesOrderSummary,
   type UpdateSalesOrderInput,
@@ -147,53 +148,24 @@ export class SalesOrdersService {
 
   create(input: SalesOrderInput): Promise<SalesOrder> {
     return this.withTenant(async (tx) => {
-      const customer = await assertCustomer(tx, input.customerId);
-      await assertWarehousesActive(tx, [{ field: 'warehouseId', warehouseId: input.warehouseId }]);
-      const address = await shippingAddressOf(tx, customer.id, input.shippingAddressId);
-      const quotation =
-        input.quotationId === null
-          ? null
-          : await this.openQuotation(tx, input.quotationId, customer);
-      // An order made from a quotation reads its prices the way the quotation did: the form copied
-      // them from there. Otherwise the workspace setting now.
-      const pricesIncludeVat = quotation?.pricesIncludeVat ?? (await pricesIncludeVatNow(tx));
-      const lines = await resolveSalesLines(tx, input.lines, pricesIncludeVat);
-      const [row] = await tx
-        .insert(salesOrders)
-        .values({
-          tenantId: getTenantId(),
-          date: input.date,
-          deliveryDate: input.deliveryDate,
-          customerId: customer.id,
-          customerReference: input.customerReference,
-          warehouseId: input.warehouseId,
-          shippingAddressId: address?.id ?? null,
-          shippingAddress: address?.text ?? null,
-          quotationId: quotation?.id ?? null,
-          pricesIncludeVat,
-          note: input.note,
-          ...documentTotals(lines.map((line) => line.amounts)),
-          createdBy: currentPrincipal().userId,
-          updatedBy: currentPrincipal().userId,
-        })
-        .returning();
-      if (!row) throw new Error('Sales order insert returned no row');
-      await this.writeLines(tx, row.id, lines);
-      // The customer said yes: the quotation is accepted by the order made from it. No audit row
-      // of its own: this one names it.
-      if (quotation !== null) await this.setQuotationStatus(tx, quotation.id, 'accepted');
-      await audit(tx, {
-        action: 'sales_order.created',
-        entityType: 'sales_order',
-        entityId: row.id,
-        changes: created({
-          ...(await this.snapshot(tx, row, customer, lines.length)),
-          quotation: quotation?.number ?? null,
-        }),
-      });
+      const row = await this.insert(tx, input, null);
       if (input.confirm) await this.confirmAndLog(tx, row, input.overrideCreditLimit);
       return this.read(tx, row.id);
     });
+  }
+
+  // Step 18b: an order written on a device without a connection, inside the push's transaction
+  // (SyncPushService). A draft only, with the device's id, and the same checks as a draft saved
+  // online: an active customer and warehouse, one of the customer's addresses, the lines' units
+  // and VAT rates. The prices stay as the device worked them out; the totals are worked out here
+  // again from the lines (decision 15). An id used by anything else fails on sales_orders_pkey,
+  // and the push refuses the command with sync_id_taken.
+  async createDraftFromDevice(
+    tx: Transaction,
+    id: string,
+    input: SalesOrderDraftInput,
+  ): Promise<void> {
+    await this.insert(tx, { ...input, quotationId: null }, id);
   }
 
   update(id: string, input: UpdateSalesOrderInput): Promise<SalesOrder> {
@@ -367,6 +339,59 @@ export class SalesOrdersService {
       await audit(tx, { action: 'sales_order.cancelled', entityType: 'sales_order', entityId: id });
       return this.read(tx, id);
     });
+  }
+
+  // A new draft, its lines and its audit row: the form's order (confirmed after, when asked) and
+  // a device's draft (step 18b). `id` is the device's id, or null for the database's own.
+  private async insert(
+    tx: Transaction,
+    input: SalesOrderDraftInput & { quotationId: string | null },
+    id: string | null,
+  ): Promise<OrderRow> {
+    const customer = await assertCustomer(tx, input.customerId);
+    await assertWarehousesActive(tx, [{ field: 'warehouseId', warehouseId: input.warehouseId }]);
+    const address = await shippingAddressOf(tx, customer.id, input.shippingAddressId);
+    const quotation =
+      input.quotationId === null ? null : await this.openQuotation(tx, input.quotationId, customer);
+    // An order made from a quotation reads its prices the way the quotation did: the form copied
+    // them from there. Otherwise the workspace setting now.
+    const pricesIncludeVat = quotation?.pricesIncludeVat ?? (await pricesIncludeVatNow(tx));
+    const lines = await resolveSalesLines(tx, input.lines, pricesIncludeVat);
+    const [row] = await tx
+      .insert(salesOrders)
+      .values({
+        ...(id === null ? {} : { id }),
+        tenantId: getTenantId(),
+        date: input.date,
+        deliveryDate: input.deliveryDate,
+        customerId: customer.id,
+        customerReference: input.customerReference,
+        warehouseId: input.warehouseId,
+        shippingAddressId: address?.id ?? null,
+        shippingAddress: address?.text ?? null,
+        quotationId: quotation?.id ?? null,
+        pricesIncludeVat,
+        note: input.note,
+        ...documentTotals(lines.map((line) => line.amounts)),
+        createdBy: currentPrincipal().userId,
+        updatedBy: currentPrincipal().userId,
+      })
+      .returning();
+    if (!row) throw new Error('Sales order insert returned no row');
+    await this.writeLines(tx, row.id, lines);
+    // The customer said yes: the quotation is accepted by the order made from it. No audit row
+    // of its own: this one names it.
+    if (quotation !== null) await this.setQuotationStatus(tx, quotation.id, 'accepted');
+    await audit(tx, {
+      action: 'sales_order.created',
+      entityType: 'sales_order',
+      entityId: row.id,
+      changes: created({
+        ...(await this.snapshot(tx, row, customer, lines.length)),
+        quotation: quotation?.number ?? null,
+      }),
+    });
+    return row;
   }
 
   // The number the first time; a reopened order confirms again with the number it already has.

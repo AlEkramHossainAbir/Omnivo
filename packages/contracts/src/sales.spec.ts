@@ -10,6 +10,7 @@ import {
   draftLineAmounts,
   lineAmounts,
   salesLineInputSchema,
+  startingPrice,
 } from './sales.js';
 
 const CUSTOMER = '01920000-0000-7000-8000-000000000001';
@@ -199,6 +200,35 @@ describe('sales line input', () => {
       error: contractErrorMap,
     });
     expect(errorsOf(result)).toEqual({ discount: 'money_format' });
+  });
+});
+
+describe('starting price', () => {
+  it("takes the price list's price as it is", () => {
+    expect(startingPrice({ listPrice: '504', salePrice: '21.0000', factor: '24' })).toEqual({
+      price: '504.0000',
+      source: 'price_list',
+    });
+  });
+
+  it("works out the product's price in the unit, to 4 decimals", () => {
+    // A case of 24 at ৳21 a piece
+    expect(startingPrice({ listPrice: null, salePrice: '21.0000', factor: '24' })).toEqual({
+      price: '504.0000',
+      source: 'product',
+    });
+    // A yard of fabric priced by the metre: 0.8512 × 0.9144 = 0.77833728
+    expect(startingPrice({ listPrice: null, salePrice: '0.8512', factor: '0.914400' })).toEqual({
+      price: '0.7783',
+      source: 'product',
+    });
+  });
+
+  it('starts with no price when there is none anywhere', () => {
+    expect(startingPrice({ listPrice: null, salePrice: null, factor: '1' })).toEqual({
+      price: null,
+      source: null,
+    });
   });
 });
 

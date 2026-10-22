@@ -7,7 +7,9 @@ import {
   type Quotation,
   routes,
   type SalesOrder,
+  type SalesOrderDraftInput,
   type SalesOrderFormValues,
+  type SyncCommandError,
   updateSalesOrderInputSchema,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
@@ -22,17 +24,20 @@ import {
   TextField,
   toast,
 } from '@omnivo/ui';
+import { saveOrderDraft } from '@omnivo/sync';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Controller, type Path, useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
-import { applyApiError } from '../lib/field-errors';
+import { applyApiError, applyCommandError } from '../lib/field-errors';
+import { requestSync, useLocalDb, useSaveMode } from '../lib/local-data';
 import { rowPath } from '../lib/products';
-import { SALES_LINE_FIELDS, savedLines } from '../lib/sales';
+import { formTotals, type LineMeta, SALES_LINE_FIELDS, savedLines } from '../lib/sales';
 import { useCan } from '../lib/permissions';
-import { customerQuery } from '../lib/queries';
+import { customerQuery, taxRatesQuery } from '../lib/queries';
+import { useOnline } from '../lib/use-online';
 import {
   CreditLimitDialog,
   CreditLine,
@@ -41,7 +46,7 @@ import {
   useCreditText,
 } from './credit-parts';
 import { failureOf } from './journal-parts';
-import { addressLabel, SalesBackLink, useSalesRefresh } from './sales-parts';
+import { addressLabel, DocumentNotice, SalesBackLink, useSalesRefresh } from './sales-parts';
 import { useTenantId, useWarehouses, warehouseLabel } from './stock-parts';
 
 // The order form: its own chunk (loaded by routes/sales-order.tsx), like the quotation's.
@@ -82,17 +87,30 @@ function shippingAddresses(addresses: readonly CustomerAddress[]): CustomerAddre
   return addresses.filter((address) => address.kind === 'shipping');
 }
 
+// Step 18b: a draft order waiting in the outbox, opened again from the unsynced orders or the
+// Sync page. Its lines come with their products from the device (sales.ts → draftLines).
+export interface OutboxDraft {
+  orderId: string;
+  input: SalesOrderDraftInput;
+  lines: { values: SalesOrderFormValues['lines']; meta: LineMeta[] };
+  // Refused by the server: its errors go under the boxes
+  error: SyncCommandError | null;
+}
+
 // Writing a new order (from nothing, or from a quotation), or changing a draft. "Save draft" keeps
-// it a draft; "Confirm order" saves and confirms in one request, all or nothing.
+// it a draft; "Confirm order" saves and confirms in one request, all or nothing. Step 18b: offline,
+// or for a customer whose changes wait on this device, it saves a draft into the outbox instead.
 export function SalesOrderForm({
   order,
   quotation,
+  draft = null,
   today,
   pricesIncludeVat,
 }: {
   order: SalesOrder | null;
   // The quotation a new order is made from ("Make order"); null otherwise
   quotation: Quotation | null;
+  draft?: OutboxDraft | null;
   today: string;
   // The order's own copy, the quotation's (an order keeps its quotation's prices), or the
   // workspace's now
@@ -113,6 +131,7 @@ export function SalesOrderForm({
   const [start] = useState(() => {
     if (order) return savedLines(order.lines, order.customer.id);
     if (quotation) return savedLines(quotation.lines, quotation.customer.id);
+    if (draft) return draft.lines;
     return { values: [], meta: [] };
   });
   // A draft that has a number, or comes from a quotation, keeps its customer (the API refuses a
@@ -134,13 +153,13 @@ export function SalesOrderForm({
   } = useForm({
     resolver: zodResolver(updateSalesOrderInputSchema, { error: contractErrorMap }),
     defaultValues: {
-      customerId: savedCustomer?.id ?? '',
-      date: order?.date ?? today,
-      deliveryDate: order?.deliveryDate ?? '',
-      customerReference: order?.customerReference ?? '',
-      warehouseId: order?.warehouseId ?? onlyWarehouse ?? '',
-      shippingAddressId: order?.shippingAddressId ?? '',
-      note: order?.note ?? '',
+      customerId: savedCustomer?.id ?? draft?.input.customerId ?? '',
+      date: order?.date ?? draft?.input.date ?? today,
+      deliveryDate: order?.deliveryDate ?? draft?.input.deliveryDate ?? '',
+      customerReference: order?.customerReference ?? draft?.input.customerReference ?? '',
+      warehouseId: order?.warehouseId ?? draft?.input.warehouseId ?? onlyWarehouse ?? '',
+      shippingAddressId: order?.shippingAddressId ?? draft?.input.shippingAddressId ?? '',
+      note: order?.note ?? draft?.input.note ?? '',
       lines: start.values,
       confirm: false,
       version: order?.version ?? 1,
@@ -153,6 +172,23 @@ export function SalesOrderForm({
     enabled: customerId !== '',
   }).data;
   const addresses = shippingAddresses(customer?.addresses ?? []);
+  // Step 18b (decision 2): a new order goes into the outbox offline, and online when its customer
+  // has changes waiting on this device (a customer made offline is not on the server yet). A
+  // server draft and an order from a quotation stay with the API: neither can be a command.
+  const online = useOnline();
+  const db = useLocalDb();
+  const customerMode = useSaveMode(customerId);
+  const onDevice =
+    order === null &&
+    quotation === null &&
+    (draft !== null || !online || customerMode === 'device');
+  const rates = useQuery(taxRatesQuery(tenantId)).data;
+
+  // Once, when the form opens a refused draft: its errors where the person fixes them
+  useEffect(() => {
+    if (draft?.error)
+      applyCommandError(draft.error, fieldNames(draft.lines.values.length), setError);
+  }, [draft, setError]);
   // The address the draft was saved with, if it is no longer one of the customer's shipping
   // addresses: it still shows as chosen, by the text the order kept
   const keptId = order?.shippingAddressId ?? null;
@@ -215,6 +251,43 @@ export function SalesOrderForm({
       }
     });
 
+  // Into the outbox (decision 15): a draft only, so no confirm and no credit check. The name and
+  // the total are kept with it for the Sync page and the unsynced orders.
+  const saveOnDevice = handleSubmit(async (values) => {
+    if (!db) return;
+    const input: SalesOrderDraftInput = {
+      customerId: values.customerId,
+      date: values.date,
+      deliveryDate: values.deliveryDate,
+      customerReference: values.customerReference,
+      warehouseId: values.warehouseId,
+      shippingAddressId: values.shippingAddressId,
+      note: values.note,
+      lines: values.lines,
+    };
+    const rateOf = (id: string) => rates?.find((rate) => rate.id === id)?.rate ?? null;
+    let result;
+    try {
+      result = await saveOrderDraft(db, {
+        orderId: draft?.orderId ?? null,
+        input,
+        name: customer?.name ?? '',
+        total: formTotals(values.lines, rateOf, pricesIncludeVat).totals.total,
+        savedAt: new Date().toISOString(),
+      });
+    } catch {
+      setError('root.server', { message: t('sync.saveFailed') });
+      return;
+    }
+    if (result === 'busy') {
+      setError('root.server', { message: t('sync.busy') });
+      return;
+    }
+    requestSync();
+    toast(t('sync.savedOnDevice'));
+    void navigate({ to: '/sales-orders', replace: true });
+  });
+
   const removeDraft = useMutation({
     mutationFn: (draft: SalesOrder) =>
       call(routes.salesOrders.remove, {
@@ -234,7 +307,13 @@ export function SalesOrderForm({
     <div className="grid max-w-6xl grid-cols-1 gap-5">
       <SalesBackLink to="/sales-orders" label={t('salesOrders.back')} />
       <PageHeader
-        title={order ? (order.number ?? t('salesOrders.draftTitle')) : t('salesOrders.newTitle')}
+        title={
+          order
+            ? (order.number ?? t('salesOrders.draftTitle'))
+            : draft
+              ? t('salesOrders.draftTitle')
+              : t('salesOrders.newTitle')
+        }
         description={
           quotation
             ? `${t('salesOrders.quotation')}: ${quotation.number}`
@@ -243,9 +322,14 @@ export function SalesOrderForm({
       />
       <form
         noValidate
-        onSubmit={(event) => void save(false)(event)}
+        onSubmit={(event) => void (onDevice ? saveOnDevice(event) : save(false)(event))}
         className="grid grid-cols-1 gap-5"
       >
+        {onDevice && (
+          <DocumentNotice tone="neutral">
+            {online ? t('sync.waitingNotice') : t('sync.orderOfflineNotice')}
+          </DocumentNotice>
+        )}
         {failure && <FormAlert message={failure} />}
         {keptNumber !== null && (
           <p className="text-body-sm text-ink-2">
@@ -271,7 +355,7 @@ export function SalesOrderForm({
                 </Suspense>
               )}
             </FormField>
-            <CreditLine customerId={customerId} />
+            <CreditLine customerId={customerId} onDevice={onDevice} />
           </div>
           <FormField control={control} name="date" label={t('salesOrders.date')}>
             {(field) => (
@@ -344,6 +428,7 @@ export function SalesOrderForm({
                 getLines={() => getValues('lines')}
                 initialMeta={start.meta}
                 customerId={customerId}
+                onDevice={onDevice}
                 pricesIncludeVat={pricesIncludeVat}
                 errors={errors.lines}
               />
@@ -351,34 +436,44 @@ export function SalesOrderForm({
           )}
         />
 
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {/* A reopened draft keeps its number and cannot be deleted (it says so above) */}
-          {order?.number === null && (
-            <div className="mr-auto flex flex-wrap items-center gap-2">
-              <Button
-                variant="secondary"
-                disabled={removeDraft.isPending}
-                onClick={() => {
-                  if (confirming) removeDraft.mutate(order);
-                  else setConfirming(true);
-                }}
-              >
-                <HugeiconsIcon icon={Delete02Icon} size={17} strokeWidth={1.5} />
-                {confirming ? t('salesOrders.confirmDelete') : t('salesOrders.deleteDraft')}
-              </Button>
-              {confirming && (
-                <span className="text-body-sm text-ink-2">{t('salesOrders.deleteWarning')}</span>
-              )}
-            </div>
-          )}
-          <Button type="submit" variant="secondary" disabled={isSubmitting}>
-            {t('salesOrders.saveDraft')}
-          </Button>
-          <Button disabled={isSubmitting || lineCount === 0} onClick={() => void save(true)()}>
-            {isSubmitting ? t('salesOrders.confirming') : t('salesOrders.confirm')}
-          </Button>
-        </div>
-        <p className="text-right text-label text-ink-3">{t('salesOrders.confirmHint')}</p>
+        {onDevice ? (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button type="submit" disabled={isSubmitting}>
+              {t('sync.saveOnDevice')}
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {/* A reopened draft keeps its number and cannot be deleted (it says so above) */}
+            {order?.number === null && (
+              <div className="mr-auto flex flex-wrap items-center gap-2">
+                <Button
+                  variant="secondary"
+                  disabled={removeDraft.isPending}
+                  onClick={() => {
+                    if (confirming) removeDraft.mutate(order);
+                    else setConfirming(true);
+                  }}
+                >
+                  <HugeiconsIcon icon={Delete02Icon} size={17} strokeWidth={1.5} />
+                  {confirming ? t('salesOrders.confirmDelete') : t('salesOrders.deleteDraft')}
+                </Button>
+                {confirming && (
+                  <span className="text-body-sm text-ink-2">{t('salesOrders.deleteWarning')}</span>
+                )}
+              </div>
+            )}
+            <Button type="submit" variant="secondary" disabled={isSubmitting}>
+              {t('salesOrders.saveDraft')}
+            </Button>
+            <Button disabled={isSubmitting || lineCount === 0} onClick={() => void save(true)()}>
+              {isSubmitting ? t('salesOrders.confirming') : t('salesOrders.confirm')}
+            </Button>
+          </div>
+        )}
+        {!onDevice && (
+          <p className="text-right text-label text-ink-3">{t('salesOrders.confirmHint')}</p>
+        )}
       </form>
       <CreditLimitDialog
         stop={stop}

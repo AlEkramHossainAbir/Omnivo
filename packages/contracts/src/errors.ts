@@ -480,6 +480,12 @@ export const ERROR_CODES = [
   'device_revoked',
   // The app was built for another version of the sync (SYNC_PROTOCOL): reload it
   'sync_protocol_mismatch',
+  // Step 18b: a command from a device. An id the device made (a customer, an address, an order) is
+  // already used by something else; a command type this server does not run; the customer a
+  // change is for was deleted, or is no longer a customer.
+  'sync_id_taken',
+  'sync_command_invalid',
+  'sync_customer_gone',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

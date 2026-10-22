@@ -1,6 +1,8 @@
 import type {
   Product,
   SyncCategory,
+  SyncCommand,
+  SyncCommandError,
   SyncCustomer,
   SyncCustomerGroup,
   SyncEntity,
@@ -33,6 +35,8 @@ export interface ProductRecord extends Stored<Product> {
   text: string;
   // Every barcode of the product: its variants' and its packs'. A barcode is matched whole.
   barcodes: string[];
+  // Its variants' ids (step 18b): the order form offline finds a line's product by its variant
+  variantIds: string[];
 }
 
 export interface CustomerRecord extends Stored<SyncCustomer> {
@@ -55,6 +59,52 @@ export interface PullState {
   lastSyncAt: string | null;
   // The rows the running (or the last) full pull wrote, for "1,250 items copied so far"
   copied: number;
+}
+
+// Step 18b: one thing the person did on this device, waiting to reach the server. The outbox is in
+// the same database as the copy, so signing out deletes both (the app asks first).
+export type OutboxStatus = 'waiting' | 'sending' | 'failed';
+
+export interface OutboxEntry {
+  // The order the person did things in: the push sends the outbox by seq, oldest first.
+  // Auto-increment, so it is missing until Dexie adds the row.
+  seq?: number;
+  // What the server gets, as the schema reads it (its output). Its own id is the command's id.
+  command: SyncCommand;
+  // waiting: not sent, or sent with no answer yet. sending: in the push that runs now.
+  // failed: the server refused it (error), so it never ran.
+  status: OutboxStatus;
+  // Sent at least once. A sent command with no answer may have run on the server (the answer was
+  // lost), so it is sent again as it is, and never rewritten (decision 33).
+  sent: boolean;
+  error: SyncCommandError | null;
+  // The customer the command is about: its own, or the order's. Two commands on one customer
+  // reach the server in the order they were made (decision 13).
+  customerId: string;
+  // The thing the command makes or changes: the customer, or the order. A form opens its
+  // waiting command by it.
+  key: string;
+  // A change to a customer: the customer as the person saw it when they started, so a second edit
+  // keeps the first `from` values. null for the other commands.
+  base: SyncCustomer | null;
+  // What the Sync page calls it: the customer's name
+  name: string;
+  // An order: its lines and total, for the Sync page and the unsynced orders. null otherwise.
+  lines: number | null;
+  total: string | null;
+  // When it was saved, by this device's clock: shown, never sent (decision 6)
+  savedAt: string;
+}
+
+// A head-office field the server kept (a kept_server_value notice), shown on the Sync page until
+// the person dismisses it. The command itself is gone: it was accepted.
+export interface SyncNoticeRecord {
+  commandId: string;
+  customerId: string;
+  name: string;
+  fields: string[];
+  // The server's time of the push that brought it
+  at: string;
 }
 
 // The tables, by entity. The names are the ones the app reads (db.products, db.customers).
@@ -100,6 +150,8 @@ export class SyncDatabase extends Dexie {
   customers!: Table<CustomerRecord, string>;
   stock!: Table<Stored<SyncStock>, string>;
   meta!: Table<PullState, string>;
+  outbox!: Table<OutboxEntry, number>;
+  notices!: Table<SyncNoticeRecord, string>;
 
   constructor(name: string) {
     super(name);
@@ -122,6 +174,24 @@ export class SyncDatabase extends Dexie {
       stock: 'key, gen, data.warehouseId, data.variantId',
       meta: 'key',
     });
+    // Step 18b: the outbox and its notices, and the products by variant. The copy stays: Dexie
+    // keeps the tables of version 1, adds the new ones, and the upgrade fills the new field of the
+    // products it already has. `++seq` counts up by itself. `key` and `customerId` find a form's
+    // waiting command and the commands of one customer.
+    this.version(2)
+      .stores({
+        products: 'key, gen, sortName, sortCode, *barcodes, *variantIds',
+        outbox: '++seq, key, customerId',
+        notices: 'commandId',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<ProductRecord, string>('products')
+          .toCollection()
+          .modify((record) => {
+            record.variantIds = record.data.variants.map((variant) => variant.id);
+          });
+      });
   }
 
   // Every synced table, to sweep or clear them all. Not `this.tables`, which has `meta` too.

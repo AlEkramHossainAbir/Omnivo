@@ -303,6 +303,7 @@ import {
   toSupplier,
   toSupplierGroup,
 } from './supplier-data';
+import { push } from './push-data';
 import { pull, registerDevice } from './sync-data';
 import {
   assertCodeFree,
@@ -4985,6 +4986,17 @@ export const handlers = [
     guarded(({ request }) => {
       const query = readQuery(routes.sync.pull.query, request);
       return reply(routes.sync.pull, pull(current(), workspace.tenantId, OWNER.id, query));
+    }),
+  ),
+
+  // Step 18b: the commands a device saved offline (push-data.ts)
+  mock(
+    routes.sync.push,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.sync.push.body, request);
+      const answer = push(current(), OWNER.id, body);
+      await delay();
+      return reply(routes.sync.push, answer);
     }),
   ),
 ];

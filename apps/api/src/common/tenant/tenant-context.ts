@@ -5,6 +5,8 @@ export interface TenantStore {
   tenantId: string;
   // HTTP request-এ AuthMiddleware বসায়; background job-এ (ধাপ ৮) শুধু tenantId থাকবে
   principal?: Principal;
+  // Step 18b: the device a sync command came from. The audit rows its work writes carry it.
+  deviceId?: string;
 }
 
 export const tenantStorage = new AsyncLocalStorage<TenantStore>();
@@ -31,4 +33,17 @@ export function currentPrincipal(): Principal {
     throw new Error('No principal — is this route marked @Public()?');
   }
   return principal;
+}
+
+// Step 18b: run one pushed command as the device's work. The tenant and the person stay as they
+// are; only the device is added, so every audit row the command's services write names it without
+// each service passing it on.
+export function runFromDevice<T>(deviceId: string, fn: () => T): T {
+  const store = tenantStorage.getStore();
+  if (!store) throw new Error('No tenant context — runFromDevice needs a signed-in request');
+  return tenantStorage.run({ ...store, deviceId }, fn);
+}
+
+export function currentDeviceId(): string | null {
+  return tenantStorage.getStore()?.deviceId ?? null;
 }

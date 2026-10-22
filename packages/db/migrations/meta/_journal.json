@@ -316,6 +316,20 @@
       "when": 1792491363789,
       "tag": "0044_sync-devices-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792575266254,
+      "tag": "0045_sync-commands",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792575286229,
+      "tag": "0046_sync-commands-rules",
+      "breakpoints": true
     }
   ]
 }

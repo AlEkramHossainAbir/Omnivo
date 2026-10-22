@@ -1,6 +1,6 @@
 import { Controller, Inject } from '@nestjs/common';
 import { type RouteInput, type RouteResponse, routes } from '@omnivo/contracts';
-import { auditLogs, users } from '@omnivo/db';
+import { auditLogs, devices, users } from '@omnivo/db';
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -38,10 +38,19 @@ export class AuditController {
           createdAtText: sql<string>`${auditLogs.createdAt}::text`,
           actorId: users.id,
           actorName: users.fullName,
+          deviceId: devices.id,
+          deviceName: devices.name,
         })
         .from(auditLogs)
         // users-এ RLS নেই — কিন্তু join শুধু এই টেন্যান্টের audit রো-র actor-এ, তাই বাইরের কেউ আসে না
         .leftJoin(users, eq(users.id, auditLogs.actorUserId))
+        // Step 18b: the device a change was sent from. No foreign key (18b's decision 26), but
+        // devices are never deleted, so the name is there; the tenant in the join keeps it to this
+        // workspace's devices (RLS does too)
+        .leftJoin(
+          devices,
+          and(eq(devices.tenantId, auditLogs.tenantId), eq(devices.id, auditLogs.deviceId)),
+        )
         .where(
           and(
             eq(auditLogs.tenantId, tenantId),
@@ -70,6 +79,10 @@ export class AuditController {
           actor:
             row.actorId !== null && row.actorName !== null
               ? { id: row.actorId, fullName: row.actorName }
+              : null,
+          device:
+            row.deviceId !== null && row.deviceName !== null
+              ? { id: row.deviceId, name: row.deviceName }
               : null,
           changes: row.payload?.changes ?? {},
           ipAddress: row.ipAddress,

@@ -101,7 +101,13 @@ export function AuditLogPage() {
             <span className="min-w-0">
               <span className="block truncate font-medium">{getValue()}</span>
               <span className="block truncate text-caption text-ink-3 tabular-nums">
-                {format.dateTime(new Date(row.original.createdAt), timeZone)}
+                {/* Step 18b (decision 20): a change sent from a device's outbox names the device */}
+                {row.original.device
+                  ? t('audit.fromDevice', {
+                      time: format.dateTime(new Date(row.original.createdAt), timeZone),
+                      device: row.original.device.name,
+                    })
+                  : format.dateTime(new Date(row.original.createdAt), timeZone)}
               </span>
             </span>
           </span>

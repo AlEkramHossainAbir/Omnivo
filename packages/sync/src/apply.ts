@@ -1,5 +1,6 @@
 import type {
   SyncCategory,
+  SyncChange,
   SyncCustomerGroup,
   SyncPriceList,
   SyncPriceListItem,
@@ -55,10 +56,10 @@ function emptyWrites(): Writes {
   };
 }
 
-function groupChanges(page: SyncPull, gen: number) {
+function groupChanges(changes: readonly SyncChange[], gen: number) {
   const puts = emptyWrites();
   const deletes = new Map<SyncTableName, string[]>();
-  for (const change of page.changes) {
+  for (const change of changes) {
     if (change.op === 'delete') {
       const table = TABLE_OF[change.entity];
       deletes.set(table, [...(deletes.get(table) ?? []), change.key]);
@@ -126,6 +127,29 @@ function nextState(state: PullState, page: SyncPull, sentCursor: string | null):
   };
 }
 
+// Rows into their tables, with the generation given. Called inside a transaction that holds every
+// synced table: a page of the pull (below), or the rows a push's answer sent back (push.ts).
+export async function writeChanges(
+  db: SyncDatabase,
+  changes: readonly SyncChange[],
+  gen: number,
+): Promise<void> {
+  const { puts, deletes } = groupChanges(changes, gen);
+  for (const [table, keys] of deletes) await db[table].bulkDelete(keys);
+  // A key is in a page at most once (the contract), so no row is both put and deleted here
+  await db.settings.bulkPut(puts.settings);
+  await db.units.bulkPut(puts.units);
+  await db.productCategories.bulkPut(puts.productCategories);
+  await db.taxRates.bulkPut(puts.taxRates);
+  await db.warehouses.bulkPut(puts.warehouses);
+  await db.priceLists.bulkPut(puts.priceLists);
+  await db.customerGroups.bulkPut(puts.customerGroups);
+  await db.products.bulkPut(puts.products);
+  await db.priceListItems.bulkPut(puts.priceListItems);
+  await db.customers.bulkPut(puts.customers);
+  await db.stock.bulkPut(puts.stock);
+}
+
 // One page into the database, in one transaction: the rows, the deletes and the cursor are
 // saved together or not at all. A tab closed half way through a page leaves the old cursor, and
 // the same page comes again; its upserts and deletes give the same result twice.
@@ -136,20 +160,7 @@ export async function applyPage(
 ): Promise<PullState> {
   return db.transaction('rw', [...db.syncTables(), db.meta], async () => {
     const state = nextState(await readPullState(db), page, sentCursor);
-    const { puts, deletes } = groupChanges(page, state.generation);
-    for (const [table, keys] of deletes) await db[table].bulkDelete(keys);
-    // A key is in a page at most once (the contract), so no row is both put and deleted here
-    await db.settings.bulkPut(puts.settings);
-    await db.units.bulkPut(puts.units);
-    await db.productCategories.bulkPut(puts.productCategories);
-    await db.taxRates.bulkPut(puts.taxRates);
-    await db.warehouses.bulkPut(puts.warehouses);
-    await db.priceLists.bulkPut(puts.priceLists);
-    await db.customerGroups.bulkPut(puts.customerGroups);
-    await db.products.bulkPut(puts.products);
-    await db.priceListItems.bulkPut(puts.priceListItems);
-    await db.customers.bulkPut(puts.customers);
-    await db.stock.bulkPut(puts.stock);
+    await writeChanges(db, page.changes, state.generation);
     // The last page of a full pull: every row it did not send is older than its generation, and
     // goes (decision 17). Until now, the lists kept showing them.
     if (page.full && !page.hasMore) {

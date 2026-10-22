@@ -3,7 +3,7 @@ import { auditLogs } from '@omnivo/db';
 import { sql } from 'drizzle-orm';
 
 import { currentRequest } from '../request/request-context.js';
-import { tenantStorage } from '../tenant/tenant-context.js';
+import { currentDeviceId, tenantStorage } from '../tenant/tenant-context.js';
 import type { Transaction } from '../tenant/with-tenant.js';
 
 export interface AuditEvent {
@@ -28,6 +28,8 @@ export async function audit(tx: Transaction, event: AuditEvent): Promise<void> {
     action: event.action,
     entityType: event.entityType,
     entityId: event.entityId,
+    // Step 18b: set while a pushed command runs (runFromDevice); null for work done online
+    deviceId: currentDeviceId(),
     payload: { changes: event.changes ?? {} },
     requestId: request?.id ?? null,
     ipAddress: request?.ipAddress ?? null,

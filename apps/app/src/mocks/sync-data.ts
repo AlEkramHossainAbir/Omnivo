@@ -8,7 +8,10 @@ import {
   SYNC_PROTOCOL,
   syncCategorySchema,
   type SyncChange,
+  type SyncCommandError,
+  type SyncCommandType,
   type SyncEntity,
+  type SyncNotice,
   type SyncPull,
   syncSettingsSchema,
   type SyncStock,
@@ -44,6 +47,12 @@ interface Paging {
   finished: Finished;
 }
 
+// What the mock kept of a command it ran (step 18b): the API's sync_commands row. An accepted one
+// reads its customer again when it is sent again, so the answer holds no rows.
+export type MockAnswer = { type: SyncCommandType; entityId: string } & (
+  { status: 'accepted'; notices: SyncNotice[] } | { status: 'rejected'; error: SyncCommandError }
+);
+
 export interface MockSync {
   devices: Device[];
   // A finished pull's cursor → what it left the device with. Only the newest one per device is
@@ -56,10 +65,18 @@ export interface MockSync {
   // When a stock row last changed. Movements have dates, not times, and a row's updatedAt must
   // stay the same while its quantity does, or every pull would send every stock row again.
   stamps: Map<string, { quantity: string; at: string }>;
+  // A pushed command's id → its answer (push-data.ts)
+  answers: Map<string, MockAnswer>;
 }
 
 export function emptySync(): MockSync {
-  return { devices: [], finished: new Map(), paging: new Map(), stamps: new Map() };
+  return {
+    devices: [],
+    finished: new Map(),
+    paging: new Map(),
+    stamps: new Map(),
+    answers: new Map(),
+  };
 }
 
 function now(): string {
@@ -103,8 +120,8 @@ export function registerDevice(
   return { device, branchCode: branch.code };
 }
 
-// The device a pull names: the signed-in person's own, and not revoked
-function deviceFor(data: WorkspaceData, userId: string, id: string): Device {
+// The device a pull or a push names: the signed-in person's own, and not revoked
+export function deviceFor(data: WorkspaceData, userId: string, id: string): Device {
   const device = data.sync.devices.find((candidate) => candidate.id === id);
   if (device?.userId !== userId) throw new MockProblem(404, 'device_not_found');
   if (device.revokedAt !== null) throw new MockProblem(403, 'device_revoked');

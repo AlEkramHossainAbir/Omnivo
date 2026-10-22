@@ -1,5 +1,6 @@
 import type { Branch } from '@omnivo/contracts';
 import {
+  customerCommands,
   readPullState,
   STORAGE_FAILED,
   type SyncDatabase,
@@ -7,7 +8,7 @@ import {
   type SyncStatus,
   type Watch,
 } from '@omnivo/sync';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
@@ -56,6 +57,18 @@ export function useDeviceState(): DeviceState {
   return useStore(localDataStore, (state) => state.device);
 }
 
+// Step 18b: a sync soon, after a save into the outbox (the engine waits 300 ms for more)
+export function requestSync(): void {
+  const { device } = localDataStore.getState();
+  if (device.kind === 'ready') device.engine.request();
+}
+
+// The device's database, when it has one open: the outbox is in it
+export function useLocalDb(): SyncDatabase | null {
+  const device = useDeviceState();
+  return device.kind === 'ready' ? device.db : null;
+}
+
 // A read of the copy that runs again by itself when a pull changes what it read. `query` must be
 // stable (useCallback): a new function is a new read. null = nothing to read (the archived tab).
 // While a new read runs, the last answer stays, so a list does not flash empty on each key press.
@@ -99,18 +112,21 @@ const NOTICES: ReadonlySet<string> = new Set([
   'device_branch_invalid',
 ]);
 
-const NO_STATUS: SyncStatus = { pulling: false, problem: null, stopped: false };
+const NO_STATUS: SyncStatus = { syncing: false, problem: null, stopped: false };
 const noSubscribe = () => () => undefined;
 const noStatus = () => NO_STATUS;
+
+// The engine's status (syncing, its problem), for the sidebar and the Sync page
+export function useSyncStatus(): SyncStatus {
+  const device = useDeviceState();
+  const engine = device.kind === 'ready' ? device.engine : null;
+  return useSyncExternalStore(engine?.subscribe ?? noSubscribe, engine?.getStatus ?? noStatus);
+}
 
 export function useLocalData(): { view: LocalView; notice: string | null } {
   const device = useDeviceState();
   const online = useOnline();
-  const engine = device.kind === 'ready' ? device.engine : null;
-  const status = useSyncExternalStore(
-    engine?.subscribe ?? noSubscribe,
-    engine?.getStatus ?? noStatus,
-  );
+  const status = useSyncStatus();
   // Live: the first pull's count and its end show here as the pages arrive
   const pull = useLocalQuery(readPullState);
   const notice = status.problem !== null && NOTICES.has(status.problem) ? status.problem : null;
@@ -141,4 +157,25 @@ function viewOf(
       if (status.problem === null) return { kind: 'first-pull', copied };
       return online ? { kind: 'first-pull-failed' } : { kind: 'offline-empty' };
   }
+}
+
+// Where a customer form or an order form saves (decision 2): through the API online, into the
+// outbox offline, and into the outbox online too while the customer has commands waiting, so
+// its changes reach the server in the order they were made. '' = no customer (yet).
+// undefined while the device's answer is not read yet: the form waits for it.
+export type SaveMode = 'api' | 'device';
+
+export function useSaveMode(customerId: string): SaveMode | undefined {
+  const online = useOnline();
+  const db = useLocalDb();
+  const read = useCallback(
+    (database: SyncDatabase) =>
+      customerId === '' ? Promise.resolve([]) : customerCommands(database, customerId),
+    [customerId],
+  );
+  const commands = useLocalQuery(db ? read : null);
+  if (!online) return 'device';
+  if (!db) return 'api';
+  if (commands === undefined) return undefined;
+  return commands.length > 0 ? 'device' : 'api';
 }

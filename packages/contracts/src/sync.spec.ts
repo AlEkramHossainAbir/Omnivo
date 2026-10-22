@@ -1,13 +1,21 @@
 import { describe, expect, it } from 'vitest';
 
+import { contractErrorMap } from './errors.js';
 import {
+  customerUpdateCommandSchema,
   priceListItemKey,
   registerDeviceInputSchema,
+  salesOrderDraftCommandSchema,
   stockKey,
   syncChangeSchema,
+  syncCommandSchema,
   syncCustomerSchema,
   syncPullQuerySchema,
   syncPullSchema,
+  syncPushInputSchema,
+  syncPushSchema,
+  type SyncCommandInput,
+  type SyncPushInput,
 } from './sync.js';
 
 const WAREHOUSE = '0192f1c4-0000-7000-8000-00000000000a';
@@ -170,5 +178,216 @@ describe('device registration', () => {
       ['name', 'device_name_required'],
       ['branchId', 'device_branch_invalid'],
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The push (step 18b)
+
+const COMMAND = '0192f1c5-0000-7000-8000-000000000001';
+const CUSTOMER = '0192f1c5-0000-7000-8000-000000000002';
+const ADDRESS = '0192f1c5-0000-7000-8000-000000000003';
+const ORDER = '0192f1c5-0000-7000-8000-000000000004';
+const RATE = '0192f1c5-0000-7000-8000-000000000005';
+// A v4 id: what another library would make
+const V4 = '6f1c2a4e-1111-4111-8111-111111111111';
+
+// The error codes where the form will show them: field path → code
+function errorsOf(result: { error?: { issues: { path: PropertyKey[]; message: string }[] } }) {
+  return Object.fromEntries(
+    (result.error?.issues ?? []).map((issue) => [issue.path.map(String).join('.'), issue.message]),
+  );
+}
+
+// A pharmacy a sales officer adds in Chattogram with no signal: as the customer form sends it
+function newCustomer(extra: object = {}) {
+  return {
+    code: '',
+    name: 'Rahman Pharmacy',
+    groupId: '',
+    contactPerson: 'Abdur Rahman',
+    phone: '01819-123456',
+    email: '',
+    documentLanguage: 'bn' as const,
+    bin: '',
+    paymentTermsDays: 15,
+    creditLimit: '',
+    priceListId: '',
+    notes: '',
+    addresses: [
+      {
+        id: ADDRESS,
+        kind: 'billing' as const,
+        label: '',
+        address: 'Agrabad C/A, Chattogram',
+        phone: '',
+      },
+    ],
+    ...extra,
+  };
+}
+
+describe('sync commands', () => {
+  it('adds a customer with the device ids, and leaves the code to the server', () => {
+    const command = syncCommandSchema.parse({
+      id: COMMAND,
+      type: 'customer.create',
+      customerId: CUSTOMER,
+      input: newCustomer(),
+    });
+    expect(command.type === 'customer.create' && command.input).toMatchObject({
+      code: null,
+      creditLimit: null,
+      addresses: [{ id: ADDRESS, label: null, phone: null }],
+    });
+  });
+
+  it('needs a UUIDv7 for every new id, an address too', () => {
+    const result = syncCommandSchema.safeParse(
+      {
+        id: V4,
+        type: 'customer.create',
+        customerId: V4,
+        input: newCustomer({
+          addresses: [
+            { id: null, kind: 'billing', label: '', address: 'Agrabad C/A, Chattogram', phone: '' },
+          ],
+        }),
+      },
+      { error: contractErrorMap },
+    );
+    expect(errorsOf(result)).toEqual({
+      id: 'invalid_format',
+      customerId: 'invalid_format',
+      'input.addresses.0.id': 'invalid_value',
+    });
+  });
+
+  it("keeps the form's one-billing rule", () => {
+    const result = syncCommandSchema.safeParse({
+      id: COMMAND,
+      type: 'customer.create',
+      customerId: CUSTOMER,
+      input: newCustomer({
+        addresses: [
+          {
+            id: ADDRESS,
+            kind: 'billing',
+            label: '',
+            address: 'Agrabad C/A, Chattogram',
+            phone: '',
+          },
+          { id: ORDER, kind: 'billing', label: '', address: 'GEC Circle, Chattogram', phone: '' },
+        ],
+      }),
+    });
+    expect(errorsOf(result)).toEqual({ 'input.addresses.1.kind': 'customer_billing_twice' });
+  });
+
+  it('changes only the fields sent: the old value as the API sent it, the new as the form', () => {
+    const command = customerUpdateCommandSchema.parse({
+      id: COMMAND,
+      type: 'customer.update',
+      customerId: CUSTOMER,
+      baseVersion: 4,
+      changes: {
+        creditLimit: { from: '200000.0000', to: '' },
+        phone: { from: null, to: ' 01711-000000 ' },
+      },
+      addresses: {
+        add: [],
+        remove: [],
+        change: [{ id: ADDRESS, label: 'Head office' }],
+      },
+    });
+    // '' is "no limit" in the form, null on the server
+    expect(command.changes).toEqual({
+      creditLimit: { from: '200000.0000', to: null },
+      phone: { from: null, to: '01711-000000' },
+    });
+    expect(command.addresses.change).toEqual([{ id: ADDRESS, label: 'Head office' }]);
+  });
+
+  it('writes an order as a draft only, and still checks its dates', () => {
+    const order = {
+      customerId: CUSTOMER,
+      date: '2026-10-21',
+      customerReference: '',
+      deliveryDate: '2026-10-20',
+      warehouseId: CUSTOMER,
+      shippingAddressId: ADDRESS,
+      note: '',
+      lines: [
+        {
+          variantId: VARIANT,
+          unitId: UNIT,
+          quantity: '20',
+          description: '',
+          unitPrice: '120',
+          discountType: 'percent',
+          discount: '',
+          taxRateId: RATE,
+        },
+      ],
+      // A device cannot confirm: the field is dropped, not obeyed
+      confirm: true,
+    };
+    const command = { id: COMMAND, type: 'sales_order.create_draft', orderId: ORDER };
+    expect(errorsOf(salesOrderDraftCommandSchema.safeParse({ ...command, input: order }))).toEqual({
+      'input.deliveryDate': 'order_delivery_date',
+    });
+    const parsed = salesOrderDraftCommandSchema.parse({
+      ...command,
+      input: { ...order, deliveryDate: '' },
+    });
+    expect(parsed.input).not.toHaveProperty('confirm');
+  });
+});
+
+describe('push', () => {
+  it('takes a command it cannot read, so the server can refuse that one alone', () => {
+    const command: SyncCommandInput = {
+      id: COMMAND,
+      type: 'customer.create',
+      customerId: CUSTOMER,
+      input: newCustomer(),
+    };
+    // A command the device made fits what the request takes, as a type too
+    const commands: SyncPushInput['commands'] = [command, { id: ORDER, type: 'sale.refund' }];
+    const input = syncPushInputSchema.parse({ deviceId: CUSTOMER, protocol: 1, commands });
+    expect(input.commands[0]).toEqual(command);
+    expect(syncCommandSchema.safeParse(input.commands[1]).success).toBe(false);
+  });
+
+  it('sends at most 50 commands, and at least one', () => {
+    const commands = Array.from({ length: 51 }, () => ({ id: COMMAND, type: 'customer.create' }));
+    expect(
+      syncPushInputSchema.safeParse({ deviceId: CUSTOMER, protocol: 1, commands }).success,
+    ).toBe(false);
+    expect(
+      syncPushInputSchema.safeParse({ deviceId: CUSTOMER, protocol: 1, commands: [] }).success,
+    ).toBe(false);
+  });
+
+  it('answers each command: accepted with its rows and notices, or refused with its error', () => {
+    const answer = syncPushSchema.parse({
+      results: [
+        {
+          id: COMMAND,
+          status: 'accepted',
+          notices: [{ code: 'kept_server_value', fields: ['creditLimit'] }],
+          changes: [],
+        },
+        {
+          id: ORDER,
+          status: 'rejected',
+          error: { code: 'customer_code_taken', fieldErrors: { code: ['customer_code_taken'] } },
+        },
+      ],
+      serverTime: AT,
+    });
+    const [accepted, rejected] = answer.results;
+    expect(accepted?.status === 'accepted' && accepted.notices[0]?.fields).toEqual(['creditLimit']);
+    expect(rejected?.status === 'rejected' && rejected.error.code).toBe('customer_code_taken');
   });
 });

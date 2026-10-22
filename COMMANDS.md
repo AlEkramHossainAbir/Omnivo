@@ -194,6 +194,10 @@ docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d om
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, c.entity, count(*) AS lines, min(c.created_at) AS oldest FROM sync_changes c JOIN tenants t ON t.id = c.tenant_id GROUP BY t.slug, c.entity ORDER BY t.slug, c.entity"
 # write transactions open for more than a minute: every device's pull waits for them (should print nothing)
 docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT pid, usename, now() - xact_start AS open_for, state, left(query, 80) AS query FROM pg_stat_activity WHERE backend_xid IS NOT NULL AND xact_start < now() - interval '1 minute'"
+# the push's answers per workspace and device: how many accepted and refused, and the newest (kept 30 days)
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, d.name AS device, c.status, count(*) AS commands, max(c.created_at) AS newest FROM sync_commands c JOIN tenants t ON t.id = c.tenant_id JOIN devices d ON d.tenant_id = c.tenant_id AND d.id = c.device_id GROUP BY t.slug, d.name, c.status ORDER BY t.slug, d.name, c.status"
+# the last 20 refused commands: which type, which record, and why
+docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo -c "SELECT t.slug, c.type, c.entity_id, c.error->>'code' AS error, c.created_at FROM sync_commands c JOIN tenants t ON t.id = c.tenant_id WHERE c.status = 'rejected' ORDER BY c.created_at DESC LIMIT 20"
 ```
 
 ## Permission cache (Valkey)

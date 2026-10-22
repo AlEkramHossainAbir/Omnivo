@@ -641,6 +641,13 @@ const approvalsRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/approvals'), 'ApprovalsPage'),
 });
 
+// Step 18b: the outbox and the last sync of this device
+const syncRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/sync',
+  component: lazyRouteComponent(() => import('./routes/sync'), 'SyncPage'),
+});
+
 // Step 17b: purchase orders ("Make purchase order" on a requisition comes with ?requisitionId=) and
 // goods receipts ("Receive goods" on an order comes with ?orderId=). '/…/new' beats '/…/$id'.
 const purchaseOrdersRoute = createRoute({
@@ -941,6 +948,7 @@ const routeTree = rootRoute.addChildren([
     newRequisitionRoute,
     requisitionRoute,
     approvalsRoute,
+    syncRoute,
     purchaseOrdersRoute,
     newPurchaseOrderRoute,
     purchaseOrderRoute,

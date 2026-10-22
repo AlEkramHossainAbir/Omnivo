@@ -97,7 +97,7 @@ const optionalIdSchema = z
   .transform((value) => (value === '' ? null : value))
   .nullable();
 
-const customerAddressInputSchema = z.object({
+export const customerAddressInputSchema = z.object({
   // An existing address keeps its id: a delivery (step 15b) points at the address it went to
   id: z.uuid().nullable(),
   kind: z.enum(ADDRESS_KINDS),

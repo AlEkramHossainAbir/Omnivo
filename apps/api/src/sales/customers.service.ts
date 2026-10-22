@@ -6,6 +6,8 @@ import {
   type CustomerPage,
   type CustomerSort,
   type ErrorCode,
+  type SyncCommand,
+  type SyncNotice,
   todayIn,
   type UpdateCustomerInput,
 } from '@omnivo/contracts';
@@ -27,7 +29,7 @@ import {
   salesReturns,
   tenantSettings,
 } from '@omnivo/db';
-import { and, eq, inArray, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -40,9 +42,15 @@ import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { NumberingService } from '../numbering/numbering.service.js';
 import { BalanceAccess } from './balance-access.js';
+import { type CurrentAddress, mergeCustomer } from './customer-merge.js';
 import { customersOf } from './customer-read.js';
 
 type PartyRow = typeof parties.$inferSelect;
+
+type CustomerUpdateCommand = Extract<SyncCommand, { type: 'customer.update' }>;
+
+// Where a new address's id comes from: the database (the form), or the device (step 18b)
+type NewAddressIds = 'server' | 'device';
 
 // What a customer owes: debit − credit of the posted receivable lines that name it. A correlated
 // subquery on the parties row it is selected with, run for the rows of one page only;
@@ -231,34 +239,22 @@ export class CustomersService {
   async create(input: CustomerInput): Promise<Customer> {
     const canSeeBalance = await this.access.canSee();
     try {
-      return await this.withTenant(async (tx) => {
-        await this.checkLinks(tx, input, null);
-        const code = input.code ?? (await this.newCode(tx));
-        if (await this.codeUsed(tx, code, null)) throw codeTaken();
-        const [row] = await tx
-          .insert(parties)
-          .values({
-            tenantId: getTenantId(),
-            code,
-            isCustomer: true,
-            ...this.fields(input),
-            createdBy: currentPrincipal().userId,
-            updatedBy: currentPrincipal().userId,
-          })
-          .returning({ id: parties.id });
-        if (!row) throw new Error('Customer insert returned no row');
-        await this.saveAddresses(tx, row.id, input.addresses);
-        const customer = await this.read(tx, row.id, canSeeBalance);
-        await audit(tx, {
-          action: 'customer.created',
-          entityType: 'customer',
-          entityId: row.id,
-          changes: created(await this.snapshot(tx, customer)),
-        });
-        return customer;
-      });
+      return await this.withTenant((tx) => this.insert(tx, input, null, canSeeBalance));
     } catch (error) {
       // Two saves with the same code at the same moment: both passed codeUsed()
+      if (isUniqueViolation(error, 'parties_tenant_code_idx')) throw codeTaken();
+      throw error;
+    }
+  }
+
+  // Step 18b: a customer added on a device without a connection, inside the push's transaction
+  // (SyncPushService). The device made the ids of the customer and of every address: an order
+  // written on the same device may already point at them. Its code, when empty, is the next
+  // number now, when the command arrives (decision 16).
+  async createFromDevice(tx: Transaction, id: string, input: CustomerInput): Promise<void> {
+    try {
+      await this.insert(tx, input, id, false);
+    } catch (error) {
       if (isUniqueViolation(error, 'parties_tenant_code_idx')) throw codeTaken();
       throw error;
     }
@@ -270,34 +266,35 @@ export class CustomersService {
       return await this.withTenant(async (tx) => {
         const before = await this.lock(tx, id);
         if (before.version !== input.version) throw versionConflict();
-        await this.checkLinks(tx, input, before);
-        const old = await this.read(tx, id, canSeeBalance);
-        // An empty code keeps the one it has, like a product's
-        const code = input.code ?? before.code;
-        if (await this.codeUsed(tx, code, id)) throw codeTaken();
-        await tx
-          .update(parties)
-          .set({
-            code,
-            ...this.fields(input),
-            version: sql`${parties.version} + 1`,
-            updatedBy: currentPrincipal().userId,
-          })
-          .where(and(eq(parties.tenantId, getTenantId()), eq(parties.id, id)));
-        await this.saveAddresses(tx, id, input.addresses);
-        const customer = await this.read(tx, id, canSeeBalance);
-        await audit(tx, {
-          action: 'customer.updated',
-          entityType: 'customer',
-          entityId: id,
-          changes: diff(await this.snapshot(tx, old), await this.snapshot(tx, customer)),
-        });
-        return customer;
+        return await this.save(tx, before, input, 'server', canSeeBalance);
       });
     } catch (error) {
       if (isUniqueViolation(error, 'parties_tenant_code_idx')) throw codeTaken();
       throw error;
     }
+  }
+
+  // Step 18b: a change made on a device, merged into the customer as the server has it now
+  // (decisions 4, 6 and 14). Only the fields the person changed are written. A head-office field
+  // (SERVER_WINS_CUSTOMER_FIELDS) the server changed since the device read it keeps the server's
+  // value, and the answer names it. The addresses are merged one by one, by id. Then the merged
+  // customer is saved like a save from the form: the same checks, the same audit row.
+  async updateFromDevice(
+    tx: Transaction,
+    command: Pick<CustomerUpdateCommand, 'customerId' | 'changes' | 'addresses'>,
+  ): Promise<SyncNotice[]> {
+    const before = await this.lockForDevice(tx, command.customerId);
+    // The customer as the API sends it: the shape the changes' `from` values were read in
+    const [now] = await customersOf(tx, [before]);
+    if (!now) throw new Error('customersOf returned no customer');
+    const merged = mergeCustomer(now, await this.addressesOf(tx, before.id), command);
+    try {
+      await this.save(tx, before, merged.input, 'device', false);
+    } catch (error) {
+      if (isUniqueViolation(error, 'parties_tenant_code_idx')) throw codeTaken();
+      throw error;
+    }
+    return merged.kept.length === 0 ? [] : [{ code: 'kept_server_value', fields: merged.kept }];
   }
 
   // Archived: hidden from new documents. Its entries, its balance and its statement stay; a
@@ -453,6 +450,75 @@ export class CustomersService {
       );
   }
 
+  // A new customer, with its addresses and its audit row. `id` is the device's id for a customer
+  // added offline (step 18b), or null for the database's own.
+  private async insert(
+    tx: Transaction,
+    input: CustomerInput,
+    id: string | null,
+    canSeeBalance: boolean,
+  ): Promise<Customer> {
+    await this.checkLinks(tx, input, null);
+    const code = input.code ?? (await this.newCode(tx));
+    if (await this.codeUsed(tx, code, null)) throw codeTaken();
+    const [row] = await tx
+      .insert(parties)
+      .values({
+        ...(id === null ? {} : { id }),
+        tenantId: getTenantId(),
+        code,
+        isCustomer: true,
+        ...this.fields(input),
+        createdBy: currentPrincipal().userId,
+        updatedBy: currentPrincipal().userId,
+      })
+      .returning({ id: parties.id });
+    if (!row) throw new Error('Customer insert returned no row');
+    await this.saveAddresses(tx, row.id, input.addresses, id === null ? 'server' : 'device');
+    const customer = await this.read(tx, row.id, canSeeBalance);
+    await audit(tx, {
+      action: 'customer.created',
+      entityType: 'customer',
+      entityId: row.id,
+      changes: created(await this.snapshot(tx, customer)),
+    });
+    return customer;
+  }
+
+  // A locked customer saved with new values, and its audit row: the form's save (after the version
+  // check) and a device's merged change (step 18b) both end here
+  private async save(
+    tx: Transaction,
+    before: PartyRow,
+    input: CustomerInput,
+    newAddressIds: NewAddressIds,
+    canSeeBalance: boolean,
+  ): Promise<Customer> {
+    await this.checkLinks(tx, input, before);
+    const old = await this.read(tx, before.id, canSeeBalance);
+    // An empty code keeps the one it has, like a product's
+    const code = input.code ?? before.code;
+    if (await this.codeUsed(tx, code, before.id)) throw codeTaken();
+    await tx
+      .update(parties)
+      .set({
+        code,
+        ...this.fields(input),
+        version: sql`${parties.version} + 1`,
+        updatedBy: currentPrincipal().userId,
+      })
+      .where(and(eq(parties.tenantId, getTenantId()), eq(parties.id, before.id)));
+    await this.saveAddresses(tx, before.id, input.addresses, newAddressIds);
+    const customer = await this.read(tx, before.id, canSeeBalance);
+    await audit(tx, {
+      action: 'customer.updated',
+      entityType: 'customer',
+      entityId: before.id,
+      changes: diff(await this.snapshot(tx, old), await this.snapshot(tx, customer)),
+    });
+    return customer;
+  }
+
   // The columns the form sets, the same on create and update
   private fields(input: CustomerInput) {
     return {
@@ -528,6 +594,9 @@ export class CustomersService {
   // The addresses sent replace the ones the customer had. An address sent back with its id is
   // changed in place, so its id stays (a delivery in step 15b points at it); one whose id is not
   // this customer's — another customer's, or made up — is added as a new address, never moved.
+  // Step 18b: from a device, a new address keeps the id the device made ('device'); an id used
+  // anywhere else then fails on party_addresses_pkey, and the push refuses the command with
+  // sync_id_taken. From the form it gets a new one ('server'), as before.
   // The order matters because of party_addresses_billing_idx, checked on every row: first the
   // removed ones go, then the kept ones that are no longer billing are changed, then the one that
   // is billing now, and last the new ones. At no moment are there two billing addresses.
@@ -535,6 +604,7 @@ export class CustomersService {
     tx: Transaction,
     partyId: string,
     addresses: CustomerInput['addresses'],
+    newAddressIds: NewAddressIds,
   ): Promise<void> {
     const tenantId = getTenantId();
     const ofParty = and(eq(partyAddresses.tenantId, tenantId), eq(partyAddresses.partyId, partyId));
@@ -542,6 +612,7 @@ export class CustomersService {
     const own = new Set(existing.map((row) => row.id));
     const rows = addresses.map((address, position) => ({
       id: address.id !== null && own.has(address.id) ? address.id : null,
+      newId: newAddressIds === 'device' ? address.id : null,
       fields: {
         kind: address.kind,
         position,
@@ -572,12 +643,43 @@ export class CustomersService {
         .set(row.fields)
         .where(and(ofParty, eq(partyAddresses.id, row.id)));
     }
-    const added = rows.flatMap(({ id, fields }) => (id === null ? [fields] : []));
+    const added = rows.flatMap(({ id, newId, fields }) =>
+      id !== null ? [] : [newId === null ? fields : { id: newId, ...fields }],
+    );
     if (added.length > 0) {
       await tx
         .insert(partyAddresses)
         .values(added.map((fields) => ({ tenantId, partyId, ...fields })));
     }
+  }
+
+  // A device's change finds the customer gone when it was deleted, or is now only a supplier,
+  // since the device read it: the change has nowhere to go, and the person must know
+  private async lockForDevice(tx: Transaction, id: string): Promise<PartyRow> {
+    try {
+      return await this.lock(tx, id);
+    } catch (error) {
+      if (error instanceof AppError && error.code === 'not_found') {
+        throw new AppError(409, 'sync_customer_gone', 'This customer is no longer on the server.');
+      }
+      throw error;
+    }
+  }
+
+  // The customer's addresses as the table keeps them (the kind typed), in the order the API sends
+  // them: billing first, then the shipping ones by position
+  private addressesOf(tx: Transaction, partyId: string): Promise<CurrentAddress[]> {
+    return tx
+      .select({
+        id: partyAddresses.id,
+        kind: partyAddresses.kind,
+        label: partyAddresses.label,
+        address: partyAddresses.address,
+        phone: partyAddresses.phone,
+      })
+      .from(partyAddresses)
+      .where(and(eq(partyAddresses.tenantId, getTenantId()), eq(partyAddresses.partyId, partyId)))
+      .orderBy(sql`${partyAddresses.kind} = 'billing' DESC`, asc(partyAddresses.position));
   }
 
   private async lock(tx: Transaction, id: string): Promise<PartyRow> {

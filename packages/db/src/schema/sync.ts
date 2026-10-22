@@ -1,13 +1,23 @@
-import type { SyncEntity } from '@omnivo/contracts';
+import type {
+  SyncCommandError,
+  SyncCommandType,
+  SyncEntity,
+  SyncNotice,
+  SyncResult,
+} from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
 import {
   bigint,
   customType,
   foreignKey,
+  check,
   index,
+  jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
@@ -81,6 +91,8 @@ export const devices = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
   (table) => [
+    // The target of the composite FKs from sync_commands and audit_logs: never another tenant's device
+    uniqueIndex('devices_tenant_id_idx').on(table.tenantId, table.id),
     // A person's devices (step 18c's list) — and Postgres's own check of the membership FK
     index('devices_tenant_user_idx').on(table.tenantId, table.userId),
     // The devices of a branch, and the branch FK's own check
@@ -97,5 +109,59 @@ export const devices = pgTable(
       columns: [table.tenantId, table.branchId],
       foreignColumns: [branches.tenantId, branches.id],
     }),
+  ],
+);
+
+const SYNC_COMMAND_STATUSES = [
+  'accepted',
+  'rejected',
+] as const satisfies readonly SyncResult['status'][];
+
+// The answer to every command a device pushed (step 18b, decision 10). The push looks a command
+// up here first: one found is answered from this row, never run again, so a batch sent again
+// after its answer was lost makes one customer, not two. A row is written once, in the same
+// transaction as the command's own work, and never changed (migration 0046 takes UPDATE and
+// DELETE away from the API); the worker deletes the rows older than 30 days, like the change log.
+// A command the server could not read at all (no such type, a bad field) has no row: the same
+// bytes always give the same refusal, so there is nothing to keep.
+export const syncCommands = pgTable(
+  'sync_commands',
+  {
+    // The command's own id, made by the device (not the customer's or the order's)
+    id: uuid('id').notNull(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    deviceId: uuid('device_id').notNull(),
+    // $type, no check, like the change log's entity: a type a later step drops keeps its old rows
+    type: text('type').$type<SyncCommandType>().notNull(),
+    // The customer or the order the command is about. An accepted command sent again is answered
+    // with this row as it is NOW (decision 18), so the answer needs to know which one it was.
+    entityId: uuid('entity_id').notNull(),
+    status: text('status', { enum: SYNC_COMMAND_STATUSES }).notNull(),
+    // An accepted command's notices (kept_server_value), [] when there are none
+    notices: jsonb('notices').$type<SyncNotice[]>().notNull().default([]),
+    // A refused command's error: code, params and field errors, as the device was told
+    error: jsonb('error').$type<SyncCommandError>(),
+    // When the server ran it. For pruning, and for support ("when did this order arrive?")
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    // The lookup of a pushed command. The tenant first: another tenant's command is never found,
+    // and its id never blocks this tenant's.
+    primaryKey({ name: 'sync_commands_pkey', columns: [table.tenantId, table.id] }),
+    // The worker's pruning: the oldest rows of every tenant
+    index('sync_commands_created_idx').on(table.createdAt),
+    foreignKey({
+      name: 'sync_commands_device_fk',
+      columns: [table.tenantId, table.deviceId],
+      foreignColumns: [devices.tenantId, devices.id],
+    }),
+    check('sync_commands_status_check', sql`${table.status} IN ('accepted', 'rejected')`),
+    // A refused command has its error, an accepted one has none
+    check(
+      'sync_commands_error_check',
+      sql`(${table.status} = 'rejected') = (${table.error} IS NOT NULL)`,
+    ),
   ],
 );

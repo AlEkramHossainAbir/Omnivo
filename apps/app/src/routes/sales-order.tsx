@@ -1,14 +1,21 @@
-import { AlertCircleIcon } from '@hugeicons/core-free-icons';
+import { AlertCircleIcon, WifiDisconnected02Icon } from '@hugeicons/core-free-icons';
 import { useLocale } from '@omnivo/i18n';
+import { outboxOf, productsOfVariants, type SyncDatabase } from '@omnivo/sync';
 import { EmptyState } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useSearch } from '@tanstack/react-router';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useCallback } from 'react';
 
+import { LocalState } from '../components/local-state';
+import type { OutboxDraft } from '../components/sales-order-form';
 import { SalesBackLink } from '../components/sales-parts';
 import { useTenantId, useToday, useWarehouses } from '../components/stock-parts';
+import { useLocalData, useLocalDb, useLocalQuery } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
+import { draftLines } from '../lib/sales';
+import { useOnline } from '../lib/use-online';
 import {
+  deviceSettingsQuery,
   quotationQuery,
   salesOrderQuery,
   settingsQuery,
@@ -24,15 +31,39 @@ const SalesOrderView = lazy(async () => ({
   default: (await import('../components/sales-order-view')).SalesOrderView,
 }));
 
-// The units, the VAT rates, the warehouses and the settings: the form and the view need them all
+// The units, the VAT rates, the warehouses and the settings: the form and the view need them all.
+// Step 18b: offline, the first three come from the device (queries.ts), and the way prices are
+// written from the device's copy of the settings.
 function useReady(): { pricesIncludeVat: boolean } | null {
   const tenantId = useTenantId();
   const units = useQuery(unitsQuery(tenantId)).data;
   const rates = useQuery(taxRatesQuery(tenantId)).data;
   const settings = useQuery(settingsQuery(tenantId)).data;
+  const local = useQuery({ ...deviceSettingsQuery(tenantId), enabled: !settings }).data;
+  const pricesIncludeVat = settings?.pricesIncludeVat ?? local?.pricesIncludeVat;
   const { active } = useWarehouses();
-  if (units === undefined || rates === undefined || settings === undefined || !active) return null;
-  return { pricesIncludeVat: settings.pricesIncludeVat };
+  if (units === undefined || rates === undefined || pricesIncludeVat === undefined || !active) {
+    return null;
+  }
+  return { pricesIncludeVat };
+}
+
+// A draft order waiting in the outbox under this id, with its lines' products from the device;
+// null = none (the order is the server's)
+async function readDraft(db: SyncDatabase, orderId: string): Promise<OutboxDraft | null> {
+  const [entry] = await outboxOf(db, orderId);
+  if (entry?.command.type !== 'sales_order.create_draft') return null;
+  const { input } = entry.command;
+  const products = await productsOfVariants(
+    db,
+    input.lines.map((line) => line.variantId),
+  );
+  return {
+    orderId,
+    input,
+    lines: draftLines(input.lines, products, input.customerId),
+    error: entry.error,
+  };
 }
 
 function CantFind({ message }: { message: string }) {
@@ -56,6 +87,8 @@ export function NewSalesOrderPage() {
     ...quotationQuery(useTenantId(), quotationId),
     enabled: quotationId !== '',
   });
+  const online = useOnline();
+  const { view } = useLocalData();
   if (!canWrite) {
     return (
       <div className="grid max-w-6xl grid-cols-1 gap-5">
@@ -65,6 +98,15 @@ export function NewSalesOrderPage() {
     );
   }
   if (isError) return <CantFind message={t('quotations.notFound')} />;
+  // Offline, an order is saved on the device: without a complete copy, its state says what to do
+  if (!online && quotationId === '' && view.kind !== 'ready') {
+    return (
+      <div className="grid max-w-6xl grid-cols-1 gap-5">
+        <SalesBackLink to="/sales-orders" label={t('salesOrders.back')} />
+        <LocalState view={view} />
+      </div>
+    );
+  }
   if (!ready || (quotationId !== '' && !quotation)) return null;
   return (
     <Suspense fallback={null}>
@@ -85,11 +127,43 @@ export function SalesOrderPage() {
   const canWrite = useCan()('sales.order.manage');
   const today = useToday();
   const ready = useReady();
+  const online = useOnline();
+  const db = useLocalDb();
+  // Step 18b: a draft saved on this device opens from the outbox; the server is asked only when
+  // there is none (it does not know the order yet)
+  const read = useCallback((database: SyncDatabase) => readDraft(database, orderId), [orderId]);
+  const draft = useLocalQuery(db ? read : null);
   const { data: order, isError } = useQuery({
     ...salesOrderQuery(useTenantId(), orderId),
-    enabled: orderId !== '',
+    enabled: orderId !== '' && (db === null || draft === null),
   });
 
+  if (db && draft === undefined) return null;
+  if (draft && ready) {
+    return (
+      <Suspense fallback={null}>
+        <SalesOrderForm
+          order={null}
+          quotation={null}
+          draft={draft}
+          today={today}
+          pricesIncludeVat={ready.pricesIncludeVat}
+        />
+      </Suspense>
+    );
+  }
+  if (!online && !order) {
+    return (
+      <div className="grid max-w-6xl grid-cols-1 gap-5">
+        <SalesBackLink to="/sales-orders" label={t('salesOrders.back')} />
+        <EmptyState
+          icon={WifiDisconnected02Icon}
+          title={t('sync.needsConnectionTitle')}
+          description={t('sync.orderOffline')}
+        />
+      </div>
+    );
+  }
   if (isError) return <CantFind message={t('salesOrders.notFound')} />;
   if (!order || !ready) return null;
   if (order.status === 'draft' && canWrite) {

@@ -38,6 +38,7 @@ export function productRecord(key: string, gen: number, data: Product): ProductR
     sortCode: data.code.toLowerCase(),
     text: searchText([data.name, data.code, ...data.variants.map((variant) => variant.sku)]),
     barcodes: [...new Set(barcodes)],
+    variantIds: data.variants.map((variant) => variant.id),
   };
 }
 

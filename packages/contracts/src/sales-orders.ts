@@ -100,9 +100,11 @@ const salesOrderFieldsSchema = salesDocumentFieldsSchema.extend({
   overrideCreditLimit: z.boolean().default(false),
 });
 
-type OrderRuleInput = z.output<typeof salesOrderFieldsSchema>;
-
-function orderRules(input: OrderRuleInput, ctx: z.RefinementCtx<OrderRuleInput>) {
+// Generic, so the offline draft below (without confirm and the override) shares the rule
+function orderRules<T extends { date: string; deliveryDate: string | null }>(
+  input: T,
+  ctx: z.RefinementCtx<T>,
+) {
   if (input.deliveryDate !== null && input.deliveryDate < input.date) {
     ctx.addIssue({
       code: 'custom',
@@ -125,6 +127,16 @@ export const updateSalesOrderInputSchema = salesOrderFieldsSchema
   .superRefine(orderRules);
 export type UpdateSalesOrderInput = z.infer<typeof updateSalesOrderInputSchema>;
 export type SalesOrderFormValues = z.input<typeof updateSalesOrderInputSchema>;
+
+// A draft written on a device without a connection (step 18b), sent later in a sync command.
+// Only a draft: confirming checks the credit limit against what the customer owes now, which only
+// the server knows, so the order is confirmed online. No quotation either: "Make order" opens the
+// quotation's page, which is online. The order's id is the device's (sync.ts).
+export const salesOrderDraftInputSchema = salesOrderFieldsSchema
+  .omit({ confirm: true, overrideCreditLimit: true })
+  .superRefine(orderRules);
+export type SalesOrderDraftInput = z.infer<typeof salesOrderDraftInputSchema>;
+export type SalesOrderDraftFormValues = z.input<typeof salesOrderDraftInputSchema>;
 
 export const salesOrderVersionInputSchema = z.object({ version: versionSchema });
 

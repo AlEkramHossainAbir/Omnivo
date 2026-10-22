@@ -12,6 +12,7 @@ import {
   type ProductVariant,
   type SalesLine,
   type SalesLineFormValues,
+  type SalesLineInput,
   type SalesOrderLine,
   subtractQuantity,
   sumQuantity,
@@ -240,5 +241,54 @@ export function savedLines(
       source: undefined,
       pricedFor: customerId,
     })),
+  };
+}
+
+// Step 18b: a draft order waiting in the outbox, opened again. Its lines are the command's (what
+// the schema made of the form), so they go back into the boxes the way a saved line does; their
+// products come from the device's copy, by variant. A product no longer on the device (archived
+// meanwhile) keeps the line under its description: the server refuses it when it is sent, and the
+// person sees which line.
+export function draftLines(
+  lines: readonly SalesLineInput[],
+  products: ReadonlyMap<string, Product>,
+  customerId: string,
+): { values: SalesLineFormValues[]; meta: LineMeta[] } {
+  return {
+    values: lines.map((line) => ({
+      variantId: line.variantId,
+      unitId: line.unitId,
+      quantity: plainQuantity(line.quantity),
+      description: line.description ?? '',
+      unitPrice: line.unitPrice,
+      discountType: line.discountType,
+      discount: formDiscount(line.discount),
+      taxRateId: line.taxRateId,
+    })),
+    meta: lines.map((line, index) => {
+      const product = products.get(line.variantId);
+      const variant = product?.variants.find((one) => one.id === line.variantId);
+      return {
+        key: `draft-${String(index)}`,
+        item:
+          product && variant
+            ? productItemOf(product, variant)
+            : {
+                variantId: line.variantId,
+                productId: '',
+                productCode: '',
+                productName: line.description ?? '',
+                optionValues: [],
+                sku: '',
+                baseUnitId: line.unitId,
+                units: [],
+                productType: 'goods',
+                tracking: 'none',
+                hasExpiry: false,
+              },
+        source: undefined,
+        pricedFor: customerId,
+      };
+    }),
   };
 }

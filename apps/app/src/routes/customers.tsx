@@ -1,4 +1,5 @@
 import {
+  CloudUploadIcon,
   PlusSignIcon,
   Search01Icon,
   UserMultiple02Icon,
@@ -19,6 +20,7 @@ import {
   EmptyState,
   Input,
   PageHeader,
+  Pill,
   SegmentedControl,
   Select,
   type SortingState,
@@ -116,6 +118,13 @@ export function CustomersPage() {
     [settled, groupId, sort, limit],
   );
   const local = useLocalQuery(archived ? null : readPage);
+  // Step 18b: the customers with changes waiting on this device (decision 34). A customer made
+  // here has version 0: no page on the server yet, so it opens in its form.
+  const pending = local?.pending;
+  const madeHere = useMemo(
+    () => new Set(local?.rows.filter((row) => row.version === 0).map((row) => row.id)),
+    [local],
+  );
   // The archived tab: the server's pages, with their balances, online only (decision 11)
   const server = useInfiniteQuery({
     ...customerListQuery(tenantId, { search: settled, groupId, status, sort }),
@@ -126,7 +135,10 @@ export function CustomersPage() {
   // The balances of the rows shown (decision 10). Online and with the permission only: offline
   // the column shows a dash.
   const balances = useQueries({
-    queries: chunksOf(local?.rows.map((customer) => customer.id) ?? []).map((ids) => ({
+    // A customer made here has no balance on the server: it is not asked for
+    queries: chunksOf(
+      local?.rows.filter((row) => row.version !== 0).map((customer) => customer.id) ?? [],
+    ).map((ids) => ({
       ...customerBalancesQuery(tenantId, ids),
       enabled: canSeeBalance && online,
     })),
@@ -169,8 +181,16 @@ export function CustomersPage() {
               </span>
               <span className="grid min-w-0 max-w-[20rem]">
                 <span className="truncate font-medium">{row.original.name}</span>
-                <span className="truncate font-mono text-caption text-ink-3 tabular-nums">
-                  {row.original.code}
+                <span className="flex min-w-0 items-center gap-2">
+                  {/* No code yet: the server gives the next number when it arrives */}
+                  <span className="truncate font-mono text-caption text-ink-3 tabular-nums">
+                    {row.original.code === '' ? t('sync.noNumberYet') : row.original.code}
+                  </span>
+                  {pending?.has(row.original.id) && (
+                    <Pill tone="neutral" icon={CloudUploadIcon}>
+                      {t('sync.notSynced')}
+                    </Pill>
+                  )}
                 </span>
               </span>
             </span>
@@ -235,7 +255,7 @@ export function CustomersPage() {
             ]
           : []),
       ]),
-    [t, text, groupName, canSeeBalance, online],
+    [t, text, groupName, canSeeBalance, online, pending],
   );
 
   const empty =
@@ -345,7 +365,12 @@ export function CustomersPage() {
           getRowId={(customer) => customer.id}
           sorting={{ state: sorting, onChange: setSorting }}
           onRowClick={(customer) =>
-            void navigate({ to: '/customers/$customerId', params: { customerId: customer.id } })
+            void (madeHere.has(customer.id)
+              ? navigate({
+                  to: '/customers/$customerId/edit',
+                  params: { customerId: customer.id },
+                })
+              : navigate({ to: '/customers/$customerId', params: { customerId: customer.id } }))
           }
           onEndReached={loadMore}
           maxHeight={640}

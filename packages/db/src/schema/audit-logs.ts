@@ -29,6 +29,11 @@ export const auditLogs = pgTable(
     // inet: Postgres নিজেই IP-র আকার যাচাই করে, আর পরে "এই subnet থেকে" খোঁজা যায়
     ipAddress: inet('ip_address'),
     userAgent: text('user_agent'),
+    // The device a command came from (step 18b, decision 20): a change made offline is written when
+    // it reaches the server, maybe hours later, so the request alone does not say where it was made.
+    // NULL for everything done online. No FK, like actor_user_id and entity_id: an audit row only
+    // records what happened. The audit list joins devices on (tenant_id, device_id) for the name.
+    deviceId: uuid('device_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

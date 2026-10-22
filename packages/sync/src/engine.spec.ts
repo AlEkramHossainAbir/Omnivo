@@ -26,6 +26,8 @@ function engineWith(
     db,
     deviceId: DEVICE,
     pull,
+    // Nothing in the outbox: the 18a tests never push
+    push: () => Promise.reject(new Error('no push expected')),
     codeOf,
     registerAgain: () => Promise.resolve(),
     onRevoked: () => undefined,
@@ -54,15 +56,15 @@ describe('SyncEngine', () => {
       Promise.resolve(pages.shift() ?? page({ changes: [] })),
     );
     const { db, engine } = engineWith(pull);
-    await engine.pullNow();
+    await engine.syncNow();
     expect(pull.mock.calls.map(([query]) => query.cursor)).toEqual([undefined, 'a']);
     expect(pull.mock.calls[0]?.[0]).toMatchObject({ deviceId: DEVICE, protocol: 1, limit: 500 });
     expect(await db.products.count()).toBe(2);
     expect((await readPullState(db)).cursor).toBe('b');
     // The next pull starts from the saved cursor
-    await engine.pullNow();
+    await engine.syncNow();
     expect(pull.mock.calls.at(-1)?.[0].cursor).toBe('b');
-    expect(engine.getStatus()).toEqual({ pulling: false, problem: null, stopped: false });
+    expect(engine.getStatus()).toEqual({ syncing: false, problem: null, stopped: false });
   });
 
   it('runs one pull at a time, and once more when asked during one', async () => {
@@ -76,9 +78,9 @@ describe('SyncEngine', () => {
         }),
     );
     const { engine } = engineWith(pull);
-    const first = engine.pullNow();
-    const second = engine.pullNow();
-    const third = engine.pullNow();
+    const first = engine.syncNow();
+    const second = engine.syncNow();
+    const third = engine.syncNow();
     expect(second).toBe(first);
     expect(third).toBe(first);
     await vi.waitFor(() => {
@@ -101,7 +103,7 @@ describe('SyncEngine', () => {
       .mockResolvedValueOnce(page({ changes: [] }));
     const registerAgain = vi.fn(() => Promise.resolve());
     const { engine } = engineWith(pull, { registerAgain });
-    await engine.pullNow();
+    await engine.syncNow();
     expect(registerAgain).toHaveBeenCalledTimes(1);
     expect(pull).toHaveBeenCalledTimes(2);
     expect(engine.getStatus().problem).toBeNull();
@@ -111,21 +113,21 @@ describe('SyncEngine', () => {
     const pull = vi.fn(() => Promise.reject(new CodedError('device_revoked')));
     const onRevoked = vi.fn();
     const { engine } = engineWith(pull, { onRevoked });
-    await engine.pullNow();
+    await engine.syncNow();
     expect(onRevoked).toHaveBeenCalledTimes(1);
     expect(engine.getStatus()).toEqual({
-      pulling: false,
+      syncing: false,
       problem: 'device_revoked',
       stopped: true,
     });
-    await engine.pullNow();
+    await engine.syncNow();
     expect(pull).toHaveBeenCalledTimes(1);
   });
 
   it('stops on sync_protocol_mismatch: only a reload helps', async () => {
     const pull = vi.fn(() => Promise.reject(new CodedError('sync_protocol_mismatch')));
     const { engine } = engineWith(pull);
-    await engine.pullNow();
+    await engine.syncNow();
     expect(engine.getStatus()).toMatchObject({ problem: 'sync_protocol_mismatch', stopped: true });
   });
 
@@ -143,22 +145,22 @@ describe('SyncEngine', () => {
       .mockRejectedValueOnce(new CodedError('network_error'))
       .mockResolvedValueOnce(page({ full: true, cursor: 'b', changes: [] }));
     const { db, engine } = engineWith(pull);
-    await engine.pullNow();
+    await engine.syncNow();
     expect(engine.getStatus()).toEqual({
-      pulling: false,
+      syncing: false,
       problem: 'network_error',
       stopped: false,
     });
     // The first page is saved with its cursor, so the next pull goes on from there
     expect(await db.products.count()).toBe(1);
-    await engine.pullNow();
+    await engine.syncNow();
     expect(pull.mock.calls.at(-1)?.[0].cursor).toBe('a');
     expect(engine.getStatus().problem).toBeNull();
   });
 
   it('an error that is not the API’s is unknown_error', async () => {
     const { engine } = engineWith(() => Promise.reject(new TypeError('boom')));
-    await engine.pullNow();
+    await engine.syncNow();
     expect(engine.getStatus().problem).toBe('unknown_error');
   });
 
@@ -166,7 +168,7 @@ describe('SyncEngine', () => {
     const pull = vi.fn(() => Promise.resolve(page({ changes: [] })));
     const { engine } = engineWith(pull);
     engine.stop();
-    await engine.pullNow();
+    await engine.syncNow();
     expect(pull).not.toHaveBeenCalled();
   });
 
@@ -174,11 +176,11 @@ describe('SyncEngine', () => {
     const { engine } = engineWith(() => Promise.resolve(page({ changes: [] })));
     const seen: boolean[] = [];
     const unsubscribe = engine.subscribe(() => {
-      seen.push(engine.getStatus().pulling);
+      seen.push(engine.getStatus().syncing);
     });
-    await engine.pullNow();
+    await engine.syncNow();
     unsubscribe();
-    await engine.pullNow();
+    await engine.syncNow();
     expect(seen).toEqual([true, false]);
   });
 });

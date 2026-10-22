@@ -322,6 +322,8 @@ export function record(
   entityType: AuditEntityType,
   entityId: string,
   changes: AuditChanges = {},
+  // Step 18b: the device a pushed command came from; null for everything done online
+  device: AuditEntry['device'] = null,
 ): void {
   // নতুন আগে — আসল API-র ক্রম
   data.audit.unshift({
@@ -330,6 +332,7 @@ export function record(
     entityType,
     entityId,
     actor: { id: OWNER.id, fullName: OWNER.fullName },
+    device,
     changes,
     ipAddress: '103.4.145.2',
     requestId: crypto.randomUUID(),

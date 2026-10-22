@@ -1,4 +1,11 @@
-import type { Product, SyncChange, SyncCustomer, SyncPull } from '@omnivo/contracts';
+import type {
+  CustomerInput,
+  Product,
+  SalesOrderDraftInput,
+  SyncChange,
+  SyncCustomer,
+  SyncPull,
+} from '@omnivo/contracts';
 import { uuidv7 } from 'uuidv7';
 
 import { SyncDatabase } from './database.js';
@@ -84,5 +91,78 @@ export function page(fields: Partial<SyncPull> & Pick<SyncPull, 'changes'>): Syn
     full: false,
     serverTime: '2026-10-21T04:30:00.000Z',
     ...fields,
+  };
+}
+
+// What the customer form sends (the schema's output): every empty box is null
+export function customerInput(
+  fields: Partial<CustomerInput> & Pick<CustomerInput, 'name'>,
+): CustomerInput {
+  return {
+    code: null,
+    groupId: null,
+    contactPerson: null,
+    phone: null,
+    email: null,
+    documentLanguage: 'en',
+    bin: null,
+    paymentTermsDays: 0,
+    creditLimit: null,
+    priceListId: null,
+    notes: null,
+    addresses: [],
+    ...fields,
+  };
+}
+
+// The form's values of a customer the device has: what a form opened on it sends unchanged
+export function inputOf(row: SyncCustomer): CustomerInput {
+  return {
+    code: row.code,
+    name: row.name,
+    groupId: row.groupId,
+    contactPerson: row.contactPerson,
+    phone: row.phone,
+    email: row.email,
+    documentLanguage: row.documentLanguage,
+    bin: row.bin,
+    paymentTermsDays: row.paymentTermsDays,
+    creditLimit: row.creditLimit,
+    priceListId: row.priceListId,
+    notes: row.notes,
+    addresses: row.addresses.map((address) => ({
+      id: address.id,
+      kind: address.kind === 'billing' ? 'billing' : 'shipping',
+      label: address.label,
+      address: address.address,
+      phone: address.phone,
+    })),
+  };
+}
+
+export const WAREHOUSE = '01928c4e-7777-7000-8000-000000000001';
+export const VAT_15 = '01928c4e-7777-7000-8000-000000000002';
+
+export function orderDraft(customerId: string, variantId: string): SalesOrderDraftInput {
+  return {
+    customerId,
+    date: '2026-10-21',
+    deliveryDate: null,
+    customerReference: null,
+    warehouseId: WAREHOUSE,
+    shippingAddressId: null,
+    note: null,
+    lines: [
+      {
+        variantId,
+        unitId: '01928c4e-0000-7000-8000-000000000001',
+        quantity: '12',
+        description: null,
+        unitPrice: '50',
+        discountType: 'percent',
+        discount: '0',
+        taxRateId: VAT_15,
+      },
+    ],
   };
 }

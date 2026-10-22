@@ -278,6 +278,9 @@ export const auditEntrySchema = z.object({
   entityId: z.uuid(),
   // null = the system itself: a background job in the worker (step 8)
   actor: z.object({ id: z.uuid(), fullName: z.string() }).nullable(),
+  // The device the change was made on without a connection (step 18b), sent later in a sync
+  // command; null for a change made online
+  device: z.object({ id: z.uuid(), name: z.string() }).nullable(),
   changes: auditChangesSchema,
   ipAddress: z.string().nullable(),
   requestId: z.string().nullable(),

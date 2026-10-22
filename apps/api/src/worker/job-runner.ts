@@ -75,6 +75,9 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
       // Step 18a: the same hour, the sync change log's lines older than 30 days
       const pruned = await this.syncLog.deleteOld();
       this.logger.log(`sync log cleanup: ${String(pruned)} old lines deleted`);
+      // Step 18b: and the answers to pushed commands older than 30 days
+      const answers = await this.syncLog.deleteOldAnswers();
+      this.logger.log(`sync answers cleanup: ${String(answers)} old answers deleted`);
       return;
     }
     // A job we cannot read will never become readable: no retries

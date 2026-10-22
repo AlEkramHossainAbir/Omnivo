@@ -320,6 +320,31 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   branch is this device in?", a select that starts empty ("Pick a branch", active branches only), "Not now"
   (secondary) and "Use this branch" (primary), then the toast "This device is set up for Chattogram depot". Closing
   it any way is "Not now".
+- **Sync line (sidebar):** the item after Overview in the sidebar nav (and in the phone's top bar), linking to `/sync`:
+  `Wifi01` and "Online" (or "Syncing…"), `WifiDisconnected02` and "Offline". The count on the right is the changes
+  waiting on the device, or, when any was refused, the refused ones in `crit`. Its accessible name is the whole
+  sentence ("Sync: Offline, 2 changes waiting").
+- **Outbox pills:** a change on the device is Waiting (`brand`, `Clock01`), Sending (`brand`, `CloudUpload`) or
+  Needs attention (`warn`, `Alert02`). A row read from the device that the server has not got yet has a neutral
+  "Not synced" pill (`CloudUpload`); a customer without its code yet says "No number yet". A change that waits for
+  another stays Waiting, with "Waits for Sylhet Pharmacy to sync first" under it.
+- **Device mode on a form:** offline (or online, for a customer with changes still on the device), the customer
+  and sales order forms show a neutral document notice that says the work is saved on this device and sent when
+  the connection is back, and their primary button says "Save on this device". An order saved this way is a
+  draft: no "Confirm order". Then the toast "Saved on this device. It syncs when the connection is back."
+- **Sync page (`/sync`):** the page header (title, description, "Sync now" secondary with
+  `ArrowReloadHorizontal`, disabled offline), a 13px `ink-3` "Last synced …" line, then two cards: "Kept from the
+  server" (only when there is a notice: the customer's name and "Not changed: Credit limit" in 12px `ink-3`, a
+  Dismiss text link per row) and "Changes on this device", a list with 1px `line` rules. A row: what the change is
+  ("New customer Sylhet Pharmacy"), when it was saved, its pill, and for a refused one the error in `crit` with an
+  `Alert02` icon. On the right, Edit (a text link), Retry (secondary `sm`, refused ones only) and Discard
+  (secondary `sm`); none while it is Sending. Discard asks first in a dialog that says how many changes that need
+  it go with it. With nothing waiting: the empty state with `CloudSavingDone01`, "Everything is synced".
+- **Orders on the device:** above the sales orders list, a section header "On this device · not synced" and its
+  own table (cards on a phone) of the drafts in the outbox, each with "No number yet" and its pill. Offline, the
+  server's list below is the empty state "Needs a connection".
+- **Sign-out with changes waiting:** the dialog "Sign out and lose the changes?", which says how many changes have
+  not synced; "Sign out anyway" (secondary, pushed left) and "Stay signed in" (primary).
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -604,6 +629,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Respect `prefers-reduced-motion`.
 - **Focus:** every interactive element shows a visible focus state, either the `brand`
   ring or a 2px `brand` outline with 2px offset.
+- **A screen that works offline** has its route in `apps/app/src/lib/offline-screens.ts`. Until step 19's service
+  worker keeps the app's files, a lazy chunk cannot load without a connection, so these chunks load in the
+  background while the device is online.
 
 ### Tailwind wiring
 

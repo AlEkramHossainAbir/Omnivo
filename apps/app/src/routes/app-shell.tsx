@@ -54,6 +54,8 @@ import {
   UserGroupIcon,
   UserMultiple02Icon,
   WarehouseIcon,
+  Wifi01Icon,
+  WifiDisconnected02Icon,
   WorkHistoryIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
@@ -86,12 +88,20 @@ import { logout, switchTenant } from '../lib/session';
 import { useCan } from '../lib/permissions';
 import { waitingCountQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
+import { useSyncSummary } from '../lib/sync-summary';
 import { isTheme } from '../lib/theme';
+import { useOnline } from '../lib/use-online';
 
 // Step 18a: the device and its copy of the data (Dexie, the sync engine, the branch dialog) in a
 // chunk of their own. The shell draws at once; the copy starts a moment later.
 const LocalDataHost = lazy(async () => ({
   default: (await import('../components/local-data-host')).LocalDataHost,
+}));
+// Step 18b: the question before signing out with changes on the device. Loaded when it is asked:
+// the dialog's code (about 14 KB gz with its focus trap and scroll lock) took the shell over its
+// budget, for a dialog most sessions never open.
+const SignOutDialog = lazy(async () => ({
+  default: (await import('../components/sign-out-dialog')).SignOutDialog,
 }));
 
 // ui-র সাধারণ <a> → TanStack-এর টাইপ-চেকড লিংক: to="/kitchn-sink" লিখলে compile error,
@@ -194,8 +204,36 @@ function WorkspaceSwitcher() {
   );
 }
 
+// Step 18b (decision 1): the sidebar line. It says whether the device is online, and how many
+// changes wait (a refused one first, in crit, since the person must act on it). It links to the
+// Sync page. The screen reader hears the whole sentence, not "Offline 3".
+function SyncNavItem() {
+  const { t, format } = useLocale();
+  const online = useOnline();
+  const { syncing, waiting: total, failed } = useSyncSummary();
+  const state = !online ? t('sync.offline') : syncing ? t('sync.syncing') : t('sync.online');
+  const count = failed > 0 ? failed : total;
+  const counted =
+    failed > 0
+      ? t('sync.needsAttention', { count: failed, formatted: format.number(failed) })
+      : total > 0
+        ? t('sync.waiting', { count: total, formatted: format.number(total) })
+        : t('sync.allSynced');
+  return (
+    <NavLink
+      to="/sync"
+      icon={online ? Wifi01Icon : WifiDisconnected02Icon}
+      count={count > 0 ? count : undefined}
+      countTone={failed > 0 ? 'crit' : 'neutral'}
+      aria-label={`${t('nav.sync')}: ${state}, ${counted}`}
+    >
+      {state}
+    </NavLink>
+  );
+}
+
 // ডেস্কটপের সাইডবার-তলা আর ফোনের টপ বার — দুই trigger, একই মেনু
-function UserMenuContent({ align }: { align: 'start' | 'end' }) {
+function UserMenuContent({ align, onSignOut }: { align: 'start' | 'end'; onSignOut: () => void }) {
   const { t, language } = useLocale();
   const theme = useSession((state) => state.me?.preferences.theme ?? 'system');
   return (
@@ -231,12 +269,7 @@ function UserMenuContent({ align }: { align: 'start' | 'end' }) {
         ))}
       </DropdownMenuRadioGroup>
       <DropdownMenuSeparator />
-      <DropdownMenuItem
-        icon={Logout01Icon}
-        onSelect={() => {
-          void logout();
-        }}
-      >
+      <DropdownMenuItem icon={Logout01Icon} onSelect={onSignOut}>
         {t('common.signOut')}
       </DropdownMenuItem>
     </DropdownMenuContent>
@@ -252,6 +285,13 @@ export function AppShell() {
   const can = useCan();
   // Step 17a: how many documents wait for this person's decision, polled like the bell's badge
   const { data: waiting = 0 } = useQuery(waitingCountQuery(me?.tenant.id ?? ''));
+  // Step 18b: sign out at once with nothing on the device, else ask
+  const { waiting: unsynced } = useSyncSummary();
+  const [asking, setAsking] = useState(false);
+  const signOut = () => {
+    if (unsynced > 0) setAsking(true);
+    else void logout();
+  };
 
   // refresh ব্যর্থ হলে (session শেষ, অন্য ট্যাবে লগআউট) api.ts store-এ signed-out বসায়
   useEffect(() => {
@@ -267,7 +307,7 @@ export function AppShell() {
           <DropdownMenuTrigger asChild>
             <IconButton icon={UserCircleIcon} label={t('shell.account')} />
           </DropdownMenuTrigger>
-          <UserMenuContent align="end" />
+          <UserMenuContent align="end" onSignOut={signOut} />
         </DropdownMenu>
       }
       sidebarHeader={<WorkspaceSwitcher />}
@@ -278,6 +318,7 @@ export function AppShell() {
             <NavLink to="/" icon={DashboardSquare01Icon} activeOptions={{ exact: true }}>
               {t('nav.overview')}
             </NavLink>
+            <SyncNavItem />
             {import.meta.env.DEV && (
               <NavLink to="/kitchen-sink" icon={LayoutGridIcon}>
                 {t('nav.kitchenSink')}
@@ -530,11 +571,21 @@ export function AppShell() {
               />
             </button>
           </DropdownMenuTrigger>
-          <UserMenuContent align="start" />
+          <UserMenuContent align="start" onSignOut={signOut} />
         </DropdownMenu>
       }
     >
       <Outlet />
+      {asking && (
+        <Suspense fallback={null}>
+          <SignOutDialog
+            count={unsynced}
+            onClose={() => {
+              setAsking(false);
+            }}
+          />
+        </Suspense>
+      )}
       {/* No fallback: the host draws nothing until a branch dialog is needed */}
       <Suspense fallback={null}>
         <LocalDataHost />

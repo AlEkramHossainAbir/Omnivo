@@ -1,10 +1,16 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useStore } from 'zustand';
 
 import { localDataStore, useDeviceState } from '../lib/local-data';
-import { startLocalData } from '../lib/local-session';
+import { chooseBranch, chooseLater, startLocalData } from '../lib/local-session';
+import { preloadOfflineScreens } from '../lib/offline-screens';
 import { useSession } from '../lib/session-store';
-import { DeviceBranchDialog } from './device-branch-dialog';
+
+// Step 18b: loaded when it opens, once per device at most. The push took this chunk (with Dexie)
+// over its budget, and the dialog's code is 14 KB gz of it.
+const DeviceBranchDialog = lazy(async () => ({
+  default: (await import('./device-branch-dialog')).DeviceBranchDialog,
+}));
 
 // Step 18a: the device and its copy of the data, for the person signed in now. Rendered once,
 // inside the AppShell, and loaded lazily with Dexie: the login page never downloads it. A switch
@@ -20,7 +26,22 @@ export function LocalDataHost() {
     return startLocalData({ tenantId, userId });
   }, [tenantId, userId]);
 
+  // Step 18b (decision 42): the offline screens' code, while there is a connection
+  useEffect(() => {
+    preloadOfflineScreens();
+    window.addEventListener('online', preloadOfflineScreens);
+    return () => {
+      window.removeEventListener('online', preloadOfflineScreens);
+    };
+  }, []);
+
   return asking && device.kind === 'not-set-up' ? (
-    <DeviceBranchDialog branches={device.branches} />
+    <Suspense fallback={null}>
+      <DeviceBranchDialog
+        branches={device.branches}
+        chooseBranch={chooseBranch}
+        chooseLater={chooseLater}
+      />
+    </Suspense>
   ) : null;
 }

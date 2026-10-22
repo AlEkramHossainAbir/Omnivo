@@ -330,8 +330,11 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
   পরিবর্তন, পাতায় পাতায়), `POST /sync/devices` (ব্রাউজার = device, একটা ব্রাঞ্চে)। "POS-ready" ডেটা Dexie-তে;
   products ও customers পাতা, customer box আর "Add items" সবসময় device থেকে পড়ে, অনলাইন বা অফলাইন। balance
   সার্ভার থেকে, শুধু স্ক্রিনের সারিগুলোর।
-- **Push:** ক্লায়েন্টে Dexie-তে outbox, প্রতিটা কাজ একটা **command** (`{id: uuidv7, type: 'pos.sale.create', payload, device_id}`)। `POST /sync/push` — সার্ভার `id` দেখে idempotency নিশ্চিত করবে এবং **সব business rule আবার যাচাই করবে**।
-- **Conflict:** ডেটার ধরন অনুযায়ী আলাদা নীতি (লেনদেন = append-only তাই conflict নেই; মাস্টার ডেটা = field-level LWW; দাম/ক্রেডিট লিমিট = server-wins)।
+- **Push (১৮b):** Dexie-তে `outbox`, তিনটা command: কাস্টমার তৈরি, কাস্টমার বদল (field-level merge, ঠিকানা id
+  ধরে, ক্রেডিট লিমিট/terms/price list/group = server-wins + নোটিস), sales order draft। `POST /sync/push`,
+  `sync_commands`-এ উত্তর রেখে idempotent। অনলাইনে ফর্ম আগের মতো API-তে যায়; অফলাইনে "Save on this device"।
+  সাইডবারে online/offline + অপেক্ষায় থাকা পরিবর্তনের সংখ্যা, Sync পাতা (retry, discard, edit, Sync now)।
+- **১৮c:** device list, নাম বদল, ব্রাঞ্চ বদল, revoke + মুছে ফেলা, ২৪ ঘণ্টা / ৭ দিনের সীমা।
 
 **দেখবেন:** DevTools-এ নেটওয়ার্ক "Offline" করে প্রোডাক্ট লিস্ট দেখা, একটা কাজ করা, তারপর অনলাইন করলে সার্ভারে পৌঁছানো।
 

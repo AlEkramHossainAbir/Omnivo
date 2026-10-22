@@ -13,8 +13,10 @@ const INITIAL_BUDGET = 210 * 1024;
 // Step 17d: a lazy chunk is 105 KB for now. Almost every page loads the contracts' whole route
 // table (about 28 KB gz) to call the API, and 17d's three documents grew it enough to push pages
 // that 17d never touched (team, units) over 100 KB. Loading each module's routes with its own
-// pages is the real fix, a step of its own, like the words above.
-const CHUNK_BUDGET = 105 * 1024;
+// pages is the real fix, a step of its own, like the words above. Step 18b: 110 KB (you chose this).
+// The customer box and the pickers now read the device's customers with the outbox on top, and the
+// line editors and the shell were already at 104–105 KB.
+const CHUNK_BUDGET = 110 * 1024;
 
 const dist = path.resolve(import.meta.dirname, '../dist');
 

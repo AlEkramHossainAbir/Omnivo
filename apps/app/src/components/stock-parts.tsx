@@ -22,7 +22,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useCallback, useMemo } from 'react';
 
-import { settingsQuery, unitsQuery, warehousesQuery } from '../lib/queries';
+import { deviceSettingsQuery, settingsQuery, unitsQuery, warehousesQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { daysUntil, expiryTone, variantName } from '../lib/stock';
 
@@ -79,10 +79,17 @@ export function warehouseLabel(place: Warehouse | undefined): string {
 }
 
 // "Today" in the company's time zone: the forms' default date, and the expiry countdown
+// The company's time zone. Step 18b: offline, before the settings were ever loaded, the device's
+// copy has it.
+export function useTimeZone(): string {
+  const tenantId = useTenantId();
+  const server = useQuery(settingsQuery(tenantId)).data;
+  const local = useQuery({ ...deviceSettingsQuery(tenantId), enabled: !server }).data;
+  return server?.timezone ?? local?.timezone ?? DEFAULT_SETTINGS.timezone;
+}
+
 export function useToday(): string {
-  const timeZone =
-    useQuery(settingsQuery(useTenantId())).data?.timezone ?? DEFAULT_SETTINGS.timezone;
-  return todayIn(timeZone);
+  return todayIn(useTimeZone());
 }
 
 // After a posting: everything under ['stock', tenant] — the list, the cards, the reports and the

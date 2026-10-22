@@ -1,10 +1,14 @@
+import { allRows, customerCommands, type SyncDatabase } from '@omnivo/sync';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useCallback } from 'react';
 
 import { CustomerNotFound, useTenantId } from '../components/customer-parts';
+import { LocalState, type WaitingView } from '../components/local-state';
+import { useLocalData, useLocalDb, useLocalQuery, useSaveMode } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
 import { customerGroupsQuery, customerQuery, priceListsQuery } from '../lib/queries';
+import { useOnline } from '../lib/use-online';
 
 // The new and edit pages, apart from the customer's page (routes/customer.tsx): that page's
 // statement brings the data table and the date pickers, which the form never uses. In one file,
@@ -16,21 +20,50 @@ const CustomerForm = lazy(async () => ({
   default: (await import('../components/customer-form')).CustomerForm,
 }));
 
-// What the form needs besides the customer: the groups and the price lists to pick from
+// Reads of the device's copy: stable functions, so useLocalQuery subscribes once
+const readGroups = (db: SyncDatabase) => allRows(db.customerGroups);
+const readPriceLists = (db: SyncDatabase) => allRows(db.priceLists);
+
+// What the form needs besides the customer: the groups and the price lists to pick from. Step
+// 18b: offline, the device's copy has them.
 function useFormData() {
   const tenantId = useTenantId();
-  const groups = useQuery(customerGroupsQuery(tenantId)).data;
-  const priceLists = useQuery(priceListsQuery(tenantId)).data;
-  return { groups, priceLists };
+  const online = useOnline();
+  const groups = useQuery({ ...customerGroupsQuery(tenantId), enabled: online }).data;
+  const priceLists = useQuery({ ...priceListsQuery(tenantId), enabled: online }).data;
+  const localGroups = useLocalQuery(online ? null : readGroups);
+  const localPriceLists = useLocalQuery(online ? null : readPriceLists);
+  return online ? { groups, priceLists } : { groups: localGroups, priceLists: localPriceLists };
+}
+
+// Offline without a complete copy of the data, there is nothing to pick from: the device's state
+// says what to do instead
+function NoCopy({ view }: { view: WaitingView }) {
+  return (
+    <div className="grid max-w-4xl grid-cols-1 gap-5">
+      <LocalState view={view} />
+    </div>
+  );
 }
 
 export function NewCustomerPage() {
   const canManage = useCan()('sales.customer.manage');
   const { groups, priceLists } = useFormData();
-  if (!groups || !priceLists) return null;
+  // A new customer has no commands: online it is the API, offline the device
+  const mode = useSaveMode('');
+  const { view } = useLocalData();
+  if (mode === 'device' && view.kind !== 'ready') return <NoCopy view={view} />;
+  if (!groups || !priceLists || mode === undefined) return null;
   return (
     <Suspense fallback={null}>
-      <CustomerForm customer={null} groups={groups} priceLists={priceLists} canManage={canManage} />
+      <CustomerForm
+        customer={null}
+        groups={groups}
+        priceLists={priceLists}
+        canManage={canManage}
+        mode={mode}
+        failed={null}
+      />
     </Suspense>
   );
 }
@@ -39,21 +72,36 @@ export function EditCustomerPage() {
   const { customerId = '' } = useParams({ strict: false });
   const canManage = useCan()('sales.customer.manage');
   const { groups, priceLists } = useFormData();
+  const mode = useSaveMode(customerId);
+  const db = useLocalDb();
+  // The customer's refused command, if any: the form shows its errors under the boxes
+  const readCommands = useCallback(
+    (database: SyncDatabase) => customerCommands(database, customerId),
+    [customerId],
+  );
+  const commands = useLocalQuery(db ? readCommands : null);
+  const failed = commands?.find((command) => command.status === 'failed')?.error ?? null;
+  // In device mode the query reads the device (queries.ts): the customer with its changes on it
   const { data: customer, isError } = useQuery({
     ...customerQuery(useTenantId(), customerId),
     enabled: customerId !== '',
   });
+  const { view } = useLocalData();
+  if (mode === 'device' && view.kind !== 'ready') return <NoCopy view={view} />;
   if (isError) return <CustomerNotFound />;
-  if (!customer || !groups || !priceLists) return null;
+  if (!customer || !groups || !priceLists || mode === undefined) return null;
   return (
     <Suspense fallback={null}>
-      {/* key: a customer saved elsewhere comes back with a new version; start from it again */}
+      {/* key: a customer saved elsewhere comes back with a new version, and a customer whose
+          commands synced goes back to the API: start from it again */}
       <CustomerForm
-        key={`${customer.id}-${String(customer.version)}`}
+        key={`${customer.id}-${String(customer.version)}-${mode}`}
         customer={customer}
         groups={groups}
         priceLists={priceLists}
         canManage={canManage}
+        mode={mode}
+        failed={failed}
       />
     </Suspense>
   );

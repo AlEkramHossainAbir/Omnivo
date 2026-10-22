@@ -3,7 +3,7 @@ import type { ErrorOption, Path } from 'react-hook-form';
 import { describe, expect, it } from 'vitest';
 
 import { ApiRequestError } from './api';
-import { applyApiError } from './field-errors';
+import { applyApiError, applyCommandError } from './field-errors';
 
 const FIELDS: Path<SignUpInput>[] = [
   'companyName',
@@ -54,5 +54,52 @@ describe('applyApiError', () => {
 
   it('treats anything that is not an API error as unknown', () => {
     expect(collect(new TypeError('boom'))).toEqual({ 'root.server': 'unknown_error' });
+  });
+});
+
+describe('applyCommandError', () => {
+  interface Values {
+    name: string;
+    addresses: { kind: string }[];
+  }
+  const fields: Path<Values>[] = ['name', 'addresses.0.kind', 'addresses.1.kind'];
+
+  function placedFrom(
+    error: Parameters<typeof applyCommandError>[0],
+    rename?: (path: string) => string,
+  ) {
+    const placed: Record<string, string | undefined> = {};
+    applyCommandError<Values>(
+      error,
+      fields,
+      (name: string, option: ErrorOption) => {
+        placed[name] = option.message;
+      },
+      rename,
+    );
+    return placed;
+  }
+
+  it('puts a refused command’s field errors under the boxes, by the form’s place', () => {
+    const id = '01928c4e-9999-7000-8000-000000000002';
+    const rename = (path: string) => path.replace(`addresses.${id}.`, 'addresses.1.');
+    expect(
+      placedFrom(
+        {
+          code: 'customer_billing_twice',
+          fieldErrors: { [`addresses.${id}.kind`]: ['customer_billing_twice'] },
+        },
+        rename,
+      ),
+    ).toEqual({ 'addresses.1.kind': 'customer_billing_twice' });
+  });
+
+  it('puts an error without a field, or a code this app does not know, at the top', () => {
+    expect(placedFrom({ code: 'sync_customer_gone' })).toEqual({
+      'root.server': 'sync_customer_gone',
+    });
+    expect(placedFrom({ code: 'a_newer_servers_code' })).toEqual({
+      'root.server': 'unknown_error',
+    });
   });
 });

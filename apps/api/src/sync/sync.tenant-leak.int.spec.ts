@@ -13,7 +13,10 @@ import {
   problemSchema,
   setupSchema,
   type SyncChange,
+  type SyncCommandInput,
   syncPullSchema,
+  syncPushSchema,
+  taxRateListSchema,
   type Unit,
   unitListSchema,
   warehouseListSchema,
@@ -83,6 +86,40 @@ async function pulled(space: Pick<Workspace, 'who' | 'device'>, cursor?: string)
   const page = syncPullSchema.parse(res.json());
   expect(page.hasMore).toBe(false);
   return page;
+}
+
+// One push of a workspace's own device; every answer back, in order
+async function pushed(space: Pick<Workspace, 'who' | 'device'>, commands: SyncCommandInput[]) {
+  const res = await as(space.who, 'POST', '/sync/push', {
+    deviceId: space.device.id,
+    protocol: 1,
+    commands,
+  });
+  expect(res.statusCode, res.body).toBe(200);
+  return syncPushSchema.parse(res.json()).results;
+}
+
+function newCustomer(name: string, customerId = v7()): SyncCommandInput {
+  return {
+    id: v7(),
+    type: 'customer.create',
+    customerId,
+    input: {
+      code: '',
+      name,
+      groupId: '',
+      contactPerson: '',
+      phone: '',
+      email: '',
+      documentLanguage: 'en',
+      bin: '',
+      paymentTermsDays: 30,
+      creditLimit: '',
+      priceListId: '',
+      notes: '',
+      addresses: [],
+    },
+  };
 }
 
 // A change as text: its key (a price or a stock key holds three ids) and every id inside its row,
@@ -290,6 +327,88 @@ describe('pulling over HTTP', () => {
   });
 });
 
+describe('pushing over HTTP', () => {
+  it("cannot change tenant B's customer, nor take its id", async () => {
+    const results = await pushed(a, [
+      {
+        id: v7(),
+        type: 'customer.update',
+        customerId: b.customer.id,
+        baseVersion: b.customer.version,
+        changes: { name: { from: b.customer.name, to: 'Taken by A' } },
+        addresses: { add: [], remove: [], change: [] },
+      },
+      newCustomer('Copy of Lazz Pharma', b.customer.id),
+    ]);
+    // "Gone" and "taken", as for an id of A's own: nothing says the id is B's
+    expect(results.map((r) => r.status === 'rejected' && r.error.code)).toEqual([
+      'sync_customer_gone',
+      'sync_id_taken',
+    ]);
+    const res = await as(b.who, 'GET', `/customers/${b.customer.id}`);
+    expect(customerSchema.parse(res.json()).name).toBe('Lazz Pharma');
+  });
+
+  it("writes no order for tenant B's customer", async () => {
+    const [warehouse] = warehouseListSchema.parse(
+      (await as(a.who, 'GET', '/warehouses')).json(),
+    ).items;
+    const [taxRate] = taxRateListSchema.parse((await as(a.who, 'GET', '/tax-rates')).json()).items;
+    const [result] = await pushed(a, [
+      {
+        id: v7(),
+        type: 'sales_order.create_draft',
+        orderId: v7(),
+        input: {
+          customerId: b.customer.id,
+          date: '2026-10-21',
+          deliveryDate: '',
+          customerReference: '',
+          warehouseId: warehouse?.id ?? '',
+          shippingAddressId: '',
+          note: '',
+          lines: [
+            {
+              variantId: a.product.variants[0]?.id ?? '',
+              unitId: a.product.baseUnitId,
+              quantity: '1',
+              description: '',
+              unitPrice: '10',
+              discountType: 'percent',
+              discount: '0',
+              taxRateId: taxRate?.id ?? '',
+            },
+          ],
+        },
+      },
+    ]);
+    expect(result?.status === 'rejected' && result.error.code).toBe('sales_customer_invalid');
+  });
+
+  it("is never answered from tenant B's answer to the same command id", async () => {
+    const ofB = newCustomer('Tamanna Pharmacy');
+    const [answerOfB] = await pushed(b, [ofB]);
+    expect(answerOfB?.status).toBe('accepted');
+    // A device of A sends a command with the same id (ids are global, so only a bug would)
+    const ofA = { ...newCustomer('Tamanna Fashion'), id: ofB.id };
+    const [answerOfA] = await pushed(a, [ofA]);
+    if (answerOfA?.status !== 'accepted') throw new Error('not accepted');
+    // A's own command ran: the row is A's new customer, not B's
+    expect(JSON.stringify(answerOfA.changes)).toContain('Tamanna Fashion');
+    expect(JSON.stringify(answerOfA.changes)).not.toContain('Tamanna Pharmacy');
+  });
+
+  it("cannot push with tenant B's device", async () => {
+    const res = await as(a.who, 'POST', '/sync/push', {
+      deviceId: b.device.id,
+      protocol: 1,
+      commands: [newCustomer('Through B')],
+    });
+    expect(res.statusCode).toBe(404);
+    expect(problemSchema.parse(res.json()).code).toBe('device_not_found');
+  });
+});
+
 // Postgres error code of a statement run as the given role, or null when it worked
 async function errorCodeAs(url: string, run: (sql: postgres.Sql) => Promise<unknown>) {
   const sql = postgres(url, { max: 1 });
@@ -328,6 +447,10 @@ describe('the change log and the devices as omnivo_app', () => {
       await asAppInA((tx) => tx`SELECT tenant_id FROM devices`),
     );
     expect(devices).toEqual([{ tenant_id: a.tenantId }]);
+    const answers = tenantRowsSchema.parse(
+      await asAppInA((tx) => tx`SELECT DISTINCT tenant_id FROM sync_commands`),
+    );
+    expect(answers).toEqual([{ tenant_id: a.tenantId }]);
   });
 
   it("cannot add a line for tenant B, nor change B's device", async () => {
@@ -346,6 +469,16 @@ describe('the change log and the devices as omnivo_app', () => {
       (tx) => tx`UPDATE devices SET name = 'Taken' WHERE id = ${b.device.id} RETURNING id`,
     );
     expect(updated).toEqual([]);
+    expect(
+      await errorCodeAs(pg.appUrl, (sql) =>
+        sql.begin(async (tx) => {
+          await tx`SELECT set_config('app.tenant_id', ${a.tenantId}, true)`;
+          await tx`INSERT INTO sync_commands (id, tenant_id, device_id, type, entity_id, status)
+                   VALUES (${v7()}, ${b.tenantId}, ${b.device.id}, 'customer.create',
+                           ${b.customer.id}, 'accepted')`;
+        }),
+      ),
+    ).toBe('42501');
   });
 
   it('cannot edit or delete a line, nor delete a device, even its own', async () => {
@@ -359,15 +492,21 @@ describe('the change log and the devices as omnivo_app', () => {
     expect(await inA((tx) => tx`UPDATE sync_changes SET entity_key = 'x'`)).toBe('42501');
     expect(await inA((tx) => tx`DELETE FROM sync_changes`)).toBe('42501');
     expect(await inA((tx) => tx`DELETE FROM devices`)).toBe('42501');
+    // An answer is written once: changing it would change what a resend is told
+    expect(await inA((tx) => tx`UPDATE sync_commands SET status = 'rejected'`)).toBe('42501');
+    expect(await inA((tx) => tx`DELETE FROM sync_commands`)).toBe('42501');
   });
 });
 
 describe('omnivo_worker, the cleanup role', () => {
-  it('sees the lines of every tenant, without a tenant context', async () => {
+  it('sees the lines and the answers of every tenant, without a tenant context', async () => {
     const sql = postgres(pg.workerUrl, { max: 1 });
     const rows = tenantRowsSchema.parse(await sql`SELECT DISTINCT tenant_id FROM sync_changes`);
+    // The answers too: the worker deletes the old ones of every workspace (0046's sync_prune)
+    const answers = tenantRowsSchema.parse(await sql`SELECT DISTINCT tenant_id FROM sync_commands`);
     await sql.end();
     expect(rows.map((row) => row.tenant_id).sort()).toEqual([a.tenantId, b.tenantId].sort());
+    expect(answers.map((row) => row.tenant_id).sort()).toEqual([a.tenantId, b.tenantId].sort());
   });
 
   it('cannot read the devices, nor add a line', async () => {

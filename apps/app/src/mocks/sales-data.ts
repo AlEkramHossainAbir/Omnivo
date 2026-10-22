@@ -535,11 +535,14 @@ function newCode(data: WorkspaceData): string {
 
 // Create (no `existing`) or update. The addresses sent replace the old ones; one sent back with
 // its id keeps it, one with an id that is not this customer's becomes a new address. The billing
-// address comes first, then the shipping ones in the order sent.
+// address comes first, then the shipping ones in the order sent. Step 18b: a save from a device
+// (`device`) keeps the ids the device made, for a new customer and its new addresses, because an
+// order written on the same device already points at them. push-data.ts has checked they are free.
 export function saveCustomer(
   data: WorkspaceData,
   input: CustomerInput,
   existing?: MockCustomer,
+  device?: { customerId: string },
 ): MockCustomer {
   const { sales } = data;
   if (input.groupId !== null && !sales.groups.some((item) => item.id === input.groupId)) {
@@ -561,14 +564,17 @@ export function saveCustomer(
   }
   const own = new Set(existing?.addresses.map((address) => address.id));
   const addresses = input.addresses.map((address) => ({
-    id: address.id !== null && own.has(address.id) ? address.id : crypto.randomUUID(),
+    id:
+      address.id !== null && (own.has(address.id) || device !== undefined)
+        ? address.id
+        : crypto.randomUUID(),
     kind: address.kind,
     label: address.label,
     address: address.address,
     phone: address.phone,
   }));
   return {
-    id: existing?.id ?? crypto.randomUUID(),
+    id: existing?.id ?? device?.customerId ?? crypto.randomUUID(),
     code,
     name: input.name,
     groupId: input.groupId,

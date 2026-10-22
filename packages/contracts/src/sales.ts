@@ -10,6 +10,7 @@ import {
   isMoneyAmount,
   multiplyMoney,
   percentOfMoney,
+  priceInUnit,
   requiredPriceSchema,
   subtractMoney,
   sumMoney,
@@ -273,6 +274,25 @@ export const priceLookupItemSchema = z.object({
   taxRateId: z.uuid(),
 });
 export type PriceLookupItem = z.infer<typeof priceLookupItemSchema>;
+
+// The price rule of the lookup, in one place (step 18b): the API's lookup and the order form on a
+// device without a connection both start a line with it, so a line gets the same price online and
+// offline.
+//   listPrice  the price of the customer's price list for this variant in this unit, if the list is
+//              active and has one; else null
+//   salePrice  the variant's own sale price, per base unit; null = none set
+//   factor     the unit's size in the base unit, as product_units.factor keeps it: "1" for the base
+//              unit, "24" for a case of 24, "0.914400" for a yard in metres
+export function startingPrice(input: {
+  listPrice: string | null;
+  salePrice: string | null;
+  factor: string;
+}): Pick<PriceLookupItem, 'price' | 'source'> {
+  if (input.listPrice !== null) return { price: sumMoney([input.listPrice]), source: 'price_list' };
+  if (input.salePrice === null) return { price: null, source: null };
+  // salePrice × factor, to the 4 decimals a price keeps: a case of 24 at ৳21 a piece is ৳504
+  return { price: priceInUnit(input.salePrice, '1', input.factor), source: 'product' };
+}
 
 export const priceLookupSchema = z.object({
   // The workspace setting now: a new document copies it

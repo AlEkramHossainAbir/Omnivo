@@ -12,11 +12,12 @@ import {
   ADDRESS_KINDS,
   contractErrorMap,
   type Customer,
-  type CustomerGroup,
   MAX_CUSTOMER_ADDRESSES,
   MAX_PAYMENT_TERMS_DAYS,
-  type PriceList,
   routes,
+  type SyncCommandError,
+  type SyncCustomerGroup,
+  type SyncPriceList,
   updateCustomerInputSchema,
 } from '@omnivo/contracts';
 import { LANGUAGES, useLocale } from '@omnivo/i18n';
@@ -36,17 +37,21 @@ import {
   TextField,
   toast,
 } from '@omnivo/ui';
+import { saveCustomer } from '@omnivo/sync';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { type Path, useFieldArray, useForm, useWatch } from 'react-hook-form';
 import type { z } from 'zod';
 
-import { applyApiError } from '../lib/field-errors';
+import { applyApiError, applyCommandError } from '../lib/field-errors';
 import { call } from '../lib/api';
+import { requestSync, type SaveMode, useLocalDb } from '../lib/local-data';
 import { rowPath } from '../lib/products';
 import { customerQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
+import { useOnline } from '../lib/use-online';
+import { DocumentNotice } from './sales-parts';
 
 // The customer form: a chunk of its own (loaded by routes/customer.tsx), like the product form.
 // The schema is the contract's own, so the form refuses what the API refuses, in the same words.
@@ -81,8 +86,10 @@ function valuesOf(customer: Customer | null): FormValues {
         address: address.address,
         phone: address.phone ?? '',
       })) ?? [],
-    // A new customer has no version; 1 passes the schema, and the create route never reads it
-    version: customer?.version ?? 1,
+    // A new customer has no version; 1 passes the schema, and the create route never reads it.
+    // Step 18b: nor does one made on this device (version 0, overlay.ts), whose save goes to the
+    // outbox. With its 0 the schema refused every save, and showed no box to fix.
+    version: customer === null || customer.version === 0 ? 1 : customer.version,
   };
 }
 
@@ -130,23 +137,45 @@ function SectionCard({
   );
 }
 
+// A path of a refused change names an address by its id (decision 22): the form's errors go by
+// the address's place in the list
+function addressPlaces(customer: Customer | null): (path: string) => string {
+  const ids = customer?.addresses.map((address) => address.id) ?? [];
+  return (path) =>
+    path.replace(/^addresses\.([0-9a-f-]{36})\./, (whole, id: string) => {
+      const index = ids.indexOf(id);
+      return index === -1 ? whole : `addresses.${String(index)}.`;
+    });
+}
+
 export function CustomerForm({
   customer,
   groups,
   priceLists,
   canManage,
+  mode,
+  failed,
 }: {
+  // Step 18b: in device mode, the server's customer with the waiting changes on it
   customer: Customer | null;
-  groups: CustomerGroup[];
+  // The server's or the device's (step 18b): the form needs only their ids and names
+  groups: SyncCustomerGroup[];
   // All of them, archived ones too: the customer's own list stays in the select if it was
   // archived since (like an archived unit on a product), and the server keeps it on save
-  priceLists: PriceList[];
+  priceLists: SyncPriceList[];
   canManage: boolean;
+  // Step 18b (decision 2): 'api' saves through the API as before; 'device' into the outbox
+  mode: SaveMode;
+  // The error of the customer's refused command, shown under its boxes until the next save
+  failed: SyncCommandError | null;
 }) {
   const { t, errorText } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
+  const online = useOnline();
+  const db = useLocalDb();
+  const onDevice = mode === 'device';
   const {
     register,
     control,
@@ -159,6 +188,18 @@ export function CustomerForm({
     defaultValues: valuesOf(customer),
   });
   const addressArray = useFieldArray({ control, name: 'addresses' });
+
+  // Once, when the form opens a refused command: its errors where the person fixes them
+  useEffect(() => {
+    if (failed) {
+      applyCommandError(
+        failed,
+        fieldNames(customer?.addresses.length ?? 0),
+        setError,
+        addressPlaces(customer),
+      );
+    }
+  }, [failed, customer, setError]);
   const addresses = useWatch({ control, name: 'addresses' });
   // The first shipping address is the default on a delivery (step 15b): the form says so
   const defaultShipping = addresses.findIndex((address) => address.kind === 'shipping');
@@ -180,6 +221,26 @@ export function CustomerForm({
   });
 
   const onSubmit = handleSubmit(async ({ version, ...values }) => {
+    if (onDevice) {
+      if (!db) return;
+      try {
+        await saveCustomer(db, {
+          base: customer,
+          input: values,
+          savedAt: new Date().toISOString(),
+        });
+      } catch {
+        // IndexedDB refused the write (a full disk): the text, not a code, like the credit errors
+        setError('root.server', { message: t('sync.saveFailed') });
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ['customers', tenantId] });
+      requestSync();
+      toast(t('sync.savedOnDevice'));
+      // The list, where it shows "Not synced": the customer's page needs the server
+      void navigate({ to: '/customers', replace: true });
+      return;
+    }
     try {
       const saved = customer
         ? await call(routes.customers.update, {
@@ -205,7 +266,7 @@ export function CustomerForm({
 
   return (
     <div className="grid max-w-4xl grid-cols-1 gap-5">
-      {customer ? (
+      {customer && !onDevice ? (
         <Link
           to="/customers/$customerId"
           params={{ customerId: customer.id }}
@@ -228,6 +289,11 @@ export function CustomerForm({
         description={customer?.name}
       />
       {!canManage && <p className="text-body-sm text-ink-3">{t('customers.readOnly')}</p>}
+      {canManage && onDevice && (
+        <DocumentNotice tone="neutral">
+          {online ? t('sync.waitingNotice') : t('sync.offlineNotice')}
+        </DocumentNotice>
+      )}
       <form noValidate onSubmit={(event) => void onSubmit(event)}>
         {/* Without the permission the same page reads, every control disabled at once */}
         <fieldset disabled={!canManage} className="grid min-w-0 grid-cols-1 gap-5">
@@ -244,7 +310,12 @@ export function CustomerForm({
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-x-4">
               <TextField
                 label={t('customers.fields.code')}
-                hint={customer ? undefined : t('customers.fields.codeHint')}
+                hint={
+                  customer
+                    ? undefined
+                    : // Offline the next number is not known (decision 16)
+                      t(onDevice ? 'sync.codeOfflineHint' : 'customers.fields.codeHint')
+                }
                 optional={!customer}
                 autoCapitalize="characters"
                 spellCheck={false}
@@ -447,7 +518,7 @@ export function CustomerForm({
               <Button
                 variant="secondary"
                 onClick={() =>
-                  void (customer
+                  void (customer && !onDevice
                     ? navigate({
                         to: '/customers/$customerId',
                         params: { customerId: customer.id },
@@ -460,9 +531,11 @@ export function CustomerForm({
               <Button type="submit" disabled={isSubmitting}>
                 {isSubmitting
                   ? t('common.saving')
-                  : customer
-                    ? t('customers.save')
-                    : t('customers.create')}
+                  : onDevice
+                    ? t('sync.saveOnDevice')
+                    : customer
+                      ? t('customers.save')
+                      : t('customers.create')}
               </Button>
             </div>
           )}
