@@ -324,7 +324,7 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
 
 #### ধাপ ১৮: `packages/sync` — সিঙ্ক ইঞ্জিন · ~৪ সপ্তাহ
 
-**তিনটা গাইডে:** ১৮a pull, ১৮b push, ১৮c conflict + device list + sync status।
+**তিনটা গাইডে:** ১৮a pull, ১৮b push + conflict + sync status, ১৮c device list + revoke + সময়ের সীমা।
 
 - **Pull (১৮a):** `sync_changes` change log (trigger) + `xid8` watermark cursor, `GET /sync/pull` (পুরো বা শুধু
   পরিবর্তন, পাতায় পাতায়), `POST /sync/devices` (ব্রাউজার = device, একটা ব্রাঞ্চে)। "POS-ready" ডেটা Dexie-তে;
@@ -334,7 +334,10 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
   ধরে, ক্রেডিট লিমিট/terms/price list/group = server-wins + নোটিস), sales order draft। `POST /sync/push`,
   `sync_commands`-এ উত্তর রেখে idempotent। অনলাইনে ফর্ম আগের মতো API-তে যায়; অফলাইনে "Save on this device"।
   সাইডবারে online/offline + অপেক্ষায় থাকা পরিবর্তনের সংখ্যা, Sync পাতা (retry, discard, edit, Sync now)।
-- **১৮c:** device list, নাম বদল, ব্রাঞ্চ বদল, revoke + মুছে ফেলা, ২৪ ঘণ্টা / ৭ দিনের সীমা।
+- **Devices (১৮c):** My devices (account menu, সবার) আর Workspace → Devices (`core.device.manage`): নাম বদল,
+  revoke (সিঙ্ক বন্ধ + sign-in শেষ + কপি মুছে ফেলা; আবার sign-in = নতুন device), ব্রাঞ্চ বদল শুধু ওই ডিভাইস থেকে,
+  outbox খালি থাকলে। সদস্য সরালে তার device revoke; device থাকা ব্রাঞ্চ archive হয় না। ২৪ ঘণ্টা পরে সতর্কবার্তা,
+  ৭ দিন পরে অফলাইনে নতুন কাজ বন্ধ।
 
 **দেখবেন:** DevTools-এ নেটওয়ার্ক "Offline" করে প্রোডাক্ট লিস্ট দেখা, একটা কাজ করা, তারপর অনলাইন করলে সার্ভারে পৌঁছানো।
 

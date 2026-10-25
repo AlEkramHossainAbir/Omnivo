@@ -320,10 +320,29 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   branch is this device in?", a select that starts empty ("Pick a branch", active branches only), "Not now"
   (secondary) and "Use this branch" (primary), then the toast "This device is set up for Chattogram depot". Closing
   it any way is "Not now".
+- **Device lists (My devices, Devices):** a data table (cards on a phone) with no row click; a row's actions are a
+  menu (`MoreHorizontal` icon button, "Actions for Front desk PC"): Rename, Change branch (only on this device's
+  row, with its copy ready) and Revoke; a revoked device has no menu. The first column is a 30px `brand-soft` tile
+  with a `ComputerPhoneSync` icon, the name, a `brand` "This device" pill (`ComputerCheck`) on this browser's row,
+  and for a revoked one "Revoked by Nusrat Jahan · " and the date and time in 12px `ink-3`. Columns: device, person
+  (workspace list only), branch, last synced ("Never synced"), status. My devices is in the account menu, for
+  everyone; Devices is in the Workspace group with `core.device.manage`, with a search (device or person), a
+  branch select and an Active / Revoked segmented control, sorted on the server by name or last sync.
+- **Device status pills:** Active (`good`, `CheckmarkCircle02`), "Not synced for 3 days" (`warn`, `Time04`, in
+  Active's place 24 hours after the last sync), Revoked (neutral, `ComputerRemove`).
+- **Device dialogs:** Rename (one name box), Change branch (only on this device: the copy of the old branch is
+  deleted and the new one copied; a neutral notice and a disabled button while offline, or while changes wait,
+  with a Sync link; the select leaves out the current branch), Revoke (says it stops syncing and signs out at
+  once, that changes not synced on it are lost, and that a revoked device cannot be restored; on this device it
+  says how many changes wait). Cancel (secondary) and "Revoke device" (primary).
+- **Revoked sign-out:** a device that finds out it was revoked deletes its copy and signs out; the sign-in page
+  then shows a neutral document notice, "This device was revoked, so its data was deleted and you were signed
+  out.", until the next sign-in, which asks the branch again (a new device).
 - **Sync line (sidebar):** the item after Overview in the sidebar nav (and in the phone's top bar), linking to `/sync`:
   `Wifi01` and "Online" (or "Syncing…"), `WifiDisconnected02` and "Offline". The count on the right is the changes
-  waiting on the device, or, when any was refused, the refused ones in `crit`. Its accessible name is the whole
-  sentence ("Sync: Offline, 2 changes waiting").
+  waiting on the device, or, when any was refused, the refused ones in `crit`. 24 hours after the last sync, "Last
+  synced 2 days ago" in `warn` takes the place of the words (the icon still says online or offline), unless it is
+  syncing. Its accessible name is the whole sentence ("Sync: Offline, Last synced 2 days ago, 2 changes waiting").
 - **Outbox pills:** a change on the device is Waiting (`brand`, `Clock01`), Sending (`brand`, `CloudUpload`) or
   Needs attention (`warn`, `Alert02`). A row read from the device that the server has not got yet has a neutral
   "Not synced" pill (`CloudUpload`); a customer without its code yet says "No number yet". A change that waits for
@@ -331,9 +350,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Device mode on a form:** offline (or online, for a customer with changes still on the device), the customer
   and sales order forms show a neutral document notice that says the work is saved on this device and sent when
   the connection is back, and their primary button says "Save on this device". An order saved this way is a
-  draft: no "Confirm order". Then the toast "Saved on this device. It syncs when the connection is back."
+  draft: no "Confirm order". Then the toast "Saved on this device. It syncs when the connection is back." 7 days
+  after the last sync, offline, the notice is `warn` and says the device can't save new work offline, and there is
+  no save button. The changes already waiting still go when the connection is back.
 - **Sync page (`/sync`):** the page header (title, description, "Sync now" secondary with
-  `ArrowReloadHorizontal`, disabled offline), a 13px `ink-3` "Last synced …" line, then two cards: "Kept from the
+  `ArrowReloadHorizontal`, disabled offline), a 13px `ink-3` "Last synced …" line (24 hours after the last sync it
+  says "Last synced 2 days ago", with a `warn` document notice under it about what may be out of date; after 7 days
+  the notice says that new work stops until the device syncs), then two cards: "Kept from the
   server" (only when there is a notice: the customer's name and "Not changed: Credit limit" in 12px `ink-3`, a
   Dismiss text link per row) and "Changes on this device", a list with 1px `line` rules. A row: what the change is
   ("New customer Sylhet Pharmacy"), when it was saved, its pill, and for a refused one the error in `crit` with an
@@ -474,9 +497,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Document notice:** a line above a document that says what its state means and what to do next: radius
   10px, 13.5px text, a 17px icon, `warn-bg` with `warn` text and an `Hourglass` icon
   for an offer that has ended, a credit note more than 6 months after its invoice, an overdue bill or a bill whose
-  prices differ from its orders, or an `ArrowTurnBackward` icon and the approver's
-  comment for a document sent back by an approval,
-  `subtle` with `ink-2` text and an `InformationCircle` icon otherwise.
+  prices differ from its orders, a device that has not synced for 24 hours or 7 days, or an `ArrowTurnBackward`
+  icon and the approver's comment for a document sent back by an approval,
+  `subtle` with `ink-2` text and an `InformationCircle` icon otherwise. It is `DocumentNotice` in
+  `apps/app/src/components/document-notice.tsx` (since 18c; the sign-in page uses it, so it may not import any
+  module's code).
 - **Credit line and credit dialog:** under the customer box on an order or invoice form, a 13px line: "Credit
   left: ৳35,000 of ৳2,00,000 · ৳40,000 on confirmed orders" in `ink-3`, whole taka, `tabular-nums`; over the limit
   it is `crit`/500 with a 15px `Alert02` icon. Shown only with `sales.customer.balance`. When the API refuses a
