@@ -24,6 +24,7 @@ import { baseColumns } from '../base-columns.js';
 import { branches } from './branches.js';
 import { memberships } from './memberships.js';
 import { tenants } from './tenants.js';
+import { users } from './users.js';
 
 // Postgres's 64-bit transaction id (xid8). It never wraps around, unlike the old 32-bit xid, so
 // two of them always compare in the order the transactions started. A string in TypeScript: the
@@ -74,7 +75,8 @@ export const syncChanges = pgTable(
 // browser makes the id (a UUIDv7) and keeps it, so a registration whose answer was lost registers
 // the same device again. Step 18c lists, renames, moves and revokes them.
 // deleted_at (from baseColumns) is not used: a device is revoked, never deleted, because its
-// commands (step 18b) point at it.
+// commands (step 18b) point at it. A revoked device never changes again (migration 0048), and is
+// never restored: the same browser signing in again makes a new device (step 18c, decision 4).
 export const devices = pgTable(
   'devices',
   {
@@ -88,7 +90,16 @@ export const devices = pgTable(
     // When it last finished a pull, by the server's clock. The pull writes only this column, never
     // version or updated_at: a pull a minute must not make step 18c's rename fail on its version.
     lastSyncAt: timestamp('last_sync_at', { withTimezone: true }),
+    // The sign-in (Better Auth's session) the device used last: registering and every pull and
+    // push write it. A revoke deletes that session, so the browser is signed out (step 18c,
+    // decision 3). No foreign key: sessions is a table of every workspace, deleted at each
+    // sign-out, and an id left here after that only makes the revoke delete nothing.
+    sessionId: uuid('session_id'),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    // Who revoked it: the person themself, someone with core.device.manage, or the person who
+    // removed them from the workspace. Set with revoked_at; migration 0048 makes every revoke
+    // from step 18c on name someone.
+    revokedBy: uuid('revoked_by').references(() => users.id),
   },
   (table) => [
     // The target of the composite FKs from sync_commands and audit_logs: never another tenant's device
@@ -109,6 +120,12 @@ export const devices = pgTable(
       columns: [table.tenantId, table.branchId],
       foreignColumns: [branches.tenantId, branches.id],
     }),
+    // Nobody revokes an active device. Only one way: a device revoked before step 18c (by hand,
+    // in a test) has revoked_at without revoked_by.
+    check(
+      'devices_revoked_by_check',
+      sql`${table.revokedBy} IS NULL OR ${table.revokedAt} IS NOT NULL`,
+    ),
   ],
 );
 

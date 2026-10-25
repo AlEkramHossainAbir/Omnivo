@@ -24,6 +24,7 @@ const claims = {
   tenantId: '0192f0c4-7b6e-7c1a-9d2e-3f4a5b6c7d8f',
   membershipId: '0192f0c4-7b6e-7c1a-9d2e-3f4a5b6c7d90',
   roles: ['Owner'],
+  sessionId: '0192f0c4-7b6e-7c1a-9d2e-3f4a5b6c7d91',
 };
 
 @Controller('probe')

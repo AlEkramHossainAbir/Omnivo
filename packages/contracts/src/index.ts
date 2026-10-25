@@ -11,6 +11,7 @@ export * from './custom-fields.js';
 export * from './customers.js';
 export * from './debit-notes.js';
 export * from './deliveries.js';
+export * from './devices.js';
 export * from './document-output.js';
 export * from './errors.js';
 export * from './fields.js';

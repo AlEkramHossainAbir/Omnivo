@@ -9,6 +9,7 @@ const DESCRIPTIONS = {
   'core.user.read': 'View people in the workspace',
   'core.user.invite': 'Invite people and manage open invitations',
   'core.user.manage': "Change members' roles and remove members",
+  'core.device.manage': "See every device of the workspace, and rename and revoke anyone's device",
   'core.role.manage': 'Create roles and choose their permissions',
   'core.settings.manage': 'Edit the company profile, regional settings and numbering',
   'core.branch.manage': 'Add, edit and archive branches',

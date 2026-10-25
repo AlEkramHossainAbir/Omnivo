@@ -7,7 +7,9 @@ import {
   customerBalancesSchema,
   customerSchema,
   type Device,
+  devicePageSchema,
   deviceSchema,
+  myDeviceListSchema,
   type Product,
   productSchema,
   problemSchema,
@@ -64,7 +66,12 @@ function v7(): string {
   return `${id.slice(0, 14)}7${id.slice(15)}`;
 }
 
-function as(who: SignedIn, method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) {
+function as(
+  who: SignedIn,
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH',
+  url: string,
+  payload?: object,
+) {
   return app.inject({
     method,
     url,
@@ -406,6 +413,45 @@ describe('pushing over HTTP', () => {
     });
     expect(res.statusCode).toBe(404);
     expect(problemSchema.parse(res.json()).code).toBe('device_not_found');
+  });
+});
+
+describe('managing devices over HTTP', () => {
+  it("never lists tenant B's devices", async () => {
+    const all = devicePageSchema.parse((await as(a.who, 'GET', '/devices?limit=100')).json());
+    expect(all.items.map((device) => device.id)).toContain(a.device.id);
+    expect(all.items.map((device) => device.id)).not.toContain(b.device.id);
+    // B's person, by name: nothing, not even an empty row
+    const search = devicePageSchema.parse((await as(a.who, 'GET', '/devices?search=karim')).json());
+    expect(search.items).toEqual([]);
+    const own = myDeviceListSchema.parse((await as(a.who, 'GET', '/me/devices')).json());
+    expect(own.items.map((device) => device.id)).not.toContain(b.device.id);
+  });
+
+  it("cannot rename, move or revoke tenant B's device", async () => {
+    const [branch] = branchListSchema.parse((await as(a.who, 'GET', '/branches')).json()).items;
+    if (!branch) throw new Error('no branch');
+    const path = `/devices/${b.device.id}`;
+    const tries = [
+      await as(a.who, 'PATCH', path, { name: 'Taken', version: b.device.version }),
+      await as(a.who, 'PUT', `${path}/branch`, { branchId: branch.id, version: b.device.version }),
+      await as(a.who, 'POST', `${path}/revoke`),
+    ];
+    // The owner of A has every permission, core.device.manage too: B's id is still unknown here
+    for (const res of tries) {
+      expect(res.statusCode).toBe(404);
+      expect(problemSchema.parse(res.json()).code).toBe('device_not_found');
+    }
+
+    // B's device is as it was, and still syncs
+    const [theirs] = myDeviceListSchema.parse((await as(b.who, 'GET', '/me/devices')).json()).items;
+    expect(theirs).toMatchObject({
+      id: b.device.id,
+      name: 'Chrome on Windows',
+      version: b.device.version,
+      revokedAt: null,
+    });
+    expect((await pull(b.who, b.device.id)).statusCode).toBe(200);
   });
 });
 

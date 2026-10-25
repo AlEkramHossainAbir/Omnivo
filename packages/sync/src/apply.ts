@@ -110,7 +110,12 @@ function groupChanges(changes: readonly SyncChange[], gen: number) {
 // starts a new generation when the device was not in a full pull, or when it sent no cursor (the
 // server started from the beginning, so whatever an earlier full pull wrote does not count).
 // Every later page of that full pull writes the same generation.
-function nextState(state: PullState, page: SyncPull, sentCursor: string | null): PullState {
+function nextState(
+  state: PullState,
+  page: SyncPull,
+  sentCursor: string | null,
+  now: number,
+): PullState {
   const starts = page.full && (!state.full || sentCursor === null);
   const generation = starts ? state.generation + 1 : state.generation;
   const upserts = page.changes.filter((change) => change.op === 'upsert').length;
@@ -123,6 +128,7 @@ function nextState(state: PullState, page: SyncPull, sentCursor: string | null):
     // starts a new generation that sweeps whatever this one left.
     full: page.full && page.hasMore,
     lastSyncAt: page.hasMore ? state.lastSyncAt : page.serverTime,
+    syncedAt: page.hasMore ? state.syncedAt : now,
     copied: starts ? upserts : page.full ? state.copied + upserts : state.copied,
   };
 }
@@ -152,14 +158,16 @@ export async function writeChanges(
 
 // One page into the database, in one transaction: the rows, the deletes and the cursor are
 // saved together or not at all. A tab closed half way through a page leaves the old cursor, and
-// the same page comes again; its upserts and deletes give the same result twice.
+// the same page comes again; its upserts and deletes give the same result twice. `now` is the
+// device's clock (step 18c), a parameter so a test can set it.
 export async function applyPage(
   db: SyncDatabase,
   page: SyncPull,
   sentCursor: string | null,
+  now: number = Date.now(),
 ): Promise<PullState> {
   return db.transaction('rw', [...db.syncTables(), db.meta], async () => {
-    const state = nextState(await readPullState(db), page, sentCursor);
+    const state = nextState(await readPullState(db), page, sentCursor, now);
     await writeChanges(db, page.changes, state.generation);
     // The last page of a full pull: every row it did not send is older than its generation, and
     // goes (decision 17). Until now, the lists kept showing them.

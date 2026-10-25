@@ -648,6 +648,20 @@ const syncRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/sync'), 'SyncPage'),
 });
 
+// Step 18c: your own devices (the account menu) and every device of the workspace (the sidebar,
+// with core.device.manage)
+const myDevicesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/my-devices',
+  component: lazyRouteComponent(() => import('./routes/my-devices'), 'MyDevicesPage'),
+});
+
+const devicesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/devices',
+  component: lazyRouteComponent(() => import('./routes/devices'), 'DevicesPage'),
+});
+
 // Step 17b: purchase orders ("Make purchase order" on a requisition comes with ?requisitionId=) and
 // goods receipts ("Receive goods" on an order comes with ?orderId=). '/…/new' beats '/…/$id'.
 const purchaseOrdersRoute = createRoute({
@@ -949,6 +963,8 @@ const routeTree = rootRoute.addChildren([
     requisitionRoute,
     approvalsRoute,
     syncRoute,
+    myDevicesRoute,
+    devicesRoute,
     purchaseOrdersRoute,
     newPurchaseOrderRoute,
     purchaseOrderRoute,

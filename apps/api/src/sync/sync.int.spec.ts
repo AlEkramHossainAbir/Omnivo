@@ -543,8 +543,9 @@ describe('registering a device', () => {
 
   it('stops a revoked device, and checks the protocol before the device', async () => {
     const lost = await newDevice('Lost phone', narsingdi);
-    // Step 18c revokes from the device list; until then, the superuser
-    await sql`UPDATE devices SET revoked_at = now() WHERE id = ${lost.id}`;
+    // The superuser revokes it, as its own person: migration 0048 refuses a revoke that names
+    // nobody. 18c's revoke route has tests of its own (devices.int.spec.ts).
+    await sql`UPDATE devices SET revoked_at = now(), revoked_by = user_id WHERE id = ${lost.id}`;
     const pulled = await pullPage(lost.id, undefined, 10);
     expect(pulled.statusCode).toBe(403);
     expect(problemOf(pulled).code).toBe('device_revoked');

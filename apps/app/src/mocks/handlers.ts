@@ -303,6 +303,15 @@ import {
   toSupplier,
   toSupplierGroup,
 } from './supplier-data';
+import {
+  assertNoActiveDevices,
+  deviceList,
+  keepSession,
+  moveDevice,
+  myDevices,
+  renameDevice,
+  revokeDevice,
+} from './device-data';
 import { push } from './push-data';
 import { pull, registerDevice } from './sync-data';
 import {
@@ -320,6 +329,9 @@ import {
 
 // mock সার্ভারের অবস্থা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে
 let signedIn = true;
+// Step 18c: the sign-in this browser uses, like the API's session id. A new one at every sign-in; a
+// device remembers the one it was last used with (device-data.ts), so revoking it can end it.
+let sessionId = crypto.randomUUID();
 let workspace: Workspace = WORKSPACES[0];
 let preferences: Preferences = { language: null, theme: 'system' };
 
@@ -642,6 +654,7 @@ export const handlers = [
     await delay();
     if (body.password === 'wrong-password') return problem(401, 'invalid_credentials');
     signedIn = true;
+    sessionId = crypto.randomUUID();
     return reply(routes.auth.login, session());
   }),
 
@@ -655,6 +668,7 @@ export const handlers = [
     workspace = WORKSPACES[0];
     startFresh(workspace, body.companyName);
     signedIn = true;
+    sessionId = crypto.randomUUID();
     return reply(routes.auth.signUp, session());
   }),
 
@@ -1058,6 +1072,8 @@ export const handlers = [
       checkVersion(target.version, version);
       const othersActive = data.branches.some((b) => b.id !== id && b.archivedAt === null);
       if (!othersActive) throw new MockProblem(409, 'branch_last_active');
+      // Step 18c (decision 20): after the last-branch rule, like the API
+      assertNoActiveDevices(data, id);
       Object.assign(target, { archivedAt: new Date().toISOString(), version: version + 1 });
       record(data, 'branch.archived', 'branch', id);
       return reply(routes.branches.archive, target);
@@ -4970,6 +4986,7 @@ export const handlers = [
       const body = await readBody(routes.sync.registerDevice.body, request);
       const data = current();
       const { device, branchCode } = registerDevice(data, OWNER.id, body);
+      keepSession(data, device.id, sessionId);
       // The API's audit row, for a new device only
       if (branchCode !== null) {
         record(data, 'device.registered', 'device', device.id, {
@@ -4985,7 +5002,11 @@ export const handlers = [
     routes.sync.pull,
     guarded(({ request }) => {
       const query = readQuery(routes.sync.pull.query, request);
-      return reply(routes.sync.pull, pull(current(), workspace.tenantId, OWNER.id, query));
+      const data = current();
+      const page = pull(data, workspace.tenantId, OWNER.id, query);
+      // The API writes the sign-in at the end of a pull; any page is close enough for the mock
+      keepSession(data, query.deviceId, sessionId);
+      return reply(routes.sync.pull, page);
     }),
   ),
 
@@ -4994,9 +5015,53 @@ export const handlers = [
     routes.sync.push,
     guarded(async ({ request }) => {
       const body = await readBody(routes.sync.push.body, request);
-      const answer = push(current(), OWNER.id, body);
+      const data = current();
+      const answer = push(data, OWNER.id, body);
+      keepSession(data, body.deviceId, sessionId);
       await delay();
       return reply(routes.sync.push, answer);
+    }),
+  ),
+
+  // Step 18c: the device lists, rename, move and revoke (device-data.ts)
+  mock(routes.devices.mine, () => reply(routes.devices.mine, { items: myDevices(current()) })),
+
+  mock(routes.devices.list, async ({ request }) => {
+    const query = readQuery(routes.devices.list.query, request);
+    await delay();
+    return reply(routes.devices.list, deviceList(current(), query));
+  }),
+
+  mock(
+    routes.devices.rename,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.devices.rename.params.parse(params);
+      const body = await readBody(routes.devices.rename.body, request);
+      await delay();
+      return reply(routes.devices.rename, renameDevice(current(), id, body));
+    }),
+  ),
+
+  mock(
+    routes.devices.move,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.devices.move.params.parse(params);
+      const body = await readBody(routes.devices.move.body, request);
+      await delay();
+      return reply(routes.devices.move, moveDevice(current(), id, body));
+    }),
+  ),
+
+  // A revoke of the device this browser uses ends its sign-in: the app's refresh after the wipe
+  // then fails, and it signs out with the notice (local-session.ts's revoke())
+  mock(
+    routes.devices.revoke,
+    guarded(async ({ params }) => {
+      const { id } = routes.devices.revoke.params.parse(params);
+      const { device, endsSession } = revokeDevice(current(), id, sessionId);
+      if (endsSession) signedIn = false;
+      await delay();
+      return reply(routes.devices.revoke, device);
     }),
   ),
 ];

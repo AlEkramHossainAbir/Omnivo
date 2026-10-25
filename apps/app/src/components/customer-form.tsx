@@ -15,6 +15,7 @@ import {
   MAX_CUSTOMER_ADDRESSES,
   MAX_PAYMENT_TERMS_DAYS,
   routes,
+  SYNC_BLOCK_AFTER_DAYS,
   type SyncCommandError,
   type SyncCustomerGroup,
   type SyncPriceList,
@@ -47,6 +48,7 @@ import type { z } from 'zod';
 import { applyApiError, applyCommandError } from '../lib/field-errors';
 import { call } from '../lib/api';
 import { requestSync, type SaveMode, useLocalDb } from '../lib/local-data';
+import { useSyncAge } from '../lib/sync-summary';
 import { rowPath } from '../lib/products';
 import { customerQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
@@ -169,13 +171,17 @@ export function CustomerForm({
   // The error of the customer's refused command, shown under its boxes until the next save
   failed: SyncCommandError | null;
 }) {
-  const { t, errorText } = useLocale();
+  const { t, format, errorText } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const online = useOnline();
   const db = useLocalDb();
   const onDevice = mode === 'device';
+  // Step 18c (decision 12): 7 days after the last sync the device saves no new work. The form
+  // still opens (the person sees what they wanted to change), with no button to save it.
+  const age = useSyncAge();
+  const blocked = onDevice && age?.age === 'blocked';
   const {
     register,
     control,
@@ -222,7 +228,8 @@ export function CustomerForm({
 
   const onSubmit = handleSubmit(async ({ version, ...values }) => {
     if (onDevice) {
-      if (!db) return;
+      // Enter in a box submits the form even with no submit button
+      if (!db || blocked) return;
       try {
         await saveCustomer(db, {
           base: customer,
@@ -289,9 +296,14 @@ export function CustomerForm({
         description={customer?.name}
       />
       {!canManage && <p className="text-body-sm text-ink-3">{t('customers.readOnly')}</p>}
-      {canManage && onDevice && (
+      {canManage && onDevice && !blocked && (
         <DocumentNotice tone="neutral">
           {online ? t('sync.waitingNotice') : t('sync.offlineNotice')}
+        </DocumentNotice>
+      )}
+      {canManage && blocked && (
+        <DocumentNotice tone="warn">
+          {t('sync.blockedFormNotice', { days: format.number(SYNC_BLOCK_AFTER_DAYS) })}
         </DocumentNotice>
       )}
       <form noValidate onSubmit={(event) => void onSubmit(event)}>
@@ -528,15 +540,17 @@ export function CustomerForm({
               >
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" disabled={isSubmitting}>
-                {isSubmitting
-                  ? t('common.saving')
-                  : onDevice
-                    ? t('sync.saveOnDevice')
-                    : customer
-                      ? t('customers.save')
-                      : t('customers.create')}
-              </Button>
+              {!blocked && (
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting
+                    ? t('common.saving')
+                    : onDevice
+                      ? t('sync.saveOnDevice')
+                      : customer
+                        ? t('customers.save')
+                        : t('customers.create')}
+                </Button>
+              )}
             </div>
           )}
         </fieldset>

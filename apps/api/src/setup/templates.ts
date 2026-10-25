@@ -500,6 +500,8 @@ export const INDUSTRY_TEMPLATES = {
         description: 'Stock by batch and expiry at a depot',
         permissions: [
           'core.branch.manage',
+          // Step 18c: a lost phone is reported to the person in charge of the depot or shop first
+          'core.device.manage',
           'inventory.product.manage',
           'inventory.warehouse.manage',
           ...STOCK_WORK,
@@ -575,6 +577,7 @@ export const INDUSTRY_TEMPLATES = {
         description: 'Stock and deliveries at a depot',
         permissions: [
           'core.branch.manage',
+          'core.device.manage',
           'inventory.product.manage',
           'inventory.warehouse.manage',
           ...STOCK_WORK,
@@ -685,6 +688,7 @@ export const INDUSTRY_TEMPLATES = {
         permissions: [
           'core.user.read',
           'core.branch.manage',
+          'core.device.manage',
           'inventory.product.manage',
           'inventory.warehouse.manage',
           ...STOCK_WORK,

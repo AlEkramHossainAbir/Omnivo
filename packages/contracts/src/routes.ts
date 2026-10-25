@@ -21,6 +21,7 @@ import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
 import { debitNoteRoutes } from './debit-notes.js';
 import { deliveryRoutes } from './deliveries.js';
+import { deviceRoutes } from './devices.js';
 import { documentOutputRoutes, publicDocumentRoutes } from './document-output.js';
 import { goodsReceiptRoutes } from './goods-receipts.js';
 import { priceListRoutes } from './price-lists.js';
@@ -133,4 +134,5 @@ export const routes = {
   debitNotes: debitNoteRoutes,
   supplierRefunds: supplierRefundRoutes,
   sync: syncRoutes,
+  devices: deviceRoutes,
 };

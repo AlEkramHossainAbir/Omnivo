@@ -10,6 +10,8 @@ import {
   type CustomerSort,
   type CustomerStatus,
   type DeliveryInvoiceFilter,
+  type DeviceSort,
+  type DeviceStatus,
   type InvoicePage,
   type InvoicePaymentFilter,
   type InvoiceStatus,
@@ -138,6 +140,43 @@ export function notificationsQuery(tenantId: string) {
     queryKey: ['notifications', tenantId, 'latest'],
     queryFn: async () => (await call(routes.notifications.list, { query: { limit: 20 } })).items,
     staleTime: 0,
+  });
+}
+
+// Step 18c: both device lists start with ['devices', tenantId], so a rename, a move or a revoke
+// refreshes your own list and the workspace's with one invalidate
+export function myDevicesQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['devices', tenantId, 'mine'],
+    queryFn: async () => (await call(routes.devices.mine)).items,
+  });
+}
+
+export interface DeviceFilter {
+  search: string;
+  // '' = every branch
+  branchId: string;
+  status: DeviceStatus;
+  sort: DeviceSort;
+}
+
+export function deviceListQuery(tenantId: string, filter: DeviceFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['devices', tenantId, 'list', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.devices.list, {
+        query: {
+          limit: 50,
+          status: filter.status,
+          sort: filter.sort,
+          ...(filter.search !== '' && { search: filter.search }),
+          ...(filter.branchId !== '' && { branchId: filter.branchId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
   });
 }
 

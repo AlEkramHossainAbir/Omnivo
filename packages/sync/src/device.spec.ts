@@ -1,18 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
-import { deviceNameParts, type IdentityStorage, readDevice, saveDevice } from './device.js';
+import {
+  deviceNameParts,
+  forgetDevice,
+  type IdentityStorage,
+  readDevice,
+  saveDevice,
+} from './device.js';
 
 const TENANT = '01928c4e-2222-7000-8000-000000000001';
 const USER = '01928c4e-3333-7000-8000-000000000001';
 const BRANCH = '01928c4e-4444-7000-8000-000000000001';
 
-function memoryStorage(): IdentityStorage & { items: Map<string, string> } {
+function memoryStorage(): IdentityStorage &
+  Pick<Storage, 'removeItem'> & { items: Map<string, string> } {
   const items = new Map<string, string>();
   return {
     items,
     getItem: (key) => items.get(key) ?? null,
     setItem: (key, value) => {
       items.set(key, value);
+    },
+    removeItem: (key) => {
+      items.delete(key);
     },
   };
 }
@@ -44,18 +54,40 @@ describe('readDevice / saveDevice', () => {
   });
 
   it('works without a storage, or with one that throws (Safari private window)', () => {
-    const refusing: IdentityStorage = {
+    const refusing: IdentityStorage & Pick<Storage, 'removeItem'> = {
       getItem: () => {
         throw new Error('SecurityError');
       },
       setItem: () => {
         throw new Error('QuotaExceededError');
       },
+      removeItem: () => {
+        throw new Error('SecurityError');
+      },
     };
     const identity = readDevice(refusing, TENANT, USER);
     expect(saveDevice(refusing, TENANT, USER, identity)).toBe(false);
     expect(saveDevice(null, TENANT, USER, identity)).toBe(false);
     expect(readDevice(null, TENANT, USER).branchId).toBeNull();
+    expect(forgetDevice(refusing, TENANT, USER)).toBe(false);
+    expect(forgetDevice(null, TENANT, USER)).toBe(false);
+  });
+});
+
+describe('forgetDevice', () => {
+  it('drops the saved identity, so the next read makes a new id (step 18c, decision 4)', () => {
+    const storage = memoryStorage();
+    const revoked = { ...readDevice(storage, TENANT, USER), branchId: BRANCH };
+    saveDevice(storage, TENANT, USER, revoked);
+    const other = { ...readDevice(storage, TENANT, BRANCH), branchId: BRANCH };
+    saveDevice(storage, TENANT, BRANCH, other);
+
+    expect(forgetDevice(storage, TENANT, USER)).toBe(true);
+    const next = readDevice(storage, TENANT, USER);
+    expect(next.id).not.toBe(revoked.id);
+    expect(next).toMatchObject({ branchId: null, later: false });
+    // Another person's identity on the same browser stays
+    expect(readDevice(storage, TENANT, BRANCH)).toEqual(other);
   });
 });
 

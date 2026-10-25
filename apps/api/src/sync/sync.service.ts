@@ -12,7 +12,7 @@ import { and, asc, eq, inArray, isNull, or, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { AppError } from '../common/http/app-error.js';
-import { getTenantId } from '../common/tenant/tenant-context.js';
+import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { DevicesService } from './devices.service.js';
@@ -76,10 +76,16 @@ export class SyncService {
 
       // The device finished a pull: by the database's clock (decision 19), and without touching
       // version or updated_at (decision 32), so a raw statement: Drizzle's update() would set
-      // updated_at through $onUpdate
+      // updated_at through $onUpdate. Step 18c: with the sign-in it pulled with (decision 13),
+      // here and not on the first page, so the pages before still write nothing. The CASE: a
+      // revoke that committed while this waited keeps its session_id (migration 0048 refuses a
+      // change); its last_sync_at may still move.
       if (!page.hasMore) {
         await tx.execute(
-          sql`UPDATE devices SET last_sync_at = now()
+          sql`UPDATE devices SET last_sync_at = now(),
+                     session_id = CASE WHEN revoked_at IS NULL
+                                       THEN ${currentPrincipal().sessionId}::uuid
+                                       ELSE session_id END
                WHERE tenant_id = ${getTenantId()}::uuid AND id = ${device.id}::uuid`,
         );
       }

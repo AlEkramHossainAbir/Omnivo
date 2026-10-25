@@ -4,6 +4,7 @@ import {
   CloudSavingDone01Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
+import { SYNC_BLOCK_AFTER_DAYS } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
   dependentsOf,
@@ -31,6 +32,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 
+import { DocumentNotice } from '../components/document-notice';
 import { LocalState } from '../components/local-state';
 import { useTenantId, useTimeZone } from '../components/stock-parts';
 import { OutboxStatusPill, useCommandText, useFieldList } from '../components/sync-parts';
@@ -41,6 +43,7 @@ import {
   useLocalQuery,
   useSyncStatus,
 } from '../lib/local-data';
+import { useSyncAge } from '../lib/sync-summary';
 import { useOnline } from '../lib/use-online';
 
 // Step 18b (decision 1): the work saved on this device, oldest first, as the push sends it; what
@@ -87,6 +90,8 @@ export function SyncPage() {
   const entries = useLocalQuery(db ? outboxEntries : null);
   const notices = useLocalQuery(db ? syncNotices : null);
   const pull = useLocalQuery(readPullState);
+  // Step 18c (decision 12): the limits, on this device's clock
+  const age = useSyncAge();
   const commandText = useCommandText();
   const fieldList = useFieldList();
   const [discarding, setDiscarding] = useState<OutboxEntry | null>(null);
@@ -133,9 +138,19 @@ export function SyncPage() {
       <p className="text-body-sm text-ink-2 tabular-nums">
         {lastSync === null
           ? t('sync.neverSynced')
-          : t('sync.lastSynced', { time: format.dateTime(new Date(lastSync), timeZone) })}
+          : age !== null && age.age !== 'fresh'
+            ? t('sync.lastSyncedDays', { count: age.days, formatted: format.number(age.days) })
+            : t('sync.lastSynced', { time: format.dateTime(new Date(lastSync), timeZone) })}
         {!online && ` · ${t('sync.syncNowOffline')}`}
       </p>
+      {/* Step 18c: after 24 hours what may be out of date; after 7 days what stops. The waiting
+          changes are not blocked, so the page says they still go. */}
+      {age?.age === 'warn' && <DocumentNotice tone="warn">{t('sync.staleNotice')}</DocumentNotice>}
+      {age?.age === 'blocked' && (
+        <DocumentNotice tone="warn">
+          {t('sync.blockedNotice', { days: format.number(SYNC_BLOCK_AFTER_DAYS) })}
+        </DocumentNotice>
+      )}
 
       {!db && view.kind !== 'ready' && <LocalState view={view} />}
 

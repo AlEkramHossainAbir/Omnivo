@@ -19,9 +19,11 @@ import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 
 import { AuthPreview } from '../components/auth-preview';
+import { DocumentNotice } from '../components/document-notice';
 import { LanguageSwitch } from '../components/language-switch';
 import { applyApiError } from '../lib/field-errors';
 import { login } from '../lib/session';
+import { useSession } from '../lib/session-store';
 
 // key-টা অনুবাদের, লেখা না — ভাষা বদলালে সাথে সাথে বদলায়
 const INDUSTRIES = [
@@ -35,6 +37,8 @@ export function LoginPage() {
   const { t } = useLocale();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  // Step 18c: why this page shows, when the app signed the person out (a revoked device)
+  const notice = useSession((state) => state.notice);
   // zodResolver: API যে schema দিয়ে যাচাই করে, ফর্মও ঠিক সেটা দিয়ে — একই নিয়ম, একই code।
   // contractErrorMap: schema যেখানে নিজে code দেয়নি সেখানে Zod-এর ইংরেজি মেসেজের বদলে code
   const {
@@ -73,6 +77,11 @@ export function LoginPage() {
               onSubmit={(event) => void onSubmit(event)}
               className="mt-8 grid gap-[18px]"
             >
+              {/* Step 18c: not an error of the form, so the neutral notice, not FormAlert. It stays
+                  until the next sign-in, which clears it (session-store.ts). */}
+              {notice === 'device_revoked' && (
+                <DocumentNotice tone="neutral">{t('devices.revokedSignedOut')}</DocumentNotice>
+              )}
               {/* message-এ code; FormAlert আর TextField নিজেরাই বর্তমান ভাষায় লেখে */}
               {errors.root?.server?.message && <FormAlert message={errors.root.server.message} />}
               <TextField

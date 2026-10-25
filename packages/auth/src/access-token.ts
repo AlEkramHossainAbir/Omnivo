@@ -15,6 +15,9 @@ export interface AccessClaims {
   tenantId: string;
   membershipId: string;
   roles: readonly string[];
+  // Step 18c: the sign-in (Better Auth's session) this token belongs to. A device remembers the
+  // session it used last, so revoking the device can end that sign-in.
+  sessionId: string;
 }
 
 // যাচাই করা টোকেন থেকে যা বেরোয়
@@ -31,6 +34,10 @@ const payloadSchema = z.object({
   tenant_id: z.uuid(),
   membership_id: z.uuid(),
   roles: z.array(z.string()),
+  // Step 18c. Required: a token from before this claim (15 minutes at most) is refused like an
+  // expired one, and the app refreshes it once. An optional claim would make every caller handle
+  // a session it does not know.
+  sid: z.uuid(),
 });
 
 export function createAccessTokens(config: AccessTokenConfig) {
@@ -49,6 +56,8 @@ export function createAccessTokens(config: AccessTokenConfig) {
       tenant_id: claims.tenantId,
       membership_id: claims.membershipId,
       roles: [...claims.roles],
+      // "sid" is the usual JWT name for a session id (OpenID Connect)
+      sid: claims.sessionId,
     })
       .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
       .setSubject(claims.userId)
@@ -76,6 +85,7 @@ export function createAccessTokens(config: AccessTokenConfig) {
         tenantId: claims.data.tenant_id,
         membershipId: claims.data.membership_id,
         roles: claims.data.roles,
+        sessionId: claims.data.sid,
         tokenId: claims.data.jti,
         expiresAt: new Date(claims.data.exp * 1000),
       };

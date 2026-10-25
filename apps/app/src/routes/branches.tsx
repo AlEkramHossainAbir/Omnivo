@@ -48,7 +48,7 @@ const FIELD_NAMES = updateBranchInputSchema.keyof().options;
 // একটা ফর্ম দুই কাজে: নতুন (branch নেই) আর বদল। নতুনের version 1 — schema-র min(1) পার হয়,
 // আর তৈরির route version পড়েই না (branchInputSchema-তে ঘরটা নেই, z.object বাড়তি key ফেলে দেয়)
 function BranchForm({ branch, onDone }: { branch: Branch | null; onDone: () => void }) {
-  const { t } = useLocale();
+  const { t, errorText } = useLocale();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const queryClient = useQueryClient();
   const {
@@ -104,7 +104,7 @@ function BranchForm({ branch, onDone }: { branch: Branch | null; onDone: () => v
     }
   });
 
-  const failure = errors.root?.server?.message ?? toggleFailure(toggle.error);
+  const failure = errors.root?.server?.message ?? toggleFailure(toggle.error, errorText);
 
   return (
     <DialogContent
@@ -180,9 +180,17 @@ function BranchForm({ branch, onDone }: { branch: Branch | null; onDone: () => v
 }
 
 // archive/restore-এর error (branch_last_active, version_conflict) ফর্মের ঘরের না — উপরে alert-এ
-function toggleFailure(error: Error | null): string | undefined {
+// Step 18c: the text, not the code. branch_has_devices has a value inside ("Active devices in this
+// branch: 4"), and FormAlert translates a code without its params; a text that is not a code it
+// shows as it is. Worked out on every render, so a change of language still changes it.
+function toggleFailure(
+  error: Error | null,
+  errorText: (code: string, params?: Record<string, string | number>) => string,
+): string | undefined {
   if (!error) return undefined;
-  return error instanceof ApiRequestError ? error.code : 'unknown_error';
+  return error instanceof ApiRequestError
+    ? errorText(error.code, error.problem.params)
+    : 'unknown_error';
 }
 
 // null = dialog বন্ধ, 'new' = নতুন ব্রাঞ্চ, Branch = সেটা বদলানো

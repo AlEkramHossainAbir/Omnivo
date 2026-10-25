@@ -31,6 +31,8 @@ export const en = {
     notifications: 'Notifications',
     notificationsUnread_one: 'Notifications, {{count}} unread',
     notificationsUnread_other: 'Notifications, {{count}} unread',
+    // Step 18c: the account menu's link to your own devices (decision 1)
+    myDevices: 'My devices',
   },
   nav: {
     overview: 'Overview',
@@ -39,6 +41,7 @@ export const en = {
     settings: 'Settings',
     numbering: 'Numbering',
     branches: 'Branches',
+    devices: 'Devices',
     auditLog: 'Audit log',
     team: 'Team',
     roles: 'Roles',
@@ -349,6 +352,86 @@ export const en = {
     useBranch: 'Use this branch',
     later: 'Not now',
     registered: 'This device is set up for {{branch}}',
+    // Step 18c: the two lists (decision 1). My devices = your own, in the account menu; Devices =
+    // every device of the workspace, with core.device.manage
+    mineTitle: 'My devices',
+    mineDescription:
+      'The browsers and phones you use this workspace on. Revoke the ones you no longer use.',
+    mineEmptyTitle: 'No devices yet',
+    mineEmptyBody: 'Choose the branch of this computer or phone to set it up. It then shows here.',
+    title: 'Devices',
+    description: "Every browser and phone that keeps a copy of this workspace's data",
+    readOnly: 'Ask a workspace owner for the core.device.manage permission to see every device.',
+    loadFailed: "Couldn't load the devices. Refresh the page to try again.",
+    // Step 18c.6: both lists are the server's, like the orders list offline
+    needsConnection: 'The device list is on the server. Connect to the internet to see it.',
+    show: 'Show',
+    statuses: {
+      active: 'Active',
+      revoked: 'Revoked',
+    },
+    // The warn pill of an active device after SYNC_WARN_AFTER_HOURS (syncAge), counted in whole
+    // days from the server's time; formatted = the number in the page's language
+    stale_one: 'Not synced for {{formatted}} day',
+    stale_other: 'Not synced for {{formatted}} days',
+    thisDevice: 'This device',
+    searchLabel: 'Search devices',
+    searchPlaceholder: 'Device or person, like Counter 1 or Tanvir',
+    allBranches: 'All branches',
+    columns: {
+      device: 'Device',
+      person: 'Person',
+      branch: 'Branch',
+      lastSync: 'Last synced',
+      status: 'Status',
+      // Step 18c.6: the header of the column with each row's menu, read by screen readers only
+      actions: 'Actions',
+    },
+    neverSynced: 'Never synced',
+    revokedBy: 'Revoked by {{name}} · {{time}}',
+    emptyTitle: 'No devices yet',
+    emptyBody:
+      'A device shows here once someone signs in on it and picks its branch, like the counter computer of the Chattogram depot.',
+    emptyRevokedTitle: 'No revoked devices',
+    emptyRevokedBody:
+      'A lost phone or a replaced counter computer shows here once it is revoked. Its history stays in the audit log.',
+    noMatchTitle: 'No device matches "{{query}}"',
+    noMatchBody: "Search by the device's name, like Counter 1, or by the person's name.",
+    actionsFor: 'Actions for {{name}}',
+    rename: 'Rename',
+    renameTitle: 'Rename {{name}}',
+    name: 'Name',
+    nameHint: "A name people know it by, like Counter 1 or Tanvir's phone.",
+    saveName: 'Save name',
+    renamed: 'Renamed to {{name}}',
+    // Only this device, online, with nothing waiting in its outbox (decision 2)
+    changeBranch: 'Change branch',
+    changeBranchTitle: 'Change the branch of this device',
+    changeBranchBody:
+      'Omnivo deletes the copy of {{branch}} on this device and copies the branch you pick. Orders saved here offline then use its warehouses.',
+    newBranch: 'New branch',
+    changeBranchConfirm: 'Change branch',
+    moved: 'This device is now set up for {{branch}}',
+    changeBranchOffline: 'Connect to the internet to change the branch.',
+    changeBranchSyncFirst_one:
+      'Sync the {{formatted}} change on this device first. Open Sync to send or discard it.',
+    changeBranchSyncFirst_other:
+      'Sync the {{formatted}} changes on this device first. Open Sync to send or discard them.',
+    // A revoke is final, and what never synced on that device is lost (decisions 3 and 4)
+    revoke: 'Revoke',
+    revokeTitle: 'Revoke {{name}}?',
+    revokeBody:
+      'It stops syncing and is signed out at once. The next time it opens Omnivo, its copy of the data is deleted, with any changes on it that have not synced.',
+    revokeHereBody: 'You are signed out here, and the copy of the data on this device is deleted.',
+    revokeHereWaiting_one: '{{formatted}} change on this device has not synced. It is lost.',
+    revokeHereWaiting_other: '{{formatted}} changes on this device have not synced. They are lost.',
+    revokeFinal:
+      'A revoked device cannot be restored. Signing in on it again sets it up as a new device.',
+    revokeConfirm: 'Revoke device',
+    revoked: '{{name}} revoked',
+    // The sign-in page, after this device found out it was revoked
+    revokedSignedOut:
+      'This device was revoked, so its data was deleted and you were signed out. Sign in to set it up again as a new device.',
   },
   sync: {
     notSetUpTitle: 'This device is not set up yet',
@@ -462,6 +545,17 @@ export const en = {
     orderOffline: 'This order is on the server. Connect to the internet to open it.',
     ordersOffline:
       'The orders on the server need a connection. Drafts saved on this device are listed above.',
+    // Step 18c: the time limits (syncAge). After SYNC_WARN_AFTER_HOURS the sidebar line and the
+    // Sync page warn; after SYNC_BLOCK_AFTER_DAYS the device saves no new work offline. Days are
+    // counted on the device's own clock; days = SYNC_BLOCK_AFTER_DAYS in the page's language
+    lastSyncedDays_one: 'Last synced {{formatted}} day ago',
+    lastSyncedDays_other: 'Last synced {{formatted}} days ago',
+    staleNotice:
+      'Prices, stock and credit limits on this device may be out of date. Connect to the internet to sync.',
+    blockedNotice:
+      "This device last synced more than {{days}} days ago, so it can't save new work offline. Changes already waiting are sent once the connection is back.",
+    blockedFormNotice:
+      "This device last synced more than {{days}} days ago, so it can't save new work offline. Connect to the internet to save this.",
   },
   accounts: {
     title: 'Chart of accounts',
@@ -4162,6 +4256,7 @@ export const en = {
         invite: 'Invite people',
         manage: "Change members' roles and remove members",
       },
+      device: { manage: 'See every device of the workspace, rename them and revoke them' },
       role: { manage: 'Create roles and choose their permissions' },
       settings: { manage: 'Edit company settings and numbering' },
       branch: { manage: 'Add, edit and archive branches' },
@@ -4333,7 +4428,12 @@ export const en = {
         restored: 'Restored a branch',
       },
       number_series: { updated: 'Changed a numbering format' },
-      device: { registered: 'Set up a device' },
+      device: {
+        registered: 'Set up a device',
+        renamed: 'Renamed a device',
+        moved: 'Moved a device to another branch',
+        revoked: 'Revoked a device',
+      },
       member: {
         invited: 'Invited someone',
         invitation_resent: 'Resent an invitation',
@@ -4699,6 +4799,7 @@ export const en = {
       supplierCreditNumber: 'Supplier’s credit note',
       priceDifference: 'Purchase price difference',
       services: 'Purchased services',
+      revokedAt: 'Revoked at',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -5376,6 +5477,9 @@ export const en = {
       "The server can't read this change. Reload the page, and discard the change if it is still refused.",
     sync_customer_gone:
       'This customer was deleted, or is no longer a customer. Discard the change.',
+    // params.count = the active devices in the branch (decision 20)
+    branch_has_devices:
+      'Active devices in this branch: {{count}}. Change their branch on each device, or revoke them, first.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',
     version_conflict:
       'Someone else saved changes while you were editing. Reload to see them, then make your change again.',

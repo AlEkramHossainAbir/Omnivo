@@ -18,6 +18,7 @@ import {
   type SyncUpsert,
 } from '@omnivo/contracts';
 
+import { OWNER } from './fixtures';
 import { MockProblem } from './mock';
 // Type-only: workspace-data.ts imports this file for emptySync(), and a type import is erased
 // when the code is built, so it makes no circle
@@ -67,6 +68,10 @@ export interface MockSync {
   stamps: Map<string, { quantity: string; at: string }>;
   // A pushed command's id → its answer (push-data.ts)
   answers: Map<string, MockAnswer>;
+  // Step 18c (device-data.ts): a device's id → the sign-in it was last used with, and → the person
+  // who revoked it
+  sessions: Map<string, string>;
+  revokedBy: Map<string, string>;
 }
 
 export function emptySync(): MockSync {
@@ -76,6 +81,8 @@ export function emptySync(): MockSync {
     paging: new Map(),
     stamps: new Map(),
     answers: new Map(),
+    sessions: new Map(),
+    revokedBy: new Map(),
   };
 }
 
@@ -118,6 +125,58 @@ export function registerDevice(
   };
   data.sync.devices.push(device);
   return { device, branchCode: branch.code };
+}
+
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+
+function ago(ms: number): string {
+  return new Date(Date.now() - ms).toISOString();
+}
+
+// Step 18c: the garments workspace's devices, so both lists have rows before this browser registers: the
+// owner's own laptop at home, a store computer three days behind (the warn pill), a phone that
+// never synced, and a depot computer revoked when it was replaced. All the active ones are in the
+// head office: an active device keeps its branch from being archived (branch_has_devices), and the
+// branch tests archive the Chattogram depot and the Gazipur factory.
+export function seedDevices(data: WorkspaceData): void {
+  const [headOffice] = data.branches;
+  const depot = data.branches.find((branch) => branch.code === 'CTG');
+  const person = (fullName: string) =>
+    data.people.members.find((member) => member.fullName === fullName)?.userId ?? OWNER.id;
+  if (!headOffice || !depot) return;
+  const device = (
+    name: string,
+    userId: string,
+    branchId: string,
+    lastSyncAt: string | null,
+    revokedAt: string | null = null,
+  ): Device => ({
+    id: crypto.randomUUID(),
+    name,
+    branchId,
+    userId,
+    lastSyncAt,
+    revokedAt,
+    createdAt: ago(90 * DAY_MS),
+    version: 1,
+  });
+  const revoked = device(
+    'Depot counter 1',
+    person('Nasrin Karim'),
+    depot.id,
+    ago(15 * DAY_MS),
+    ago(12 * DAY_MS),
+  );
+  data.sync.devices.push(
+    device('Home laptop', OWNER.id, headOffice.id, ago(2 * HOUR_MS)),
+    device('Store office PC', person('Abdul Karim'), headOffice.id, ago(3 * DAY_MS + HOUR_MS)),
+    device("Kamal's phone", person('Kamal Uddin'), headOffice.id, null),
+    revoked,
+  );
+  data.sync.revokedBy.set(revoked.id, OWNER.id);
+  // Signed in somewhere else: revoking them does not sign this browser out
+  for (const seeded of data.sync.devices) data.sync.sessions.set(seeded.id, crypto.randomUUID());
 }
 
 // The device a pull or a push names: the signed-in person's own, and not revoked

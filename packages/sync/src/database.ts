@@ -57,6 +57,9 @@ export interface PullState {
   // The server's clock at the end of the last pull that finished. null = no pull has finished,
   // so the device has no complete copy yet.
   lastSyncAt: string | null;
+  // Step 18c: this device's own clock at that moment (ms since 1970), for the time limits. A copy
+  // made before step 18c has no value here until its next pull ends (readPullState gives null).
+  syncedAt: number | null;
   // The rows the running (or the last) full pull wrote, for "1,250 items copied so far"
   copied: number;
 }

@@ -9,6 +9,7 @@ import {
   type SalesOrder,
   type SalesOrderDraftInput,
   type SalesOrderFormValues,
+  SYNC_BLOCK_AFTER_DAYS,
   type SyncCommandError,
   updateSalesOrderInputSchema,
 } from '@omnivo/contracts';
@@ -33,6 +34,7 @@ import { Controller, type Path, useForm, useWatch } from 'react-hook-form';
 import { call } from '../lib/api';
 import { applyApiError, applyCommandError } from '../lib/field-errors';
 import { requestSync, useLocalDb, useSaveMode } from '../lib/local-data';
+import { useSyncAge } from '../lib/sync-summary';
 import { rowPath } from '../lib/products';
 import { formTotals, type LineMeta, SALES_LINE_FIELDS, savedLines } from '../lib/sales';
 import { useCan } from '../lib/permissions';
@@ -116,7 +118,7 @@ export function SalesOrderForm({
   // workspace's now
   pricesIncludeVat: boolean;
 }) {
-  const { t } = useLocale();
+  const { t, format } = useLocale();
   const navigate = useNavigate();
   const tenantId = useTenantId();
   const queryClient = useQueryClient();
@@ -182,6 +184,10 @@ export function SalesOrderForm({
     order === null &&
     quotation === null &&
     (draft !== null || !online || customerMode === 'device');
+  // Step 18c (decision 12): 7 days after the last sync, no new draft on the device. A refused draft
+  // opened from the Sync page is blocked too: saving it again is new work on the device.
+  const age = useSyncAge();
+  const blocked = onDevice && age?.age === 'blocked';
   const rates = useQuery(taxRatesQuery(tenantId)).data;
 
   // Once, when the form opens a refused draft: its errors where the person fixes them
@@ -254,7 +260,8 @@ export function SalesOrderForm({
   // Into the outbox (decision 15): a draft only, so no confirm and no credit check. The name and
   // the total are kept with it for the Sync page and the unsynced orders.
   const saveOnDevice = handleSubmit(async (values) => {
-    if (!db) return;
+    // Enter in a box submits the form even with no submit button
+    if (!db || blocked) return;
     const input: SalesOrderDraftInput = {
       customerId: values.customerId,
       date: values.date,
@@ -325,9 +332,14 @@ export function SalesOrderForm({
         onSubmit={(event) => void (onDevice ? saveOnDevice(event) : save(false)(event))}
         className="grid grid-cols-1 gap-5"
       >
-        {onDevice && (
+        {onDevice && !blocked && (
           <DocumentNotice tone="neutral">
             {online ? t('sync.waitingNotice') : t('sync.orderOfflineNotice')}
+          </DocumentNotice>
+        )}
+        {blocked && (
+          <DocumentNotice tone="warn">
+            {t('sync.blockedFormNotice', { days: format.number(SYNC_BLOCK_AFTER_DAYS) })}
           </DocumentNotice>
         )}
         {failure && <FormAlert message={failure} />}
@@ -437,11 +449,13 @@ export function SalesOrderForm({
         />
 
         {onDevice ? (
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button type="submit" disabled={isSubmitting}>
-              {t('sync.saveOnDevice')}
-            </Button>
-          </div>
+          !blocked && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button type="submit" disabled={isSubmitting}>
+                {t('sync.saveOnDevice')}
+              </Button>
+            </div>
+          )
         ) : (
           <div className="flex flex-wrap items-center justify-end gap-2">
             {/* A reopened draft keeps its number and cannot be deleted (it says so above) */}

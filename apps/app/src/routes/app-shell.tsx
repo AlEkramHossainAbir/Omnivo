@@ -7,6 +7,7 @@ import {
   ChartIncreaseIcon,
   CheckmarkBadge01Icon,
   Coins01Icon,
+  ComputerPhoneSyncIcon,
   DashboardSquare01Icon,
   DeliveryReturn01Icon,
   DeliveryTruck01Icon,
@@ -88,7 +89,7 @@ import { logout, switchTenant } from '../lib/session';
 import { useCan } from '../lib/permissions';
 import { waitingCountQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
-import { useSyncSummary } from '../lib/sync-summary';
+import { useSyncAge, useSyncSummary } from '../lib/sync-summary';
 import { isTheme } from '../lib/theme';
 import { useOnline } from '../lib/use-online';
 
@@ -207,10 +208,17 @@ function WorkspaceSwitcher() {
 // Step 18b (decision 1): the sidebar line. It says whether the device is online, and how many
 // changes wait (a refused one first, in crit, since the person must act on it). It links to the
 // Sync page. The screen reader hears the whole sentence, not "Offline 3".
+// Step 18c (decision 12): 24 hours after the last sync, the line says how long ago it was, in warn,
+// in place of Online or Offline (the icon still says which). "Syncing…" wins: it is the answer.
 function SyncNavItem() {
   const { t, format } = useLocale();
   const online = useOnline();
   const { syncing, waiting: total, failed } = useSyncSummary();
+  const age = useSyncAge();
+  const stale =
+    !syncing && age !== null && age.age !== 'fresh'
+      ? t('sync.lastSyncedDays', { count: age.days, formatted: format.number(age.days) })
+      : null;
   const state = !online ? t('sync.offline') : syncing ? t('sync.syncing') : t('sync.online');
   const count = failed > 0 ? failed : total;
   const counted =
@@ -225,9 +233,9 @@ function SyncNavItem() {
       icon={online ? Wifi01Icon : WifiDisconnected02Icon}
       count={count > 0 ? count : undefined}
       countTone={failed > 0 ? 'crit' : 'neutral'}
-      aria-label={`${t('nav.sync')}: ${state}, ${counted}`}
+      aria-label={`${t('nav.sync')}: ${stale === null ? state : `${state}, ${stale}`}, ${counted}`}
     >
-      {state}
+      {stale === null ? state : <span className="text-warn">{stale}</span>}
     </NavLink>
   );
 }
@@ -235,9 +243,19 @@ function SyncNavItem() {
 // ডেস্কটপের সাইডবার-তলা আর ফোনের টপ বার — দুই trigger, একই মেনু
 function UserMenuContent({ align, onSignOut }: { align: 'start' | 'end'; onSignOut: () => void }) {
   const { t, language } = useLocale();
+  const navigate = useNavigate();
   const theme = useSession((state) => state.me?.preferences.theme ?? 'system');
   return (
     <DropdownMenuContent align={align}>
+      {/* Step 18c (decision 22): what is about the person themself is in this menu; the app has
+          no profile page */}
+      <DropdownMenuItem
+        icon={ComputerPhoneSyncIcon}
+        onSelect={() => void navigate({ to: '/my-devices' })}
+      >
+        {t('shell.myDevices')}
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
       <DropdownMenuLabel>{t('common.language')}</DropdownMenuLabel>
       <DropdownMenuRadioGroup
         value={language}
@@ -530,6 +548,13 @@ export function AppShell() {
             <NavLink to="/branches" icon={Store01Icon}>
               {t('nav.branches')}
             </NavLink>
+            {/* Step 18c (decision 22): after the branches the devices are in, for the people who
+                may see them all */}
+            {can('core.device.manage') && (
+              <NavLink to="/devices" icon={ComputerPhoneSyncIcon}>
+                {t('nav.devices')}
+              </NavLink>
+            )}
             {can('core.settings.manage') && (
               <NavLink to="/numbering" icon={LeftToRightListNumberIcon}>
                 {t('nav.numbering')}

@@ -22,6 +22,8 @@ export {
 export {
   type DeviceIdentity,
   deviceNameParts,
+  deviceStorageKey,
+  forgetDevice,
   type IdentityStorage,
   newDeviceId,
   readDevice,
@@ -78,4 +80,4 @@ export {
   syncNotices,
 } from './queries.js';
 export { customerRecord, productRecord, searchText } from './records.js';
-export { NO_PULL, readPullState } from './state.js';
+export { NO_PULL, readPullState, syncedAtOf } from './state.js';

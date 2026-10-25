@@ -486,6 +486,9 @@ export const ERROR_CODES = [
   'sync_id_taken',
   'sync_command_invalid',
   'sync_customer_gone',
+  // Step 18c: a branch is archived only when no active device is in it. Move or revoke them
+  // first: a device's next pull would otherwise copy a branch that is gone.
+  'branch_has_devices',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

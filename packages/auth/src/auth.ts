@@ -107,14 +107,16 @@ export function createAuth(options: AuthOptions) {
     async issueTokens(input: {
       sessionId: string;
       sessionExpiresAt: Date;
-      claims: AccessClaims;
+      // The session id goes into the token from sessionId above: one source, so a token can
+      // never name another sign-in than the refresh token it comes with
+      claims: Omit<AccessClaims, 'sessionId'>;
     }): Promise<IssuedTokens> {
       const refreshToken = await createRefreshToken(db, {
         sessionId: input.sessionId,
         activeTenantId: input.claims.tenantId,
         expiresAt: input.sessionExpiresAt,
       });
-      const access = await accessTokens.sign(input.claims);
+      const access = await accessTokens.sign({ ...input.claims, sessionId: input.sessionId });
       return {
         accessToken: access.token,
         accessTokenExpiresAt: access.expiresAt,

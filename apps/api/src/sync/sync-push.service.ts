@@ -79,7 +79,12 @@ export class SyncPushService {
     if (input.protocol !== SYNC_PROTOCOL) {
       throw new AppError(409, 'sync_protocol_mismatch', 'Reload the app to sync again.');
     }
-    const device = await this.withTenant((tx) => this.devices.forSync(tx, input.deviceId));
+    // Step 18c: and the sign-in it pushes with (decision 13), in the same short transaction
+    const device = await this.withTenant(async (tx) => {
+      const row = await this.devices.forSync(tx, input.deviceId);
+      await this.devices.keepSession(tx, row);
+      return row;
+    });
     // The person's roles of now (decision 17), read once for the batch: one request is one moment
     const access = await this.permissions.ofCurrentUser();
     const results: SyncResult[] = [];

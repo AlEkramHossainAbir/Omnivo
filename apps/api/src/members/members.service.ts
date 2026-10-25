@@ -12,6 +12,7 @@ import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { assertCanGrant, loadRoles, type RoleGrant } from '../rbac/grants.js';
 import { PermissionService } from '../rbac/permission.service.js';
+import { activeDevicesOf, revokeDevices } from '../sync/device-revoke.js';
 
 interface MemberRow {
   membershipId: string;
@@ -193,6 +194,9 @@ export class MembersService {
           updatedBy: actor.userId,
         })
         .where(and(eq(memberships.tenantId, tenantId), eq(memberships.id, membershipId)));
+      // Step 18c: their devices stop with them, in the same transaction. Each one is revoked by
+      // the person removing them (an audit row each), and the sign-in each one used ends.
+      await revokeDevices(tx, await activeDevicesOf(tx, before.userId));
       await audit(tx, {
         action: 'member.removed',
         entityType: 'member',

@@ -9,7 +9,6 @@ import {
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
-  DEFAULT_SETTINGS,
   todayIn,
   type StockDocumentStatus,
   type TransferStatus,
@@ -22,16 +21,16 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useCallback, useMemo } from 'react';
 
-import { deviceSettingsQuery, settingsQuery, unitsQuery, warehousesQuery } from '../lib/queries';
-import { useSession } from '../lib/session-store';
+import { unitsQuery, warehousesQuery } from '../lib/queries';
 import { daysUntil, expiryTone, variantName } from '../lib/stock';
+import { useTenantId, useTimeZone } from '../lib/workspace';
 
 // Shared by the stock pages and forms. Here, not in a route file: a route file is its own lazy
 // chunk, and importing from one would pull that whole page into the others.
 
-export function useTenantId(): string {
-  return useSession((state) => state.me?.tenant.id) ?? '';
-}
+// Step 18c: in lib/workspace.ts now, so a page that needs only these two (the device lists) does not
+// load the stock pages' parts; the stock pages keep importing them from here
+export { useTenantId, useTimeZone };
 
 // "72 pcs", "2.74 m": a quantity with its unit's decimals and code, in the reader's digits. The
 // units are a small list every product page already loaded.
@@ -79,15 +78,6 @@ export function warehouseLabel(place: Warehouse | undefined): string {
 }
 
 // "Today" in the company's time zone: the forms' default date, and the expiry countdown
-// The company's time zone. Step 18b: offline, before the settings were ever loaded, the device's
-// copy has it.
-export function useTimeZone(): string {
-  const tenantId = useTenantId();
-  const server = useQuery(settingsQuery(tenantId)).data;
-  const local = useQuery({ ...deviceSettingsQuery(tenantId), enabled: !server }).data;
-  return server?.timezone ?? local?.timezone ?? DEFAULT_SETTINGS.timezone;
-}
-
 export function useToday(): string {
   return todayIn(useTimeZone());
 }

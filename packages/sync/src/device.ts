@@ -21,7 +21,9 @@ const identitySchema = z.object({
   later: z.boolean(),
 });
 
-function storageKey(tenantId: string, userId: string): string {
+// Step 18c: exported for the app's `storage` listener, which follows a move or a revoke made in
+// another tab of the same browser
+export function deviceStorageKey(tenantId: string, userId: string): string {
   return `omnivo.device.${tenantId}.${userId}`;
 }
 
@@ -35,7 +37,7 @@ export function readDevice(
   userId: string,
 ): DeviceIdentity {
   try {
-    const saved = storage?.getItem(storageKey(tenantId, userId));
+    const saved = storage?.getItem(deviceStorageKey(tenantId, userId));
     if (saved !== null && saved !== undefined) {
       const parsed = identitySchema.safeParse(JSON.parse(saved));
       if (parsed.success) return parsed.data;
@@ -55,7 +57,25 @@ export function saveDevice(
   identity: DeviceIdentity,
 ): boolean {
   try {
-    storage?.setItem(storageKey(tenantId, userId), JSON.stringify(identity));
+    storage?.setItem(deviceStorageKey(tenantId, userId), JSON.stringify(identity));
+    return storage !== null;
+  } catch {
+    return false;
+  }
+}
+
+// Step 18c (decision 4): a revoked device is never used again. Without a saved identity, the next
+// readDevice makes a new id, so the next set-up registers a new device. false = the storage
+// refused; the revoked id then stays, and registering it again finds it revoked once more.
+// Its own storage type: reading and saving never remove, and a caller that only reads and saves
+// (a test's stand-in) need not write a removeItem
+export function forgetDevice(
+  storage: Pick<Storage, 'removeItem'> | null,
+  tenantId: string,
+  userId: string,
+): boolean {
+  try {
+    storage?.removeItem(deviceStorageKey(tenantId, userId));
     return storage !== null;
   } catch {
     return false;

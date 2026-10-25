@@ -15,6 +15,7 @@ const claims = {
   tenantId: '0192f0c4-7b6e-7c1a-9d2e-3f4a5b6c7d8f',
   membershipId: '0192f0c4-7b6e-7c1a-9d2e-3f4a5b6c7d90',
   roles: ['Owner'],
+  sessionId: '0192f0c4-7b6e-7c1a-9d2e-3f4a5b6c7d91',
 };
 
 describe('access tokens', () => {
@@ -61,6 +62,25 @@ describe('access tokens', () => {
   it('rejects a correctly signed token without our custom claims', async () => {
     const key = new TextEncoder().encode(config.secret);
     const token = await new SignJWT({})
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject(claims.userId)
+      .setIssuer(config.issuer)
+      .setAudience(config.audience)
+      .setExpirationTime('5m')
+      .setJti('x')
+      .sign(key);
+    expect(await createAccessTokens(config).verify(token)).toBeNull();
+  });
+
+  // Step 18c: a token signed before the sid claim existed. Refused like an expired one, so the app
+  // refreshes it and gets one that names its session.
+  it('rejects a token without a session id', async () => {
+    const key = new TextEncoder().encode(config.secret);
+    const token = await new SignJWT({
+      tenant_id: claims.tenantId,
+      membership_id: claims.membershipId,
+      roles: claims.roles,
+    })
       .setProtectedHeader({ alg: 'HS256' })
       .setSubject(claims.userId)
       .setIssuer(config.issuer)

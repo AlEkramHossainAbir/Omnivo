@@ -421,7 +421,7 @@ export type SyncPush = z.infer<typeof syncPushSchema>;
 
 // ---------------------------------------------------------------------------------------------
 // Devices. Step 18a registers one; step 18c lists them, renames them, moves them to another
-// branch and revokes them.
+// branch and revokes them (devices.ts).
 
 export const deviceSchema = z.object({
   id: z.uuid(),

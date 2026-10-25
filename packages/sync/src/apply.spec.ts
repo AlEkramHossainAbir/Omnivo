@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 
 import { applyPage } from './apply.js';
-import { readPullState } from './state.js';
+import { NO_PULL, readPullState, syncedAtOf } from './state.js';
 import { newDatabase, page, product, upsertProduct } from './test-fixtures.js';
 
 const shirt = product({ name: 'Polo shirt', code: 'FG-0001' });
@@ -119,6 +119,38 @@ describe('applyPage', () => {
       first.cursor,
     );
     expect((await readPullState(db)).lastSyncAt).toBe('2026-10-21T04:00:05.000Z');
+  });
+
+  it("keeps the device's own clock at the end of a pull, for the time limits (step 18c)", async () => {
+    const db = newDatabase();
+    // The device's clock is three hours behind the server's: the limits count on the device's
+    const deviceNow = Date.parse('2026-10-21T01:00:00.000Z');
+    const first = page({ full: true, hasMore: true, changes: [] });
+    await applyPage(db, first, null, deviceNow - 5000);
+    expect((await readPullState(db)).syncedAt).toBeNull();
+    await applyPage(
+      db,
+      page({ full: true, changes: [], serverTime: '2026-10-21T04:00:05.000Z' }),
+      first.cursor,
+      deviceNow,
+    );
+    const state = await readPullState(db);
+    expect(state.syncedAt).toBe(deviceNow);
+    expect(syncedAtOf(state)).toBe(deviceNow);
+  });
+
+  it('reads a pull state saved before step 18c, with the server time standing in', async () => {
+    const db = newDatabase();
+    await db.meta.put({ ...NO_PULL, cursor: 'c', lastSyncAt: '2026-10-21T04:00:05.000Z' });
+    // An older app saved the row without syncedAt: take the field off, as it was stored then
+    await db.meta.update('pull', (row) => {
+      Reflect.deleteProperty(row, 'syncedAt');
+    });
+    expect(await db.meta.get('pull')).not.toHaveProperty('syncedAt');
+    const state = await readPullState(db);
+    expect(state.syncedAt).toBeNull();
+    expect(syncedAtOf(state)).toBe(Date.parse('2026-10-21T04:00:05.000Z'));
+    expect(syncedAtOf(NO_PULL)).toBeNull();
   });
 
   it('keeps the price and the stock keys the server sends', async () => {

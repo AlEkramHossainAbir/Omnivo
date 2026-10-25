@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Branch, BranchInput, BranchStatus } from '@omnivo/contracts';
-import { branches, warehouses } from '@omnivo/db';
+import { branches, devices, warehouses } from '@omnivo/db';
 import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -129,6 +129,26 @@ export class BranchesService {
           409,
           'branch_last_active',
           'A workspace needs at least one active branch.',
+        );
+      }
+      // Step 18c, decision 11: a device keeps a copy of one branch, and makes its offline orders
+      // there. Move or revoke them first. Checked before the warehouses: a branch with devices has
+      // warehouses too, and archiving those first would leave the devices syncing a branch with no
+      // stock. A device registering or moving into this branch right now holds it FOR SHARE, so
+      // the lock above waited for it, and this count sees it.
+      const [inBranch] = await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(devices)
+        .where(
+          and(eq(devices.tenantId, tenantId), eq(devices.branchId, id), isNull(devices.revokedAt)),
+        );
+      const deviceCount = inBranch?.count ?? 0;
+      if (deviceCount > 0) {
+        throw new AppError(
+          409,
+          'branch_has_devices',
+          `Move or revoke the ${String(deviceCount)} devices in this branch first.`,
+          { params: { count: deviceCount } },
         );
       }
       // Step 13: a warehouse lives in a branch. Archive (or move) its warehouses first, so no

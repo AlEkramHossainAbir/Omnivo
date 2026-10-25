@@ -1,4 +1,4 @@
-import type { Branch } from '@omnivo/contracts';
+import type { Branch, DeviceListItem, MoveDeviceInput } from '@omnivo/contracts';
 import {
   customerCommands,
   readPullState,
@@ -31,19 +31,40 @@ export type DeviceState =
   | { kind: 'revoked' }
   | { kind: 'ready'; db: SyncDatabase; engine: SyncEngine; watch: Watch };
 
+// Step 18c: what moving this device answers. 'waiting' = its outbox is not empty (decision 2): the
+// dialog checked, but a save in another tab may have come in between.
+export type MoveResult = DeviceListItem | 'waiting';
+
 interface LocalDataState {
   device: DeviceState;
   // The branch dialog is open
   asking: boolean;
   // "Try again" on a first pull that failed; set by the session
   retry: () => void;
+  // Step 18c: this browser's device id for the person signed in now, for the "This device" pill
+  // and for the actions only this device has. null = no session.
+  deviceId: string | null;
+  // Step 18c: the two device actions that change the copy on this device, set by the session like
+  // `retry`. The pages call them through the store, so their chunks never load Dexie.
+  moveHere: (input: MoveDeviceInput) => Promise<MoveResult>;
+  // After this device was revoked from its own list: delete the copy, then sign out
+  revokedHere: () => Promise<void>;
 }
+
+const noSession = () => Promise.reject(new Error('No device session'));
 
 export const localDataStore = createStore<LocalDataState>()(() => ({
   device: { kind: 'starting' },
   asking: false,
   retry: () => undefined,
+  deviceId: null,
+  moveHere: noSession,
+  revokedHere: noSession,
 }));
+
+export function useThisDeviceId(): string | null {
+  return useStore(localDataStore, (state) => state.deviceId);
+}
 
 export function askForBranch(): void {
   localDataStore.setState({ asking: true });

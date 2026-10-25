@@ -54,7 +54,7 @@ import {
 } from './sales-document-data';
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
 import { emptySuppliers, type MockSuppliers, seedSuppliers } from './supplier-data';
-import { emptySync, type MockSync } from './sync-data';
+import { emptySync, type MockSync, seedDevices } from './sync-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
 // নিয়মগুলো আসল API-র মতো (version, অনন্য কোড, শেষ চালু ব্রাঞ্চ) — UI-র error-পথ mock দিয়েও দেখা যায়
@@ -209,6 +209,8 @@ function seed(workspace: Workspace): WorkspaceData {
   seedPurchaseOrders(data, garments);
   // After the orders: the bill's round names the same levels and people
   seedBills(data, garments);
+  // Step 18c: after the team, whose people own them
+  if (garments) seedDevices(data);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -274,6 +276,8 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.sales = emptySales();
   data.suppliers = emptySuppliers();
   data.purchase = emptyPurchase();
+  // The seeded devices belong to the people and branches just removed
+  data.sync = emptySync();
   // Sign-up gives a new workspace its Main store, in its one branch (like auth.service.ts)
   data.stock = emptyStock();
   const [first] = data.branches;
