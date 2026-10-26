@@ -10,7 +10,9 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import { useLocale } from '@omnivo/i18n';
 import { Button, EmptyState } from '@omnivo/ui';
+import { useEffect } from 'react';
 
+import { checkForUpdate, reloadApp } from '../lib/app-update';
 import { askForBranch, type LocalView, retryLocalData } from '../lib/local-data';
 
 export type WaitingView = Exclude<LocalView, { kind: 'ready' }>;
@@ -119,8 +121,15 @@ export function useLocalStateText(): (view: WaitingView) => string | undefined {
 
 // A problem of the engine that needs the person (local-data.ts → NOTICES, all error codes): above the list, which
 // still shows the copy. Like a document notice (CLAUDE.md), neutral: the data is still there.
+// Step 19a: the app is older than the server (sync_protocol_mismatch) right after a new version was
+// published, so the notice asks the service worker to look for it at once: by the time the person
+// reads this, it is often waiting, and Reload takes it. A plain reload would open the old version
+// again, from the worker's files.
 export function SyncNotice({ code }: { code: string }) {
   const { t, errorText } = useLocale();
+  useEffect(() => {
+    if (code === 'sync_protocol_mismatch') checkForUpdate();
+  }, [code]);
   return (
     <p className="flex items-start gap-2 rounded-control border border-line bg-subtle px-3 py-2.5 text-body-sm text-ink-2">
       <HugeiconsIcon
@@ -134,9 +143,7 @@ export function SyncNotice({ code }: { code: string }) {
         <button
           type="button"
           className="font-medium text-brand underline-offset-3 hover:underline"
-          onClick={() => {
-            window.location.reload();
-          }}
+          onClick={reloadApp}
         >
           {t('common.reload')}
         </button>

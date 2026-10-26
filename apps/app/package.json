@@ -8,10 +8,11 @@
     "dev:mock": "vite --mode mock",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts && tsc --noEmit -p e2e",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts && tsc --noEmit -p e2e && tsc --noEmit -p sw",
     "test": "vitest run --passWithNoTests",
     "test:bundle-size": "node scripts/check-bundle-size.ts",
-    "test:e2e": "playwright test --config e2e/playwright.config.ts"
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:e2e:pwa": "playwright test --config e2e/playwright.pwa.config.ts"
   },
   "devDependencies": {
     "@omnivo/config": "workspace:*",
@@ -25,6 +26,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^8.3.0",
+    "vite-plugin-pwa": "^2.0.0",
     "vitest": "^5.0.1"
   },
   "dependencies": {
@@ -40,6 +42,9 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-hook-form": "^7.89.0",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
     "zod": "^4.6.5",
     "zustand": "^5.0.15"
   }

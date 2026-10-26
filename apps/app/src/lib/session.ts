@@ -9,9 +9,10 @@ import {
   type SignUpInput,
 } from '@omnivo/contracts';
 
-import { call, refreshSession } from './api';
+import { call, isNoAnswer, refreshSession } from './api';
 import { applyPreferences } from './preferences';
 import { queryClient } from './query-client';
+import { clearSignOutPending, markSignOutPending, signOutPending } from './remembered-session';
 import { sessionStore } from './session-store';
 
 async function startSession(session: AuthSession): Promise<void> {
@@ -36,33 +37,71 @@ let restoring: Promise<void> | null = null;
 
 export function restoreSession(): Promise<void> {
   restoring ??= (async () => {
+    // Step 19a: signed out with no connection. The cookie still works, so it is never refreshed:
+    // the sign-out is sent first, and the person stays signed out whatever the answer.
+    if (signOutPending()) {
+      await sendPendingSignOut();
+      sessionStore.getState().signOut();
+      return;
+    }
     try {
       const session = await refreshSession();
       if (session) {
         await startSession(session);
         return;
       }
-    } catch {
+    } catch (error) {
       // API বন্ধ বা নেটওয়ার্ক নেই — reject হলে প্রতিটা route চিরতরে ভাঙত; লগইন পেজ দেখানোই নিরাপদ,
-      // সেখানে চেষ্টা করলে network_error-এর লেখা দেখাবে
+      // সেখানে চেষ্টা করলে network_error-এর লেখা দেখাবে।
+      // Step 19a (decision 2): no answer, and this browser remembers the last person and their copy:
+      // the app opens as that person. import(): only such a reload loads the code.
+      if (isNoAnswer(error) && (await openOffline())) return;
     }
     sessionStore.getState().signOut();
   })();
   return restoring;
 }
 
-export async function login(input: LoginInput): Promise<void> {
-  await startSession(await call(authRoutes.login, { body: input }));
+// A failure to load the chunk (no worker yet, and no connection) is the sign-in page, as before
+async function openOffline(): Promise<boolean> {
+  try {
+    const offline = await import('./offline-session');
+    return await offline.openOffline();
+  } catch {
+    return false;
+  }
 }
 
-export async function signUp(input: SignUpInput): Promise<void> {
-  await startSession(await call(authRoutes.signUp, { body: input }));
+// Step 19a: any answer ends the wait (the server cleared the cookie, or there was no session to
+// end); no answer keeps it for the next try
+async function sendPendingSignOut(): Promise<void> {
+  try {
+    await call(authRoutes.logout);
+    clearSignOutPending();
+  } catch (error) {
+    if (!isNoAnswer(error)) clearSignOutPending();
+  }
+}
+
+// Step 19a: a sign-out still waiting goes before the new sign-in. After it, the new cookie takes
+// the old one's place in the browser, and the old session could not be ended from here any more.
+async function signInWith(request: () => Promise<AuthSession>): Promise<void> {
+  if (signOutPending()) await sendPendingSignOut();
+  await startSession(await request());
+}
+
+export function login(input: LoginInput): Promise<void> {
+  return signInWith(() => call(authRoutes.login, { body: input }));
+}
+
+export function signUp(input: SignUpInput): Promise<void> {
+  return signInWith(() => call(authRoutes.signUp, { body: input }));
 }
 
 // invitation গ্রহণ = লগইন: উত্তরে একই session, আর সেই workspace-এ। আগে অন্য অ্যাকাউন্টে লগইন থাকলে
 // startSession সেটার ক্যাশ মুছে নতুনটা বসায়
-export async function acceptInvitation(input: AcceptInvitationInput): Promise<void> {
-  await startSession(await call(invitationRoutes.accept, { body: input }));
+export function acceptInvitation(input: AcceptInvitationInput): Promise<void> {
+  return signInWith(() => call(invitationRoutes.accept, { body: input }));
 }
 
 export async function switchTenant(tenantId: string): Promise<void> {
@@ -73,6 +112,11 @@ export async function logout(): Promise<void> {
   const me = sessionStore.getState().me;
   try {
     await call(authRoutes.logout);
+  } catch (error) {
+    // Step 19a: no connection. The person is signed out here at once (below); the server hears of
+    // it at the next reload or sign-in, and until then the cookie is never refreshed. A refusal
+    // is an answer: there was no session left to end.
+    if (isNoAnswer(error)) markSignOutPending();
   } finally {
     // নেটওয়ার্ক ব্যর্থ হলেও এই ট্যাবে লগআউট দেখাতে হবে, আর আগের ইউজারের ক্যাশ মুছতে হবে
     queryClient.clear();

@@ -2,6 +2,7 @@ import './types.js';
 
 export { i18n, isLanguage, LANGUAGES, languageReady, setLanguage, type Language } from './i18n.js';
 export {
+  formatBytes,
   formatDate,
   formatDateTime,
   formatMoney,

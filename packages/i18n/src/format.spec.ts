@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  formatBytes,
   formatDate,
   formatDateTime,
   formatMoney,
@@ -72,5 +73,25 @@ describe('formatMonthName', () => {
   it('names the month in both languages', () => {
     expect(formatMonthName(7, 'en')).toBe('July');
     expect(formatMonthName(7, 'bn')).toBe('জুলাই');
+  });
+});
+
+describe('formatBytes', () => {
+  it('picks the unit and keeps one decimal', () => {
+    expect(formatBytes(24_500_000, 'en')).toBe('24.5 MB');
+    expect(formatBytes(1_234_000_000, 'en')).toBe('1.2 GB');
+  });
+
+  it('writes Bangla digits and keeps the unit as it is', () => {
+    expect(formatBytes(24_500_000, 'bn')).toBe('২৪.৫ MB');
+  });
+
+  it('starts at kB, and moves up before the rounding would print 1,000', () => {
+    expect(formatBytes(0, 'en')).toBe('0 kB');
+    expect(formatBytes(999_960, 'en')).toBe('1 MB');
+  });
+
+  it('groups a large value the lakh way', () => {
+    expect(formatBytes(123_456e12, 'en')).toBe('1,23,456 TB');
   });
 });

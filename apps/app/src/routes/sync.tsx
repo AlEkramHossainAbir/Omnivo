@@ -34,6 +34,7 @@ import { useState } from 'react';
 
 import { DocumentNotice } from '../components/document-notice';
 import { LocalState } from '../components/local-state';
+import { StorageCard } from '../components/storage-card';
 import { useTenantId, useTimeZone } from '../components/stock-parts';
 import { OutboxStatusPill, useCommandText, useFieldList } from '../components/sync-parts';
 import {
@@ -43,6 +44,7 @@ import {
   useLocalQuery,
   useSyncStatus,
 } from '../lib/local-data';
+import { useSession } from '../lib/session-store';
 import { useSyncAge } from '../lib/sync-summary';
 import { useOnline } from '../lib/use-online';
 
@@ -92,6 +94,8 @@ export function SyncPage() {
   const pull = useLocalQuery(readPullState);
   // Step 18c (decision 12): the limits, on this device's clock
   const age = useSyncAge();
+  // Step 19a: opened offline with the remembered sign-in, not checked by the server yet
+  const openedOffline = useSession((state) => state.openedOffline);
   const commandText = useCommandText();
   const fieldList = useFieldList();
   const [discarding, setDiscarding] = useState<OutboxEntry | null>(null);
@@ -143,6 +147,7 @@ export function SyncPage() {
             : t('sync.lastSynced', { time: format.dateTime(new Date(lastSync), timeZone) })}
         {!online && ` · ${t('sync.syncNowOffline')}`}
       </p>
+      {openedOffline && <DocumentNotice tone="neutral">{t('sync.openedOffline')}</DocumentNotice>}
       {/* Step 18c: after 24 hours what may be out of date; after 7 days what stops. The waiting
           changes are not blocked, so the page says they still go. */}
       {age?.age === 'warn' && <DocumentNotice tone="warn">{t('sync.staleNotice')}</DocumentNotice>}
@@ -266,6 +271,9 @@ export function SyncPage() {
           )}
         </Card>
       )}
+
+      {/* Step 19a: last, because nothing in it changes from one sync to the next */}
+      <StorageCard />
 
       <Dialog
         open={discarding !== null}

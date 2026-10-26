@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
+  formatBytes,
   formatDate,
   formatDateTime,
   formatMoney,
@@ -38,6 +39,7 @@ export function useLocale() {
       month: (date: Date) => formatMonth(date, language),
       dateTime: (date: Date, timeZone: string) => formatDateTime(date, language, timeZone),
       monthName: (month: number) => formatMonthName(month, language),
+      bytes: (bytes: number) => formatBytes(bytes, language),
     }),
     [language],
   );

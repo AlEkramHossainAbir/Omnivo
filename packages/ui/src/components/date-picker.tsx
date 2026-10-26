@@ -8,14 +8,7 @@ import { parseIsoDate, toIsoDate } from '../lib/iso-date.js';
 import { controlBoxClass } from './field.js';
 import { Popover, PopoverContent, PopoverTrigger } from './popover.js';
 
-// Step 18b: also called by the app while it is online, so that a date can be picked offline later
-// (the app's offline-screens.ts): before step 19's service worker, a chunk the browser never
-// loaded cannot load without a connection
-export function loadCalendar() {
-  return import('./calendar.js');
-}
-
-const Calendar = lazy(async () => ({ default: (await loadCalendar()).Calendar }));
+const Calendar = lazy(async () => ({ default: (await import('./calendar.js')).Calendar }));
 
 interface DatePickerProps {
   id?: string;

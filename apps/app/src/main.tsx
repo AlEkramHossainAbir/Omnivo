@@ -8,7 +8,10 @@ import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { UpdateNotice } from './components/update-notice';
 import { API_URL } from './lib/api';
+import { startAppUpdates } from './lib/app-update';
+import { watchInstall } from './lib/install';
 import { queryClient } from './lib/query-client';
 import { router } from './router';
 
@@ -23,12 +26,23 @@ async function enableMocking(): Promise<void> {
       if (request.url.startsWith(API_URL)) print.error();
     },
   });
+  // Step 19a: the offline screens' code, since this mode has no service worker of ours
+  void import('./mocks/offline-screens').then(({ preloadOfflineScreens }) => {
+    preloadOfflineScreens();
+  });
 }
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
   throw new Error('Root element #root is missing from index.html');
 }
+
+// Step 19a: before the first render, so Chrome's install prompt is never missed (install.ts)
+watchInstall();
+// Step 19a (decision 11): the service worker only in a production build. `pnpm dev` would keep
+// old files while they are edited, and `pnpm dev:mock` cannot have it: MSW's worker needs the
+// same scope (/). A production build has no MSW (enableMocking above).
+if (import.meta.env.PROD) startAppUpdates();
 
 // worker চালু হওয়ার পরে render — নাহলে প্রথম request (session ফেরানো) mock-এর আগেই বেরিয়ে যেত.
 // And after this device's language has arrived (Bangla is its own chunk since step 13).
@@ -40,6 +54,8 @@ void Promise.all([enableMocking(), languageReady]).then(() => {
       </QueryClientProvider>
       {/* রুটের বাইরে: পেজ বদলালেও চলতি toast মুছে যায় না */}
       <Toaster />
+      {/* Step 19a: outside the routes too, for the same reason, and for the sign-in page */}
+      <UpdateNotice />
     </StrictMode>,
   );
 });

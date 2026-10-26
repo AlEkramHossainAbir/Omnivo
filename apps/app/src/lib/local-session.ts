@@ -29,6 +29,7 @@ import { setDeviceReads } from './device-reads';
 import { localDataStore, type MoveResult } from './local-data';
 import { queryClient } from './query-client';
 import { sessionStore } from './session-store';
+import { askToKeep } from './storage';
 import { NO_SUMMARY, syncSummaryStore } from './sync-summary';
 
 // Step 18a: this browser as a device, and its copy of the data, for the person signed in now.
@@ -259,8 +260,12 @@ async function register(session: Session, branchId: string): Promise<Device> {
   // The server's branch, not the one asked for: registering an existing device again changes
   // nothing (decision 37)
   remember(session, { id: device.id, branchId: device.branchId, later: false });
-  if (device.revokedAt === null) await open(session);
-  else await revoke(session);
+  if (device.revokedAt === null) {
+    // Step 19a: the copy is about to be pulled, so the browser is asked to keep it. Not awaited:
+    // Firefox shows a question, and the pull must not wait for the answer.
+    void askToKeep();
+    await open(session);
+  } else await revoke(session);
   return device;
 }
 

@@ -58,6 +58,42 @@ export function formatMoney(
   return `${sign}৳${digits}`;
 }
 
+// Step 19a: the storage the device copy uses (the Sync page). SI units, 1 MB = 1,000,000 bytes:
+// what "MB" means, and what macOS, iOS and Android show in their own storage screens
+const BYTE_UNITS = ['kilobyte', 'megabyte', 'gigabyte', 'terabyte'] as const;
+
+type ByteUnit = (typeof BYTE_UNITS)[number];
+
+const byteFormats = new Map<string, Intl.NumberFormat>();
+
+function byteFormat(language: Language, unit: ByteUnit): Intl.NumberFormat {
+  const key = `${language}:${unit}`;
+  let format = byteFormats.get(key);
+  if (!format) {
+    format = new Intl.NumberFormat(NUMBER_LOCALE[language], {
+      style: 'unit',
+      unit,
+      maximumFractionDigits: 1,
+    });
+    byteFormats.set(key, format);
+  }
+  return format;
+}
+
+// "24.5 MB" / "২৪.৫ MB". Never in bytes: a copy of a branch is never that small, and "byte" is
+// the one unit ICU spells out in English
+export function formatBytes(bytes: number, language: Language): string {
+  let value = bytes / 1000;
+  let unit: ByteUnit = 'kilobyte';
+  for (const next of BYTE_UNITS.slice(1)) {
+    // shown with 1 decimal: 999.96 kB would round to "1,000 kB", so it moves up from 999.95
+    if (value < 999.95) break;
+    value /= 1000;
+    unit = next;
+  }
+  return byteFormat(language, unit).format(value);
+}
+
 // en-GB নতুন ICU-তে "Sept" লেখে, তাই en-US-এর অংশ নিয়ে নিজেরা সাজানো: "23 Sep 2026"
 const EN_DATE = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',

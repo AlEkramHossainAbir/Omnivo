@@ -8,6 +8,7 @@ import {
   TShirtIcon,
   ViewIcon,
   ViewOffIcon,
+  WifiDisconnected02Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -24,6 +25,7 @@ import { LanguageSwitch } from '../components/language-switch';
 import { applyApiError } from '../lib/field-errors';
 import { login } from '../lib/session';
 import { useSession } from '../lib/session-store';
+import { useOnline } from '../lib/use-online';
 
 // key-টা অনুবাদের, লেখা না — ভাষা বদলালে সাথে সাথে বদলায়
 const INDUSTRIES = [
@@ -39,6 +41,8 @@ export function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   // Step 18c: why this page shows, when the app signed the person out (a revoked device)
   const notice = useSession((state) => state.notice);
+  // Step 19a: signing in needs the server; saying so first saves typing a password for nothing
+  const online = useOnline();
   // zodResolver: API যে schema দিয়ে যাচাই করে, ফর্মও ঠিক সেটা দিয়ে — একই নিয়ম, একই code।
   // contractErrorMap: schema যেখানে নিজে code দেয়নি সেখানে Zod-এর ইংরেজি মেসেজের বদলে code
   const {
@@ -81,6 +85,15 @@ export function LoginPage() {
                   until the next sign-in, which clears it (session-store.ts). */}
               {notice === 'device_revoked' && (
                 <DocumentNotice tone="neutral">{t('devices.revokedSignedOut')}</DocumentNotice>
+              )}
+              {/* Step 19a (decision 19): signed out after an offline opening; the copy stays */}
+              {notice === 'session_ended' && (
+                <DocumentNotice tone="neutral">{t('auth.login.sessionEnded')}</DocumentNotice>
+              )}
+              {!online && (
+                <DocumentNotice tone="neutral" icon={WifiDisconnected02Icon}>
+                  {t('auth.login.offlineNotice')}
+                </DocumentNotice>
               )}
               {/* message-এ code; FormAlert আর TextField নিজেরাই বর্তমান ভাষায় লেখে */}
               {errors.root?.server?.message && <FormAlert message={errors.root.server.message} />}

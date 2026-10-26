@@ -47,6 +47,9 @@ jobs:
       - name: E2E (Playwright on MSW mocks)
         run: pnpm test:e2e
 
+      - name: E2E (service worker on a production build)
+        run: pnpm test:e2e:pwa
+
       - name: Build
         run: pnpm build
 

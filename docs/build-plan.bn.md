@@ -343,6 +343,15 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
 
 #### ধাপ ১৯: PWA শেল · ~১.৫ সপ্তাহ
 
+**দুটো গাইডে:** ১৯a service worker + অফলাইনে খোলা, ১৯b এনক্রিপশন + PIN।
+
+- **Service worker (১৯a):** `vite-plugin-pwa` (injectManifest) + নিজের `sw/sw.ts` (Workbox), সব JS/CSS/woff2
+  precache, manifest আর আইকন, update notice (ক্লিকে reload), Install app (Chrome-এর prompt, Safari-তে নির্দেশনা),
+  `persist()` + Sync পাতায় স্টোরেজ কার্ড, আইকনে অপেক্ষার সংখ্যা। নেট ছাড়া reload শেষ ব্যবহারকারীর কপি খোলে;
+  অফলাইনে sign-out সঙ্গে সঙ্গে, সার্ভার পরে জানে। worker-এর নিজের e2e (`pnpm test:e2e:pwa`)।
+- **এনক্রিপশন + PIN (১৯b):** ডিভাইসের কপি AES-GCM-এ, চাবি সার্ভারের device key আর PIN দুটো দিয়েই খোলে;
+  অফলাইন reload-এ PIN, ৫ বার ভুল হলে অফলাইনে খোলা বন্ধ, "Lock now"।
+
 Workbox service worker, manifest, install prompt, `navigator.storage.persist()`, UI-তে **"৫টা বিক্রি সিঙ্ক বাকি" ব্যাজ**, IndexedDB-তে সংবেদনশীল ডেটা এনক্রিপ্ট (Web Crypto)।
 
 #### ধাপ ২০: POS স্ক্রিন · ~৩ সপ্তাহ

@@ -40,6 +40,13 @@ function clientError(status: number, code: ErrorCode, detail: string): ApiReques
   return new ApiRequestError({ title: 'Client error', status, detail, code });
 }
 
+// Step 19a: the server did not answer the question: no connection (status 0), or the API or a
+// proxy in front of it failing (5xx). A refusal (4xx) is an answer. The offline opening and the
+// sign-out with no connection both need to tell the two apart.
+export function isNoAnswer(error: unknown): boolean {
+  return error instanceof ApiRequestError && (error.status === 0 || error.status >= 500);
+}
+
 async function toError(response: Response): Promise<ApiRequestError> {
   const body: unknown = await response.json().catch(() => null);
   const parsed = problemSchema.safeParse(body);
@@ -114,6 +121,9 @@ export function refreshSession(): Promise<AuthSession | null> {
     // call() না, send() — call() নিজেই 401-এ refresh ডাকে, lock-এর ভেতর থেকে সেটা আটকে যেত
     .request('omnivo-refresh', async () => {
       const response = await send(authRoutes.refresh, {}, null);
+      // Step 19a: null only for a refusal. A 502 from a proxy while the API restarts is no
+      // answer, and throws like a lost connection: it must not sign anyone out.
+      if (response.status >= 500) throw await toError(response);
       if (!response.ok) return null;
       return read(authRoutes.refresh, response);
     })
@@ -148,11 +158,26 @@ export async function call(route: RouteDef, input: RequestParts = {}): Promise<u
     }
     sessionStore.getState().setAccessToken(session.accessToken);
     response = await send(route, input, session.accessToken);
+  } else if (response.status === 401 && sessionStore.getState().openedOffline) {
+    // Step 19a: an app opened offline has no token. Its first request that reaches the server
+    // is the moment to check the sign-in; then the request goes again, with the new token.
+    const token = await checkOfflineSession();
+    if (!token) throw await toError(response);
+    response = await send(route, input, token);
   }
 
   const result = await read(route, response);
   if (route.method !== 'GET') notifyWrite();
   return result;
+}
+
+// Step 19a: the check of an offline opening (offline-session.ts): the new token, or null when the
+// server refused the sign-in (the person is signed out by then). Handed over at run time, like
+// the write listeners below: that file imports this one, and loads only after an offline opening.
+let checkOfflineSession: () => Promise<string | null> = () => Promise.resolve(null);
+
+export function setOfflineCheck(check: () => Promise<string | null>): void {
+  checkOfflineSession = check;
 }
 
 // Step 18a: a save on this device pulls its change onto the device at once, instead of up to a

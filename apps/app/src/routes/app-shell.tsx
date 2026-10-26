@@ -11,6 +11,7 @@ import {
   DashboardSquare01Icon,
   DeliveryReturn01Icon,
   DeliveryTruck01Icon,
+  Download04Icon,
   Factory01Icon,
   FileDownloadIcon,
   FileImportIcon,
@@ -84,6 +85,7 @@ import { createLink, Outlet, useNavigate } from '@tanstack/react-router';
 import { lazy, Suspense, useEffect, useState } from 'react';
 
 import { NotificationBell } from '../components/notification-bell';
+import { type InstallWay, promptInstall, useInstallWay } from '../lib/install';
 import { savePreference } from '../lib/preferences';
 import { logout, switchTenant } from '../lib/session';
 import { useCan } from '../lib/permissions';
@@ -103,6 +105,10 @@ const LocalDataHost = lazy(async () => ({
 // budget, for a dialog most sessions never open.
 const SignOutDialog = lazy(async () => ({
   default: (await import('../components/sign-out-dialog')).SignOutDialog,
+}));
+// Step 19a: Safari's how-to, the same way: opened once per device at most
+const InstallDialog = lazy(async () => ({
+  default: (await import('../components/install-dialog')).InstallDialog,
 }));
 
 // ui-র সাধারণ <a> → TanStack-এর টাইপ-চেকড লিংক: to="/kitchn-sink" লিখলে compile error,
@@ -241,7 +247,16 @@ function SyncNavItem() {
 }
 
 // ডেস্কটপের সাইডবার-তলা আর ফোনের টপ বার — দুই trigger, একই মেনু
-function UserMenuContent({ align, onSignOut }: { align: 'start' | 'end'; onSignOut: () => void }) {
+function UserMenuContent({
+  align,
+  onInstall,
+  onSignOut,
+}: {
+  align: 'start' | 'end';
+  // Step 19a: undefined = nothing to install (installed already, or a browser that cannot)
+  onInstall: (() => void) | undefined;
+  onSignOut: () => void;
+}) {
   const { t, language } = useLocale();
   const navigate = useNavigate();
   const theme = useSession((state) => state.me?.preferences.theme ?? 'system');
@@ -255,6 +270,12 @@ function UserMenuContent({ align, onSignOut }: { align: 'start' | 'end'; onSignO
       >
         {t('shell.myDevices')}
       </DropdownMenuItem>
+      {/* Step 19a: about this device, like My devices */}
+      {onInstall && (
+        <DropdownMenuItem icon={Download04Icon} onSelect={onInstall}>
+          {t('shell.installApp')}
+        </DropdownMenuItem>
+      )}
       <DropdownMenuSeparator />
       <DropdownMenuLabel>{t('common.language')}</DropdownMenuLabel>
       <DropdownMenuRadioGroup
@@ -310,6 +331,16 @@ export function AppShell() {
     if (unsynced > 0) setAsking(true);
     else void logout();
   };
+  // Step 19a (decision 20): Chrome's own prompt, or the dialog with Safari's steps
+  const installWay = useInstallWay();
+  const [installHelp, setInstallHelp] = useState<Exclude<InstallWay, 'prompt'> | null>(null);
+  const install =
+    installWay === null
+      ? undefined
+      : () => {
+          if (installWay === 'prompt') promptInstall();
+          else setInstallHelp(installWay);
+        };
 
   // refresh ব্যর্থ হলে (session শেষ, অন্য ট্যাবে লগআউট) api.ts store-এ signed-out বসায়
   useEffect(() => {
@@ -325,7 +356,7 @@ export function AppShell() {
           <DropdownMenuTrigger asChild>
             <IconButton icon={UserCircleIcon} label={t('shell.account')} />
           </DropdownMenuTrigger>
-          <UserMenuContent align="end" onSignOut={signOut} />
+          <UserMenuContent align="end" onInstall={install} onSignOut={signOut} />
         </DropdownMenu>
       }
       sidebarHeader={<WorkspaceSwitcher />}
@@ -596,7 +627,7 @@ export function AppShell() {
               />
             </button>
           </DropdownMenuTrigger>
-          <UserMenuContent align="start" onSignOut={signOut} />
+          <UserMenuContent align="start" onInstall={install} onSignOut={signOut} />
         </DropdownMenu>
       }
     >
@@ -607,6 +638,16 @@ export function AppShell() {
             count={unsynced}
             onClose={() => {
               setAsking(false);
+            }}
+          />
+        </Suspense>
+      )}
+      {installHelp && (
+        <Suspense fallback={null}>
+          <InstallDialog
+            way={installHelp}
+            onClose={() => {
+              setInstallHelp(null);
             }}
           />
         </Suspense>

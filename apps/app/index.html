@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- Step 19a: iOS reads its home-screen icon from here, not from the manifest -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+    <!-- The browser's bar and the installed app's title bar: the surface token, light and dark.
+         The build adds <link rel="manifest"> itself (vite-plugin-pwa). -->
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#111722" media="(prefers-color-scheme: dark)" />
     <title>Omnivo</title>
     <!-- প্রথম রং আঁকার আগেই থিম: React লোড হতে কয়েকশো ms লাগে, ততক্ষণ dark বাছাই করা ইউজার সাদা পেজ
          দেখত। key আর মান src/lib/theme.ts-এর সাথে এক -->

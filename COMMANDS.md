@@ -50,6 +50,16 @@ important commands come up.
    Mock sign-in: any password works except `wrong-password`; the sign-up address
    `rahman-garments` is already taken.
 
+   To try the service worker (only a production build has it) against the real API:
+
+   ```sh
+   APP_ORIGIN=http://localhost:4173 pnpm turbo run dev dev:worker --filter=@omnivo/api
+   pnpm --filter @omnivo/app build && pnpm --filter @omnivo/app preview   # http://localhost:4173
+   ```
+
+   `preview` is another origin than `pnpm dev` (4173, not 5173), so its worker never serves old files to the dev
+   server; the API must allow that origin. Clear it with DevTools → Application → Storage → Clear site data.
+
 Stop infra when done:
 
 ```sh
@@ -244,8 +254,9 @@ pnpm test:integration # API integration tests on Testcontainers (Docker must be 
 pnpm test:tenant-leak # RLS + HTTP-level tenant isolation tests (Docker must be running)
 pnpm test:e2e     # Playwright on the MSW mocks, desktop + 390px — no API or Docker needed
 pnpm --filter @omnivo/app exec playwright install chromium   # once per machine, before the first test:e2e
+pnpm test:e2e:pwa # the service worker on a production build (Chromium): offline reload, updates — no API or Docker needed
 pnpm build      # build every package and app
-pnpm test:bundle-size # build the app, then fail if first-load JS > 210 KB gz or a route chunk > 105 KB gz
+pnpm test:bundle-size # build the app, then fail if first-load JS > 215 KB gz, a route chunk > 110 KB gz, or the worker's list misses a file / is over 2 MB gz
 pnpm boundaries # dependency-cruiser on apps/packages
 pnpm dedupe --check # fail if the lockfile has duplicate copies (e.g. drizzle-orm)
 pnpm gen:openapi  # rewrite packages/contracts/openapi.json from the route registry — commit it

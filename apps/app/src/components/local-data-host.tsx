@@ -3,8 +3,9 @@ import { useStore } from 'zustand';
 
 import { localDataStore, useDeviceState } from '../lib/local-data';
 import { chooseBranch, chooseLater, startLocalData } from '../lib/local-session';
-import { preloadOfflineScreens } from '../lib/offline-screens';
+import { setIconCount } from '../lib/install';
 import { useSession } from '../lib/session-store';
+import { syncSummaryStore } from '../lib/sync-summary';
 
 // Step 18b: loaded when it opens, once per device at most. The push took this chunk (with Dexie)
 // over its budget, and the dialog's code is 14 KB gz of it.
@@ -20,20 +21,24 @@ export function LocalDataHost() {
   const tenantId = useSession((state) => state.me?.tenant.id);
   const asking = useStore(localDataStore, (state) => state.asking);
   const device = useDeviceState();
+  const waiting = useStore(syncSummaryStore, (state) => state.waiting);
 
   useEffect(() => {
     if (userId === undefined || tenantId === undefined) return;
     return startLocalData({ tenantId, userId });
   }, [tenantId, userId]);
 
-  // Step 18b (decision 42): the offline screens' code, while there is a connection
+  // Step 19a: the changes waiting, on the installed app's icon. Gone when the host goes (sign-out):
+  // the copy and its outbox are deleted then, and the next person must not see the count.
   useEffect(() => {
-    preloadOfflineScreens();
-    window.addEventListener('online', preloadOfflineScreens);
-    return () => {
-      window.removeEventListener('online', preloadOfflineScreens);
-    };
-  }, []);
+    setIconCount(waiting);
+  }, [waiting]);
+  useEffect(
+    () => () => {
+      setIconCount(0);
+    },
+    [],
+  );
 
   return asking && device.kind === 'not-set-up' ? (
     <Suspense fallback={null}>

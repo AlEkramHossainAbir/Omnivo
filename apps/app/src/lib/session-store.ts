@@ -2,9 +2,12 @@ import type { MeResponse } from '@omnivo/contracts';
 import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 
-// Step 18c: why the sign-in page is showing, when the person did not sign out themself. Only one
-// reason so far: this device was revoked (its data was deleted).
-export type SignOutNotice = 'device_revoked';
+import { forgetMe, rememberMe } from './remembered-session';
+
+// Step 18c: why the sign-in page is showing, when the person did not sign out themself: this
+// device was revoked (its data was deleted), or (step 19a) the server refused the sign-in once the
+// connection was back after an offline opening (the data stays).
+export type SignOutNotice = 'device_revoked' | 'session_ended';
 
 interface SessionState {
   // unknown = অ্যাপ সবে খুলেছে, refresh cookie দিয়ে session ফেরানো এখনো শেষ হয়নি
@@ -12,9 +15,13 @@ interface SessionState {
   // শুধু memory-তে — localStorage-এ রাখলে যেকোনো XSS স্ক্রিপ্ট টোকেন পড়তে পারত
   accessToken: string | null;
   me: MeResponse | null;
+  // Step 19a: opened offline with the remembered `me` (offline-session.ts). Signed in for the
+  // screens, but the server has not checked this sign-in yet, and there is no token until it has.
+  openedOffline: boolean;
   notice: SignOutNotice | null;
   setAccessToken: (accessToken: string) => void;
   signIn: (me: MeResponse) => void;
+  openOffline: (me: MeResponse) => void;
   // লগইনের পরে me-র অংশ বদলালে (কোম্পানির নাম, পছন্দ) — status না ছুঁয়ে
   setMe: (me: MeResponse) => void;
   signOut: (notice?: SignOutNotice) => void;
@@ -25,23 +32,34 @@ export const sessionStore = createStore<SessionState>()((set) => ({
   status: 'unknown',
   accessToken: null,
   me: null,
+  openedOffline: false,
   notice: null,
   setAccessToken: (accessToken) => {
     set({ accessToken });
   },
+  // Step 19a: every `me` the server gives is remembered, for the next reload with no connection
   signIn: (me) => {
-    set({ status: 'signed-in', me, notice: null });
+    rememberMe(me);
+    set({ status: 'signed-in', me, openedOffline: false, notice: null });
+  },
+  openOffline: (me) => {
+    set({ status: 'signed-in', accessToken: null, me, openedOffline: true, notice: null });
   },
   setMe: (me) => {
+    rememberMe(me);
     set({ me });
   },
   // Step 18c: a sign-out without a reason keeps the one already there. After a revoke, the requests
   // still on their way get a 401, and api.ts signs out again for each: the notice must stay.
+  // Step 19a: every sign-out forgets the remembered `me`: a sign-in the server refused, or one the
+  // person ended, never opens offline again.
   signOut: (notice) => {
+    forgetMe();
     set((state) => ({
       status: 'signed-out',
       accessToken: null,
       me: null,
+      openedOffline: false,
       notice: notice ?? (state.status === 'signed-out' ? state.notice : null),
     }));
   },

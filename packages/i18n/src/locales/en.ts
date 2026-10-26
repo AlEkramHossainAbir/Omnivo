@@ -33,6 +33,30 @@ export const en = {
     notificationsUnread_other: 'Notifications, {{count}} unread',
     // Step 18c: the account menu's link to your own devices (decision 1)
     myDevices: 'My devices',
+    // Step 19a: a new version waits until the person reloads (decision 3). The notice stays above
+    // every page until then; its button is common.reload
+    update: {
+      ready: 'A new version of Omnivo is ready. Save what you are working on, then reload.',
+      // Another tab clicked Reload. This tab still runs the old version, whose files are gone
+      otherTab: 'Omnivo was updated in another tab. Reload this tab to keep working.',
+      reloading: 'Reloading…',
+    },
+    // Step 19a: the account menu's item. Chrome and Edge show their own install prompt; Safari
+    // has none, so the item opens a dialog that says where Safari's own command is
+    installApp: 'Install app',
+    install: {
+      title: 'Install Omnivo',
+      description:
+        'Omnivo then opens in its own window, with its own icon, and works without a connection.',
+      iosTitle: 'On an iPhone or iPad',
+      iosStep1: 'Tap Share in the toolbar.',
+      iosStep2: 'Tap Add to Home Screen.',
+      iosStep3: 'Tap Add.',
+      macTitle: 'In Safari on a Mac',
+      macStep1: 'Choose File, then Add to Dock.',
+      macStep2: 'Click Add.',
+    },
+    installed: 'Omnivo is installed',
   },
   nav: {
     overview: 'Overview',
@@ -113,6 +137,13 @@ export const en = {
       submitting: 'Signing in…',
       newHere: 'New to Omnivo?',
       createWorkspace: 'Create a workspace',
+      // Step 19a: the sign-in page with no connection. Only the last person's copy opens offline
+      // (decision 2), and only after a reload of the app, so anyone else must wait
+      offlineNotice: "You're offline. Signing in needs a connection.",
+      // Step 19a: the app opened offline, and the server refused the sign-in once the connection
+      // was back. The copy stays on the device, so signing in again sends its changes
+      sessionEnded:
+        'You were signed out while offline. Sign in again: the changes saved on this device are sent after that.',
       panelLabel: 'What Omnivo does',
       panelTitle: 'Production, stock and accounts. One system.',
       panelBody:
@@ -556,6 +587,26 @@ export const en = {
       "This device last synced more than {{days}} days ago, so it can't save new work offline. Changes already waiting are sent once the connection is back.",
     blockedFormNotice:
       "This device last synced more than {{days}} days ago, so it can't save new work offline. Connect to the internet to save this.",
+    // Step 19a: the app opened offline with the person it remembered (decision 2). The Sync page
+    // says so under its "Last synced" line
+    openedOffline:
+      'Omnivo opened without a connection. Your sign-in is checked once the connection is back.',
+    // Step 19a: the storage card on the Sync page. navigator.storage.persist() asks the browser to
+    // keep the copy; without it, a browser low on space may delete a site's data
+    storage: {
+      title: 'Storage on this device',
+      subtitle: 'The copy of the data, the changes waiting and the app itself',
+      kept: 'Kept',
+      keptBody: 'The browser keeps this copy, even when the device runs low on space.',
+      mayBeCleared: 'May be cleared',
+      mayBeClearedBody:
+        'When the device runs low on space, the browser may delete this copy, with any changes not synced yet.',
+      ask: 'Ask to keep it',
+      refused: 'The browser said no. Install the app: browsers keep the data of an installed app.',
+      unknown: "This browser doesn't say whether it keeps the copy.",
+      // used and quota = formatBytes in the page's language (24.5 MB / ২৪.৫ MB)
+      used: '{{used}} used. The browser allows up to {{quota}}.',
+    },
   },
   accounts: {
     title: 'Chart of accounts',

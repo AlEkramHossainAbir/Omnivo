@@ -368,6 +368,24 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   server's list below is the empty state "Needs a connection".
 - **Sign-out with changes waiting:** the dialog "Sign out and lose the changes?", which says how many changes have
   not synced; "Sign out anyway" (secondary, pushed left) and "Stay signed in" (primary).
+- **Update notice:** `UpdateNotice` (`apps/app/src/components/update-notice.tsx`), outside the router so it stays on
+  every page. The toast's look (`ink` background, `bg` text, radius 10px, `shadow-lg`), fixed at the bottom (centered
+  on a phone, bottom-right from `sm`), `role="status"`, with a `bg`/`ink` Reload button; it never closes by itself and
+  has no close button. "A new version of Omnivo is ready. Save what you are working on, then reload." in the tab
+  that may reload; "Omnivo was updated in another tab. Reload this tab to keep working." in the others. The app
+  never reloads by itself.
+- **Install app:** an item in the account menu after My devices (`Download04`), only where the browser can
+  install: Chrome and Edge open their own prompt; Safari opens a dialog with its own steps (iPhone and iPad: Share,
+  Add to Home Screen; Mac: File, Add to Dock). Hidden in the installed app. "Omnivo is installed" is the toast.
+- **Storage card (Sync page):** the last card: "Storage on this device", a `good` "Kept" pill
+  (`CheckmarkCircle02`) or a `warn` "May be cleared" pill (`Alert02`) with "Ask to keep it" (secondary `sm`), and the
+  space used in 12px `ink-3` `tabular-nums` ("24.5 MB used. The browser allows up to 1.2 GB.").
+- **Opened offline:** a reload with no answer from the server opens the last person's copy. The Sync page then
+  shows a neutral document notice ("Omnivo opened without a connection…") until the sign-in is checked. The
+  sign-in page shows a neutral notice with `WifiDisconnected02` while the browser is offline, and "You were signed
+  out while offline…" when the check was refused.
+- **App icon badge:** the installed app's icon shows the changes waiting on the device (the sync line's count),
+  where the browser has the badge API.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -654,9 +672,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Respect `prefers-reduced-motion`.
 - **Focus:** every interactive element shows a visible focus state, either the `brand`
   ring or a 2px `brand` outline with 2px offset.
-- **A screen that works offline** has its route in `apps/app/src/lib/offline-screens.ts`. Until step 19's service
-  worker keeps the app's files, a lazy chunk cannot load without a connection, so these chunks load in the
-  background while the device is online.
+- **The service worker keeps every built script, style and woff2 font** (`apps/app/sw/sw.ts`), so every screen loads
+  offline in a production build, with nothing to list. A new kind of built file (an image a screen imports) needs
+  its extension in `globPatterns` in `vite.config.ts`; `pnpm test:bundle-size` fails while a built file is missing
+  from the worker's list. Mock mode has no worker of ours, so a screen that works offline also goes into
+  `apps/app/src/mocks/offline-screens.ts`, or the mock e2e tests that go offline cannot load it.
 
 ### Tailwind wiring
 
