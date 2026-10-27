@@ -383,7 +383,30 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Opened offline:** a reload with no answer from the server opens the last person's copy. The Sync page then
   shows a neutral document notice ("Omnivo opened without a connection…") until the sign-in is checked. The
   sign-in page shows a neutral notice with `WifiDisconnected02` while the browser is offline, and "You were signed
-  out while offline…" when the check was refused.
+  out while offline…" when the check was refused. On a device without a PIN, an offline reload shows the sign-in
+  page with "This device has no PIN…" in place of the offline notice, and with a PIN it shows the lock screen first.
+- **PIN field:** `PinField` (`apps/app/src/components/pin-field.tsx`), the input box with a 17px `LockKeyhole` icon,
+  `type="password"`, `inputmode="numeric"` and `autocomplete="off"`, 6 digits. Bangla digits become ASCII ones as
+  they are typed, so the value is always ASCII. Easy PINs (`000000`, `123456`) and two different PINs are refused
+  under the box, like any field error.
+- **Lock screen:** `LockScreen`, in the sign-in page's layout (`AuthLayout`, with the side panel), drawn by
+  `AppFrame` in the shell's place: "Omnivo is locked" (the auth form's 28px title), a line that says why it asks
+  (after Lock now, after an offline reload, after the server's key changed), the person's name and email in a 1px
+  `line` box, one PIN field, Unlock (primary, full width), "Forgot PIN? Sign in with your password" (a text link;
+  offline a sentence with `WifiDisconnected02` that says to connect first) and Sign out (a text link, asks first
+  when changes wait). A wrong PIN says how many tries are left. After 5 the PIN field goes: a `warn` notice and
+  "Sign in with your password" (primary) take its place, or offline a neutral notice that says to connect.
+- **PIN dialog:** the dialog, after the device is set up ("Set a PIN for this device", with "Not now"), after
+  "Forgot PIN?" or 5 wrong PINs ("Set a new PIN"), and from the Sync page's card ("Change the PIN of this device",
+  the current PIN first). PIN and "Type the PIN again", with the hint that the PIN works only on this device;
+  "Set PIN" / "Change PIN" (primary), "Setting the PIN…" while it works (up to a second, on purpose). Toasts
+  "Device PIN set" and "Device PIN changed".
+- **Device PIN card (Sync page):** before the storage card: "Device PIN", a `good` "PIN set" pill
+  (`CheckmarkCircle02`), a `warn` "Stopped working" pill (`Alert02`) or a neutral "No PIN" pill
+  (`SquareUnlock02`), a 13.5px `ink-2` sentence, and "Set a PIN" / "Change PIN" (secondary `sm`).
+- **Lock now:** an item in the account menu after Install app (`SquareLock02`). Without a PIN it is "Set a PIN to
+  lock" (`LockKey`) and opens the PIN dialog. Other tabs lock too, and a reload keeps the lock until the PIN or a
+  sign-in with the password. The words never say "key" or "encryption".
 - **App icon badge:** the installed app's icon shows the changes waiting on the device (the sync line's count),
   where the browser has the badge API.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
@@ -677,6 +700,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   its extension in `globPatterns` in `vite.config.ts`; `pnpm test:bundle-size` fails while a built file is missing
   from the worker's list. Mock mode has no worker of ours, so a screen that works offline also goes into
   `apps/app/src/mocks/offline-screens.ts`, or the mock e2e tests that go offline cannot load it.
+- **The device's copy is sealed.** Every row in the device's database is `{ key, gen, box }` plus the ids an index
+  needs, `box` sealed with AES-GCM by `LocalCopy` (`packages/sync/src/copy.ts`). A new table on the device goes
+  through `sealed.ts`, and only ids, codes that are searched exactly (SKU, barcodes) and dates stay readable: never
+  a name, a phone number, an amount or a command. Code that reads the copy takes the open `LocalCopy`, never the
+  database.
 
 ### Tailwind wiring
 
