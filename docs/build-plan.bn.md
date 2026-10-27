@@ -355,8 +355,6 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
   অফলাইনে খোলা বন্ধ, "Forgot PIN?" = password দিয়ে sign-in। Dexie version 3: পুরনো কপি মুছে আবার pull, outbox
   থেকে যায়।
 
-Workbox service worker, manifest, install prompt, `navigator.storage.persist()`, UI-তে **"৫টা বিক্রি সিঙ্ক বাকি" ব্যাজ**, IndexedDB-তে সংবেদনশীল ডেটা এনক্রিপ্ট (Web Crypto)।
-
 #### ধাপ ২০: POS স্ক্রিন · ~৩ সপ্তাহ
 
 দ্রুত বিক্রি স্ক্রিন (বারকোড স্ক্যান, কীবোর্ড শর্টকাট — মাউস ছাড়া পুরো বিক্রি), split payment (ক্যাশ/কার্ড/bKash/Nagad), hold/resume বিল, রিটার্ন, শিফট open/close ও ক্যাশ কাউন্ট, **থার্মাল প্রিন্ট (৫৮/৮০mm)**, **ডিভাইস-ভিত্তিক নম্বর সিরিজ** (`POS1-000123`), negative stock সেটিং।
@@ -530,10 +528,11 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [x] **ধাপ ৩** — Auth + RBAC + প্রথম ড্যাশবোর্ড
 - [x] **ধাপ ৪–৫** — ডিজাইন সিস্টেম + API কন্ট্র্যাক্ট
 - [x] **ধাপ ৬–৮** — Core Platform
-- [ ] **ধাপ ৯–১১** — Accounting
-- [ ] **ধাপ ১২–১৪** — Inventory
-- [ ] **ধাপ ১৫–১৭** — Sales + Purchase
-- [ ] **ধাপ ১৮–২০** — POS + অফলাইন
+- [x] **ধাপ ৯–১১** — Accounting
+- [x] **ধাপ ১২–১৪** — Inventory
+- [x] **ধাপ ১৫–১৭** — Sales + Purchase
+- [x] **ধাপ ১৮–১৯** — সিঙ্ক ইঞ্জিন + PWA শেল (অফলাইন, এনক্রিপশন, PIN)
+- [ ] **ধাপ ২০** — POS স্ক্রিন
 - [ ] **ধাপ ২১** — Reports 🏁 MVP
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
