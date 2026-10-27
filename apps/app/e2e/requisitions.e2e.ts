@@ -1,6 +1,14 @@
 import type { Page } from '@playwright/test';
 
-import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
+import {
+  expect,
+  expectNoSideScroll,
+  listItem,
+  openFromNav,
+  test,
+  toastShown,
+  waitForCopy,
+} from './helpers.js';
 
 // Step 17a in the mock garments workspace, where the signed-in person is the Owner. Requisitions
 // from ৳20,000 need the Purchase manager (Kamal Uddin), from ৳1,00,000 a Director as well, a role
@@ -179,6 +187,9 @@ test('cancels an approved requisition, reopens a waiting one, and deletes a draf
 });
 
 test('opens the waiting requisition from the bell', async ({ page }) => {
+  // Step 19b: the PIN dialog opens before the first pull ends, and it would close the bell's panel
+  // if it opened just after the click. After the copy, the fixture answers it before the click.
+  await waitForCopy(page);
   await page.getByRole('button', { name: 'Notifications, 3 unread' }).click();
   const panel = page.getByRole('dialog');
   await panel

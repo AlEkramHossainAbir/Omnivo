@@ -20,11 +20,14 @@ export async function revokeDevices(tx: Transaction, rows: readonly DeviceRow[])
   for (const row of rows) {
     // revoked_at IS NULL: a device revoked already keeps who and when (migration 0048 refuses a
     // change anyway). A plain update, so version and updated_at move like any other change.
+    // Step 19b: the device's key goes in the same update, for good. The server can then never
+    // open that copy again; migration 0050's check refuses a revoke that keeps it.
     const [after] = await tx
       .update(devices)
       .set({
         revokedAt: sql`now()`,
         revokedBy,
+        secret: null,
         version: sql`${devices.version} + 1`,
         updatedBy: revokedBy,
       })

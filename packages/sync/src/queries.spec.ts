@@ -17,7 +17,7 @@ import {
   customer,
   customerInput,
   inputOf,
-  newDatabase,
+  newCopy,
   page,
   product,
   upsertCustomer,
@@ -68,9 +68,9 @@ const polo = product({
 });
 
 async function loaded() {
-  const db = newDatabase();
+  const copy = await newCopy();
   await applyPage(
-    db,
+    copy,
     page({
       full: true,
       changes: [napa, ace, tusca, polo].map(upsertProduct).concat(
@@ -88,18 +88,28 @@ async function loaded() {
     }),
     null,
   );
-  return db;
+  return copy;
 }
 
 const names = (rows: readonly { name: string }[]) => rows.map((row) => row.name);
 
 describe('productPage', () => {
   it('sorts by name without case, like the server, and says when there is more', async () => {
-    const db = await loaded();
-    const first = await productPage(db, { search: '', categoryIds: null, sort: 'name', limit: 3 });
+    const copy = await loaded();
+    const first = await productPage(copy, {
+      search: '',
+      categoryIds: null,
+      sort: 'name',
+      limit: 3,
+    });
     expect(names(first.rows)).toEqual(['ace Plus tablet', 'Napa 500 mg tablet', 'Polo shirt']);
     expect(first.more).toBe(true);
-    const all = await productPage(db, { search: '', categoryIds: null, sort: '-name', limit: 10 });
+    const all = await productPage(copy, {
+      search: '',
+      categoryIds: null,
+      sort: '-name',
+      limit: 10,
+    });
     expect(names(all.rows)).toEqual([
       'Tusca syrup 100 ml',
       'Polo shirt',
@@ -110,31 +120,37 @@ describe('productPage', () => {
   });
 
   it('sorts by code', async () => {
-    const db = await loaded();
-    const rows = (await productPage(db, { search: '', categoryIds: null, sort: 'code', limit: 10 }))
-      .rows;
+    const copy = await loaded();
+    const rows = (
+      await productPage(copy, { search: '', categoryIds: null, sort: 'code', limit: 10 })
+    ).rows;
     expect(rows.map((row) => row.code)).toEqual(['FG-0001', 'MED-0001', 'MED-0002', 'MED-0003']);
   });
 
   it('finds by part of the name, the code or a SKU, and by a whole barcode', async () => {
-    const db = await loaded();
-    expect(names(await findProducts(db, 'TABLET'))).toEqual([
+    const copy = await loaded();
+    expect(names(await findProducts(copy, 'TABLET'))).toEqual([
       'ace Plus tablet',
       'Napa 500 mg tablet',
     ]);
-    expect(names(await findProducts(db, 'med-0003'))).toEqual(['Tusca syrup 100 ml']);
+    expect(names(await findProducts(copy, 'med-0003'))).toEqual(['Tusca syrup 100 ml']);
     // An archived variant's SKU still finds its product, like the server
-    expect(names(await findProducts(db, 'nvy-xxl'))).toEqual(['Polo shirt']);
+    expect(names(await findProducts(copy, 'nvy-xxl'))).toEqual(['Polo shirt']);
     // A pack's barcode and a variant's barcode, whole only
-    expect(names(await findProducts(db, '8941100500017'))).toEqual(['Napa 500 mg tablet']);
-    expect(names(await findProducts(db, '2000000000015'))).toEqual(['Polo shirt']);
-    expect(await findProducts(db, '89411005')).toEqual([]);
+    expect(names(await findProducts(copy, '8941100500017'))).toEqual(['Napa 500 mg tablet']);
+    expect(names(await findProducts(copy, '2000000000015'))).toEqual(['Polo shirt']);
+    expect(await findProducts(copy, '89411005')).toEqual([]);
   });
 
   it('filters by the categories it is given', async () => {
-    const db = await loaded();
+    const copy = await loaded();
     const rows = (
-      await productPage(db, { search: '', categoryIds: new Set([SYRUP]), sort: 'name', limit: 10 })
+      await productPage(copy, {
+        search: '',
+        categoryIds: new Set([SYRUP]),
+        sort: 'name',
+        limit: 10,
+      })
     ).rows;
     expect(names(rows)).toEqual(['Tusca syrup 100 ml']);
   });
@@ -158,24 +174,24 @@ describe('productSummaryOf', () => {
 
 describe('customerPage', () => {
   it('sorts by name, filters by group and searches the phone and contact person', async () => {
-    const db = await loaded();
-    const all = await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 10 });
+    const copy = await loaded();
+    const all = await customerPage(copy, { search: '', groupId: '', sort: 'name', limit: 10 });
     expect(names(all.rows)).toEqual(['Anwar Pharmacy', 'Bismillah Store', 'Rahman Traders']);
-    const group = await customerPage(db, {
+    const group = await customerPage(copy, {
       search: '',
       groupId: MEDICINE,
       sort: '-name',
       limit: 10,
     });
     expect(names(group.rows)).toEqual(['Rahman Traders', 'Anwar Pharmacy']);
-    expect(names(await findCustomers(db, '1711'))).toEqual(['Rahman Traders']);
-    expect(names(await findCustomers(db, 'karim'))).toEqual(['Bismillah Store']);
-    expect(names(await findCustomers(db, 'c-0000'))).toHaveLength(3);
+    expect(names(await findCustomers(copy, '1711'))).toEqual(['Rahman Traders']);
+    expect(names(await findCustomers(copy, 'karim'))).toEqual(['Bismillah Store']);
+    expect(names(await findCustomers(copy, 'c-0000'))).toHaveLength(3);
   });
 
   it('has no balance on the device', async () => {
-    const db = await loaded();
-    const [first] = (await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 1 }))
+    const copy = await loaded();
+    const [first] = (await customerPage(copy, { search: '', groupId: '', sort: 'name', limit: 1 }))
       .rows;
     expect(first && customerSummaryOf(first).balance).toBeNull();
   });
@@ -185,13 +201,13 @@ describe('the outbox on top of the copy', () => {
   const SAVED = '2026-10-21T15:00:00.000Z';
 
   it('shows a customer made on the device in its place, and a renamed one in its new place', async () => {
-    const db = await loaded();
-    await saveCustomer(db, {
+    const copy = await loaded();
+    await saveCustomer(copy, {
       base: null,
       input: customerInput({ name: 'Chowdhury Medicine Corner' }),
       savedAt: SAVED,
     });
-    const all = await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 10 });
+    const all = await customerPage(copy, { search: '', groupId: '', sort: 'name', limit: 10 });
     expect(names(all.rows)).toEqual([
       'Anwar Pharmacy',
       'Bismillah Store',
@@ -201,33 +217,34 @@ describe('the outbox on top of the copy', () => {
     const made = all.rows.find((row) => row.name === 'Chowdhury Medicine Corner');
     expect(made).toMatchObject({ code: '', version: 0 });
     expect(made && all.pending.has(made.id)).toBe(true);
-    expect(names(await findCustomers(db, 'chowdhury'))).toEqual(['Chowdhury Medicine Corner']);
+    expect(names(await findCustomers(copy, 'chowdhury'))).toEqual(['Chowdhury Medicine Corner']);
 
     const anwar = all.rows.find((row) => row.name === 'Anwar Pharmacy');
     if (!anwar) throw new Error('no Anwar');
-    await saveCustomer(db, {
+    await saveCustomer(copy, {
       base: anwar,
       input: { ...inputOf(anwar), name: 'Zaman Pharmacy' },
       savedAt: SAVED,
     });
-    const after = await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 10 });
+    const after = await customerPage(copy, { search: '', groupId: '', sort: 'name', limit: 10 });
     expect(names(after.rows).at(-1)).toBe('Zaman Pharmacy');
     // The server's row in the database is unchanged; only the screens see the change
-    expect((await db.customers.get(anwar.id))?.data.name).toBe('Anwar Pharmacy');
-    expect((await localCustomer(db, anwar.id))?.name).toBe('Zaman Pharmacy');
+    const row = await copy.db.customers.get(anwar.id);
+    expect(row && (await copy.open('customers', row.key, row.box)).name).toBe('Anwar Pharmacy');
+    expect((await localCustomer(copy, anwar.id))?.name).toBe('Zaman Pharmacy');
   });
 
   it('keeps the page size and says there is more with the outbox merged in', async () => {
-    const db = await loaded();
-    await saveCustomer(db, {
+    const copy = await loaded();
+    await saveCustomer(copy, {
       base: null,
       input: customerInput({ name: 'Aarong Dairy Depot' }),
       savedAt: SAVED,
     });
-    const first = await customerPage(db, { search: '', groupId: '', sort: 'name', limit: 2 });
+    const first = await customerPage(copy, { search: '', groupId: '', sort: 'name', limit: 2 });
     expect(names(first.rows)).toEqual(['Aarong Dairy Depot', 'Anwar Pharmacy']);
     expect(first.more).toBe(true);
-    const last = await customerPage(db, { search: '', groupId: '', sort: '-name', limit: 4 });
+    const last = await customerPage(copy, { search: '', groupId: '', sort: '-name', limit: 4 });
     expect(names(last.rows)).toEqual([
       'Rahman Traders',
       'Bismillah Store',

@@ -8,7 +8,7 @@ import {
 import { Dexie } from 'dexie';
 
 import { applyPage } from './apply.js';
-import type { SyncDatabase } from './database.js';
+import type { LocalCopy } from './copy.js';
 import { STORAGE_FAILED } from './problems.js';
 import {
   applyAnswers,
@@ -48,7 +48,8 @@ const webLock: LockRunner = async (name, fn) => {
 };
 
 export interface SyncEngineOptions {
-  db: SyncDatabase;
+  // Step 19b: the open copy (its key seals what the pull writes)
+  copy: LocalCopy;
   deviceId: string;
   // The app's API call (routes.sync.pull). The engine knows nothing of tokens or the API's url.
   pull: (query: SyncPullQuery) => Promise<SyncPull>;
@@ -168,7 +169,7 @@ export class SyncEngine {
     let problem: string | null = null;
     try {
       const lock = this.options.lock ?? webLock;
-      await lock(`omnivo-sync:${this.options.db.name}`, async () => {
+      await lock(`omnivo-sync:${this.options.copy.db.name}`, async () => {
         // The outbox first: the pull after it then brings what the commands changed, and a full
         // pull's sweep never meets a customer that is only in the outbox
         const outcome = await this.withRegistration(() => this.pushAll());
@@ -202,12 +203,12 @@ export class SyncEngine {
   // (push.ts), and an accepted customer frees the order that waited for it in the next round. A
   // refused command is marked failed and is not taken again, so the loop always ends.
   private async pushAll(): Promise<PushOutcome> {
-    const { db, deviceId } = this.options;
-    await resetSending(db);
+    const { copy, deviceId } = this.options;
+    await resetSending(copy.db);
     const outcome = { ...NO_PUSH };
     for (;;) {
       if (this.ended) return outcome;
-      const batch = await takeBatch(db);
+      const batch = await takeBatch(copy);
       if (batch.length === 0) return outcome;
       let answer: SyncPush;
       try {
@@ -217,10 +218,10 @@ export class SyncEngine {
           commands: batch.map((entry) => entry.command),
         });
       } catch (error) {
-        await releaseBatch(db, batch);
+        await releaseBatch(copy.db, batch);
         throw error;
       }
-      const round = await applyAnswers(db, batch, answer);
+      const round = await applyAnswers(copy, batch, answer);
       outcome.accepted += round.accepted;
       outcome.rejected += round.rejected;
       outcome.kept += round.kept;
@@ -232,8 +233,8 @@ export class SyncEngine {
   // Pages until hasMore is false. The cursor is read from the database, not kept in memory:
   // another tab may have pulled since, and it saved its own cursor there.
   private async pullAll(): Promise<void> {
-    const { db, deviceId, pageSize = 500 } = this.options;
-    let cursor = (await readPullState(db)).cursor;
+    const { copy, deviceId, pageSize = 500 } = this.options;
+    let cursor = (await readPullState(copy.db)).cursor;
     for (;;) {
       if (this.ended) return;
       const page = await this.options.pull({
@@ -242,7 +243,7 @@ export class SyncEngine {
         limit: pageSize,
         ...(cursor !== null && { cursor }),
       });
-      await applyPage(db, page, cursor);
+      await applyPage(copy, page, cursor);
       if (!page.hasMore) return;
       cursor = page.cursor;
     }

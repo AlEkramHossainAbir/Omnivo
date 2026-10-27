@@ -344,6 +344,20 @@
       "when": 1792650008828,
       "tag": "0048_devices-revoke-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792993964720,
+      "tag": "0049_devices-secret",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792993965790,
+      "tag": "0050_devices-secret-rules",
+      "breakpoints": true
     }
   ]
 }

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { readPullState } from './state.js';
 import { SyncEngine, type SyncEngineOptions } from './engine.js';
-import { newDatabase, page, product, upsertProduct } from './test-fixtures.js';
+import { newCopy, page, product, upsertProduct } from './test-fixtures.js';
 
 // An API error the way the app's ApiRequestError carries it
 class CodedError extends Error {
@@ -17,13 +17,14 @@ class CodedError extends Error {
 const codeOf = (error: unknown) => (error instanceof CodedError ? error.code : null);
 const DEVICE = '01928c4e-1111-7000-8000-000000000001';
 
-function engineWith(
+async function engineWith(
   pull: (query: SyncPullQuery) => Promise<SyncPull>,
   options: Partial<SyncEngineOptions> = {},
 ) {
-  const db = newDatabase();
+  const copy = await newCopy();
+  const { db } = copy;
   const engine = new SyncEngine({
-    db,
+    copy,
     deviceId: DEVICE,
     pull,
     // Nothing in the outbox: the 18a tests never push
@@ -55,7 +56,7 @@ describe('SyncEngine', () => {
     const pull = vi.fn<(query: SyncPullQuery) => Promise<SyncPull>>(() =>
       Promise.resolve(pages.shift() ?? page({ changes: [] })),
     );
-    const { db, engine } = engineWith(pull);
+    const { db, engine } = await engineWith(pull);
     await engine.syncNow();
     expect(pull.mock.calls.map(([query]) => query.cursor)).toEqual([undefined, 'a']);
     expect(pull.mock.calls[0]?.[0]).toMatchObject({ deviceId: DEVICE, protocol: 1, limit: 500 });
@@ -77,7 +78,7 @@ describe('SyncEngine', () => {
           };
         }),
     );
-    const { engine } = engineWith(pull);
+    const { engine } = await engineWith(pull);
     const first = engine.syncNow();
     const second = engine.syncNow();
     const third = engine.syncNow();
@@ -102,7 +103,7 @@ describe('SyncEngine', () => {
       .mockRejectedValueOnce(new CodedError('device_not_found'))
       .mockResolvedValueOnce(page({ changes: [] }));
     const registerAgain = vi.fn(() => Promise.resolve());
-    const { engine } = engineWith(pull, { registerAgain });
+    const { engine } = await engineWith(pull, { registerAgain });
     await engine.syncNow();
     expect(registerAgain).toHaveBeenCalledTimes(1);
     expect(pull).toHaveBeenCalledTimes(2);
@@ -112,7 +113,7 @@ describe('SyncEngine', () => {
   it('stops for good on device_revoked and tells the app', async () => {
     const pull = vi.fn(() => Promise.reject(new CodedError('device_revoked')));
     const onRevoked = vi.fn();
-    const { engine } = engineWith(pull, { onRevoked });
+    const { engine } = await engineWith(pull, { onRevoked });
     await engine.syncNow();
     expect(onRevoked).toHaveBeenCalledTimes(1);
     expect(engine.getStatus()).toEqual({
@@ -126,7 +127,7 @@ describe('SyncEngine', () => {
 
   it('stops on sync_protocol_mismatch: only a reload helps', async () => {
     const pull = vi.fn(() => Promise.reject(new CodedError('sync_protocol_mismatch')));
-    const { engine } = engineWith(pull);
+    const { engine } = await engineWith(pull);
     await engine.syncNow();
     expect(engine.getStatus()).toMatchObject({ problem: 'sync_protocol_mismatch', stopped: true });
   });
@@ -144,7 +145,7 @@ describe('SyncEngine', () => {
       )
       .mockRejectedValueOnce(new CodedError('network_error'))
       .mockResolvedValueOnce(page({ full: true, cursor: 'b', changes: [] }));
-    const { db, engine } = engineWith(pull);
+    const { db, engine } = await engineWith(pull);
     await engine.syncNow();
     expect(engine.getStatus()).toEqual({
       syncing: false,
@@ -159,21 +160,21 @@ describe('SyncEngine', () => {
   });
 
   it('an error that is not the API’s is unknown_error', async () => {
-    const { engine } = engineWith(() => Promise.reject(new TypeError('boom')));
+    const { engine } = await engineWith(() => Promise.reject(new TypeError('boom')));
     await engine.syncNow();
     expect(engine.getStatus().problem).toBe('unknown_error');
   });
 
   it('pulls no more after stop()', async () => {
     const pull = vi.fn(() => Promise.resolve(page({ changes: [] })));
-    const { engine } = engineWith(pull);
+    const { engine } = await engineWith(pull);
     engine.stop();
     await engine.syncNow();
     expect(pull).not.toHaveBeenCalled();
   });
 
   it('tells its listeners when the status changes', async () => {
-    const { engine } = engineWith(() => Promise.resolve(page({ changes: [] })));
+    const { engine } = await engineWith(() => Promise.resolve(page({ changes: [] })));
     const seen: boolean[] = [];
     const unsubscribe = engine.subscribe(() => {
       seen.push(engine.getStatus().syncing);

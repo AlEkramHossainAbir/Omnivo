@@ -1,9 +1,12 @@
-import { expect, expectNoSideScroll, test } from './helpers.js';
+import { expect, expectNoSideScroll, test, waitForCopy } from './helpers.js';
 
 // The mock's Rahman Garments owner has three unread notifications (step 17a added a requisition
 // waiting for approval) and one read one
 test('reads notifications from the bell', async ({ page }) => {
   await page.goto('/');
+  // Step 19b: the PIN dialog opens before the first pull ends, and it would close the bell's panel
+  // if it opened just after the click. After the copy, the fixture answers it before the click.
+  await waitForCopy(page);
   const bell = page.getByRole('button', { name: 'Notifications, 3 unread' });
   await bell.click();
   const panel = page.getByRole('dialog');

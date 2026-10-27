@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { contractErrorMap } from './errors.js';
 import {
   customerUpdateCommandSchema,
+  deviceKeySchema,
   priceListItemKey,
   registerDeviceInputSchema,
   salesOrderDraftCommandSchema,
@@ -226,6 +227,29 @@ function newCustomer(extra: object = {}) {
     ...extra,
   };
 }
+
+describe('device key', () => {
+  // Base64 by hand: 'A' is six 0 bits, so 43 of them and '=' are 32 zero bytes. The contracts
+  // run in the browser too, so there is no Buffer here.
+  it('is 32 bytes in standard base64', () => {
+    const key = `${'A'.repeat(43)}=`;
+    expect(deviceKeySchema.parse({ key })).toEqual({ key });
+  });
+
+  it('refuses any other size, and base64url', () => {
+    for (const key of [
+      // 16 bytes would still make an AES key, a weaker one: the app must never take it
+      `${'A'.repeat(22)}==`,
+      // 31 and 33 bytes: 44 characters too
+      `${'A'.repeat(42)}==`,
+      'A'.repeat(44),
+      // base64url drops the '=' and uses - and _
+      '_'.repeat(43),
+    ]) {
+      expect(deviceKeySchema.safeParse({ key }).success, key).toBe(false);
+    }
+  });
+});
 
 describe('sync commands', () => {
   it('adds a customer with the device ids, and leaves the code to the server', () => {

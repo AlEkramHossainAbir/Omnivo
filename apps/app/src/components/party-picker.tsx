@@ -1,7 +1,7 @@
 import { UserIcon } from '@hugeicons/core-free-icons';
 import type { PartyRef, PartyRole } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { findCustomers, type SyncDatabase } from '@omnivo/sync';
+import { findCustomers, type LocalCopy } from '@omnivo/sync';
 import { Combobox, type ComboboxOption } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { type Ref, useCallback, useMemo, useState } from 'react';
@@ -75,7 +75,7 @@ export function PartyPicker({
   // Both reads, each for its side only: a hook cannot be called conditionally
   const { view } = useLocalData();
   const stateText = useLocalStateText();
-  const find = useCallback((db: SyncDatabase) => findCustomers(db, settled), [settled]);
+  const find = useCallback((copy: LocalCopy) => findCustomers(copy, settled), [settled]);
   const customers = useLocalQuery(role === 'customer' && view.kind === 'ready' ? find : null);
   const suppliers = useQuery({
     ...supplierSearchQuery(tenantId, settled),

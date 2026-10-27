@@ -502,6 +502,11 @@ export const ERROR_CODES = [
   'network_error',
   'unexpected_response',
   'unknown_error',
+  // Step 19b: the device PIN form's own rules. The PIN never leaves the device, so only the app's
+  // schema sends these
+  'pin_format',
+  'pin_too_easy',
+  'pin_mismatch',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

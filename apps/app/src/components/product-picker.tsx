@@ -9,7 +9,7 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import type { Product } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { findProducts, productSummaryOf, type SyncDatabase } from '@omnivo/sync';
+import { findProducts, type LocalCopy, productSummaryOf } from '@omnivo/sync';
 import { Button, DialogContent, EmptyState, Input, Pill } from '@omnivo/ui';
 import { useCallback, useState } from 'react';
 
@@ -45,7 +45,7 @@ export function ProductPicker({
   const [loading, setLoading] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const { view } = useLocalData();
-  const find = useCallback((db: SyncDatabase) => findProducts(db, settled), [settled]);
+  const find = useCallback((copy: LocalCopy) => findProducts(copy, settled), [settled]);
   const products = useLocalQuery(view.kind === 'ready' ? find : null);
 
   // onAdd may still ask the server (a purchase order's last price paid), so it can fail

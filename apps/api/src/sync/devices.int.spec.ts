@@ -4,6 +4,7 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   auditPageSchema,
   type Branch,
+  deviceKeySchema,
   branchSchema,
   type Device,
   type DeviceListItem,
@@ -229,15 +230,40 @@ const deviceRowSchema = z.object({
   version: z.number(),
   revoked_at: z.date().nullable(),
   last_sync_at: z.date().nullable(),
+  // Step 19b: the driver reads a bytea as a Buffer
+  secret: z.instanceof(Buffer).nullable(),
 });
 async function deviceRow(id: string) {
-  const [row] = z
-    .array(deviceRowSchema)
-    .parse(
-      await sql`SELECT session_id, version, revoked_at, last_sync_at FROM devices WHERE id = ${id}`,
-    );
+  const [row] = z.array(deviceRowSchema).parse(
+    await sql`SELECT session_id, version, revoked_at, last_sync_at, secret
+                  FROM devices WHERE id = ${id}`,
+  );
   if (!row) throw new Error(`no device ${id}`);
   return row;
+}
+
+// Step 19b: the device's key, as the app asks for it after a sign-in or a reload
+function key(device: { id: string }, as = owner) {
+  return send('GET', `/sync/devices/${device.id}/key`, undefined, as);
+}
+
+async function keyOf(device: { id: string }, as = owner): Promise<string> {
+  const res = await key(device, as);
+  expect(res.statusCode, res.body).toBe(200);
+  return deviceKeySchema.parse(res.json()).key;
+}
+
+// The Postgres error a statement of the superuser fails with: its code and the constraint
+async function refusal(run: () => Promise<unknown>) {
+  try {
+    await run();
+  } catch (error) {
+    if (error instanceof postgres.PostgresError) {
+      return { code: error.code, constraint: error.constraint_name };
+    }
+    throw error;
+  }
+  throw new Error('The statement worked');
 }
 
 async function auditOf(device: { id: string }) {
@@ -662,7 +688,8 @@ describe('revoking', () => {
 
     let pending: ReturnType<typeof pull> | undefined;
     await sql.begin(async (tx) => {
-      await tx`UPDATE devices SET revoked_at = now(), revoked_by = user_id WHERE id = ${device.id}`;
+      await tx`UPDATE devices SET revoked_at = now(), revoked_by = user_id, secret = NULL
+                 WHERE id = ${device.id}`;
       // The pull checks the device before the revoke commits, reads the data, and then waits on
       // this row for its last UPDATE
       pending = pull(device, second);
@@ -729,6 +756,137 @@ describe('the sign-in a device follows', () => {
   });
 });
 
+describe('the device key', () => {
+  it('gives the device its own key, the same each time, and no cache keeps it', async () => {
+    const browser = await signIn('rafiq');
+    const counter = await newDevice('Rafiq at the counter', headOffice, browser);
+    const van = await newDevice('Rafiq in the van', headOffice, browser);
+
+    const res = await key(counter, browser);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
+    const first = deviceKeySchema.parse(res.json()).key;
+    // 32 bytes, and exactly the bytes the database holds
+    const bytes = Buffer.from(first, 'base64');
+    expect(bytes).toHaveLength(32);
+    expect((await deviceRow(counter.id)).secret?.equals(bytes)).toBe(true);
+    // The same key on every reload: the copy was wrapped with it
+    expect(await keyOf(counter, browser)).toBe(first);
+    // Each device has a key of its own
+    expect(await keyOf(van, browser)).not.toBe(first);
+
+    // No other answer carries it: not the registration, not the lists, not the audit log
+    const again = await send(
+      'POST',
+      '/sync/devices',
+      { id: counter.id, name: counter.name, branchId: headOffice.id },
+      browser,
+    );
+    const lists = [
+      again,
+      await send('GET', '/me/devices', undefined, browser),
+      await send('GET', '/devices?limit=100'),
+      await send('GET', `/audit-logs?entityType=device&entityId=${counter.id}&limit=100`),
+    ];
+    for (const list of lists) {
+      expect(list.statusCode, list.body).toBeLessThan(300);
+      expect(list.body).not.toContain(first);
+      expect(list.body).not.toContain('secret');
+    }
+  });
+
+  it("never gives another person's device key, even with core.device.manage", async () => {
+    const counter = await newDevice('Front desk PC', headOffice);
+    for (const someone of [rafiq, nasrin]) {
+      const res = await key(counter, someone);
+      expect(res.statusCode).toBe(404);
+      expect(problemOf(res).code).toBe('device_not_found');
+    }
+    // An id nobody registered answers the same
+    const unknown = await key({ id: v7() });
+    expect(unknown.statusCode).toBe(404);
+    expect(problemOf(unknown).code).toBe('device_not_found');
+  });
+
+  it('deletes the key with the revoke, for good', async () => {
+    const browser = await signIn('nasrin');
+    const device = await newDevice('Nasrin tablet', chattogram, browser);
+    await keyOf(device, browser);
+
+    itemOf(await revoke(device, browser));
+    expect((await deviceRow(device.id)).secret).toBeNull();
+    // Its last access token still works for a few minutes, but gets no key: the app deletes the
+    // copy on device_revoked
+    const res = await key(device, browser);
+    expect(res.statusCode).toBe(403);
+    expect(problemOf(res).code).toBe('device_revoked');
+  });
+
+  it('follows the sign-in, like a pull, without a new version', async () => {
+    const first = await signIn('owner');
+    const device = await newDevice('Accounts laptop', headOffice, first);
+    // A reload after a new sign-in asks for the key before anything else
+    const second = await signIn('owner');
+    await keyOf(device, second);
+    expect(await deviceRow(device.id)).toMatchObject({
+      session_id: sidOf(second),
+      version: device.version,
+    });
+  });
+
+  it('waits for a revoke that is running, then refuses', async () => {
+    const browser = await signIn('owner');
+    const device = await newDevice('Warehouse scanner', headOffice, browser);
+
+    let pending: ReturnType<typeof key> | undefined;
+    await sql.begin(async (tx) => {
+      await tx`UPDATE devices SET revoked_at = now(), revoked_by = user_id, secret = NULL
+                 WHERE id = ${device.id}`;
+      // Without FOR SHARE, the key request would read the row as it was before this revoke,
+      // and send the key after the revoke was done
+      pending = key(device, browser);
+      await eventually(async () => {
+        const waiting = z.array(z.object({ n: z.number() })).parse(
+          await sql`SELECT count(*)::int AS n FROM pg_stat_activity
+                       WHERE wait_event_type = 'Lock' AND query LIKE '%from "devices"%for share%'`,
+        );
+        expect(waiting[0]?.n).toBe(1);
+      });
+    });
+    const res = await pending;
+    expect(res?.statusCode).toBe(403);
+    expect(res && problemOf(res).code).toBe('device_revoked');
+  });
+
+  it('is in the database for every active device, and for no revoked one', async () => {
+    const device = await newDevice('Back office PC', headOffice);
+    // A revoke that keeps the key
+    expect(
+      await refusal(
+        () => sql`UPDATE devices SET revoked_at = now(), revoked_by = user_id
+                    WHERE id = ${device.id}`,
+      ),
+    ).toEqual({ code: '23514', constraint: 'devices_secret_check' });
+    // An active device without one
+    expect(
+      await refusal(() => sql`UPDATE devices SET secret = NULL WHERE id = ${device.id}`),
+    ).toEqual({ code: '23514', constraint: 'devices_secret_check' });
+    // A key that is not 32 bytes
+    expect(
+      await refusal(
+        () => sql`UPDATE devices SET secret = decode('0102', 'hex') WHERE id = ${device.id}`,
+      ),
+    ).toEqual({ code: '23514', constraint: 'devices_secret_length_check' });
+    // And a revoked device never gets one back
+    itemOf(await revoke(device));
+    expect(
+      await refusal(
+        () => sql`UPDATE devices SET secret = gen_random_bytes(32) WHERE id = ${device.id}`,
+      ),
+    ).toEqual({ code: '23514', constraint: 'devices_secret_check' });
+  });
+});
+
 describe('removing a member', () => {
   it('revokes all their active devices, in the name of the person who removed them', async () => {
     const phoneBrowser = await signIn('tanvir');
@@ -764,6 +922,8 @@ describe('removing a member', () => {
       });
     }
     expect(await sessionExists(sidOf(tanvir))).toBe(false);
+    // Step 19b: their keys went with the revoke
+    for (const device of [laptop, tablet]) expect((await deviceRow(device.id)).secret).toBeNull();
   });
 });
 

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { applyPage } from './apply.js';
 import { lookUpPrices } from './prices.js';
-import { newDatabase, page, product, upsertProduct } from './test-fixtures.js';
+import { newCopy, page, product, upsertProduct } from './test-fixtures.js';
 
 const PCS = '01928c4e-0000-7000-8000-000000000001';
 const CASE = '01928c4e-0000-7000-8000-000000000002';
@@ -78,9 +78,9 @@ function item(priceListId: string, unitId: string, price: string): SyncChange {
 }
 
 async function loaded() {
-  const db = newDatabase();
+  const copy = await newCopy();
   await applyPage(
-    db,
+    copy,
     page({
       full: true,
       changes: [
@@ -95,15 +95,15 @@ async function loaded() {
     }),
     null,
   );
-  return db;
+  return copy;
 }
 
 describe('lookUpPrices', () => {
   it('starts a line like the server: the price list, else the product price in the unit', async () => {
-    const db = await loaded();
+    const copy = await loaded();
     const variantId = variant.id;
     expect(
-      await lookUpPrices(db, LIST, [
+      await lookUpPrices(copy, LIST, [
         { variantId, unitId: CASE },
         { variantId, unitId: PCS },
       ]),
@@ -112,21 +112,21 @@ describe('lookUpPrices', () => {
       { variantId, unitId: PCS, price: '21.0000', source: 'product', taxRateId: VAT_5 },
     ]);
     // An archived list counts for nothing: a case is 24 × ৳21
-    expect(await lookUpPrices(db, OLD_LIST, [{ variantId, unitId: CASE }])).toEqual([
+    expect(await lookUpPrices(copy, OLD_LIST, [{ variantId, unitId: CASE }])).toEqual([
       { variantId, unitId: CASE, price: '504.0000', source: 'product', taxRateId: VAT_5 },
     ]);
     // A unit the product does not have drops out, like on the server
-    expect(await lookUpPrices(db, null, [{ variantId, unitId: DOZEN }])).toEqual([]);
+    expect(await lookUpPrices(copy, null, [{ variantId, unitId: DOZEN }])).toEqual([]);
   });
 
   it('falls back to the default rate when the product’s own is archived', async () => {
-    const db = await loaded();
+    const copy = await loaded();
     await applyPage(
-      db,
+      copy,
       page({ changes: [rate(VAT_5, { archivedAt: '2026-10-01T00:00:00.000Z' })] }),
       'cursor',
     );
-    const [found] = await lookUpPrices(db, null, [{ variantId: variant.id, unitId: PCS }]);
+    const [found] = await lookUpPrices(copy, null, [{ variantId: variant.id, unitId: PCS }]);
     expect(found?.taxRateId).toBe(VAT_15);
   });
 });

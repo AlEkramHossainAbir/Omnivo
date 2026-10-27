@@ -29,8 +29,8 @@ import {
   allRows,
   customerPage,
   customerSummaryOf,
+  type LocalCopy,
   type LocalCustomerSort,
-  type SyncDatabase,
 } from '@omnivo/sync';
 import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -62,7 +62,7 @@ function chunksOf(ids: readonly string[]): string[][] {
 }
 
 // A read must be one stable function (useLocalQuery)
-const readGroups = (db: SyncDatabase) => allRows(db.customerGroups);
+const readGroups = (copy: LocalCopy) => allRows(copy, copy.db.customerGroups);
 
 // The groups' answers as one map. Outside the component: TanStack runs `combine` again only when
 // the answers or the function change, so an inline function would make a new map (and sort the
@@ -114,7 +114,7 @@ export function CustomersPage() {
   const [grown, setGrown] = useState({ key: filterKey, limit: PAGE });
   const limit = grown.key === filterKey ? grown.limit : PAGE;
   const readPage = useCallback(
-    (db: SyncDatabase) => customerPage(db, { search: settled, groupId, sort, limit }),
+    (copy: LocalCopy) => customerPage(copy, { search: settled, groupId, sort, limit }),
     [settled, groupId, sort, limit],
   );
   const local = useLocalQuery(archived ? null : readPage);

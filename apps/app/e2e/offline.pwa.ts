@@ -1,7 +1,11 @@
+// Step 19b: the key's row is made here, in Node, by @omnivo/sync itself (in memory). First, so
+// Dexie finds it when @omnivo/sync loads.
+import 'fake-indexeddb/auto';
+
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { newDeviceId, saveDevice } from '@omnivo/sync';
+import { databaseName, newDeviceId, openKey, saveDevice, setPin, SyncDatabase } from '@omnivo/sync';
 import type { Locator, Page } from '@playwright/test';
 
 import { HEAD_OFFICES, meIn, OWNER, WORKSPACES } from '../src/mocks/fixtures.js';
@@ -65,11 +69,75 @@ test('the build opens with the server gone and no connection', async ({
   expect(status).toBe(200);
 });
 
+const [garments] = WORKSPACES;
+const PIN = '480915';
+const NO_PIN_NOTICE =
+  'This device has no PIN, so its data opens only with a connection. Connect to the internet to sign in.';
+
+// Step 19b: what an online visit with a PIN leaves in the copy: the key's row (keys.ts), made with
+// a server key that is never asked for again (offline, the PIN opens it). 1,000 rounds, not
+// 600,000: the row keeps its count, and the test types the PIN twice. Plain arrays, because that
+// is what page.evaluate() carries; the page turns them back into bytes.
+async function pinRow() {
+  const db = new SyncDatabase('pwa-e2e-key');
+  try {
+    const serverKey = new Uint8Array(32).fill(7);
+    await openKey(db, { serverKey });
+    await setPin(db, { serverKey }, PIN, 1000);
+    const row = await db.keys.get('data');
+    if (!row?.pin) throw new Error('The PIN was not set');
+    return {
+      ...row,
+      server: [...row.server],
+      pin: { ...row.pin, salt: [...row.pin.salt], wrapped: [...row.pin.wrapped] },
+    };
+  } finally {
+    db.close();
+  }
+}
+
+// Into the copy's database, which the first visit made (offline-session.ts opened it to read the
+// PIN). Plain IndexedDB: the built app's Dexie is not reachable from here.
+async function putPinRow(page: Page): Promise<void> {
+  await page.evaluate(
+    async ({ name, row }) => {
+      const db = await new Promise<IDBDatabase>((resolve, reject) => {
+        const request = indexedDB.open(name);
+        request.onsuccess = () => {
+          resolve(request.result);
+        };
+        request.onerror = () => {
+          reject(new Error('The copy did not open'));
+        };
+      });
+      await new Promise<void>((resolve, reject) => {
+        const transaction = db.transaction('keys', 'readwrite');
+        transaction.objectStore('keys').put({
+          ...row,
+          server: new Uint8Array(row.server),
+          pin: {
+            ...row.pin,
+            salt: new Uint8Array(row.pin.salt),
+            wrapped: new Uint8Array(row.pin.wrapped),
+          },
+        });
+        transaction.oncomplete = () => {
+          resolve();
+        };
+        transaction.onerror = () => {
+          reject(new Error('The key was not saved'));
+        };
+      });
+      db.close();
+    },
+    { name: databaseName(garments.tenantId, OWNER.id), row: await pinRow() },
+  );
+}
+
 test.describe('a device set up for Farhana Rahman', () => {
   // What an online visit leaves in this browser: the remembered `me` (step 19a) and the device
   // with its branch (step 18a). Only when nothing is there: a reload keeps what the app saved.
   test.beforeEach(async ({ page }) => {
-    const [garments] = WORKSPACES;
     const saved = new Map<string, string>();
     saveDevice(
       { getItem: () => null, setItem: (key, value) => saved.set(key, value) },
@@ -89,12 +157,55 @@ test.describe('a device set up for Farhana Rahman', () => {
     );
   });
 
-  test('a reload with no connection opens the app as her', async ({ page, context, server }) => {
+  // Step 19b (decision 5): this build's API never answers, so even the first visit is an opening
+  // with no answer, and with no PIN in the copy it is the sign-in page
+  test('a reload with no connection on a device without a PIN says why it cannot open', async ({
+    page,
+    context,
+    server,
+  }) => {
     await page.goto('/');
     await workerInControl(page);
+    // The browser is online here, so the page shows no notice: only a reload offline says why
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
     await server.stop();
     await context.setOffline(true);
     await page.reload();
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+    // In place of the plain offline notice: it says why
+    await expect(page.getByText(NO_PIN_NOTICE)).toBeVisible();
+    await expect(page.getByText("You're offline. Signing in needs a connection.")).toHaveCount(0);
+  });
+
+  test('a reload with no connection opens the app as her, after the PIN', async ({
+    page,
+    context,
+    server,
+  }) => {
+    await page.goto('/');
+    await workerInControl(page);
+    // The sign-in page: offline-session.ts read the copy for its PIN, so the database is there
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+    await putPinRow(page);
+    await server.stop();
+    await context.setOffline(true);
+    await page.reload();
+
+    await expect(page.getByRole('heading', { level: 1, name: 'Omnivo is locked' })).toBeVisible();
+    await expect(
+      page.getByText("You're offline, so Omnivo needs this device's PIN to open your work."),
+    ).toBeVisible();
+    // Offline, "Forgot PIN?" can only say what to do
+    await expect(
+      page.getByText('Forgot your PIN? Connect to the internet, then sign in with your password.'),
+    ).toBeVisible();
+    await page.getByLabel('PIN', { exact: true }).fill('111111');
+    await page.getByRole('button', { name: 'Unlock' }).click();
+    await expect(
+      page.getByText('Wrong PIN. 4 tries left, then the PIN stops working.'),
+    ).toBeVisible();
+    await page.getByLabel('PIN', { exact: true }).fill(PIN);
+    await page.getByRole('button', { name: 'Unlock' }).click();
 
     await expect(
       page

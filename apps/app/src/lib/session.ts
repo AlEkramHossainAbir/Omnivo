@@ -12,8 +12,13 @@ import {
 import { call, isNoAnswer, refreshSession } from './api';
 import { applyPreferences } from './preferences';
 import { queryClient } from './query-client';
-import { clearSignOutPending, markSignOutPending, signOutPending } from './remembered-session';
-import { sessionStore } from './session-store';
+import {
+  clearLocked,
+  clearSignOutPending,
+  markSignOutPending,
+  signOutPending,
+} from './remembered-session';
+import { type SignOutNotice, sessionStore } from './session-store';
 
 async function startSession(session: AuthSession): Promise<void> {
   sessionStore.getState().setAccessToken(session.accessToken);
@@ -55,7 +60,15 @@ export function restoreSession(): Promise<void> {
       // সেখানে চেষ্টা করলে network_error-এর লেখা দেখাবে।
       // Step 19a (decision 2): no answer, and this browser remembers the last person and their copy:
       // the app opens as that person. import(): only such a reload loads the code.
-      if (isNoAnswer(error) && (await openOffline())) return;
+      // Step 19b: a copy without a PIN does not open (decision 5); the sign-in page says why.
+      if (isNoAnswer(error)) {
+        const opened = await openOffline();
+        if (opened === 'opened') return;
+        if (opened === 'no-pin') {
+          sessionStore.getState().signOut('no_pin');
+          return;
+        }
+      }
     }
     sessionStore.getState().signOut();
   })();
@@ -63,12 +76,12 @@ export function restoreSession(): Promise<void> {
 }
 
 // A failure to load the chunk (no worker yet, and no connection) is the sign-in page, as before
-async function openOffline(): Promise<boolean> {
+async function openOffline(): Promise<'opened' | 'no-pin' | 'none'> {
   try {
     const offline = await import('./offline-session');
     return await offline.openOffline();
   } catch {
-    return false;
+    return 'none';
   }
 }
 
@@ -85,9 +98,13 @@ async function sendPendingSignOut(): Promise<void> {
 
 // Step 19a: a sign-out still waiting goes before the new sign-in. After it, the new cookie takes
 // the old one's place in the browser, and the old session could not be ended from here any more.
+// Step 19b: the password proves the person as well as the PIN does, so it ends "Lock now". Not in
+// startSession: a reload's refresh proves nothing, and must keep the lock screen.
 async function signInWith(request: () => Promise<AuthSession>): Promise<void> {
   if (signOutPending()) await sendPendingSignOut();
-  await startSession(await request());
+  const session = await request();
+  clearLocked();
+  await startSession(session);
 }
 
 export function login(input: LoginInput): Promise<void> {
@@ -108,19 +125,33 @@ export async function switchTenant(tenantId: string): Promise<void> {
   await startSession(await call(authRoutes.switchTenant, { body: { tenantId } }));
 }
 
-export async function logout(): Promise<void> {
-  const me = sessionStore.getState().me;
+// Step 19a: no connection. The person is signed out here at once; the server hears of it at the
+// next reload or sign-in, and until then the cookie is never refreshed. A refusal is an answer:
+// there was no session left to end.
+async function endSession(notice?: SignOutNotice): Promise<void> {
   try {
     await call(authRoutes.logout);
   } catch (error) {
-    // Step 19a: no connection. The person is signed out here at once (below); the server hears of
-    // it at the next reload or sign-in, and until then the cookie is never refreshed. A refusal
-    // is an answer: there was no session left to end.
     if (isNoAnswer(error)) markSignOutPending();
   } finally {
     // নেটওয়ার্ক ব্যর্থ হলেও এই ট্যাবে লগআউট দেখাতে হবে, আর আগের ইউজারের ক্যাশ মুছতে হবে
     queryClient.clear();
-    sessionStore.getState().signOut();
+    sessionStore.getState().signOut(notice);
+  }
+}
+
+// Step 19b (decision 31): "Forgot PIN?" and a PIN that stopped working. The person is sent to prove
+// themself with the password, so the sign-in ends on the server too: a cookie still valid would
+// let the next reload in without it. The copy stays: the password opens it with the server's key.
+export function signInAgain(): Promise<void> {
+  return endSession('pin_reset');
+}
+
+export async function logout(): Promise<void> {
+  const me = sessionStore.getState().me;
+  try {
+    await endSession();
+  } finally {
     // Step 18a: the copy of the workspace's data on this device goes too (decision 41). import():
     // local-session brings Dexie, which the first page load must not carry. A browser that refuses
     // to delete it changes nothing for the sign-out.

@@ -57,6 +57,10 @@ export const en = {
       macStep2: 'Click Add.',
     },
     installed: 'Omnivo is installed',
+    // Step 19b: the account menu's lock (decision 4). A device without a PIN has nothing to unlock
+    // it with, so its item opens the PIN dialog instead
+    lockNow: 'Lock now',
+    setPinToLock: 'Set a PIN to lock',
   },
   nav: {
     overview: 'Overview',
@@ -144,6 +148,15 @@ export const en = {
       // was back. The copy stays on the device, so signing in again sends its changes
       sessionEnded:
         'You were signed out while offline. Sign in again: the changes saved on this device are sent after that.',
+      // Step 19b: "Forgot PIN?" and a PIN typed wrong too often sign the person out with the copy
+      // kept, like session_ended. The password opens the copy again; then the PIN dialog asks for a
+      // new PIN
+      pinNotice:
+        'Sign in with your password to open your work on this device. You then set a new PIN.',
+      // Step 19b: an offline reload on a device without a PIN (decision 5). Shown instead of
+      // offlineNotice, because it also says why the copy did not open
+      noPinNotice:
+        'This device has no PIN, so its data opens only with a connection. Connect to the internet to sign in.',
       panelLabel: 'What Omnivo does',
       panelTitle: 'Production, stock and accounts. One system.',
       panelBody:
@@ -591,6 +604,10 @@ export const en = {
     // says so under its "Last synced" line
     openedOffline:
       'Omnivo opened without a connection. Your sign-in is checked once the connection is back.',
+    // Step 19b: the server's key no longer opens the copy, and the device has no PIN to open it
+    // with. The app deletes the copy and copies the branch again; what had not synced goes with it
+    copyRemade:
+      "The data on this device couldn't be opened without a PIN, so Omnivo copied it again from the server. Changes that had not synced were lost.",
     // Step 19a: the storage card on the Sync page. navigator.storage.persist() asks the browser to
     // keep the copy; without it, a browser low on space may delete a site's data
     storage: {
@@ -606,6 +623,69 @@ export const en = {
       unknown: "This browser doesn't say whether it keeps the copy.",
       // used and quota = formatBytes in the page's language (24.5 MB / ২৪.৫ MB)
       used: '{{used}} used. The browser allows up to {{quota}}.',
+    },
+  },
+  // Step 19b: the device PIN. It opens the encrypted copy without a connection and after Lock now,
+  // and it never leaves the device. count picks the plural; formatted = the number in the page's
+  // language; max = MAX_WRONG_PINS in the page's language
+  pin: {
+    // The dialog: after the device is set up, from the Sync page's card, and after the sign-in
+    // that "Forgot PIN?" started (new*)
+    setUpTitle: 'Set a PIN for this device',
+    setUpDescription:
+      'Type it to open your work on this device without a connection, or after you lock it. Without a PIN, the data on this device opens only online.',
+    newTitle: 'Set a new PIN',
+    newDescription: 'The old PIN no longer works. Pick a new one for this device.',
+    changeTitle: 'Change the PIN of this device',
+    current: 'Current PIN',
+    label: 'PIN',
+    newPin: 'New PIN',
+    repeat: 'Type the PIN again',
+    hint: '6 digits. It works only on this device and is never sent to the server.',
+    later: 'Not now',
+    save: 'Set PIN',
+    saveChange: 'Change PIN',
+    // Turning a PIN into a key takes up to a second on purpose (decision 15)
+    saving: 'Setting the PIN…',
+    set: 'Device PIN set',
+    changed: 'Device PIN changed',
+    // What typing a PIN can answer, on the lock screen and for the current PIN in the dialog
+    wrong_one: 'Wrong PIN. {{formatted}} try left, then the PIN stops working.',
+    wrong_other: 'Wrong PIN. {{formatted}} tries left, then the PIN stops working.',
+    blocked:
+      'The PIN was wrong {{max}} times, so it stopped working. Sign in with your password to open your work.',
+    // The lock screen (decision 7): the auth layout, with the person's name and email under the
+    // title
+    lock: {
+      title: 'Omnivo is locked',
+      description: 'Type the PIN of this device to open your work.',
+      // An offline reload: the person did not lock the app, so the page says why it asks
+      offlineDescription: "You're offline, so Omnivo needs this device's PIN to open your work.",
+      // The server's key no longer opens the copy (key-changed): the PIN opens it once, and the
+      // copy then follows the server's new key
+      keyChangedDescription: 'Omnivo needs the PIN once to open the work saved on this device.',
+      unlock: 'Unlock',
+      unlocking: 'Unlocking…',
+      forgot: 'Forgot PIN? Sign in with your password',
+      forgotOffline: 'Forgot your PIN? Connect to the internet, then sign in with your password.',
+      // The primary button once the PIN stopped working
+      signIn: 'Sign in with your password',
+      blockedOffline:
+        'The PIN was wrong {{max}} times, so it stopped working. Connect to the internet and sign in with your password. Your work stays on this device.',
+    },
+    // The Sync page's card (decision 5). Each state is a pill and a sentence
+    card: {
+      title: 'Device PIN',
+      subtitle: 'Opens the data on this device without a connection',
+      on: 'PIN set',
+      onBody: 'Omnivo asks for it when it opens offline, and after Lock now in the account menu.',
+      off: 'No PIN',
+      offBody:
+        'The data on this device opens only online. Set a PIN before you work without a connection.',
+      blocked: 'Stopped working',
+      blockedBody: 'The PIN was wrong {{max}} times. Set a new one to open the data offline again.',
+      set: 'Set a PIN',
+      change: 'Change PIN',
     },
   },
   accounts: {
@@ -5544,6 +5624,10 @@ export const en = {
     unexpected_response:
       "The server sent a reply this version of the app can't read. Reload the page.",
     unknown_error: 'Something went wrong. Try again in a moment.',
+    // Step 19b: the PIN form (decision 29)
+    pin_format: 'Use exactly 6 digits.',
+    pin_too_easy: 'Pick a PIN that is harder to guess than 123456 or 000000.',
+    pin_mismatch: 'The two PINs are different. Type the same 6 digits in both boxes.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

@@ -33,7 +33,7 @@ import { Controller, type Path, useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
 import { applyApiError, applyCommandError } from '../lib/field-errors';
-import { requestSync, useLocalDb, useSaveMode } from '../lib/local-data';
+import { requestSync, useLocalCopy, useSaveMode } from '../lib/local-data';
 import { useSyncAge } from '../lib/sync-summary';
 import { rowPath } from '../lib/products';
 import { formTotals, type LineMeta, SALES_LINE_FIELDS, savedLines } from '../lib/sales';
@@ -178,7 +178,7 @@ export function SalesOrderForm({
   // has changes waiting on this device (a customer made offline is not on the server yet). A
   // server draft and an order from a quotation stay with the API: neither can be a command.
   const online = useOnline();
-  const db = useLocalDb();
+  const copy = useLocalCopy();
   const customerMode = useSaveMode(customerId);
   const onDevice =
     order === null &&
@@ -261,7 +261,7 @@ export function SalesOrderForm({
   // the total are kept with it for the Sync page and the unsynced orders.
   const saveOnDevice = handleSubmit(async (values) => {
     // Enter in a box submits the form even with no submit button
-    if (!db || blocked) return;
+    if (!copy || blocked) return;
     const input: SalesOrderDraftInput = {
       customerId: values.customerId,
       date: values.date,
@@ -275,7 +275,7 @@ export function SalesOrderForm({
     const rateOf = (id: string) => rates?.find((rate) => rate.id === id)?.rate ?? null;
     let result;
     try {
-      result = await saveOrderDraft(db, {
+      result = await saveOrderDraft(copy, {
         orderId: draft?.orderId ?? null,
         input,
         name: customer?.name ?? '',

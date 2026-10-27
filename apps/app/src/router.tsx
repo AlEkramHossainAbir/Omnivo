@@ -90,7 +90,8 @@ const appRoute = createRoute({
     if (mustRunSetup()) throw redirect({ to: '/onboarding' });
   },
   // layout-ও lazy: সাইডবারের Radix মেনু (~৩০ KB gz) লগইনের আগে লাগে না
-  component: lazyRouteComponent(() => import('./routes/app-shell'), 'AppShell'),
+  // Step 19b: the frame around the shell, which shows the lock screen in its place (app-frame.tsx)
+  component: lazyRouteComponent(() => import('./routes/app-frame'), 'AppFrame'),
 });
 
 const dashboardRoute = createRoute({

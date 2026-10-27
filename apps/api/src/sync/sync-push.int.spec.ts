@@ -442,8 +442,10 @@ describe('the request', () => {
 
   it('refuses a revoked device, and runs none of its commands', async () => {
     const lost = await registerDevice(owner, 'Lost phone');
-    // revoked_by: migration 0048 refuses a revoke that names nobody
-    await sql`UPDATE devices SET revoked_at = now(), revoked_by = user_id WHERE id = ${lost.id}`;
+    // revoked_by: migration 0048 refuses a revoke that names nobody; secret: 0050 refuses one
+    // that keeps the device's key
+    await sql`UPDATE devices SET revoked_at = now(), revoked_by = user_id, secret = NULL
+               WHERE id = ${lost.id}`;
     const command = newCustomer('Lost Phone Store');
     const res = await pushRequest([command], { device: lost });
     expect(res.statusCode).toBe(403);

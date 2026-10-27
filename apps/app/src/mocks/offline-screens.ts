@@ -22,6 +22,10 @@ const SCREENS = [
   () => import('../routes/sync'),
   () => import('../components/sign-out-dialog'),
   () => import('../routes/login'),
+  // Step 19b: "Lock now" offline closes the shell, and the lock screen takes its place; the PIN
+  // dialog (a change with the current PIN works offline)
+  () => import('../components/lock-screen'),
+  () => import('../components/pin-dialog'),
 ];
 
 // Once, by main.tsx's enableMocking. The dev server is on this computer, so it does not fail.

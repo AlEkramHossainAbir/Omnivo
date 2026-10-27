@@ -313,7 +313,7 @@ import {
   revokeDevice,
 } from './device-data';
 import { push } from './push-data';
-import { pull, registerDevice } from './sync-data';
+import { deviceKey, pull, registerDevice } from './sync-data';
 import {
   assertCodeFree,
   checkVersion,
@@ -5007,6 +5007,19 @@ export const handlers = [
       // The API writes the sign-in at the end of a pull; any page is close enough for the mock
       keepSession(data, query.deviceId, sessionId);
       return reply(routes.sync.pull, page);
+    }),
+  ),
+
+  // Step 19b: the device's key, asked at every online opening. It follows the sign-in like a pull,
+  // so a revoke after a reload still signs this browser out.
+  mock(
+    routes.sync.deviceKey,
+    guarded(async ({ params }) => {
+      const { id } = routes.sync.deviceKey.params.parse(params);
+      const data = current();
+      const key = await deviceKey(data, OWNER.id, id);
+      keepSession(data, id, sessionId);
+      return reply(routes.sync.deviceKey, key);
     }),
   ),
 

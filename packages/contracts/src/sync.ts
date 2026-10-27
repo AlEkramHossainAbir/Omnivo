@@ -454,6 +454,18 @@ export const registerDeviceInputSchema = z.object({
 export type RegisterDeviceInput = z.infer<typeof registerDeviceInputSchema>;
 export type RegisterDeviceFormValues = z.input<typeof registerDeviceInputSchema>;
 
+// Step 19b: the device's own key. It opens the encrypted copy on the device without a PIN, so
+// the app asks for it after every online sign-in and reload, keeps it in memory only, and never
+// writes it to the disk: a key on the disk next to the copy would open it for anyone. 32 random
+// bytes in standard base64: 43 characters and one '='. A length of 44 alone is not enough: 31
+// bytes end in '==' and 33 bytes in no '=', and both are 44 characters too.
+export const deviceKeySchema = z.object({
+  key: z.base64().regex(/^[A-Za-z0-9+/]{43}=$/),
+});
+export type DeviceKey = z.infer<typeof deviceKeySchema>;
+
+const deviceKeyParamsSchema = z.object({ id: z.uuid() });
+
 // No permission: every member may work offline. What a device receives is what its person may
 // read anyway (products, customers, prices and stock need no permission to read).
 export const syncRoutes = {
@@ -465,6 +477,19 @@ export const syncRoutes = {
     status: 201,
     body: registerDeviceInputSchema,
     response: deviceSchema,
+  }),
+  // Only to the device's own person, while it is active: another person's device, an unknown id
+  // and another workspace's device are device_not_found, a revoked one device_revoked (and the
+  // app deletes its copy). The API answers it with Cache-Control: no-store, so no cache on the
+  // disk keeps it.
+  deviceKey: defineRoute({
+    method: 'GET',
+    path: '/sync/devices/:id/key',
+    summary: "The device's key, which opens its encrypted copy without a PIN",
+    auth: 'bearer',
+    status: 200,
+    params: deviceKeyParamsSchema,
+    response: deviceKeySchema,
   }),
   pull: defineRoute({
     method: 'GET',

@@ -1,6 +1,7 @@
 import {
   addQuantity,
   type Device,
+  type DeviceKey,
   isZeroQuantity,
   priceListItemKey,
   type RegisterDeviceInput,
@@ -185,6 +186,23 @@ export function deviceFor(data: WorkspaceData, userId: string, id: string): Devi
   if (device?.userId !== userId) throw new MockProblem(404, 'device_not_found');
   if (device.revokedAt !== null) throw new MockProblem(403, 'device_revoked');
   return device;
+}
+
+// Step 19b: the device's key (the API's GET /sync/devices/:id/key), with the pull's checks. The
+// API keeps 32 random bytes per device; the mock works them out from the device's id instead. Its
+// data starts again at every reload, and the device registers again (device_not_found), so a
+// random key would be a new one after each reload: the app would find its copy sealed with
+// another key (key-changed) and ask for the PIN, or delete the copy.
+export async function deviceKey(
+  data: WorkspaceData,
+  userId: string,
+  id: string,
+): Promise<DeviceKey> {
+  deviceFor(data, userId, id);
+  const bytes = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`omnivo-mock-key\n${id}`)),
+  );
+  return { key: btoa(String.fromCharCode(...bytes)) };
 }
 
 // --- The rows a device keeps --------------------------------------------------------------------

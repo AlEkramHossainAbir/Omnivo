@@ -19,7 +19,9 @@ function localDatabases(page: Page): Promise<string[]> {
 }
 
 test.describe('a device without a branch', () => {
-  test.use({ seedDevice: false });
+  // Step 19b: the PIN dialog opens with the branch's toast, so this test answers it itself: the
+  // fixture's handler, run before the toast's check, could take longer than the toast stays
+  test.use({ seedDevice: false, answerPinDialog: false });
 
   test('asks which branch it is in, and offers it again where the copy is needed', async ({
     page,
@@ -45,7 +47,13 @@ test.describe('a device without a branch', () => {
     await page.getByRole('button', { name: 'Choose the branch' }).click();
     await dialog.getByLabel('Branch').selectOption({ label: 'CTG · Chattogram depot' });
     await dialog.getByRole('button', { name: 'Use this branch' }).click();
-    await toastShown(page, 'This device is set up for Chattogram depot');
+    // The toast waits for the copy to open (the key, then the in-memory tables), while other tests
+    // copy 10,000 styles. The PIN dialog opens at the same moment, after its own chunk loads.
+    await toastShown(page, 'This device is set up for Chattogram depot', 15_000);
+    await page
+      .getByRole('dialog', { name: 'Set a PIN for this device' })
+      .getByRole('button', { name: 'Not now' })
+      .click();
     await waitForCopy(page);
 
     await page.getByRole('searchbox', { name: 'Search products' }).fill('pique');

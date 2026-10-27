@@ -1,4 +1,4 @@
-import { Controller } from '@nestjs/common';
+import { Controller, Header } from '@nestjs/common';
 import { type RouteInput, type RouteResponse, routes } from '@omnivo/contracts';
 
 import { Endpoint } from '../common/http/endpoint.js';
@@ -23,6 +23,16 @@ export class SyncController {
     body,
   }: RouteInput<Routes['registerDevice']>): Promise<RouteResponse<Routes['registerDevice']>> {
     return this.devices.register(body);
+  }
+
+  // no-store, like a share link: the key must never be kept by the browser's cache on the disk,
+  // where it would sit next to the copy it opens
+  @Endpoint(routes.sync.deviceKey)
+  @Header('Cache-Control', 'no-store')
+  deviceKey({
+    params,
+  }: RouteInput<Routes['deviceKey']>): Promise<RouteResponse<Routes['deviceKey']>> {
+    return this.devices.key(params.id);
   }
 
   @Endpoint(routes.sync.pull)

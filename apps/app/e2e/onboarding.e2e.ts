@@ -1,11 +1,14 @@
 import type { Page } from '@playwright/test';
 
-import { expect, expectNoSideScroll, test } from './helpers.js';
+import { expect, expectNoSideScroll, test, waitForCopy } from './helpers.js';
 
 // The mock starts signed in (as the Rahman Garments owner). Sign out through the menu — client-side,
 // so the mock keeps its state — then create a new workspace from the sign-up page.
 async function signUpNewWorkspace(page: Page): Promise<void> {
   await page.goto('/');
+  // Step 19b: the PIN dialog opens before the first pull ends, and it would close the account
+  // menu if it opened just after the click. After the copy, the fixture answers it first.
+  await waitForCopy(page);
   // Desktop: the account button at the bottom of the sidebar; phone: the icon in the top bar.
   // Only one of them is visible at a time.
   await page

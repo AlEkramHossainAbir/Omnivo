@@ -47,7 +47,7 @@ import type { z } from 'zod';
 
 import { applyApiError, applyCommandError } from '../lib/field-errors';
 import { call } from '../lib/api';
-import { requestSync, type SaveMode, useLocalDb } from '../lib/local-data';
+import { requestSync, type SaveMode, useLocalCopy } from '../lib/local-data';
 import { useSyncAge } from '../lib/sync-summary';
 import { rowPath } from '../lib/products';
 import { customerQuery } from '../lib/queries';
@@ -176,7 +176,7 @@ export function CustomerForm({
   const queryClient = useQueryClient();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const online = useOnline();
-  const db = useLocalDb();
+  const copy = useLocalCopy();
   const onDevice = mode === 'device';
   // Step 18c (decision 12): 7 days after the last sync the device saves no new work. The form
   // still opens (the person sees what they wanted to change), with no button to save it.
@@ -229,9 +229,9 @@ export function CustomerForm({
   const onSubmit = handleSubmit(async ({ version, ...values }) => {
     if (onDevice) {
       // Enter in a box submits the form even with no submit button
-      if (!db || blocked) return;
+      if (!copy || blocked) return;
       try {
-        await saveCustomer(db, {
+        await saveCustomer(copy, {
           base: customer,
           input: values,
           savedAt: new Date().toISOString(),

@@ -36,11 +36,27 @@ function copyOf(page: Page): Promise<void> {
 // again (device_not_found → registerAgain) and the dialog never shows. The key and the value come
 // from @omnivo/sync's own saveDevice(), so their format is written in one place. A test of the
 // dialog itself turns this off with test.use({ seedDevice: false }).
-export const test = base.extend<{ seedDevice: boolean }>({
+//
+// Step 19b: the first opening of a copy asks for a device PIN (decision 5), in every test that sets
+// up a device. The fixture answers "Not now" whenever the dialog shows, before the test's next
+// action or assertion (Playwright's locator handler), so the tests of step 18 and before run as
+// they did. A test of the PIN itself turns this off with test.use({ answerPinDialog: false }).
+// The dialog closes a menu or a panel that was open: a test that opens one right after the first
+// load waits for the copy first (waitForCopy), so the dialog has shown and is answered before.
+export const test = base.extend<{ seedDevice: boolean; answerPinDialog: boolean }>({
   seedDevice: [true, { option: true }],
+  answerPinDialog: [true, { option: true }],
   // `provide`, not Playwright's usual `use`: the React hooks lint rule reads `use(…)` as a hook
-  page: async ({ page, seedDevice }, provide) => {
+  page: async ({ page, seedDevice, answerPinDialog }, provide) => {
     copies.set(page, copyOf(page));
+    if (answerPinDialog) {
+      await page.addLocatorHandler(
+        page.getByRole('dialog', { name: 'Set a PIN for this device' }),
+        async (dialog) => {
+          await dialog.getByRole('button', { name: 'Not now' }).click();
+        },
+      );
+    }
     if (seedDevice) {
       const [garments] = WORKSPACES;
       const saved = new Map<string, string>();
@@ -113,8 +129,14 @@ export async function expectNoSideScroll(page: Page): Promise<void> {
 
 // A toast, then wait for it to close. On a phone it sits over the buttons at the bottom of the
 // page, and it stays open while the pointer that just clicked rests on it: move the pointer away.
-export async function toastShown(page: Page, text: string | RegExp): Promise<void> {
-  await expect(page.getByText(text)).toBeVisible();
+// Step 19b: `timeout` for a toast that waits for the copy to open (the branch dialog's).
+export async function toastShown(
+  page: Page,
+  text: string | RegExp,
+  timeout?: number,
+): Promise<void> {
+  // No `timeout` key without a value (exactOptionalPropertyTypes): the config's 5 seconds
+  await expect(page.getByText(text)).toBeVisible(timeout === undefined ? {} : { timeout });
   await page.mouse.move(0, 0);
   await expect(page.getByText(text)).toBeHidden();
 }

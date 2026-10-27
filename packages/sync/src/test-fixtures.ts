@@ -8,15 +8,32 @@ import type {
 } from '@omnivo/contracts';
 import { uuidv7 } from 'uuidv7';
 
+import { LocalCopy } from './copy.js';
 import { SyncDatabase } from './database.js';
+import { openKey } from './keys.js';
 
 // Rows and pages for the specs. Not built into dist (tsconfig.build.json leaves it out).
 
 const UPDATED = '2026-10-21T04:00:00.000Z';
 
-export function newDatabase(): SyncDatabase {
+export function newDatabase(name = `test-${uuidv7()}`): SyncDatabase {
   // A name of its own per test: fake-indexeddb keeps every database of the process in memory
-  return new SyncDatabase(`test-${uuidv7()}`);
+  return new SyncDatabase(name);
+}
+
+// Step 19b: the 32 bytes the server would give this device (19b.2), the same in every spec
+export const SERVER_KEY = new Uint8Array(32).fill(7);
+
+// A copy opened the way the app opens it online: the server's key makes the data key the first
+// time and opens it after. Close it at the end of the test (copy.close(), db.close()).
+export async function openCopy(db: SyncDatabase): Promise<LocalCopy> {
+  const opened = await openKey(db, { serverKey: SERVER_KEY });
+  if (opened.kind !== 'open') throw new Error(`The test key did not open: ${opened.kind}`);
+  return LocalCopy.open(db, opened.key);
+}
+
+export function newCopy(): Promise<LocalCopy> {
+  return openCopy(newDatabase());
 }
 
 export function product(fields: Partial<Product> & Pick<Product, 'name'>): Product {

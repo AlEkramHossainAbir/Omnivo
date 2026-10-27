@@ -7,7 +7,10 @@ import { forgetMe, rememberMe } from './remembered-session';
 // Step 18c: why the sign-in page is showing, when the person did not sign out themself: this
 // device was revoked (its data was deleted), or (step 19a) the server refused the sign-in once the
 // connection was back after an offline opening (the data stays).
-export type SignOutNotice = 'device_revoked' | 'session_ended';
+// Step 19b: 'pin_reset' = "Forgot PIN?", or a PIN that stopped working, on the lock screen: the
+// password opens the copy again (the data stays). 'no_pin' = a reload with no connection on a
+// device without a PIN: its copy opens only online (decision 5).
+export type SignOutNotice = 'device_revoked' | 'session_ended' | 'pin_reset' | 'no_pin';
 
 interface SessionState {
   // unknown = অ্যাপ সবে খুলেছে, refresh cookie দিয়ে session ফেরানো এখনো শেষ হয়নি
@@ -53,8 +56,10 @@ export const sessionStore = createStore<SessionState>()((set) => ({
   // still on their way get a 401, and api.ts signs out again for each: the notice must stay.
   // Step 19a: every sign-out forgets the remembered `me`: a sign-in the server refused, or one the
   // person ended, never opens offline again.
+  // Step 19b: except 'no_pin', which is no sign-out: the server still has the sign-in. Keeping `me`
+  // keeps the notice at the next reload with no connection too, instead of the plain one.
   signOut: (notice) => {
-    forgetMe();
+    if (notice !== 'no_pin') forgetMe();
     set((state) => ({
       status: 'signed-out',
       accessToken: null,

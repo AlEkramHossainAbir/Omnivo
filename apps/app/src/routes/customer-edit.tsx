@@ -1,11 +1,11 @@
-import { allRows, customerCommands, type SyncDatabase } from '@omnivo/sync';
+import { allRows, customerCommands, type LocalCopy } from '@omnivo/sync';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
 import { lazy, Suspense, useCallback } from 'react';
 
 import { CustomerNotFound, useTenantId } from '../components/customer-parts';
 import { LocalState, type WaitingView } from '../components/local-state';
-import { useLocalData, useLocalDb, useLocalQuery, useSaveMode } from '../lib/local-data';
+import { useLocalCopy, useLocalData, useLocalQuery, useSaveMode } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
 import { customerGroupsQuery, customerQuery, priceListsQuery } from '../lib/queries';
 import { useOnline } from '../lib/use-online';
@@ -21,8 +21,8 @@ const CustomerForm = lazy(async () => ({
 }));
 
 // Reads of the device's copy: stable functions, so useLocalQuery subscribes once
-const readGroups = (db: SyncDatabase) => allRows(db.customerGroups);
-const readPriceLists = (db: SyncDatabase) => allRows(db.priceLists);
+const readGroups = (copy: LocalCopy) => allRows(copy, copy.db.customerGroups);
+const readPriceLists = (copy: LocalCopy) => allRows(copy, copy.db.priceLists);
 
 // What the form needs besides the customer: the groups and the price lists to pick from. Step
 // 18b: offline, the device's copy has them.
@@ -73,13 +73,13 @@ export function EditCustomerPage() {
   const canManage = useCan()('sales.customer.manage');
   const { groups, priceLists } = useFormData();
   const mode = useSaveMode(customerId);
-  const db = useLocalDb();
+  const copy = useLocalCopy();
   // The customer's refused command, if any: the form shows its errors under the boxes
   const readCommands = useCallback(
-    (database: SyncDatabase) => customerCommands(database, customerId),
+    (open: LocalCopy) => customerCommands(open, customerId),
     [customerId],
   );
-  const commands = useLocalQuery(db ? readCommands : null);
+  const commands = useLocalQuery(copy ? readCommands : null);
   const failed = commands?.find((command) => command.status === 'failed')?.error ?? null;
   // In device mode the query reads the device (queries.ts): the customer with its changes on it
   const { data: customer, isError } = useQuery({

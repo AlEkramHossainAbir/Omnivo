@@ -1,6 +1,6 @@
 import { AlertCircleIcon, WifiDisconnected02Icon } from '@hugeicons/core-free-icons';
 import { useLocale } from '@omnivo/i18n';
-import { outboxOf, productsOfVariants, type SyncDatabase } from '@omnivo/sync';
+import { type LocalCopy, outboxOf, productsOfVariants } from '@omnivo/sync';
 import { EmptyState } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useSearch } from '@tanstack/react-router';
@@ -10,7 +10,7 @@ import { LocalState } from '../components/local-state';
 import type { OutboxDraft } from '../components/sales-order-form';
 import { SalesBackLink } from '../components/sales-parts';
 import { useTenantId, useToday, useWarehouses } from '../components/stock-parts';
-import { useLocalData, useLocalDb, useLocalQuery } from '../lib/local-data';
+import { useLocalCopy, useLocalData, useLocalQuery } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
 import { draftLines } from '../lib/sales';
 import { useOnline } from '../lib/use-online';
@@ -50,12 +50,12 @@ function useReady(): { pricesIncludeVat: boolean } | null {
 
 // A draft order waiting in the outbox under this id, with its lines' products from the device;
 // null = none (the order is the server's)
-async function readDraft(db: SyncDatabase, orderId: string): Promise<OutboxDraft | null> {
-  const [entry] = await outboxOf(db, orderId);
+async function readDraft(copy: LocalCopy, orderId: string): Promise<OutboxDraft | null> {
+  const [entry] = await outboxOf(copy, orderId);
   if (entry?.command.type !== 'sales_order.create_draft') return null;
   const { input } = entry.command;
   const products = await productsOfVariants(
-    db,
+    copy,
     input.lines.map((line) => line.variantId),
   );
   return {
@@ -128,17 +128,17 @@ export function SalesOrderPage() {
   const today = useToday();
   const ready = useReady();
   const online = useOnline();
-  const db = useLocalDb();
+  const copy = useLocalCopy();
   // Step 18b: a draft saved on this device opens from the outbox; the server is asked only when
   // there is none (it does not know the order yet)
-  const read = useCallback((database: SyncDatabase) => readDraft(database, orderId), [orderId]);
-  const draft = useLocalQuery(db ? read : null);
+  const read = useCallback((open: LocalCopy) => readDraft(open, orderId), [orderId]);
+  const draft = useLocalQuery(copy ? read : null);
   const { data: order, isError } = useQuery({
     ...salesOrderQuery(useTenantId(), orderId),
-    enabled: orderId !== '' && (db === null || draft === null),
+    enabled: orderId !== '' && (copy === null || draft === null),
   });
 
-  if (db && draft === undefined) return null;
+  if (copy && draft === undefined) return null;
   if (draft && ready) {
     return (
       <Suspense fallback={null}>

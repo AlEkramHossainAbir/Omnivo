@@ -33,6 +33,12 @@ const xid8 = customType<{ data: string; driverData: string }>({
   dataType: () => 'xid8',
 });
 
+// Raw bytes. Drizzle 0.45 has no bytea column; the postgres driver reads one as a Buffer and
+// writes a Buffer as one, so no conversion is needed.
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType: () => 'bytea',
+});
+
 // The change log of step 18a: one row for every row of a synced table that was written, written
 // by migration 0044's triggers in the same transaction. Code never writes it. The pull reads the
 // keys a device has not seen yet and sends each one in its current state (or as a delete when it
@@ -100,6 +106,13 @@ export const devices = pgTable(
     // removed them from the workspace. Set with revoked_at; migration 0048 makes every revoke
     // from step 18c on name someone.
     revokedBy: uuid('revoked_by').references(() => users.id),
+    // Step 19b: the device's own key, 32 random bytes. It wraps the key that encrypts the copy on
+    // the device, so the copy opens online without a PIN. Only GET /sync/devices/:id/key sends it,
+    // to the device's person. A revoke sets it to NULL, and the key is gone for good. Migration
+    // 0050 gives it its default (gen_random_bytes, so the database makes it) and its checks: an
+    // active device always has one, a revoked one never. They live there, not here: drizzle-kit
+    // would add them before the extension exists, and before the old devices have a key.
+    secret: bytea('secret'),
   },
   (table) => [
     // The target of the composite FKs from sync_commands and audit_logs: never another tenant's device

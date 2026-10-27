@@ -6,7 +6,7 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import { ORDER_STATUSES, type OrderStatus, type SalesOrderSummary } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { type OutboxEntry, outboxEntries, type SyncDatabase } from '@omnivo/sync';
+import { type LocalCopy, type OutboxEntry, outboxEntries } from '@omnivo/sync';
 import {
   Button,
   DataTable,
@@ -24,7 +24,7 @@ import { CustomerFilter } from '../components/customer-filter';
 import { OrderStatusPills } from '../components/sales-pills';
 import { useIsoDate, useTenantId, useToday } from '../components/stock-parts';
 import { NotSyncedPill, OutboxStatusPill } from '../components/sync-parts';
-import { useLocalDb, useLocalQuery } from '../lib/local-data';
+import { useLocalCopy, useLocalQuery } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
 import { salesOrdersQuery } from '../lib/queries';
 import { useOnline } from '../lib/use-online';
@@ -42,8 +42,8 @@ interface UnsyncedOrder {
 const unsyncedColumn = dataTableColumns<UnsyncedOrder>();
 
 // A stable read (useLocalQuery): the outbox's orders, oldest first
-const readUnsynced = async (db: SyncDatabase) =>
-  (await outboxEntries(db)).flatMap((entry): UnsyncedOrder[] =>
+const readUnsynced = async (copy: LocalCopy) =>
+  (await outboxEntries(copy)).flatMap((entry): UnsyncedOrder[] =>
     entry.command.type === 'sales_order.create_draft'
       ? [{ id: entry.key, entry, date: entry.command.input.date }]
       : [],
@@ -53,8 +53,8 @@ function UnsyncedOrders() {
   const { t, format } = useLocale();
   const navigate = useNavigate();
   const isoDate = useIsoDate();
-  const db = useLocalDb();
-  const rows = useLocalQuery(db ? readUnsynced : null);
+  const copy = useLocalCopy();
+  const rows = useLocalQuery(copy ? readUnsynced : null);
   const columns = useMemo(
     () =>
       unsyncedColumn.columns([

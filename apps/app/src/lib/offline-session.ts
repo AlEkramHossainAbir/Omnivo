@@ -1,5 +1,5 @@
 import { authRoutes, type MeResponse } from '@omnivo/contracts';
-import { readDevice } from '@omnivo/sync';
+import { databaseName, keyStatus, readDevice, SyncDatabase } from '@omnivo/sync';
 
 import { call, refreshSession, setOfflineCheck } from './api';
 import { applyPreferences } from './preferences';
@@ -19,15 +19,32 @@ function hasCopy(me: MeResponse): boolean {
   return readDevice(storage(), me.tenant.id, me.user.id).branchId !== null;
 }
 
-export async function openOffline(): Promise<boolean> {
+// Step 19b (decision 5): and only a copy the PIN can open, or one whose PIN stopped working (the
+// lock screen then says to sign in when online). With no PIN, nothing here could open it. This
+// brings Dexie into this chunk, which only an offline reload loads. A database the browser
+// refuses is no copy.
+async function hasPin(me: MeResponse): Promise<boolean> {
+  const db = new SyncDatabase(databaseName(me.tenant.id, me.user.id));
+  try {
+    const status = await keyStatus(db);
+    return status.hasPin || status.pinBlocked;
+  } catch {
+    return false;
+  } finally {
+    db.close();
+  }
+}
+
+export async function openOffline(): Promise<'opened' | 'no-pin' | 'none'> {
   const me = rememberedMe();
-  if (!me || !hasCopy(me)) return false;
+  if (!me || !hasCopy(me)) return 'none';
+  if (!(await hasPin(me))) return 'no-pin';
   // The person's theme and language, as after an online sign-in. The Bangla words are a chunk of
   // their own; the worker keeps it. Failing to load them only leaves the page in English.
   await applyPreferences(me.preferences).catch(() => undefined);
   sessionStore.getState().openOffline(me);
   watchForServer();
-  return true;
+  return 'opened';
 }
 
 // Read again after each await: a sign-out may end the offline opening at any of them

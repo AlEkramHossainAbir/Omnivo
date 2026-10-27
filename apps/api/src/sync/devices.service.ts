@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type {
   Device,
+  DeviceKey,
   DeviceListItem,
   DevicePage,
   DeviceSort,
@@ -27,7 +28,13 @@ import { revokeDevices } from './device-revoke.js';
 
 export type DeviceRow = typeof devices.$inferSelect;
 
-function toDevice(row: DeviceRow): Device {
+// What an answer shows of a device. Step 19b: never its key.
+type DeviceFields = Pick<
+  DeviceRow,
+  'id' | 'name' | 'branchId' | 'userId' | 'lastSyncAt' | 'revokedAt' | 'createdAt' | 'version'
+>;
+
+function toDevice(row: DeviceFields): Device {
   return {
     id: row.id,
     name: row.name,
@@ -53,8 +60,22 @@ function deviceRevoked(): AppError {
 // Step 18c: the person who revoked a device, next to the person it belongs to (both in users)
 const revoker = alias(users, 'revoker');
 
+// Step 19b: a list reads only the columns it shows, never the key, so a page of 50 devices does
+// not carry 50 keys out of the database. Named one by one, so a column added later stays out of
+// the lists until someone adds it here.
+const deviceColumns = {
+  id: devices.id,
+  name: devices.name,
+  branchId: devices.branchId,
+  userId: devices.userId,
+  lastSyncAt: devices.lastSyncAt,
+  revokedAt: devices.revokedAt,
+  createdAt: devices.createdAt,
+  version: devices.version,
+} satisfies { [K in keyof DeviceFields]: (typeof devices)[K] };
+
 const listColumns = {
-  device: devices,
+  device: deviceColumns,
   // users, not memberships: the name stays after the person left the workspace (decision 7)
   userName: users.fullName,
   branchName: branches.name,
@@ -62,7 +83,7 @@ const listColumns = {
 };
 
 interface ListRow {
-  device: DeviceRow;
+  device: DeviceFields;
   userName: string;
   branchName: string;
   revokedByName: string | null;
@@ -151,6 +172,27 @@ export class DevicesService {
     if (row?.userId !== currentPrincipal().userId) throw deviceNotFound();
     if (row.revokedAt !== null) throw deviceRevoked();
     return row;
+  }
+
+  // Step 19b: the device's key, to its own person while it is active (forSync's check). FOR
+  // SHARE: a revoke running now holds the row FOR UPDATE, so this waits for its commit, reads the
+  // row again and answers device_revoked. Once a revoke has answered, no key leaves the server.
+  // It follows the sign-in like a pull, so a revoke after a reload ends the session in use now.
+  // No audit row: the app asks at every online opening, and the row says nothing new.
+  key(id: string): Promise<DeviceKey> {
+    return this.withTenant(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(devices)
+        .where(and(eq(devices.tenantId, getTenantId()), eq(devices.id, id)))
+        .for('share');
+      if (row?.userId !== currentPrincipal().userId) throw deviceNotFound();
+      if (row.revokedAt !== null) throw deviceRevoked();
+      // devices_secret_check (migration 0050): an active device always has its key
+      if (row.secret === null) throw new Error(`device ${id} is active without a key`);
+      await this.keepSession(tx, row);
+      return { key: row.secret.toString('base64') };
+    });
   }
 
   // Step 18c (decision 13): the device remembers the sign-in it is used with, so a revoke can end

@@ -10,11 +10,17 @@ import {
 } from '@omnivo/contracts';
 import { uuidv7 } from 'uuidv7';
 
-import type { OutboxEntry, SyncDatabase } from './database.js';
+import type { LocalCopy } from './copy.js';
+import type { OutboxEntry, OutboxRow } from './database.js';
+import { openEntries, openEntry, sealEntry } from './sealed.js';
 
 // Saving work done on the device as commands (step 18b), and the outbox's own changes: retry,
-// discard. No Dexie import: everything goes through the database the session opened, so the
-// forms that save here stay small (see index.ts).
+// discard. No Dexie import: everything goes through the copy the session opened, so the forms
+// that save here stay small (see index.ts).
+//
+// Step 19b: the commands are sealed, and a transaction cannot wait for Web Crypto. So a save opens
+// what it needs first, seals what it writes, and only then starts the transaction, which decides on
+// the clear fields (status, sent, the command's id) alone.
 
 // saved: in the outbox. unchanged: the form holds what the customer already has, so nothing is
 // sent. busy: the command is on its way to the server, or was sent without an answer, so it
@@ -24,7 +30,7 @@ export type SaveResult = 'saved' | 'unchanged' | 'busy';
 // A command the server certainly never ran: it was refused, or never sent. Only these may be
 // rewritten. A sent command without an answer may have run (the answer was lost), so it is sent
 // again as it is, and a change after it is a command of its own.
-export function isOpen(entry: OutboxEntry): boolean {
+export function isOpen(entry: Pick<OutboxEntry, 'status' | 'sent'>): boolean {
   return entry.status === 'failed' || (entry.status === 'waiting' && !entry.sent);
 }
 
@@ -158,71 +164,88 @@ function entryOf(
   };
 }
 
+// What saveCustomer writes, worked out from the customer's entries, opened
+interface CustomerWrites {
+  deletes: number[];
+  // With a seq: written in that entry's place. Without: added at the end.
+  put: OutboxEntry | null;
+  result: SaveResult;
+}
+
 // A new customer, or a change to one (decision 33). The customer's open commands (never sent, or
 // refused) are folded into the first of them, which keeps its place in the outbox: an order on
 // this device for a new customer stays behind that customer's create. The folded command gets a
 // new id: a refused id is answered from what the server kept (decision 10).
-export async function saveCustomer(db: SyncDatabase, save: CustomerSave): Promise<SaveResult> {
+function customerWrites(
+  entries: readonly OutboxEntry[],
+  save: CustomerSave,
+  customerId: string,
+): CustomerWrites {
+  const open = entries.filter(
+    (entry) => entry.command.type !== 'sales_order.create_draft' && isOpen(entry),
+  );
+  const [first, ...rest] = open;
+  const folded = rest.flatMap((entry) => entry.seq ?? []);
+  const fields = { customerId, key: customerId, name: save.input.name, savedAt: save.savedAt };
+  if (first?.seq !== undefined) {
+    // A create stays a create, with what the form holds now. A change is worked out again from
+    // the first change's base, so its `from` values stay the ones the person first saw.
+    const base = first.base ?? save.base;
+    const command =
+      first.command.type === 'customer.create'
+        ? createCommand(customerId, save.input)
+        : base && updateCommand(base, save.input);
+    // Changed back to what the customer has: nothing is left to send
+    if (command === null) return { deletes: [...folded, first.seq], put: null, result: 'saved' };
+    return {
+      deletes: folded,
+      put: { ...entryOf(command, { ...fields, base: first.base }), seq: first.seq },
+      result: 'saved',
+    };
+  }
+  if (save.base === null) {
+    return {
+      deletes: [],
+      put: entryOf(createCommand(customerId, save.input), { ...fields, base: null }),
+      result: 'saved',
+    };
+  }
+  const command = updateCommand(save.base, save.input);
+  if (command === null) return { deletes: [], put: null, result: 'unchanged' };
+  return { deletes: [], put: entryOf(command, { ...fields, base: save.base }), result: 'saved' };
+}
+
+// What a customer's commands are, in short: a save writes only if they are still the ones it
+// opened. Every rewrite gives a command a new id, and a push changes the status.
+function stateOf(rows: readonly OutboxRow[]): string {
+  return rows
+    .map((row) => `${String(row.seq)}:${row.commandId}:${row.status}:${String(row.sent)}`)
+    .join(',');
+}
+
+const SAVE_ATTEMPTS = 3;
+
+// Opened, worked out and sealed outside the transaction; written only if no one changed this
+// customer's commands in between (another tab saved, the push took them). Then it starts again
+// from what is there now. Three times in a row would take three saves racing on one customer.
+export async function saveCustomer(copy: LocalCopy, save: CustomerSave): Promise<SaveResult> {
+  const { db } = copy;
   const customerId = save.base?.id ?? uuidv7();
-  return db.transaction('rw', db.outbox, async () => {
-    const entries = await db.outbox.where('customerId').equals(customerId).sortBy('seq');
-    const open = entries.filter(
-      (entry) => entry.command.type !== 'sales_order.create_draft' && isOpen(entry),
-    );
-    const [first, ...rest] = open;
-    if (first?.seq !== undefined) {
-      // A create stays a create, with what the form holds now. A change is worked out again from
-      // the first change's base, so its `from` values stay the ones the person first saw.
-      const base = first.base ?? save.base;
-      const command =
-        first.command.type === 'customer.create'
-          ? createCommand(customerId, save.input)
-          : base && updateCommand(base, save.input);
-      await db.outbox.bulkDelete(
-        rest.flatMap((entry) => (entry.seq === undefined ? [] : [entry.seq])),
-      );
-      if (command === null) {
-        // Changed back to what the customer has: nothing is left to send
-        await db.outbox.delete(first.seq);
-        return 'saved';
-      }
-      await db.outbox.put({
-        ...entryOf(command, {
-          customerId,
-          key: customerId,
-          base: first.base,
-          name: save.input.name,
-          savedAt: save.savedAt,
-        }),
-        seq: first.seq,
-      });
-      return 'saved';
-    }
-    if (save.base === null) {
-      await db.outbox.add(
-        entryOf(createCommand(customerId, save.input), {
-          customerId,
-          key: customerId,
-          base: null,
-          name: save.input.name,
-          savedAt: save.savedAt,
-        }),
-      );
-      return 'saved';
-    }
-    const command = updateCommand(save.base, save.input);
-    if (command === null) return 'unchanged';
-    await db.outbox.add(
-      entryOf(command, {
-        customerId,
-        key: customerId,
-        base: save.base,
-        name: save.input.name,
-        savedAt: save.savedAt,
-      }),
-    );
-    return 'saved';
-  });
+  const rowsOf = () => db.outbox.where('customerId').equals(customerId).sortBy('seq');
+  for (let attempt = 1; ; attempt += 1) {
+    const rows = await rowsOf();
+    const writes = customerWrites(await openEntries(copy, rows), save, customerId);
+    const row = writes.put && (await sealEntry(copy, writes.put));
+    const written = await db.transaction('rw', db.outbox, async () => {
+      if (stateOf(await rowsOf()) !== stateOf(rows)) return false;
+      await db.outbox.bulkDelete(writes.deletes);
+      // put: in the first entry's place when it has a seq, else at the end (auto-increment)
+      if (row) await db.outbox.put(row);
+      return true;
+    });
+    if (written) return writes.result;
+    if (attempt === SAVE_ATTEMPTS) throw new Error('The outbox kept changing during the save');
+  }
 }
 
 export interface OrderSave {
@@ -236,27 +259,32 @@ export interface OrderSave {
 }
 
 // A draft order (decision 15). Saved again, it goes to the end of the outbox: an order needs
-// nothing after it, and its customer may now be one added on this device after it.
-export async function saveOrderDraft(db: SyncDatabase, save: OrderSave): Promise<SaveResult> {
+// nothing after it, and its customer may now be one added on this device after it. The new entry
+// does not depend on the old one, so it is sealed first, and the transaction only checks the old
+// one's clear fields.
+export async function saveOrderDraft(copy: LocalCopy, save: OrderSave): Promise<SaveResult> {
+  const { db } = copy;
   const orderId = save.orderId ?? uuidv7();
+  const row = await sealEntry(
+    copy,
+    entryOf(
+      { id: uuidv7(), type: 'sales_order.create_draft', orderId, input: save.input },
+      {
+        customerId: save.input.customerId,
+        key: orderId,
+        base: null,
+        name: save.name,
+        savedAt: save.savedAt,
+        lines: save.input.lines.length,
+        total: save.total,
+      },
+    ),
+  );
   return db.transaction('rw', db.outbox, async () => {
-    const [entry] = await db.outbox.where('key').equals(orderId).toArray();
-    if (entry && !isOpen(entry)) return 'busy';
-    if (entry?.seq !== undefined) await db.outbox.delete(entry.seq);
-    await db.outbox.add(
-      entryOf(
-        { id: uuidv7(), type: 'sales_order.create_draft', orderId, input: save.input },
-        {
-          customerId: save.input.customerId,
-          key: orderId,
-          base: null,
-          name: save.name,
-          savedAt: save.savedAt,
-          lines: save.input.lines.length,
-          total: save.total,
-        },
-      ),
-    );
+    const [old] = await db.outbox.where('key').equals(orderId).toArray();
+    if (old && !isOpen(old)) return 'busy';
+    if (old?.seq !== undefined) await db.outbox.delete(old.seq);
+    await db.outbox.add(row);
     return 'saved';
   });
 }
@@ -264,48 +292,65 @@ export async function saveOrderDraft(db: SyncDatabase, save: OrderSave): Promise
 // ---------------------------------------------------------------------------------------------
 // The Sync page
 
+// The later commands on the same customer
+function later<E extends Pick<OutboxEntry, 'seq' | 'customerId'>>(
+  items: readonly E[],
+  item: E,
+): E[] {
+  const { seq } = item;
+  if (seq === undefined) return [];
+  return items.filter((other) => other.customerId === item.customerId && (other.seq ?? 0) > seq);
+}
+
 // What goes with an entry when it is discarded: a new customer takes every later command on that
 // customer (its changes and its orders), which the server could only refuse without it. A change
 // or an order goes alone.
 export function dependentsOf(entries: readonly OutboxEntry[], entry: OutboxEntry): OutboxEntry[] {
-  if (entry.command.type !== 'customer.create' || entry.seq === undefined) return [];
-  const { seq } = entry;
-  return entries.filter((other) => other.customerId === entry.customerId && (other.seq ?? 0) > seq);
+  return entry.command.type === 'customer.create' ? later(entries, entry) : [];
 }
 
 // Discard: the entry and its dependents leave the device and never reach the server. A command
-// being sent is left alone (busy); the page offers Discard again once it has its answer.
-export async function discardEntry(db: SyncDatabase, seq: number): Promise<SaveResult> {
+// being sent is left alone (busy); the page offers Discard again once it has its answer. The
+// clear fields say all of it: nothing is opened.
+export async function discardEntry(copy: LocalCopy, seq: number): Promise<SaveResult> {
+  const { db } = copy;
   return db.transaction('rw', db.outbox, async () => {
-    const entry = await db.outbox.get(seq);
-    if (!entry) return 'unchanged';
-    if (entry.status === 'sending') return 'busy';
-    const others = await db.outbox.where('customerId').equals(entry.customerId).toArray();
-    const gone = [entry, ...dependentsOf(others, entry)].filter(
+    const row = await db.outbox.get(seq);
+    if (!row) return 'unchanged';
+    if (row.status === 'sending') return 'busy';
+    const others = await db.outbox.where('customerId').equals(row.customerId).toArray();
+    const gone = [row, ...(row.type === 'customer.create' ? later(others, row) : [])].filter(
       (item) => item.status !== 'sending',
     );
-    await db.outbox.bulkDelete(gone.flatMap((item) => (item.seq === undefined ? [] : [item.seq])));
+    await db.outbox.bulkDelete(gone.flatMap((item) => item.seq ?? []));
     return 'saved';
   });
 }
 
 // Retry a refused command as it is, under a new id (the old id's refusal is kept on the server).
-// For a refusal that was not the command's fault: a permission given back, a code freed.
-export async function retryEntry(db: SyncDatabase, seq: number): Promise<SaveResult> {
+// For a refusal that was not the command's fault: a permission given back, a code freed. Opened
+// and sealed again first; written only if it is still the same refused command.
+export async function retryEntry(copy: LocalCopy, seq: number): Promise<SaveResult> {
+  const { db } = copy;
+  const row = await db.outbox.get(seq);
+  if (row?.status !== 'failed') return 'unchanged';
+  const entry = await openEntry(copy, row);
+  const next = await sealEntry(copy, {
+    ...entry,
+    command: { ...entry.command, id: uuidv7() },
+    status: 'waiting',
+    sent: false,
+    error: null,
+  });
   return db.transaction('rw', db.outbox, async () => {
-    const entry = await db.outbox.get(seq);
-    if (entry?.status !== 'failed') return 'unchanged';
-    await db.outbox.put({
-      ...entry,
-      command: { ...entry.command, id: uuidv7() },
-      status: 'waiting',
-      sent: false,
-      error: null,
-    });
+    const now = await db.outbox.get(seq);
+    // Discarded, edited or retried meanwhile (another tab): this retry is out of date
+    if (now?.status !== 'failed' || now.commandId !== row.commandId) return 'unchanged';
+    await db.outbox.put(next);
     return 'saved';
   });
 }
 
-export async function dismissNotice(db: SyncDatabase, commandId: string): Promise<void> {
-  await db.notices.delete(commandId);
+export async function dismissNotice(copy: LocalCopy, commandId: string): Promise<void> {
+  await copy.db.notices.delete(commandId);
 }

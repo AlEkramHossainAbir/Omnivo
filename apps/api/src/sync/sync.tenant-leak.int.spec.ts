@@ -453,6 +453,15 @@ describe('managing devices over HTTP', () => {
     });
     expect((await pull(b.who, b.device.id)).statusCode).toBe(200);
   });
+
+  it("never gives tenant B's device key", async () => {
+    // The owner of A, with every permission, asking for B's device by its id
+    const res = await as(a.who, 'GET', `/sync/devices/${b.device.id}/key`);
+    expect(res.statusCode).toBe(404);
+    expect(problemSchema.parse(res.json()).code).toBe('device_not_found');
+    // B's own person gets it: the 404 above is the tenant, not the route
+    expect((await as(b.who, 'GET', `/sync/devices/${b.device.id}/key`)).statusCode).toBe(200);
+  });
 });
 
 // Postgres error code of a statement run as the given role, or null when it worked

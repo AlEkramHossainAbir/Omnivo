@@ -76,3 +76,34 @@ export function clearSignOutPending(): void {
     // Nothing to clear in a storage that cannot be read
   }
 }
+
+// Step 19b (decision 6): "Lock now" is kept here, so a reload (online too) opens the lock screen.
+// One value for the whole browser: whoever signs in next does it with the password, which ends
+// the lock anyway. Only two things remove it: the right PIN (local-session.ts) and a sign-in with
+// the password (session.ts). A sign-out keeps it: another tab that sees it go would open its copy.
+export const LOCKED_KEY = 'omnivo.locked';
+
+export function markLocked(): void {
+  try {
+    storage()?.setItem(LOCKED_KEY, '1');
+  } catch {
+    // The storage refused: the lock still holds in this page, but not after a reload
+  }
+}
+
+export function clearLocked(): void {
+  try {
+    storage()?.removeItem(LOCKED_KEY);
+  } catch {
+    // Nothing to clear in a storage that cannot be read
+  }
+}
+
+export function isLocked(): boolean {
+  try {
+    const saved = storage()?.getItem(LOCKED_KEY);
+    return saved !== null && saved !== undefined;
+  } catch {
+    return false;
+  }
+}

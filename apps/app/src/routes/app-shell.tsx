@@ -23,14 +23,15 @@ import {
   Layers01Icon,
   LayoutGridIcon,
   LeftToRightListNumberIcon,
+  LockKeyIcon,
   Logout01Icon,
   MoneyExchange01Icon,
   MoneyReceive02Icon,
   MoneyReceiveCircleIcon,
   MoneySend02Icon,
   Note01Icon,
-  NoteRemoveIcon,
   Notebook02Icon,
+  NoteRemoveIcon,
   PackageIcon,
   PackageOutOfStockIcon,
   PackageReceiveIcon,
@@ -41,6 +42,7 @@ import {
   Settings02Icon,
   ShoppingBasket01Icon,
   ShoppingCart01Icon,
+  SquareLock02Icon,
   Store01Icon,
   TableIcon,
   Tag01Icon,
@@ -82,7 +84,7 @@ import {
 } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { createLink, Outlet, useNavigate } from '@tanstack/react-router';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 
 import { NotificationBell } from '../components/notification-bell';
 import { type InstallWay, promptInstall, useInstallWay } from '../lib/install';
@@ -95,11 +97,6 @@ import { useSyncAge, useSyncSummary } from '../lib/sync-summary';
 import { isTheme } from '../lib/theme';
 import { useOnline } from '../lib/use-online';
 
-// Step 18a: the device and its copy of the data (Dexie, the sync engine, the branch dialog) in a
-// chunk of their own. The shell draws at once; the copy starts a moment later.
-const LocalDataHost = lazy(async () => ({
-  default: (await import('../components/local-data-host')).LocalDataHost,
-}));
 // Step 18b: the question before signing out with changes on the device. Loaded when it is asked:
 // the dialog's code (about 14 KB gz with its focus trap and scroll lock) took the shell over its
 // budget, for a dialog most sessions never open.
@@ -247,14 +244,24 @@ function SyncNavItem() {
 }
 
 // ডেস্কটপের সাইডবার-তলা আর ফোনের টপ বার — দুই trigger, একই মেনু
+// Step 19b: the account menu's lock item (decision 4), from the AppFrame, which has the copy.
+// pin = "Lock now"; without a PIN the item opens the PIN dialog instead.
+export interface LockAction {
+  pin: boolean;
+  run: () => void;
+}
+
 function UserMenuContent({
   align,
   onInstall,
+  lock,
   onSignOut,
 }: {
   align: 'start' | 'end';
   // Step 19a: undefined = nothing to install (installed already, or a browser that cannot)
   onInstall: (() => void) | undefined;
+  // Step 19b: undefined = no copy open on this device, so nothing to lock
+  lock: LockAction | undefined;
   onSignOut: () => void;
 }) {
   const { t, language } = useLocale();
@@ -274,6 +281,11 @@ function UserMenuContent({
       {onInstall && (
         <DropdownMenuItem icon={Download04Icon} onSelect={onInstall}>
           {t('shell.installApp')}
+        </DropdownMenuItem>
+      )}
+      {lock && (
+        <DropdownMenuItem icon={lock.pin ? SquareLock02Icon : LockKeyIcon} onSelect={lock.run}>
+          {lock.pin ? t('shell.lockNow') : t('shell.setPinToLock')}
         </DropdownMenuItem>
       )}
       <DropdownMenuSeparator />
@@ -315,10 +327,10 @@ function UserMenuContent({
   );
 }
 
-export function AppShell() {
+// Step 19b: inside the AppFrame (app-frame.tsx), which runs the device's copy beside it and shows the
+// lock screen in its place
+export function AppShell({ lock }: { lock: LockAction | undefined }) {
   const { t } = useLocale();
-  const navigate = useNavigate();
-  const status = useSession((state) => state.status);
   const me = useSession((state) => state.me);
   // লুকানো শুধু সুবিধা — আসল পাহারা API-র PermissionGuard। যেটা খুললেই 403, সেটা মেনুতে না দেখানো
   const can = useCan();
@@ -342,11 +354,6 @@ export function AppShell() {
           else setInstallHelp(installWay);
         };
 
-  // refresh ব্যর্থ হলে (session শেষ, অন্য ট্যাবে লগআউট) api.ts store-এ signed-out বসায়
-  useEffect(() => {
-    if (status === 'signed-out') void navigate({ to: '/login' });
-  }, [status, navigate]);
-
   return (
     <Shell
       brand={<Logo />}
@@ -356,7 +363,7 @@ export function AppShell() {
           <DropdownMenuTrigger asChild>
             <IconButton icon={UserCircleIcon} label={t('shell.account')} />
           </DropdownMenuTrigger>
-          <UserMenuContent align="end" onInstall={install} onSignOut={signOut} />
+          <UserMenuContent align="end" onInstall={install} lock={lock} onSignOut={signOut} />
         </DropdownMenu>
       }
       sidebarHeader={<WorkspaceSwitcher />}
@@ -627,7 +634,7 @@ export function AppShell() {
               />
             </button>
           </DropdownMenuTrigger>
-          <UserMenuContent align="start" onInstall={install} onSignOut={signOut} />
+          <UserMenuContent align="start" onInstall={install} lock={lock} onSignOut={signOut} />
         </DropdownMenu>
       }
     >
@@ -652,10 +659,6 @@ export function AppShell() {
           />
         </Suspense>
       )}
-      {/* No fallback: the host draws nothing until a branch dialog is needed */}
-      <Suspense fallback={null}>
-        <LocalDataHost />
-      </Suspense>
     </Shell>
   );
 }

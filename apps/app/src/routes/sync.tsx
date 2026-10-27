@@ -13,7 +13,6 @@ import {
   isOpen,
   type OutboxEntry,
   outboxEntries,
-  readPullState,
   retryEntry,
   syncNotices,
 } from '@omnivo/sync';
@@ -34,13 +33,15 @@ import { useState } from 'react';
 
 import { DocumentNotice } from '../components/document-notice';
 import { LocalState } from '../components/local-state';
+import { PinCard } from '../components/pin-card';
 import { StorageCard } from '../components/storage-card';
 import { useTenantId, useTimeZone } from '../components/stock-parts';
 import { OutboxStatusPill, useCommandText, useFieldList } from '../components/sync-parts';
 import {
+  readPull,
   requestSync,
+  useLocalCopy,
   useLocalData,
-  useLocalDb,
   useLocalQuery,
   useSyncStatus,
 } from '../lib/local-data';
@@ -88,10 +89,10 @@ export function SyncPage() {
   const timeZone = useTimeZone();
   const { view } = useLocalData();
   const status = useSyncStatus();
-  const db = useLocalDb();
-  const entries = useLocalQuery(db ? outboxEntries : null);
-  const notices = useLocalQuery(db ? syncNotices : null);
-  const pull = useLocalQuery(readPullState);
+  const copy = useLocalCopy();
+  const entries = useLocalQuery(copy ? outboxEntries : null);
+  const notices = useLocalQuery(copy ? syncNotices : null);
+  const pull = useLocalQuery(readPull);
   // Step 18c (decision 12): the limits, on this device's clock
   const age = useSyncAge();
   // Step 19a: opened offline with the remembered sign-in, not checked by the server yet
@@ -102,14 +103,14 @@ export function SyncPage() {
   const dependents = discarding && entries ? dependentsOf(entries, discarding).length : 0;
 
   const retry = async (entry: OutboxEntry) => {
-    if (!db || entry.seq === undefined) return;
-    await retryEntry(db, entry.seq);
+    if (!copy || entry.seq === undefined) return;
+    await retryEntry(copy, entry.seq);
     requestSync();
   };
 
   const discard = async (entry: OutboxEntry) => {
-    if (!db || entry.seq === undefined) return;
-    const result = await discardEntry(db, entry.seq);
+    if (!copy || entry.seq === undefined) return;
+    const result = await discardEntry(copy, entry.seq);
     setDiscarding(null);
     if (result === 'busy') {
       toast(t('sync.busy'));
@@ -129,7 +130,7 @@ export function SyncPage() {
         description={t('sync.description')}
         actions={
           <Button
-            disabled={!online || !db || status.syncing}
+            disabled={!online || !copy || status.syncing}
             onClick={() => {
               requestSync();
             }}
@@ -157,7 +158,7 @@ export function SyncPage() {
         </DocumentNotice>
       )}
 
-      {!db && view.kind !== 'ready' && <LocalState view={view} />}
+      {!copy && view.kind !== 'ready' && <LocalState view={view} />}
 
       {notices && notices.length > 0 && (
         <Card>
@@ -178,7 +179,7 @@ export function SyncPage() {
                   type="button"
                   className="text-body-sm font-medium text-brand underline-offset-3 hover:underline"
                   onClick={() => {
-                    if (db) void dismissNotice(db, notice.commandId);
+                    if (copy) void dismissNotice(copy, notice.commandId);
                   }}
                 >
                   {t('sync.dismiss')}
@@ -272,6 +273,8 @@ export function SyncPage() {
         </Card>
       )}
 
+      {/* Step 19b: next to the storage card: both are about this device, not about a sync */}
+      <PinCard />
       {/* Step 19a: last, because nothing in it changes from one sync to the next */}
       <StorageCard />
 

@@ -1,4 +1,4 @@
-import { type Device, type MoveDeviceInput, routes } from '@omnivo/contracts';
+import { type Device, type DeviceKey, type MoveDeviceInput, routes } from '@omnivo/contracts';
 import { formatNumber, i18n, isLanguage } from '@omnivo/i18n';
 import {
   allRows,
@@ -9,25 +9,42 @@ import {
   deviceNameParts,
   deviceStorageKey,
   forgetDevice,
+  forgetPin,
+  type KeyProblem,
+  type KeyRecord,
+  keyStatus,
+  LocalCopy,
   localCustomer,
   lookUpPrices,
+  markPinAsked,
   newDeviceId,
+  openKey,
   outboxCounts,
   type PushOutcome,
   readDevice,
   readPullState,
+  renewServerKey,
   saveDevice,
+  setPin,
   SyncDatabase,
   SyncEngine,
   syncedAtOf,
+  type Unlock,
   watch,
 } from '@omnivo/sync';
 import { toast } from '@omnivo/ui';
 
 import { ApiRequestError, call, onApiWrite, refreshSession } from './api';
 import { setDeviceReads } from './device-reads';
-import { localDataStore, type MoveResult } from './local-data';
+import {
+  type LockReason,
+  localDataStore,
+  type MoveResult,
+  type PinSave,
+  type UnlockAnswer,
+} from './local-data';
 import { queryClient } from './query-client';
+import { clearLocked, isLocked, LOCKED_KEY, markLocked } from './remembered-session';
 import { sessionStore } from './session-store';
 import { askToKeep } from './storage';
 import { NO_SUMMARY, syncSummaryStore } from './sync-summary';
@@ -62,6 +79,16 @@ interface Session {
   cleanup: (() => void)[];
   // Step 18c: stops following the other tabs; only when the session ends, not with the copy
   unfollow: () => void;
+  // Step 19b: "Lock now" in this tab. The flag in localStorage says the same for the next reload and
+  // the other tabs, but a storage that refuses must not leave the copy open here.
+  locked: boolean;
+}
+
+// Step 19b: one opening of the database. runCleanup ends it (a lock, a move, a retry, the end of the
+// session), and every step after an await checks it, so an ended opening never changes the screen.
+interface Opening {
+  db: SyncDatabase;
+  live: boolean;
 }
 
 let current: Session | null = null;
@@ -81,6 +108,11 @@ function hasEnded(session: Session): boolean {
   return session.stopped;
 }
 
+// Step 19b: the same for an opening, read again after each await
+function closed(opening: Opening): boolean {
+  return !opening.live;
+}
+
 function runCleanup(session: Session): void {
   for (const undo of session.cleanup.splice(0)) undo();
 }
@@ -93,9 +125,15 @@ export function startLocalData(input: { tenantId: string; userId: string }): () 
     stopped: false,
     cleanup: [],
     unfollow: () => undefined,
+    locked: false,
   };
   current = session;
-  session.unfollow = followOtherTabs(session);
+  const unfollowTabs = followOtherTabs(session);
+  const unfollowSignIn = followSignIn(session);
+  session.unfollow = () => {
+    unfollowTabs();
+    unfollowSignIn();
+  };
   // Saved before the first registration: if its answer is lost, the next try sends the same id
   // and the server returns the same device (decision 20)
   remember(session, session.identity);
@@ -107,6 +145,12 @@ export function startLocalData(input: { tenantId: string; userId: string }): () 
     },
     moveHere: (input) => moveHere(session, input),
     revokedHere: () => revoke(session),
+    pinDialog: null,
+    savePin: (save) => savePin(session, save),
+    closePin,
+    lockNow: () => {
+      lockNow(session);
+    },
   });
   void setUp(session);
   return () => {
@@ -126,6 +170,11 @@ export function stopLocalData(): void {
     deviceId: null,
     moveHere: ended,
     revokedHere: ended,
+    pinDialog: null,
+    keys: null,
+    savePin: ended,
+    closePin: () => undefined,
+    lockNow: () => undefined,
   });
   syncSummaryStore.setState(NO_SUMMARY);
 }
@@ -138,7 +187,12 @@ export function stopLocalData(): void {
 function followOtherTabs(session: Session): () => void {
   const key = deviceStorageKey(session.tenantId, session.userId);
   const changed = (event: StorageEvent) => {
-    if (event.key !== key || session.stopped) return;
+    if (session.stopped) return;
+    if (event.key === LOCKED_KEY) {
+      followLock(session, event.newValue !== null);
+      return;
+    }
+    if (event.key !== key) return;
     // Removed: revoked there. The same steps here (forgetting it again changes nothing).
     if (event.newValue === null) {
       void revoke(session);
@@ -156,6 +210,32 @@ function followOtherTabs(session: Session): () => void {
   return () => {
     window.removeEventListener('storage', changed);
   };
+}
+
+// Step 19b: "Lock now" in another tab locks this one too. The right PIN there, or a sign-in with the
+// password, opens this one again: with the server's key when this tab's sign-in was checked, else
+// with the PIN typed here.
+function followLock(session: Session, locked: boolean): void {
+  const { device } = localDataStore.getState();
+  if (locked) {
+    if (device.kind === 'ready') reopen(session);
+    return;
+  }
+  session.locked = false;
+  if (device.kind === 'locked' && device.reason === 'locked') reopen(session);
+}
+
+// Step 19b: the connection came back after an offline reload, and the server checked the sign-in
+// (offline-session.ts). A copy still waiting for its PIN then opens with the server's key, as any
+// online opening does (decision 1). Not one the person locked: that one waits for the PIN.
+function followSignIn(session: Session): () => void {
+  return sessionStore.subscribe((state, previous) => {
+    if (!previous.openedOffline || state.openedOffline || state.status !== 'signed-in') return;
+    // Another person signed in meanwhile: the host stops this session and starts theirs
+    if (state.me?.user.id !== session.userId || state.me.tenant.id !== session.tenantId) return;
+    const { device } = localDataStore.getState();
+    if (device.kind === 'locked' && device.reason === 'offline') reopen(session);
+  });
 }
 
 // The copy is the workspace's data: signing out deletes it (decision 41). The device's id stays
@@ -281,10 +361,12 @@ export function chooseLater(): void {
   set({ asking: false });
 }
 
-async function open(session: Session): Promise<void> {
+// Step 19b: `keep` = the key's row of the copy a move deleted (moveHere)
+async function open(session: Session, keep?: KeyRecord): Promise<void> {
   const db = new SyncDatabase(databaseName(session.tenantId, session.userId));
   try {
     await db.open();
+    if (keep) await db.keys.put(keep);
   } catch {
     // A private window that refuses IndexedDB, a full disk
     if (!session.stopped) set({ device: { kind: 'storage-failed' } });
@@ -294,8 +376,172 @@ async function open(session: Session): Promise<void> {
     db.close();
     return;
   }
+  // First on the list, so it runs last: what start() adds goes in front of it (unshift)
+  const opening: Opening = { db, live: true };
+  session.cleanup.push(() => {
+    opening.live = false;
+    db.close();
+  });
+  await openCopy(session, opening);
+}
+
+// Step 19b: what opens the copy (decision 1). A checked sign-in, not locked: the server's key, and
+// no PIN. "Lock now" (decision 6), or an opening with no checked sign-in (an offline reload,
+// decision 2): the PIN, on the lock screen.
+async function openCopy(session: Session, opening: Opening): Promise<void> {
+  const { db } = opening;
+  const locked = session.locked || isLocked();
+  if (locked || sessionStore.getState().openedOffline) {
+    await showLock(session, opening, locked ? 'locked' : 'offline', null);
+    return;
+  }
+  let serverKey: Uint8Array<ArrayBuffer>;
+  try {
+    serverKey = await fetchServerKey(session);
+  } catch (error) {
+    if (closed(opening)) return;
+    const code = codeOf(error);
+    // A revoked device: the 18c steps (the copy goes, then a sign-in check)
+    if (code === 'device_revoked') {
+      void revoke(session);
+      return;
+    }
+    // registerAgain found the branch archived, and starts the set-up again
+    if (code === 'device_branch_invalid') return;
+    // No answer (the API is down): the PIN opens it, as offline. Without one, it tries again later.
+    const { hasPin } = await keyStatus(db);
+    if (hasPin) await showLock(session, opening, 'offline', null);
+    else if (!closed(opening)) waitForServer(session);
+    return;
+  }
+  if (closed(opening)) return;
+  const opened = await openKey(db, { serverKey });
+  if (closed(opening)) return;
+  if (opened.kind === 'open') {
+    await start(session, opening, opened.key, true);
+    return;
+  }
+  // key-changed, the one problem a server key answers (decision 17): the PIN opens the copy once,
+  // and wraps its key for the server's new one. Without a PIN nothing can open it.
+  const { hasPin } = await keyStatus(db);
+  if (hasPin) await showLock(session, opening, 'key-changed', serverKey);
+  else if (!closed(opening)) await remake(session);
+}
+
+// Step 19b (19b.2): the device's own key, asked at every online opening and never written anywhere
+// (decision 23). A device the server does not know (its database restored to a time before this
+// device) registers again, as the engine's pull does, and asks once more.
+async function fetchServerKey(session: Session): Promise<Uint8Array<ArrayBuffer>> {
+  const request = () => call(routes.sync.deviceKey, { params: { id: session.identity.id } });
+  let answer: DeviceKey;
+  try {
+    answer = await request();
+  } catch (error) {
+    if (codeOf(error) !== 'device_not_found') throw error;
+    await registerAgain(session);
+    answer = await request();
+  }
+  // The contract checked it: 43 base64 characters and one '=', so 32 bytes
+  return Uint8Array.from(atob(answer.key), (char) => char.charCodeAt(0));
+}
+
+// Step 19b: the lock screen (decision 7). The changes waiting are counted from the fields the
+// outbox keeps readable, the legacy outbox too (a device not opened since version 3), so Sign out
+// can ask first. Showing it again after a wrong PIN reads the new count of wrong ones.
+async function showLock(
+  session: Session,
+  opening: Opening,
+  reason: LockReason,
+  serverKey: Uint8Array<ArrayBuffer> | null,
+): Promise<void> {
+  const { db } = opening;
+  const [status, waiting, legacy] = await Promise.all([
+    keyStatus(db),
+    db.outbox.count(),
+    db.legacyOutbox.count(),
+  ]);
+  if (closed(opening)) return;
+  set({
+    device: {
+      kind: 'locked',
+      reason,
+      status,
+      waiting: waiting + legacy,
+      unlock: (pin) => unlock(session, opening, reason, serverKey, pin),
+      // Decision 35: the PIN goes (a PIN nobody remembers only helps someone guessing it). The
+      // lock screen then ends the sign-in: session.ts imports this module (logout), so this one
+      // does not import it back (found by the 19b.5 boundaries check).
+      forgetPin: () => forgetPin(db),
+    },
+    asking: false,
+    pinDialog: null,
+  });
+}
+
+// The lock screen's Unlock. A problem shows the screen again (fewer tries left, or the PIN off)
+// and goes back to the field.
+async function unlock(
+  session: Session,
+  opening: Opening,
+  reason: LockReason,
+  serverKey: Uint8Array<ArrayBuffer> | null,
+  pin: string,
+): Promise<UnlockAnswer> {
+  const { db } = opening;
+  const failed = async (problem: KeyProblem): Promise<UnlockAnswer> => {
+    await showLock(session, opening, reason, serverKey);
+    return problem;
+  };
+  if (serverKey) {
+    // key-changed: the PIN wraps the key for the new server key first, and the server key then
+    // opens it (no second PBKDF2, which takes up to a second on a cheap phone)
+    const renewed = await renewServerKey(db, pin, serverKey);
+    if (renewed.kind !== 'set') return failed(renewed);
+  }
+  const opened = await openKey(db, serverKey ? { serverKey } : { pin });
+  if (opened.kind !== 'open') return failed(opened);
+  if (closed(opening)) return { kind: 'open' };
+  // The right PIN ends "Lock now", here and (the storage event) in the other tabs
+  if (reason === 'locked') {
+    session.locked = false;
+    clearLocked();
+  }
+  await start(session, opening, opened.key, false);
+  return { kind: 'open' };
+}
+
+// Step 19b: the open copy, its engine and the reads the queries use offline. `ask` = opened with
+// the server's key, so the PIN dialog may follow (decision 5): no PIN yet, and not asked since the
+// last one went. Opened with the PIN, there is one.
+async function start(
+  session: Session,
+  opening: Opening,
+  key: CryptoKey,
+  ask: boolean,
+): Promise<void> {
+  const { db } = opening;
+  let copy: LocalCopy;
+  try {
+    copy = await LocalCopy.open(db, key);
+  } catch {
+    // A row that does not open (changed on the disk), or a read the browser refused
+    if (!closed(opening)) set({ device: { kind: 'storage-failed' } });
+    return;
+  }
+  const status = ask ? await keyStatus(db) : null;
+  if (closed(opening)) {
+    copy.close();
+    return;
+  }
+  // "Lock now" in another tab while this copy was opening: followLock found no open copy to close.
+  // No await from here to the 'ready' state, so a later lock finds it open (found by the 19b.5 e2e).
+  if (session.locked || isLocked()) {
+    copy.close();
+    await showLock(session, opening, 'locked', null);
+    return;
+  }
   const engine = new SyncEngine({
-    db,
+    copy,
     deviceId: session.identity.id,
     pull: (query) => call(routes.sync.pull, { query }),
     push: (body) => call(routes.sync.push, { body }),
@@ -303,25 +549,7 @@ async function open(session: Session): Promise<void> {
       if (!session.stopped) pushed(session, outcome);
     },
     codeOf,
-    registerAgain: async () => {
-      const { branchId } = session.identity;
-      if (branchId === null) return;
-      try {
-        await registerDevice(session, branchId);
-      } catch (error) {
-        // The branch was archived while the server did not know the device: forget it and ask
-        // again, like a new device
-        if (codeOf(error) === 'device_branch_invalid') {
-          remember(session, { ...session.identity, branchId: null });
-          queueMicrotask(() => {
-            runCleanup(session);
-            set({ device: { kind: 'starting' } });
-            void setUp(session);
-          });
-        }
-        throw error;
-      }
-    },
+    registerAgain: () => registerAgain(session),
     onRevoked: () => {
       void revoke(session);
     },
@@ -329,21 +557,22 @@ async function open(session: Session): Promise<void> {
   // Step 18b: the queries read the copy offline through these (device-reads.ts). The balance is the
   // server's only, so a customer from the device has none.
   setDeviceReads({
-    units: () => allRows(db.units),
-    taxRates: () => allRows(db.taxRates),
-    warehouses: () => allRows(db.warehouses),
+    units: () => allRows(copy, db.units),
+    taxRates: () => allRows(copy, db.taxRates),
+    warehouses: () => allRows(copy, db.warehouses),
     customer: async (customerId) => {
-      const local = await localCustomer(db, customerId);
+      const local = await localCustomer(copy, customerId);
       return local && { ...local, balance: null };
     },
-    hasCommands: async (customerId) => (await customerCommands(db, customerId)).length > 0,
-    settings: async () => (await allRows(db.settings))[0] ?? null,
+    hasCommands: async (customerId) => (await customerCommands(copy, customerId)).length > 0,
+    settings: async () => (await allRows(copy, db.settings))[0] ?? null,
     prices: async (customerId, items) => {
-      const customer = customerId === '' ? null : await localCustomer(db, customerId);
-      return lookUpPrices(db, customer?.priceListId ?? null, items);
+      const customer = customerId === '' ? null : await localCustomer(copy, customerId);
+      return lookUpPrices(copy, customer?.priceListId ?? null, items);
     },
   });
-  session.cleanup.push(
+  // In front of the database's close, which open() put on the list
+  session.cleanup.unshift(
     // A save on this device: pull its change now (api.ts)
     onApiWrite(() => {
       engine.request();
@@ -351,7 +580,7 @@ async function open(session: Session): Promise<void> {
     // Step 18b: the sidebar's numbers (sync-summary.ts), live: a save, a push or another tab
     // changes the outbox, and the count follows
     watch(
-      () => outboxCounts(db),
+      () => outboxCounts(copy),
       (counts) => {
         syncSummaryStore.setState({ waiting: counts.total, failed: counts.failed });
       },
@@ -368,22 +597,109 @@ async function open(session: Session): Promise<void> {
       },
       () => undefined,
     ),
+    // Step 19b: the PIN, live: a new one or a wrong one, here or in another tab
+    watch(
+      () => keyStatus(db),
+      (keys) => {
+        set({ keys });
+      },
+      () => undefined,
+    ),
     // The copy closes (a move, a revoke, a retry from the start): its numbers go with it
     () => {
       syncSummaryStore.setState(NO_SUMMARY);
     },
     () => {
       setDeviceReads(null);
+      set({ keys: null });
     },
     () => {
       engine.stop();
     },
+    // Step 19b: the key and the opened rows leave memory (decision 20)
     () => {
-      db.close();
+      copy.close();
     },
   );
-  set({ device: { kind: 'ready', db, engine, watch }, asking: false });
+  const pinDialog =
+    status && !status.hasPin && !status.pinAsked ? (status.pinBlocked ? 'new' : 'set-up') : null;
+  set({ device: { kind: 'ready', copy, engine, watch }, asking: false, pinDialog });
   engine.start();
+}
+
+// The server does not know this device (its database was restored): the same id and branch again.
+// For the engine's pull and for the key's request.
+async function registerAgain(session: Session): Promise<void> {
+  const { branchId } = session.identity;
+  if (branchId === null) return;
+  try {
+    await registerDevice(session, branchId);
+  } catch (error) {
+    // The branch was archived while the server did not know the device: forget it and ask
+    // again, like a new device
+    if (codeOf(error) === 'device_branch_invalid') {
+      remember(session, { ...session.identity, branchId: null });
+      queueMicrotask(() => {
+        runCleanup(session);
+        set({ device: { kind: 'starting' } });
+        void setUp(session);
+      });
+    }
+    throw error;
+  }
+}
+
+// Step 19b (decision 17, no PIN): the server's key does not open the copy, and nothing else can. It
+// is deleted and pulled again; what had not synced cannot be read any more, and goes with it.
+async function remake(session: Session): Promise<void> {
+  runCleanup(session);
+  await deleteLocalDatabase(session.tenantId, session.userId);
+  if (hasEnded(session)) return;
+  toast(i18n.t('sync.copyRemade'));
+  await open(session);
+}
+
+// Step 19b: the copy closes and opens again, which decides afresh how (openCopy)
+function reopen(session: Session): void {
+  runCleanup(session);
+  set({ device: { kind: 'starting' } });
+  void open(session);
+}
+
+// Step 19b (decision 4): "Lock now". The flag first, so a reload from here on shows the lock screen
+// too, and the other tabs lock (followLock). Closing the copy drops its key and its in-memory
+// tables; it then opens again only as far as the lock screen.
+function lockNow(session: Session): void {
+  session.locked = true;
+  markLocked();
+  reopen(session);
+}
+
+// Step 19b: the PIN dialog's save (decision 5). A new PIN is wrapped with the server's key, so it
+// needs the connection; a change opens the key with the current PIN, and a wrong one counts as on
+// the lock screen (keys.ts). The API's errors (no connection) go to the dialog.
+async function savePin(session: Session, save: PinSave): Promise<{ kind: 'set' } | KeyProblem> {
+  const { device } = localDataStore.getState();
+  if (device.kind !== 'ready') throw new Error('No copy is open on this device');
+  const unlock: Unlock =
+    save.current === '' ? { serverKey: await fetchServerKey(session) } : { pin: save.current };
+  return setPin(device.copy.db, unlock, save.pin);
+}
+
+// After set-up, closing the dialog any way is "Not now": not asked again on this copy. The Sync
+// page's card still sets one. The dialog closes once the answer is saved: a reload right after the
+// click would otherwise cut the write off, and ask again (found by the 19b.5 e2e test). Only this
+// dialog: the fifth wrong current PIN may have put the "new PIN" dialog in its place meanwhile.
+function closePin(): void {
+  const { device, pinDialog } = localDataStore.getState();
+  const close = () => {
+    if (localDataStore.getState().pinDialog === pinDialog) set({ pinDialog: null });
+  };
+  if (pinDialog === 'change' || device.kind !== 'ready') {
+    close();
+    return;
+  }
+  void markPinAsked(device.copy.db).finally(close);
 }
 
 // A revoked device keeps nothing (decision 7), and step 18c (decisions 3 and 4) adds two things.
@@ -426,7 +742,9 @@ async function moveHere(session: Session, input: MoveDeviceInput): Promise<MoveR
   const { device } = localDataStore.getState();
   // The page offers the move only with an open copy: without one, the outbox cannot be read
   if (device.kind !== 'ready') throw new Error('No copy is open on this device');
-  if ((await outboxCounts(device.db)).total > 0) return 'waiting';
+  if ((await outboxCounts(device.copy)).total > 0) return 'waiting';
+  // Step 19b (decision 37): the key's row goes into the new copy, so the PIN still opens it
+  const keep = await device.copy.db.keys.get('data');
   const moved = await call(routes.devices.move, {
     params: { id: session.identity.id },
     body: input,
@@ -437,6 +755,6 @@ async function moveHere(session: Session, input: MoveDeviceInput): Promise<MoveR
   await deleteLocalDatabase(session.tenantId, session.userId);
   // Saved after the delete: another tab follows the new branch only once the old copy is gone
   remember(session, { id: moved.id, branchId: moved.branchId, later: false });
-  if (!hasEnded(session)) await open(session);
+  if (!hasEnded(session)) await open(session, keep);
   return moved;
 }

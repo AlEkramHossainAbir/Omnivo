@@ -26,10 +26,10 @@ import {
 } from '@omnivo/ui';
 import {
   allRows,
+  type LocalCopy,
   type LocalProductSort,
   productPage,
   productSummaryOf,
-  type SyncDatabase,
 } from '@omnivo/sync';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
@@ -52,8 +52,8 @@ const PAGE = 100;
 
 // The small lists of the rows' categories and units, whole. Outside the component: a read must be
 // one stable function (useLocalQuery).
-const readCategories = (db: SyncDatabase) => allRows(db.productCategories);
-const readUnits = (db: SyncDatabase) => allRows(db.units);
+const readCategories = (copy: LocalCopy) => allRows(copy, copy.db.productCategories);
+const readUnits = (copy: LocalCopy) => allRows(copy, copy.db.units);
 
 // The table's sort → the list's. Two sortable columns, each with an index on the device and a
 // stable order on the server.
@@ -105,7 +105,7 @@ export function ProductsPage() {
   );
   // The active tab (decision 5): a live query, so a pull that changes a product changes its row
   const readPage = useCallback(
-    (db: SyncDatabase) => productPage(db, { search: settled, categoryIds, sort, limit }),
+    (copy: LocalCopy) => productPage(copy, { search: settled, categoryIds, sort, limit }),
     [settled, categoryIds, sort, limit],
   );
   const local = useLocalQuery(archived ? null : readPage);
