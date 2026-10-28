@@ -649,6 +649,42 @@ const syncRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/sync'), 'SyncPage'),
 });
 
+// Step 20a: the POS screen. Under the app route, so the session, the lock screen and the device's
+// copy work as on every page, but the AppFrame draws it without the shell (POS_PATH in
+// app-frame.tsx): a counter needs the whole screen. Its own chunk, like every page.
+const posRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos',
+  component: lazyRouteComponent(() => import('./routes/pos'), 'PosPage'),
+});
+
+// Step 20a: the POS's pages in the shell: the registers (a workspace setting), the posted sales
+// and their page, and what the counters sold short (under Stock). Only '/pos' itself is bare
+// (app-frame.tsx), so these keep the sidebar.
+const posRegistersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos/registers',
+  component: lazyRouteComponent(() => import('./routes/pos-registers'), 'PosRegistersPage'),
+});
+
+const posSalesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos/sales',
+  component: lazyRouteComponent(() => import('./routes/pos-sales'), 'PosSalesPage'),
+});
+
+const posSaleRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos/sales/$saleId',
+  component: lazyRouteComponent(() => import('./routes/pos-sale'), 'PosSalePage'),
+});
+
+const soldShortRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/stock/sold-short',
+  component: lazyRouteComponent(() => import('./routes/sold-short'), 'SoldShortPage'),
+});
+
 // Step 18c: your own devices (the account menu) and every device of the workspace (the sidebar,
 // with core.device.manage)
 const myDevicesRoute = createRoute({
@@ -964,6 +1000,11 @@ const routeTree = rootRoute.addChildren([
     requisitionRoute,
     approvalsRoute,
     syncRoute,
+    posRoute,
+    posRegistersRoute,
+    posSalesRoute,
+    posSaleRoute,
+    soldShortRoute,
     myDevicesRoute,
     devicesRoute,
     purchaseOrdersRoute,

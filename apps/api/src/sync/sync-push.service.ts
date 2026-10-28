@@ -26,6 +26,7 @@ import { AppError } from '../common/http/app-error.js';
 import { getTenantId, runFromDevice } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
+import { PosSalesService } from '../pos/pos-sales.service.js';
 import { type Access, PermissionService } from '../rbac/permission.service.js';
 import { CustomersService } from '../sales/customers.service.js';
 import { SalesOrdersService } from '../sales/sales-orders.service.js';
@@ -41,19 +42,34 @@ const PERMISSION_OF = {
   'customer.create': routes.customers.create.permission,
   'customer.update': routes.customers.update.permission,
   'sales_order.create_draft': routes.salesOrders.create.permission,
+  // Step 20a: no route writes a sale (decision 21), so the cashier's permission comes from the
+  // route that takes a register, which is the same one (decision 31)
+  'pos_sale.create': routes.pos.claimRegister.permission,
 } satisfies Record<SyncCommandType, PermissionKey>;
 
 // The ids a device makes (decision 12). One already used — in this workspace or another, the
 // primary keys are global — fails the insert on its primary key, and the command is refused.
-const DEVICE_ID_KEYS = ['parties_pkey', 'party_addresses_pkey', 'sales_orders_pkey'] as const;
+const DEVICE_ID_KEYS = [
+  'parties_pkey',
+  'party_addresses_pkey',
+  'sales_orders_pkey',
+  'pos_sales_pkey',
+] as const;
 
 function isSyncCommandType(type: string): type is SyncCommandType {
   return SYNC_COMMAND_TYPES.some((known) => known === type);
 }
 
-// The customer or the order a command is about: the answer's entity_id
+// The customer, the order or the POS sale a command is about: the answer's entity_id
 function entityOf(command: SyncCommand): string {
-  return command.type === 'sales_order.create_draft' ? command.orderId : command.customerId;
+  switch (command.type) {
+    case 'sales_order.create_draft':
+      return command.orderId;
+    case 'pos_sale.create':
+      return command.saleId;
+    default:
+      return command.customerId;
+  }
 }
 
 // Step 18b: the push. Every command of a batch in the order sent, each in its own transaction:
@@ -72,6 +88,7 @@ export class SyncPushService {
     private readonly permissions: PermissionService,
     private readonly customers: CustomersService,
     private readonly orders: SalesOrdersService,
+    private readonly posSales: PosSalesService,
   ) {}
 
   async push(input: z.output<typeof syncPushInputSchema>): Promise<SyncPush> {
@@ -128,6 +145,8 @@ export class SyncPushService {
       } catch (error) {
         const refusal = refusalOf(error);
         if (refusal === null) throw error;
+        // Step 20a (decision 37): the refused sale's receipt was printed, so its number stays used
+        if (command.type === 'pos_sale.create') await this.posSales.keepNumber(tx, command.input);
         await tx.insert(syncCommands).values({
           ...this.answerKey(device, command),
           status: 'rejected',
@@ -156,7 +175,10 @@ export class SyncPushService {
     command: SyncCommand,
   ): Promise<SyncNotice[]> {
     const permission = PERMISSION_OF[command.type];
-    if (!access.permissions.includes(permission)) {
+    // Step 20a (decision 28): a POS sale is never refused for it. The money is in the drawer and
+    // the goods have left, so refusing would only leave them out of the books; the sale writes
+    // its own audit row instead.
+    if (!access.permissions.includes(permission) && command.type !== 'pos_sale.create') {
       throw new AppError(403, 'permission_missing', `Missing permission: ${permission}.`, {
         params: { permissions: permission },
       });
@@ -169,6 +191,9 @@ export class SyncPushService {
         return this.customers.updateFromDevice(tx, command);
       case 'sales_order.create_draft':
         await this.orders.createDraftFromDevice(tx, command.orderId, command.input);
+        return [];
+      case 'pos_sale.create':
+        await this.posSales.createFromDevice(tx, access, command.saleId, command.input);
         return [];
     }
   }
@@ -204,14 +229,14 @@ export class SyncPushService {
 
   // The customer a command made or changed, in the pull's shape: the device writes it at once. A
   // customer the device may not keep (archived since) goes as a delete, like in a delta pull. An
-  // order sends nothing: orders are not on the device.
+  // order and a POS sale send nothing: neither is on the device (decision 35).
   private async changesOf(
     tx: Transaction,
     device: DeviceRow,
     type: SyncCommandType,
     entityId: string,
   ): Promise<SyncChange[]> {
-    if (type === 'sales_order.create_draft') return [];
+    if (type === 'sales_order.create_draft' || type === 'pos_sale.create') return [];
     // The customer loader reads only the tenant; the branch's warehouses do not matter to it
     const scope = { tenantId: getTenantId(), branchId: device.branchId, warehouseIds: [] };
     const rows = await LOADERS.customer(tx, scope, { by: 'keys', keys: [entityId] });

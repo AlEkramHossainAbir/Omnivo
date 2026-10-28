@@ -50,3 +50,4 @@ export * from './purchase-returns.js';
 export * from './debit-notes.js';
 export * from './supplier-refunds.js';
 export * from './sync.js';
+export * from './pos.js';

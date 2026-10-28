@@ -7,6 +7,7 @@ import { DocumentFileHandler } from '../documents/file.handler.js';
 import { LowStockHandler } from '../inventory/low-stock.handler.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
+import { SoldShortHandler } from '../pos/sold-short.handler.js';
 import { ProductImportHandler } from '../products/import.handler.js';
 import { ReportExportHandler } from '../reports/export.handler.js';
 import { CatalogHandler } from '../setup/catalog.handler.js';
@@ -40,6 +41,7 @@ export class EventHandlers {
     taxRates: TaxRatesHandler,
     documentFile: DocumentFileHandler,
     documentEmail: DocumentEmailHandler,
+    soldShort: SoldShortHandler,
   ) {
     this.byType = {
       'workspace.created': welcome,
@@ -55,6 +57,7 @@ export class EventHandlers {
       'workspace.tax_rates_requested': taxRates,
       'document.file_requested': documentFile,
       'document.email_requested': documentEmail,
+      'pos.sold_short': soldShort,
     };
   }
 

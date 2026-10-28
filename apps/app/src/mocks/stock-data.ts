@@ -226,8 +226,9 @@ export function decimalsOf(data: WorkspaceData, unitId: string): number {
   return data.catalog.units.find((unit) => unit.id === unitId)?.decimals ?? 0;
 }
 
-// warehouse|variant → on hand, and warehouse|variant|batch → on hand, from every movement
-function balancesOf(stock: MockStock) {
+// warehouse|variant → on hand, and warehouse|variant|batch → on hand, from every movement. Step
+// 20a: the POS sale's plan (pos-data.ts) reads them too.
+export function balancesOf(stock: MockStock) {
   const byPlace = new Map<string, string>();
   const byBatch = new Map<string, string>();
   for (const movement of stock.movements) {
@@ -759,7 +760,7 @@ function nextNumber(
   );
 }
 
-interface Move {
+export interface Move {
   line: number;
   warehouseId: string;
   stockLine: StockLine;
@@ -774,7 +775,8 @@ interface Move {
 
 // The API's StockPostingService.post(), shortened: serial numbers and stock checked, the values
 // worked out (step 14), then the movements written (one per serial number for a serial product).
-// Returns each move's value.
+// Returns each move's value. Step 20a: `belowZero` skips the stock check for a POS sale, which is
+// never refused for stock (its plan already worked out what goes below zero).
 export function postMoves(
   data: WorkspaceData,
   posting: {
@@ -783,6 +785,7 @@ export function postMoves(
     direction: 'in' | 'out';
     documentId: string;
     number: string;
+    belowZero?: boolean;
   },
   moves: readonly Move[],
   receivingTransferId?: string,
@@ -818,7 +821,7 @@ export function postMoves(
         code: posting.direction === 'in' ? 'stock_serial_in_stock' : 'stock_serial_not_here',
       });
     }
-    if (posting.direction === 'out') {
+    if (posting.direction === 'out' && posting.belowZero !== true) {
       const key = `${move.warehouseId}|${move.stockLine.variantId}|${move.batchId ?? ''}`;
       const allowed = move.stockLine.tracking === 'none' && data.settings.allowNegativeStock;
       if (

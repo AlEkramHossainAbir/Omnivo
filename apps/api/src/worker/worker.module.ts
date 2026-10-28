@@ -12,6 +12,7 @@ import { InvitationEmailHandler } from '../invitations/invitation-email.handler.
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
 import { MailService } from '../mail/mail.service.js';
 import { NumberingService } from '../numbering/numbering.service.js';
+import { SoldShortHandler } from '../pos/sold-short.handler.js';
 import { ProductImportHandler } from '../products/import.handler.js';
 import { ReportExportHandler } from '../reports/export.handler.js';
 import { CatalogHandler } from '../setup/catalog.handler.js';
@@ -72,6 +73,8 @@ export class WorkerModule implements OnApplicationShutdown {
         DocumentFileMaker,
         DocumentFileHandler,
         DocumentEmailHandler,
+        // Step 20a: the bell for a POS sale that took stock below zero
+        SoldShortHandler,
         // Step 18a: the hourly job also prunes the sync change log, on the relay's pool
         SyncLogCleanup,
       ],

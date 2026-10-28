@@ -25,6 +25,7 @@ export * from './money.js';
 export * from './notifications.js';
 export * from './numbering.js';
 export * from './pagination.js';
+export * from './pos.js';
 export * from './permissions.js';
 export * from './preferences.js';
 export * from './price-lists.js';

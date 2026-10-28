@@ -4,6 +4,8 @@ import {
   Book02Icon,
   BookOpen02Icon,
   CalendarLock01Icon,
+  Cashier02Icon,
+  CashierIcon,
   ChartIncreaseIcon,
   CheckmarkBadge01Icon,
   Coins01Icon,
@@ -35,8 +37,10 @@ import {
   PackageIcon,
   PackageOutOfStockIcon,
   PackageReceiveIcon,
+  PackageRemoveIcon,
   Payment02Icon,
   PieChartIcon,
+  ReceiptDollarIcon,
   RulerIcon,
   SecurityCheckIcon,
   Settings02Icon,
@@ -428,6 +432,17 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
               invoice and the money receipt end the chain. Step 15d: what goes back the other way
               comes after them, goods first, then money. */}
           <NavGroup label={t('nav.sales')}>
+            {/* Step 20a: the counter screen first, for the cashiers who sell there (it opens
+                without this sidebar) */}
+            {can('pos.sale.create') && (
+              <NavLink to="/pos" icon={CashierIcon}>
+                {t('nav.pointOfSale')}
+              </NavLink>
+            )}
+            {/* Everyone reads the posted sales, like every sales document */}
+            <NavLink to="/pos/sales" icon={ReceiptDollarIcon}>
+              {t('nav.posSales')}
+            </NavLink>
             <NavLink to="/quotations" icon={Note01Icon}>
               {t('nav.quotations')}
             </NavLink>
@@ -544,6 +559,9 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
             <NavLink to="/stock/batches" icon={HourglassIcon}>
               {t('nav.expiry')}
             </NavLink>
+            <NavLink to="/stock/sold-short" icon={PackageRemoveIcon}>
+              {t('nav.soldShort')}
+            </NavLink>
             <NavLink to="/stock/reorder" icon={PackageOutOfStockIcon}>
               {t('nav.reorder')}
             </NavLink>
@@ -582,6 +600,10 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
             )}
             <NavLink to="/custom-fields" icon={TextIcon}>
               {t('nav.customFields')}
+            </NavLink>
+            {/* Step 20a: everyone reads the registers (read-only without pos.register.manage) */}
+            <NavLink to="/pos/registers" icon={Cashier02Icon}>
+              {t('nav.registers')}
             </NavLink>
             <NavLink to="/branches" icon={Store01Icon}>
               {t('nav.branches')}

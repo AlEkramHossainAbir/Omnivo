@@ -53,6 +53,11 @@ const DESCRIPTIONS = {
   'purchase.return.manage': 'Write and post purchase returns, which send stock back to suppliers',
   'purchase.debit_note.manage': 'Write and post debit notes, and apply their money to bills',
   'purchase.refund.manage': 'Record money suppliers paid back, and void supplier refunds',
+  'pos.sale.create': 'Sell at a POS register, and take a free register for this device',
+  'pos.price.override':
+    "Change a price at the POS, or give more discount than the register's limit",
+  'pos.register.manage':
+    'Add, edit and archive POS registers, with their warehouse, accounts and receipt',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

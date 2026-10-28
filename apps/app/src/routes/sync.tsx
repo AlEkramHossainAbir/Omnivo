@@ -61,11 +61,13 @@ function waitsFor(entries: readonly OutboxEntry[], entry: OutboxEntry): OutboxEn
   return entries.find((other) => other.customerId === entry.customerId && (other.seq ?? 0) < seq);
 }
 
-// Where Edit opens a command: the customer's form, or the order's
+// Where Edit opens a command: the customer's form, or the order's. Step 20a: a POS sale has none:
+// it was paid and its receipt printed, so what it says is what happened.
 function EditLink({ entry }: { entry: OutboxEntry }) {
   const { t } = useLocale();
   const className =
     'inline-flex min-h-9 items-center rounded-control border border-line-strong bg-surface px-3 text-body-sm font-medium text-ink shadow-sm transition-colors duration-150 hover:bg-subtle';
+  if (entry.command.type === 'pos_sale.create') return null;
   return entry.command.type === 'sales_order.create_draft' ? (
     <Link to="/sales-orders/$orderId" params={{ orderId: entry.key }} className={className}>
       {t('sync.edit')}
@@ -254,15 +256,19 @@ export function SyncPage() {
                             {t('common.retry')}
                           </Button>
                         )}
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => {
-                            setDiscarding(entry);
-                          }}
-                        >
-                          {t('sync.discard')}
-                        </Button>
+                        {/* Step 20a: a POS sale only once refused (outbox.ts → mayGo) */}
+                        {(entry.command.type !== 'pos_sale.create' ||
+                          entry.status === 'failed') && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setDiscarding(entry);
+                            }}
+                          >
+                            {t('sync.discard')}
+                          </Button>
+                        )}
                       </div>
                     )}
                   </li>

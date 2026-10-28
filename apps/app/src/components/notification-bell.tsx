@@ -47,6 +47,8 @@ const TARGET = {
   'import.done': '/products/imports',
   'import.failed': '/products/imports',
   'stock.low': '/stock/reorder',
+  // Step 20a: the list that has every line a counter sold short, the one to act on (decision 30)
+  'pos.sold_short': '/stock/sold-short',
 } as const satisfies Record<Exclude<NotificationType, DocumentNotificationType>, string>;
 
 // A document's page from the notification's kind and id. The list of that kind when the id is

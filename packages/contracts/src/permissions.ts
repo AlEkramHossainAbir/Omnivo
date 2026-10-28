@@ -44,6 +44,9 @@ export const PERMISSION_KEYS = [
   'purchase.return.manage',
   'purchase.debit_note.manage',
   'purchase.refund.manage',
+  'pos.sale.create',
+  'pos.price.override',
+  'pos.register.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -63,6 +66,7 @@ export const PERMISSION_GROUPS = [
   'inventory',
   'sales',
   'purchase',
+  'pos',
 ] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
@@ -109,4 +113,7 @@ export const PERMISSION_GROUP_OF = {
   'purchase.return.manage': 'purchase',
   'purchase.debit_note.manage': 'purchase',
   'purchase.refund.manage': 'purchase',
+  'pos.sale.create': 'pos',
+  'pos.price.override': 'pos',
+  'pos.register.manage': 'pos',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

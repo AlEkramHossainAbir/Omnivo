@@ -4,6 +4,7 @@ import { contractErrorMap } from './errors.js';
 import {
   customerUpdateCommandSchema,
   deviceKeySchema,
+  posSaleCommandSchema,
   priceListItemKey,
   registerDeviceInputSchema,
   salesOrderDraftCommandSchema,
@@ -15,6 +16,7 @@ import {
   syncPullSchema,
   syncPushInputSchema,
   syncPushSchema,
+  syncUpsertSchema,
   type SyncCommandInput,
   type SyncPushInput,
 } from './sync.js';
@@ -413,5 +415,73 @@ describe('push', () => {
     const [accepted, rejected] = answer.results;
     expect(accepted?.status === 'accepted' && accepted.notices[0]?.fields).toEqual(['creditLimit']);
     expect(rejected?.status === 'rejected' && rejected.error.code).toBe('customer_code_taken');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// The POS (step 20a)
+
+describe('POS on the device', () => {
+  const register = {
+    id: ORDER,
+    code: 'POS1',
+    name: 'Front counter',
+    branchId: CUSTOMER,
+    warehouseId: WAREHOUSE,
+    accounts: { cash: RATE, card: null, bkash: null, nagad: null },
+    maxDiscountPercent: '10.00',
+    paperWidth: '58',
+    receiptFooter: null,
+    deviceId: COMMAND,
+    lastNumber: 122,
+    archivedAt: null,
+    version: 4,
+    updatedAt: AT,
+  };
+
+  it('keeps a register without its last number, which changes with every sale', () => {
+    const change = syncUpsertSchema.parse({
+      op: 'upsert',
+      entity: 'pos_register',
+      key: ORDER,
+      data: register,
+    });
+    expect(change.entity === 'pos_register' && change.data.code).toBe('POS1');
+    expect(change.data).not.toHaveProperty('lastNumber');
+  });
+
+  it('sends a sale under an id the device made, and refuses one of another kind', () => {
+    const input = {
+      registerId: ORDER,
+      sequence: 123,
+      date: '2026-10-27',
+      soldAt: AT,
+      customerId: null,
+      pricesIncludeVat: true,
+      lines: [
+        {
+          variantId: VARIANT,
+          unitId: UNIT,
+          quantity: '10',
+          description: '',
+          unitPrice: '12',
+          discountType: 'percent',
+          discount: '',
+          taxRateId: RATE,
+          rate: '0.00',
+          startingPrice: '12.0000',
+          batchId: BATCH,
+          serialNumbers: [],
+        },
+      ],
+      billDiscountType: 'percent',
+      billDiscount: '',
+      payments: [{ method: 'cash', amount: '120', reference: '' }],
+    };
+    const command = { id: COMMAND, type: 'pos_sale.create', saleId: CUSTOMER, input };
+    expect(syncCommandSchema.parse(command).type).toBe('pos_sale.create');
+    expect(errorsOf(posSaleCommandSchema.safeParse({ ...command, saleId: V4 }))).toEqual({
+      saleId: 'Invalid UUID',
+    });
   });
 });

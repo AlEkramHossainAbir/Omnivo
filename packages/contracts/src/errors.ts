@@ -489,6 +489,34 @@ export const ERROR_CODES = [
   // Step 18c: a branch is archived only when no active device is in it. Move or revoke them
   // first: a device's next pull would otherwise copy a branch that is gone.
   'branch_has_devices',
+  // Step 20a: POS registers. A register's code is part of every receipt number, so it is checked
+  // like a number series' prefix.
+  'pos_register_code_format',
+  'pos_register_code_taken',
+  'pos_register_name_required',
+  'pos_register_warehouse_invalid',
+  'pos_register_cash_required',
+  // A payment method's account is not an active money account (accounts.ts → moneyAccountIds)
+  'pos_register_account_invalid',
+  'pos_discount_limit_format',
+  // Another device holds the register (claim, archive); it is archived; it is in another branch
+  // than the device; the device already holds another register (it lets go of that one first);
+  // the device lets go of a register it does not hold
+  'pos_register_in_use',
+  'pos_register_archived',
+  'pos_register_branch',
+  'pos_device_has_register',
+  'pos_register_not_held',
+  // A POS sale (the device's schema, and the server again when the command arrives)
+  'pos_payments_required',
+  'pos_payment_amount_required',
+  'pos_payment_short',
+  'pos_change_not_cash',
+  // The register no longer has an account for a method the sale was paid by: someone with
+  // pos.register.manage sets one, then the cashier sends the sale again from the Sync page
+  'pos_method_not_set',
+  // Another sale of the register already has this number: a bug, never a cashier's mistake
+  'pos_number_taken',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

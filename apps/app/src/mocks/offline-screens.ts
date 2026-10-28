@@ -26,6 +26,11 @@ const SCREENS = [
   // dialog (a change with the current PIN works offline)
   () => import('../components/lock-screen'),
   () => import('../components/pin-dialog'),
+  // Step 20a: the POS screen sells from the device's copy, and its payment, done dialog and
+  // receipt are a chunk of their own (taking a register needs a connection, so not its chooser)
+  () => import('../routes/pos'),
+  () => import('../components/pos-pay'),
+  () => import('../components/pos-receipt'),
 ];
 
 // Once, by main.tsx's enableMocking. The dev server is on this computer, so it does not fail.

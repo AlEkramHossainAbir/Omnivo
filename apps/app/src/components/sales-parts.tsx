@@ -50,7 +50,8 @@ export function SalesBackLink({
     | '/receipts'
     | '/sales-returns'
     | '/credit-notes'
-    | '/refunds';
+    | '/refunds'
+    | '/pos/sales';
   label: string;
 }) {
   return (

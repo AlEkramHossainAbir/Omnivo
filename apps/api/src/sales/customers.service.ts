@@ -109,6 +109,8 @@ const CUSTOMER_IN_USE = [
   'sales_returns_customer_fk',
   'credit_notes_customer_fk',
   'refunds_customer_fk',
+  // step 20a: a POS sale made for a customer picked at the counter
+  'pos_sales_customer_fk',
 ] as const;
 
 function codeTaken(): AppError {

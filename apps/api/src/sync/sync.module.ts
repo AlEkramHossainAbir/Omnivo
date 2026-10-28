@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { PosModule } from '../pos/pos.module.js';
 import { RbacModule } from '../rbac/rbac.module.js';
 import { SalesModule } from '../sales/sales.module.js';
 import { DevicesController } from './devices.controller.js';
@@ -12,9 +13,10 @@ import { SyncPushService } from './sync-push.service.js';
 // it is the worker's (WorkerModule), on the worker's database role. Step 18b: the push, which
 // runs a device's commands with the sales services (SalesModule) and checks each command's
 // permission (RbacModule). Step 18c: the device lists, rename, move and revoke (DevicesController),
-// which also read the person's permissions.
+// which also read the person's permissions. Step 20a: the push posts a device's POS sales
+// (PosModule).
 @Module({
-  imports: [RbacModule, SalesModule],
+  imports: [RbacModule, SalesModule, PosModule],
   controllers: [SyncController, DevicesController],
   providers: [DevicesService, SyncService, SyncPushService],
 })

@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 
-import type { SyncPull, SyncPullQuery } from '@omnivo/contracts';
+import { SYNC_PROTOCOL, type SyncPull, type SyncPullQuery } from '@omnivo/contracts';
 import { describe, expect, it, vi } from 'vitest';
 
 import { readPullState } from './state.js';
@@ -59,7 +59,11 @@ describe('SyncEngine', () => {
     const { db, engine } = await engineWith(pull);
     await engine.syncNow();
     expect(pull.mock.calls.map(([query]) => query.cursor)).toEqual([undefined, 'a']);
-    expect(pull.mock.calls[0]?.[0]).toMatchObject({ deviceId: DEVICE, protocol: 1, limit: 500 });
+    expect(pull.mock.calls[0]?.[0]).toMatchObject({
+      deviceId: DEVICE,
+      protocol: SYNC_PROTOCOL,
+      limit: 500,
+    });
     expect(await db.products.count()).toBe(2);
     expect((await readPullState(db)).cursor).toBe('b');
     // The next pull starts from the saved cursor

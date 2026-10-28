@@ -41,6 +41,7 @@ import { emptyBilling, type MockBilling } from './invoice-data';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
+import { emptyPos, type MockPos, seedPos } from './pos-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import { seedPurchaseOrders } from './purchase-order-data';
 import type { MockExport } from './report-data';
@@ -100,6 +101,8 @@ export interface WorkspaceData {
   purchase: MockPurchase;
   // The devices and what their pulls left them with (step 18a)
   sync: MockSync;
+  // POS registers and the sales their devices pushed (step 20a)
+  pos: MockPos;
 }
 
 function now(): string {
@@ -190,6 +193,7 @@ function seed(workspace: Workspace): WorkspaceData {
     suppliers: emptySuppliers(),
     purchase: emptyPurchase(),
     sync: emptySync(),
+    pos: emptyPos(),
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   data.salesAccounts = seedSalesAccounts(data.accounts);
@@ -211,6 +215,8 @@ function seed(workspace: Workspace): WorkspaceData {
   seedBills(data, garments);
   // Step 18c: after the team, whose people own them
   if (garments) seedDevices(data);
+  // Step 20a: after the devices and the stock: a counter is held by one of them, in a warehouse
+  seedPos(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -278,6 +284,8 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.purchase = emptyPurchase();
   // The seeded devices belong to the people and branches just removed
   data.sync = emptySync();
+  // A new shop adds its counters in Settings → POS registers
+  data.pos = emptyPos();
   // Sign-up gives a new workspace its Main store, in its one branch (like auth.service.ts)
   data.stock = emptyStock();
   const [first] = data.branches;
@@ -301,6 +309,8 @@ export function transaction<T>(data: WorkspaceData, fn: () => T): T {
     // Step 17b: a goods receipt moves its order's received quantities and takes a number. Step
     // 17c: a bill makes a goods receipt and marks receipt lines billed; a payment pays bills.
     purchase: data.purchase,
+    // Step 20a: a POS sale moves stock, posts an entry and writes the sale; a refused one none
+    pos: data.pos,
     audit: data.audit,
   });
   try {

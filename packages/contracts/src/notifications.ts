@@ -15,6 +15,9 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // that is now waiting (document = an ApprovalDocument kind)
 // approval.approved / approval.rejected: params { document, id, number } — sent to the person who
 // submitted the document, when the last step approves it or any step rejects it
+// pos.sold_short: params { id, number, warehouse, count } — a POS sale (step 20a) took count
+// variants below zero in that warehouse; sent to the people who adjust stock, and the bell opens
+// the sale
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
@@ -28,6 +31,7 @@ export const NOTIFICATION_TYPES = [
   'approval.requested',
   'approval.approved',
   'approval.rejected',
+  'pos.sold_short',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

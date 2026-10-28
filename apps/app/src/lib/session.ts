@@ -149,6 +149,12 @@ export function signInAgain(): Promise<void> {
 
 export async function logout(): Promise<void> {
   const me = sessionStore.getState().me;
+  // Step 20a: the device lets go of its POS register first, while the session still works. The
+  // module is loaded already (the AppFrame's host brought it); a release that fails never stops
+  // the sign-out.
+  await import('./local-session')
+    .then(({ releaseRegister }) => releaseRegister())
+    .catch(() => undefined);
   try {
     await endSession();
   } finally {

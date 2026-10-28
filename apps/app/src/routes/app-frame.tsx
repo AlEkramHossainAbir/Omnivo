@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { lazy, Suspense, useEffect } from 'react';
 
 import { askForPin, lockNow, useDeviceState, useKeyStatus } from '../lib/local-data';
@@ -21,8 +21,13 @@ const LocalDataHost = lazy(async () => ({
   default: (await import('../components/local-data-host')).LocalDataHost,
 }));
 
+// Step 20a: the pages drawn without the shell's sidebar and top bar. The POS screen has its own
+// slim bar, and a counter needs the whole screen for the products and the cart.
+const BARE_PATHS: ReadonlySet<string> = new Set(['/pos']);
+
 export function AppFrame() {
   const navigate = useNavigate();
+  const bare = useRouterState({ select: (state) => BARE_PATHS.has(state.location.pathname) });
   const status = useSession((state) => state.status);
   const openedOffline = useSession((state) => state.openedOffline);
   const device = useDeviceState();
@@ -54,7 +59,9 @@ export function AppFrame() {
 
   return (
     <>
-      <Suspense fallback={null}>{locked ? <LockScreen /> : <AppShell lock={lock} />}</Suspense>
+      <Suspense fallback={null}>
+        {locked ? <LockScreen /> : bare ? <Outlet /> : <AppShell lock={lock} />}
+      </Suspense>
       {/* No fallback: the host draws nothing until a dialog is needed */}
       <Suspense fallback={null}>
         <LocalDataHost />

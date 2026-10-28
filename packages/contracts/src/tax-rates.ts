@@ -28,14 +28,15 @@ export const taxRateSchema = z.object({
 });
 export type TaxRate = z.infer<typeof taxRateSchema>;
 
-// 0 to 99.99, at most 2 decimals: "15", "7.5". VAT is never 100% or more.
-const RATE = /^\d{1,2}(?:\.\d{1,2})?$/;
+// 0 to 99.99, at most 2 decimals: "15", "7.5". VAT is never 100% or more. Exported for a POS sale's
+// line (step 20a), which sends the rate the device used.
+export const TAX_RATE_FORMAT = /^\d{1,2}(?:\.\d{1,2})?$/;
 
 export const taxRateInputSchema = z
   .object({
     name: z.string().trim().min(2, errorCode('tax_rate_name_required')).max(60),
     kind: z.enum(TAX_RATE_KINDS),
-    rate: z.string().trim().regex(RATE, errorCode('tax_rate_format')),
+    rate: z.string().trim().regex(TAX_RATE_FORMAT, errorCode('tax_rate_format')),
     isDefault: z.boolean(),
   })
   // standard and reduced charge something; zero_rated and exempt charge nothing. A "standard 0%"

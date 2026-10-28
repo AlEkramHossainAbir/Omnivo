@@ -38,6 +38,9 @@ interface Accounts {
   inventory: string;
   openingEquity: string;
   costOfGoodsSold: () => string;
+  // Step 20a: a POS sale books the sale itself too, not only its cost
+  sales: () => string;
+  vatOutput: () => string;
   use: (use: StockAccountUse) => string;
 }
 
@@ -293,6 +296,44 @@ export class StockBooksService {
     ]);
   }
 
+  // A POS sale (step 20a, decision 29): the sale and its cost in one entry, all with the branch of
+  // the warehouse it sold from. Dr each payment's account for what it brought (the cash less the
+  // change: `payments` carries the change as a minus on the cash account) / Cr Sales for the net /
+  // Cr Output VAT for the VAT, and Dr Cost of goods sold / Cr Inventory for what the goods cost.
+  // No receivable and no customer on any line: the whole amount was paid at the counter. write()
+  // sums per account, so two cash payments are one line; a sale of ৳0 that cost nothing has no
+  // entry.
+  async posSale(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: {
+      warehouseId: string;
+      payments: readonly { accountId: string; amount: string }[];
+      net: string;
+      vat: string;
+      cost: string;
+    },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [{ warehouseId: input.warehouseId, value: '0' }]);
+    const branchId = branchOf(input.warehouseId);
+    return this.write(tx, document, 'pos_sale', `POS sale ${document.number}`, [
+      ...input.payments.map((payment) => ({
+        accountId: payment.accountId,
+        branchId,
+        amount: payment.amount,
+      })),
+      { accountId: accounts.sales(), branchId, amount: negateMoney(input.net) },
+      { accountId: accounts.vatOutput(), branchId, amount: negateMoney(input.vat) },
+      ...(isZeroMoney(input.cost)
+        ? []
+        : [
+            { accountId: accounts.costOfGoodsSold(), branchId, amount: input.cost },
+            { accountId: accounts.inventory, branchId, amount: negateMoney(input.cost) },
+          ]),
+    ]);
+  }
+
   // The posted entries of a document, oldest first: an adjustment has at most one, a transfer two
   async entriesOf(tx: Transaction, documentId: string): Promise<EntryRef[]> {
     const rows = await tx
@@ -366,6 +407,8 @@ export class StockBooksService {
             'inventory',
             'opening_balance_equity',
             'cost_of_goods_sold',
+            'sales',
+            'vat_output',
           ]),
         ),
       )
@@ -373,6 +416,8 @@ export class StockBooksService {
     const inventory = purposes.find((row) => row.purpose === 'inventory')?.id;
     const openingEquity = purposes.find((row) => row.purpose === 'opening_balance_equity')?.id;
     const costOfGoodsSold = purposes.find((row) => row.purpose === 'cost_of_goods_sold')?.id;
+    const sales = purposes.find((row) => row.purpose === 'sales')?.id;
+    const vatOutput = purposes.find((row) => row.purpose === 'vat_output')?.id;
     // A workspace whose chart is still being made by the setup job
     if (inventory === undefined) throw missing('inventory');
     if (openingEquity === undefined) throw missing('opening_balance_equity');
@@ -403,6 +448,16 @@ export class StockBooksService {
       costOfGoodsSold: () => {
         if (costOfGoodsSold === undefined) throw missing('cost_of_goods_sold');
         return costOfGoodsSold;
+      },
+      // Asked for only by a POS sale. Every chart has both (templates.spec.ts); only a workspace
+      // whose chart the setup job has not made yet misses them.
+      sales: () => {
+        if (sales === undefined) throw missing('sales');
+        return sales;
+      },
+      vatOutput: () => {
+        if (vatOutput === undefined) throw missing('vat_output');
+        return vatOutput;
       },
       use: (use) => {
         const id = byUse.get(use);

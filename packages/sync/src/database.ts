@@ -6,6 +6,7 @@ import type {
   SyncCustomer,
   SyncCustomerGroup,
   SyncEntity,
+  SyncPosRegister,
   SyncPriceList,
   SyncPriceListItem,
   SyncSettings,
@@ -155,6 +156,16 @@ export interface NoticeRow {
   box: Box<SyncNoticeRecord>;
 }
 
+// Step 20a: the register this device holds, and the last number it gave a sale of it. One row,
+// under the key 'claim'. The claim's answer starts it (the server's last number), and every sale
+// counts it up in the same transaction that puts the sale in the outbox, so two sales never get one
+// number, also from two tabs. Clear, not sealed: an id and a count, nothing a person typed.
+export interface RegisterClaim {
+  key: 'claim';
+  registerId: string;
+  last: number;
+}
+
 // The tables, by entity. The names are the ones the app reads (db.products, db.customers).
 export const TABLE_OF = {
   settings: 'settings',
@@ -162,6 +173,7 @@ export const TABLE_OF = {
   product_category: 'productCategories',
   tax_rate: 'taxRates',
   warehouse: 'warehouses',
+  pos_register: 'posRegisters',
   price_list: 'priceLists',
   customer_group: 'customerGroups',
   product: 'products',
@@ -170,6 +182,23 @@ export const TABLE_OF = {
   stock: 'stock',
 } as const satisfies Record<SyncEntity, string>;
 export type SyncTableName = (typeof TABLE_OF)[SyncEntity];
+
+// The synced tables as they were in version 3, for its upgrade. Not TABLE_OF: a device that skips
+// versions (2 → 4) runs version 3's upgrade before version 4 makes posRegisters, and clearing a
+// table that does not exist yet fails the whole upgrade, so the copy would never open.
+const VERSION_3_TABLES = [
+  'settings',
+  'units',
+  'productCategories',
+  'taxRates',
+  'warehouses',
+  'priceLists',
+  'customerGroups',
+  'products',
+  'priceListItems',
+  'customers',
+  'stock',
+] as const satisfies readonly SyncTableName[];
 
 // One local database per person and workspace: two people on one shop computer never read each
 // other's copy, and a person in two workspaces keeps both.
@@ -191,6 +220,7 @@ export class SyncDatabase extends Dexie {
   productCategories!: Table<SealedRow<SyncCategory>, string>;
   taxRates!: Table<SealedRow<TaxRate>, string>;
   warehouses!: Table<SealedRow<Warehouse>, string>;
+  posRegisters!: Table<SealedRow<SyncPosRegister>, string>;
   priceLists!: Table<SealedRow<SyncPriceList>, string>;
   customerGroups!: Table<SealedRow<SyncCustomerGroup>, string>;
   products!: Table<ProductRow, string>;
@@ -207,6 +237,8 @@ export class SyncDatabase extends Dexie {
   // copy.ts seals them (an upgrade cannot wait for Web Crypto). Empty after that.
   legacyOutbox!: Table<OutboxEntry, number>;
   legacyNotices!: Table<SyncNoticeRecord, string>;
+  // Step 20a: one row (RegisterClaim)
+  registerClaim!: Table<RegisterClaim, string>;
 
   constructor(name: string) {
     super(name);
@@ -266,7 +298,7 @@ export class SyncDatabase extends Dexie {
         legacyNotices: 'commandId',
       })
       .upgrade(async (tx) => {
-        for (const name of Object.values(TABLE_OF)) await tx.table(name).clear();
+        for (const name of VERSION_3_TABLES) await tx.table(name).clear();
         await tx.table('meta').delete('pull');
         const outbox = tx.table<OutboxEntry, number>('outbox');
         await tx.table<OutboxEntry, number>('legacyOutbox').bulkAdd(await outbox.toArray());
@@ -275,6 +307,13 @@ export class SyncDatabase extends Dexie {
         await tx.table<SyncNoticeRecord, string>('legacyNotices').bulkAdd(await notices.toArray());
         await notices.clear();
       });
+    // Step 20a: the registers of the branch, and the claim. No upgrade: the copy stays, and the
+    // registers come with the next pull. SYNC_PROTOCOL is 2 now, and the server answers a cursor of
+    // protocol 1 with a full pull, which brings every register (and sweeps nothing it should keep).
+    this.version(4).stores({
+      posRegisters: 'key, gen',
+      registerClaim: 'key',
+    });
   }
 
   // Every synced table, to sweep or clear them all. Not `this.tables`, which has `meta` too.

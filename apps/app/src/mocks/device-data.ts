@@ -11,6 +11,7 @@ import type { z } from 'zod';
 
 import { OWNER } from './fixtures';
 import { MockProblem } from './mock';
+import { releaseHeldBy } from './pos-data';
 import { checkVersion, diff, record, type WorkspaceData } from './workspace-data';
 
 // The mock's step 18c (decisions 1–4): the two device lists, rename, move and revoke. The devices
@@ -155,6 +156,8 @@ export function moveDevice(
     // The next pull is a full pull of the new branch: sync-data.ts's pull compares the branch its
     // cursor was made for
     Object.assign(device, { branchId: branch.id, version: device.version + 1 });
+    // Step 20a: its register stays in the old branch, so it is free for another device there
+    releaseHeldBy(data, id);
   }
   return toListItem(data, device);
 }
@@ -171,6 +174,8 @@ export function revokeDevice(
   const revokedAt = now();
   Object.assign(device, { revokedAt, version: device.version + 1 });
   data.sync.revokedBy.set(id, OWNER.id);
+  // Step 20a: a lost or broken PC is revoked, and its counter is free for the next one
+  releaseHeldBy(data, id);
   record(data, 'device.revoked', 'device', id, { revokedAt: { from: null, to: revokedAt } });
   return {
     device: toListItem(data, device),

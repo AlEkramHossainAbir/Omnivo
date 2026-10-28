@@ -302,26 +302,36 @@ function later<E extends Pick<OutboxEntry, 'seq' | 'customerId'>>(
   return items.filter((other) => other.customerId === item.customerId && (other.seq ?? 0) > seq);
 }
 
+// Step 20a: a POS sale leaves the device only once the server refused it. The server keeps the
+// number of a refused sale (the register's last number counts it), so the next device on the
+// register never prints it again. A sale never sent has a number the server does not know yet, and
+// a paper receipt already has it.
+function mayGo(item: Pick<OutboxRow, 'type' | 'status'>): boolean {
+  return item.status !== 'sending' && (item.type !== 'pos_sale.create' || item.status === 'failed');
+}
+
 // What goes with an entry when it is discarded: a new customer takes every later command on that
-// customer (its changes and its orders), which the server could only refuse without it. A change
-// or an order goes alone.
+// customer (its changes, its orders, its refused POS sales), which the server could only refuse
+// without it. A change, an order or a sale goes alone.
 export function dependentsOf(entries: readonly OutboxEntry[], entry: OutboxEntry): OutboxEntry[] {
-  return entry.command.type === 'customer.create' ? later(entries, entry) : [];
+  return entry.command.type === 'customer.create'
+    ? later(entries, entry).filter((item) =>
+        mayGo({ type: item.command.type, status: item.status }),
+      )
+    : [];
 }
 
 // Discard: the entry and its dependents leave the device and never reach the server. A command
-// being sent is left alone (busy); the page offers Discard again once it has its answer. The
-// clear fields say all of it: nothing is opened.
+// being sent is left alone (busy); the page offers Discard again once it has its answer. So is a
+// POS sale the server has not refused (mayGo). The clear fields say all of it: nothing is opened.
 export async function discardEntry(copy: LocalCopy, seq: number): Promise<SaveResult> {
   const { db } = copy;
   return db.transaction('rw', db.outbox, async () => {
     const row = await db.outbox.get(seq);
     if (!row) return 'unchanged';
-    if (row.status === 'sending') return 'busy';
+    if (!mayGo(row)) return 'busy';
     const others = await db.outbox.where('customerId').equals(row.customerId).toArray();
-    const gone = [row, ...(row.type === 'customer.create' ? later(others, row) : [])].filter(
-      (item) => item.status !== 'sending',
-    );
+    const gone = [row, ...(row.type === 'customer.create' ? later(others, row) : [])].filter(mayGo);
     await db.outbox.bulkDelete(gone.flatMap((item) => item.seq ?? []));
     return 'saved';
   });

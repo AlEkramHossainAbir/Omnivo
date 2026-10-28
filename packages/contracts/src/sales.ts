@@ -32,10 +32,10 @@ export const DISCOUNT_TYPES = ['percent', 'amount'] as const;
 export type DiscountType = (typeof DISCOUNT_TYPES)[number];
 
 // At most 2 decimals: the line is worked out to the paisa, so ৳10.555 off could not be shown.
-// '' (an empty box) is no discount.
+// '' (an empty box) is no discount. Exported for the bill discount of a POS sale (step 20a).
 const DISCOUNT = /^\d{1,15}(?:\.\d{1,2})?$/;
 
-const discountSchema = z
+export const discountSchema = z
   .string()
   .trim()
   .refine((value) => value === '' || DISCOUNT.test(value), errorCode('money_format'))

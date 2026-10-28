@@ -20,6 +20,7 @@ export const OUTBOX_EVENT_TYPES = [
   'workspace.tax_rates_requested',
   'document.file_requested',
   'document.email_requested',
+  'pos.sold_short',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

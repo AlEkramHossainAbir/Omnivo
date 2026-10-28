@@ -10,6 +10,7 @@ import {
 import { errorCode, problemSchema } from './errors.js';
 import { versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
+import { posRegisterSchema, posSaleInputSchema } from './pos.js';
 import { priceListSchema } from './price-lists.js';
 import { productCategorySchema } from './product-categories.js';
 import { productSchema } from './products.js';
@@ -33,14 +34,16 @@ import { warehouseSchema } from './warehouses.js';
 // and barcodes, the price lists and their prices, the VAT rates, the units and categories, the
 // active customers with their groups, the warehouses of the device's branch and the stock in them,
 // and the part of the settings a sale needs. No customer balances and no stock values: they
-// change with every invoice and every movement, and they need their own permissions.
+// change with every invoice and every movement, and they need their own permissions. Step 20a adds
+// the POS registers of the branch.
 
 // The version of this protocol: what the entities below are and what their rows hold. A client
 // sends the version it was built with; the server answers sync_protocol_mismatch to any other,
 // and the app asks the person to reload. That is how a new entity can be added later: an older
 // client never receives a row it cannot read, and a client that moved to a new version starts
 // again with a full pull, so it does not miss the rows of an entity it did not know before.
-export const SYNC_PROTOCOL = 1;
+// 2 (step 20a): the POS registers (pos_register) and the pos_sale.create command.
+export const SYNC_PROTOCOL = 2;
 
 // Every kind of row a device keeps. The order is the order of a full pull: the small lists that
 // the others point at come first, so a page never shows a product before its units.
@@ -50,6 +53,7 @@ export const SYNC_ENTITIES = [
   'product_category',
   'tax_rate',
   'warehouse',
+  'pos_register',
   'price_list',
   'customer_group',
   'product',
@@ -94,6 +98,13 @@ export type SyncPriceList = z.infer<typeof syncPriceListSchema>;
 
 export const syncCustomerGroupSchema = customerGroupSchema.omit({ customerCount: true });
 export type SyncCustomerGroup = z.infer<typeof syncCustomerGroupSchema>;
+
+// A POS register of the device's branch (step 20a), active ones only: its code for the receipt
+// numbers, the methods it takes, its discount limit and its receipt, and whether this device holds
+// it. Without lastNumber, which changes with every sale: the device that holds the register counts
+// on from the number the claim answered, and every sale would send the row again for nothing.
+export const syncPosRegisterSchema = posRegisterSchema.omit({ lastNumber: true });
+export type SyncPosRegister = z.infer<typeof syncPosRegisterSchema>;
 
 // A customer with its addresses, without the balance (decision 10: the list asks the server for
 // the balances of the rows it shows, online only)
@@ -146,7 +157,8 @@ export function stockKey(row: Pick<SyncStock, 'warehouseId' | 'variantId' | 'bat
 // ---------------------------------------------------------------------------------------------
 // A change: a row to put in (insert or replace), or a key to take out. A row is taken out when it
 // is deleted, and also when it leaves what the device keeps: an archived product, a customer that
-// is now only a supplier, a warehouse moved to another branch, a stock row at zero.
+// is now only a supplier, a warehouse moved to another branch, a stock row at zero, a register
+// archived or moved to another branch with its warehouse.
 
 function upsertOf<const E extends SyncEntity, S extends z.ZodType>(entity: E, data: S) {
   return z.object({
@@ -165,6 +177,7 @@ export const syncUpsertSchema = z.discriminatedUnion('entity', [
   upsertOf('product_category', syncCategorySchema),
   upsertOf('tax_rate', taxRateSchema),
   upsertOf('warehouse', warehouseSchema),
+  upsertOf('pos_register', syncPosRegisterSchema),
   upsertOf('price_list', syncPriceListSchema),
   upsertOf('customer_group', syncCustomerGroupSchema),
   upsertOf('product', productSchema),
@@ -316,6 +329,7 @@ export const SYNC_COMMAND_TYPES = [
   'customer.create',
   'customer.update',
   'sales_order.create_draft',
+  'pos_sale.create',
 ] as const;
 export type SyncCommandType = (typeof SYNC_COMMAND_TYPES)[number];
 
@@ -347,10 +361,22 @@ export const salesOrderDraftCommandSchema = z.object({
   input: salesOrderDraftInputSchema,
 });
 
+// Step 20a: a sale at a POS counter, already paid and printed. Unlike an order it is not a draft:
+// the server posts it when the command arrives, and never refuses it for stock (pos.ts). It waits
+// for nothing but a customer made on the same device, like an order.
+export const posSaleCommandSchema = z.object({
+  id: z.uuidv7(),
+  type: z.literal('pos_sale.create'),
+  // The sale's id, made on the device: the receipt, and from step 20c a return, point at it
+  saleId: z.uuidv7(),
+  input: posSaleInputSchema,
+});
+
 export const syncCommandSchema = z.discriminatedUnion('type', [
   customerCreateCommandSchema,
   customerUpdateCommandSchema,
   salesOrderDraftCommandSchema,
+  posSaleCommandSchema,
 ]);
 export type SyncCommand = z.infer<typeof syncCommandSchema>;
 export type SyncCommandInput = z.input<typeof syncCommandSchema>;
@@ -399,8 +425,8 @@ export const syncResultSchema = z.discriminatedUnion('status', [
     status: z.literal('accepted'),
     notices: z.array(syncNoticeSchema),
     // The rows the command changed, as they are now, for the device to write at once instead of
-    // waiting for its next pull: the customer for a customer command, nothing for an order (orders
-    // are not on the device). Read when the answer is made, also for a command sent again, so an
+    // waiting for its next pull: the customer for a customer command, nothing for an order or a POS
+    // sale (neither is on the device; the stock a sale took comes with the next pull). Read when the answer is made, also for a command sent again, so an
     // old answer never puts an older row back on the device.
     changes: z.array(syncChangeSchema),
   }),
@@ -501,8 +527,9 @@ export const syncRoutes = {
     response: syncPullSchema,
   }),
   // No permission for the route: each command needs the permission its API route needs
-  // (sales.customer.manage, sales.order.manage), checked per command with the roles of now. A
-  // person whose role lost it since gets that command refused with permission_missing.
+  // (sales.customer.manage, sales.order.manage; pos.sale.create for a POS sale), checked per
+  // command with the roles of now. A person whose role lost it since gets that command refused
+  // with permission_missing.
   push: defineRoute({
     method: 'POST',
     path: '/sync/push',

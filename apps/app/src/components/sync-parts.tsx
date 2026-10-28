@@ -72,7 +72,7 @@ export function useFieldList(): (fields: readonly string[]) => string {
 }
 
 // The two lines of an entry: what it is ("Changes to Rahman Traders") and how big ("Changed:
-// Phone and Credit limit", "3 lines · ৳4,140")
+// Phone and Credit limit", "3 lines · ৳4,140"). A POS sale's name is its number (pos.ts in sync).
 export function useCommandText(): (entry: OutboxEntry) => { title: string; detail: string } {
   const { t, format } = useLocale();
   const fieldList = useFieldList();
@@ -91,7 +91,9 @@ export function useCommandText(): (entry: OutboxEntry) => { title: string; detai
           }
           return { title, detail: t('sync.changedFields', { fields: fieldList(fields) }) };
         }
+        // Step 20a: a POS sale is "Sale POS1-000124", then its lines and total like an order's
         case 'sales_order.create_draft':
+        case 'pos_sale.create':
           return {
             title,
             detail: t('sync.orderLines', {

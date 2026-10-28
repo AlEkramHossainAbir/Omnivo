@@ -28,6 +28,7 @@ import { JournalModule } from './journal/journal.module.js';
 import { MembersModule } from './members/members.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { NumberingModule } from './numbering/numbering.module.js';
+import { PosModule } from './pos/pos.module.js';
 import { PermissionGuard } from './rbac/permission.guard.js';
 import { ProductsModule } from './products/products.module.js';
 import { PurchaseModule } from './purchase/purchase.module.js';
@@ -71,6 +72,7 @@ export class AppModule implements NestModule {
         DocumentsModule,
         PurchaseModule,
         SyncModule,
+        PosModule,
       ],
       controllers: [HealthController, ...(config.exposeDocs ? [DocsController] : [])],
       providers: [

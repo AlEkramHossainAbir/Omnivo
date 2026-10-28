@@ -39,6 +39,9 @@ export const outboxPayloadSchemas = {
   // The document_emails row says what to send; the file is the PDF to attach, drawn by the email
   // job itself when it is not ready yet (the customer should not wait on a second queue)
   'document.email_requested': z.object({ emailId: z.uuid(), fileId: z.uuid() }),
+  // Step 20a: a POS sale took stock below zero when it was posted. The sale's lines say what and
+  // where (short_quantity, short_serials); the worker tells the people who put stock right.
+  'pos.sold_short': z.object({ saleId: z.uuid() }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

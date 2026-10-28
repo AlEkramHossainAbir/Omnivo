@@ -36,6 +36,9 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // purchase_debit_note, purchase_refund (step 17d): a debit note takes money off what the company
 // owes a supplier (the payable, goods received not billed, the price difference, VAT input), and a
 // supplier refund is money a supplier paid back into a cash or bank account.
+// pos_sale (step 20a): a POS sale books everything in one entry: Dr each payment's account, Cr Sales
+// and VAT payable, and Dr Cost of goods sold / Cr Inventory for its goods. It moves stock, so it is
+// a stock document's entry too: only a POS return (step 20c) undoes it.
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -56,6 +59,7 @@ export const JOURNAL_SOURCES = [
   'purchase_return',
   'purchase_debit_note',
   'purchase_refund',
+  'pos_sale',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -72,6 +76,7 @@ export const STOCK_JOURNAL_SOURCES = [
   'sales_return',
   'purchase_receipt',
   'purchase_return',
+  'pos_sale',
 ] as const satisfies readonly JournalSource[];
 export type StockJournalSource = (typeof STOCK_JOURNAL_SOURCES)[number];
 

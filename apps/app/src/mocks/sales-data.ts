@@ -628,7 +628,8 @@ export function refreshPartyRefs(data: WorkspaceData, saved: PartyRef): void {
   }
 }
 
-// Every document that names a customer: step 15b's, 15c's and 15d's
+// Every document that names a customer: step 15b's, 15c's and 15d's, and step 20a's POS sales that
+// are not a walk-in's
 function salesDocumentsOf(data: WorkspaceData): { customer: PartyRef }[] {
   const { quotations, orders, deliveries } = data.salesDocuments;
   const { invoices, receipts } = data.billing;
@@ -642,6 +643,9 @@ function salesDocumentsOf(data: WorkspaceData): { customer: PartyRef }[] {
     ...salesReturns,
     ...creditNotes,
     ...refunds,
+    ...data.pos.sales.filter(
+      (sale): sale is typeof sale & { customer: PartyRef } => sale.customer !== null,
+    ),
   ];
 }
 

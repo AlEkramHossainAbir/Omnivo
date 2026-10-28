@@ -359,6 +359,13 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
 
 দ্রুত বিক্রি স্ক্রিন (বারকোড স্ক্যান, কীবোর্ড শর্টকাট — মাউস ছাড়া পুরো বিক্রি), split payment (ক্যাশ/কার্ড/bKash/Nagad), hold/resume বিল, রিটার্ন, শিফট open/close ও ক্যাশ কাউন্ট, **থার্মাল প্রিন্ট (৫৮/৮০mm)**, **ডিভাইস-ভিত্তিক নম্বর সিরিজ** (`POS1-000123`), negative stock সেটিং।
 
+- **বিক্রি (২০a):** register (কাউন্টার: warehouse, প্রতি পেমেন্ট মেথডের account, সর্বোচ্চ ছাড় %, কাগজ ৫৮/৮০ mm,
+  footer); একটা ডিভাইস একটা register ধরে রাখে আর নিজেই নম্বর দেয় (`POS1-000123`), sign-out-এ ছেড়ে দেয়। `/pos`
+  স্ক্রিন (shell ছাড়া, বারকোড, শর্টকাট), walk-in বা কাস্টমার, পুরো টাকা তখনই (ক্যাশ/কার্ড/bKash/Nagad, split,
+  ভাংতি), `pos_sale.create` সবসময় outbox দিয়ে; সার্ভারে নিজস্ব `pos_sales` ডকুমেন্ট, একটা journal entry আর স্টক,
+  স্টকের জন্য কখনো refuse না ("Sold short" + bell)। ব্রাউজার প্রিন্টে থার্মাল রিসিট। POS sales তালিকা, Settings →
+  POS registers।
+
 **দেখবেন:** ওয়াইফাই বন্ধ করে ট্যাবলেটে ১০টা বিক্রি করে, রিসিট প্রিন্ট করে, তারপর ওয়াইফাই চালু করলে সব সার্ভারে গিয়ে হিসাবে বসল। 🎉 **এটাই Omnivo-র সবচেয়ে বড় প্রতিযোগিতামূলক সুবিধা।**
 **শিখবেন:** offline-first আর্কিটেকচার, conflict কৌশল, service worker, idempotency, Web Crypto।
 

@@ -1,6 +1,6 @@
 // Two kinds of module. The pages of the app import the reads (queries, records, state, problems),
-// the outbox's saves (outbox, overlay, prices; step 18b), the key's code (crypto, keys; step 19b)
-// and the types: none of them loads Dexie at run time, so a page that searches customers or a
+// the outbox's saves (outbox, overlay, prices; step 18b), the key's code (crypto, keys; step 19b),
+// the POS's register and sale (pos; step 20a) and the types: none of them loads Dexie at run time, so a page that searches customers or a
 // form that saves offline stays small. The code that opens the database and syncs (database,
 // copy, apply, push, engine, live, device) brings Dexie, and the app loads it once, lazily, after
 // sign-in. `sideEffects: false` in package.json lets the bundler leave out the modules a chunk
@@ -20,6 +20,7 @@ export {
   type PriceListItemRow,
   type ProductRow,
   type PullState,
+  type RegisterClaim,
   type SealedRow,
   type StockRow,
   SyncDatabase,
@@ -70,6 +71,18 @@ export {
   type SaveResult,
 } from './outbox.js';
 export { changedCustomer, createdCustomer, projectCustomer } from './overlay.js';
+export {
+  dropClaim,
+  keepClaim,
+  localRegisters,
+  type PosSaleSave,
+  type PosSaveResult,
+  productByBarcode,
+  readClaim,
+  savePosSale,
+  stockOf,
+  waitingSales,
+} from './pos.js';
 export { lookUpPrices, productsOfVariants } from './prices.js';
 export { STORAGE_FAILED } from './problems.js';
 export {

@@ -16,6 +16,7 @@ import {
   problemSchema,
   roleListSchema,
   setupSchema,
+  SYNC_PROTOCOL,
   syncPullSchema,
   syncPushSchema,
   type Warehouse,
@@ -153,7 +154,11 @@ function itemOf(res: Awaited<ReturnType<typeof send>>): DeviceListItem {
 }
 
 function pull(device: { id: string }, as = owner, cursor?: string) {
-  const query = new URLSearchParams({ deviceId: device.id, protocol: '1', limit: '1000' });
+  const query = new URLSearchParams({
+    deviceId: device.id,
+    protocol: String(SYNC_PROTOCOL),
+    limit: '1000',
+  });
   if (cursor !== undefined) query.set('cursor', cursor);
   return send('GET', `/sync/pull?${query.toString()}`, undefined, as);
 }
@@ -174,7 +179,7 @@ function push(device: { id: string }, as = owner) {
     '/sync/push',
     {
       deviceId: device.id,
-      protocol: 1,
+      protocol: SYNC_PROTOCOL,
       commands: [
         {
           id: v7(),

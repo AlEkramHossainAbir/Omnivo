@@ -125,6 +125,12 @@ export const en = {
     supplierRefunds: 'Supplier refunds',
     approvals: 'Approvals',
     sync: 'Sync',
+    // Step 20a: the counter screen, its registers (a workspace setting), its sales (under Sales)
+    // and what it sold without stock (under Inventory)
+    pointOfSale: 'POS',
+    registers: 'POS registers',
+    posSales: 'POS sales',
+    soldShort: 'Sold short',
   },
   auth: {
     workspace: 'Workspace',
@@ -527,6 +533,8 @@ export const en = {
       sales_order: {
         create_draft: 'Draft order for {{name}}',
       },
+      // Step 20a: {{name}} is the sale's number (POS1-000123)
+      pos_sale: { create: 'Sale {{name}}' },
     },
     savedAt: 'Saved {{time}}',
     // fields = the form's own labels, joined in the page's language ("Phone and Credit limit")
@@ -863,6 +871,7 @@ export const en = {
       purchase_return: 'Purchase return',
       purchase_debit_note: 'Debit note',
       purchase_refund: 'Supplier refund',
+      pos_sale: 'POS sale',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
@@ -1495,6 +1504,7 @@ export const en = {
       sales_return: 'Came back',
       purchase_receipt: 'Goods receipt',
       purchase_return: 'Sent back',
+      pos_sale: 'Sold at a counter',
     },
     historyEmpty: 'No movement in these dates.',
   },
@@ -3924,6 +3934,259 @@ export const en = {
   },
   // The approval of any document that needs one: the "Waiting for me" page, the approval card on the
   // document's page, and its two dialogs
+  // Step 20a: Settings → POS registers. A register is one counter (decision 3)
+  registers: {
+    title: 'POS registers',
+    description: 'The counters that sell: where their goods leave from, and where their money goes',
+    add: 'Add register',
+    newTitle: 'Add a register',
+    editTitle: 'Edit {{code}}',
+    code: 'Code',
+    codeHint:
+      'A capital letter, then up to 7 letters or digits. Every receipt number starts with it: POS1-000123',
+    // Decision 16: the edit form shows the code, but not as a box
+    codeLocked: 'The code is on every receipt this register printed, so it never changes.',
+    name: 'Name',
+    namePlaceholder: 'Front counter',
+    warehouse: 'Warehouse',
+    warehouseHint: 'Its goods leave from here. The register is in this warehouse’s branch.',
+    warehousePlaceholder: 'Pick a warehouse',
+    // Decision 18: one account per method; an empty one = the counter does not take it
+    accountsTitle: 'Where the money goes',
+    accountsHint:
+      'An account for each way this counter takes money. Leave one empty and the counter does not take it.',
+    accounts: { cash: 'Cash', card: 'Card', bkash: 'bKash', nagad: 'Nagad' },
+    accountPlaceholder: 'Pick an account',
+    notTaken: 'Not taken here',
+    cashHint: 'Always needed: change is given in cash.',
+    noMoneyAccounts:
+      'No account holds money yet. Tick "Holds money" on your cash, bank and wallet accounts in the chart of accounts.',
+    maxDiscount: 'Most discount a cashier may give (%)',
+    maxDiscountHint:
+      'On a line or on the whole bill. More than this, or a changed price, needs pos.price.override. Empty means no discount.',
+    paperWidth: 'Receipt paper',
+    paperWidths: { '58': '58 mm', '80': '80 mm' },
+    paperWidthHint: 'The width of the roll in this counter’s receipt printer.',
+    receiptFooter: 'Receipt footer',
+    receiptFooterPlaceholder: 'Goods once sold are exchanged within 7 days with this receipt.',
+    show: 'Show',
+    statuses: { active: 'Active', archived: 'Archived' },
+    columns: {
+      register: 'Register',
+      warehouse: 'Warehouse',
+      holder: 'Held by',
+      lastNumber: 'Last receipt',
+      status: 'Status',
+    },
+    // Who holds it (decision 14): the device's name and its person, or nobody
+    holder: '{{device}} · {{person}}',
+    free: 'Free',
+    noSaleYet: 'No sale yet',
+    archive: 'Archive',
+    restore: 'Restore',
+    created: '{{name}} added',
+    updated: 'Changes to {{name}} saved',
+    archivedToast: '{{name}} archived',
+    restoredToast: '{{name}} restored',
+    readOnly: 'Ask a workspace owner for the pos.register.manage permission to change registers.',
+    emptyTitle: 'No registers yet',
+    emptyBody:
+      'Add a register for each counter that sells: a pharmacy’s front counter, a superstore’s checkout.',
+    emptyArchivedTitle: 'No archived registers',
+    emptyArchivedBody: 'A counter you close can be archived once no device holds it.',
+    loadFailed: "Couldn't load the registers. Refresh the page to try again.",
+  },
+  // Step 20a: the POS screen (/pos, decision 12), its payment and its receipt
+  pos: {
+    title: 'POS',
+    exit: 'Leave the POS',
+    // The top bar
+    register: '{{code}} · {{name}}',
+    cashier: 'Cashier: {{name}}',
+    nextNumber: 'Next receipt {{number}}',
+    // Taking a register (decision 14). Online only: the server says which ones are free
+    chooseTitle: 'Which counter is this?',
+    chooseDescription:
+      'This device gives the receipt numbers of the register it takes. Only one device holds a register at a time.',
+    chooseLabel: 'Register',
+    choosePlaceholder: 'Pick a register',
+    choose: 'Use this register',
+    heldBy: '{{code}} · held by {{device}}',
+    claimed: 'This device is {{code}} now. The next receipt is {{number}}.',
+    chooseOffline: 'Taking a register needs a connection. Connect to the internet, then try again.',
+    noRegistersTitle: 'No register in this branch',
+    noRegistersBody:
+      'Someone with pos.register.manage adds one in Settings → POS registers: the counter, its warehouse and its accounts.',
+    changeRegister: 'Change register',
+    // Decision 32: the device lets go only when no sale of the register waits in its outbox
+    changeRegisterWaiting:
+      'Sales of {{code}} wait on this device. Sync them, then change the register.',
+    cantSell:
+      'You can look at the POS, but not sell. Ask a workspace owner for the pos.sale.create permission.',
+    // Searching and scanning. A scanner types the barcode and Enter, like a keyboard
+    search: 'Scan or search',
+    searchPlaceholder: 'Name, SKU or barcode',
+    noMatch: 'No active product matches "{{query}}".',
+    noBarcode: 'No product has the barcode {{code}}.',
+    inStock: '{{quantity}} in stock',
+    outOfStock: 'Out of stock',
+    // The cart
+    cart: 'Cart',
+    cartEmptyTitle: 'Nothing in the cart',
+    cartEmptyBody: 'Scan an item, or search for it.',
+    walkIn: 'Walk-in customer',
+    customer: 'Customer',
+    customerPlaceholder: 'Search by name, code or phone',
+    noCustomerMatch: 'No active customer matches',
+    walkInAgain: 'Back to walk-in',
+    quantity: 'Quantity',
+    price: 'Price',
+    discount: 'Discount',
+    lineAmount: 'Amount',
+    removeLine: 'Remove {{name}}',
+    batch: 'Batch',
+    batchPlaceholder: 'Pick a batch',
+    serials: 'Serial numbers',
+    serialsHint: 'Scan one serial number for each item.',
+    billDiscount: 'Bill discount',
+    itemCount_one: '{{formatted}} item',
+    itemCount_other: '{{formatted}} items',
+    clear: 'Clear the cart',
+    pay: 'Pay {{amount}}',
+    // Decision 7: the device's copy stops a sale the workspace would not allow
+    shortStock: 'Only {{quantity}} here. This workspace does not sell below zero.',
+    noStock: 'None in stock here. This workspace does not sell below zero.',
+    // Decision 11: what needs pos.price.override, said where the cashier types it
+    overLimit: 'More than {{max}}% off needs pos.price.override.',
+    priceLocked: 'Changing the price needs pos.price.override.',
+    priceChanged: 'Changed from {{price}}',
+    // Taking the money (decision 5)
+    payTitle: 'Take payment',
+    payDescription: 'Total {{total}}. Split it over several methods if the customer asks.',
+    methods: { cash: 'Cash', card: 'Card', bkash: 'bKash', nagad: 'Nagad' },
+    method: 'Paid by',
+    amount: 'Amount',
+    reference: 'Reference',
+    referencePlaceholders: {
+      cash: 'Optional',
+      card: 'Card ending 4821',
+      bkash: 'TrxID BK7XQ2M4',
+      nagad: 'TxnID 73K9QW2P',
+    },
+    quickCash: 'Notes the customer gave',
+    exact: 'Exact amount',
+    addPayment: 'Add another method',
+    removePayment: 'Remove payment {{number}}',
+    due: 'Still to pay',
+    paid: 'Paid',
+    change: 'Change',
+    complete: 'Complete sale',
+    completing: 'Saving the sale…',
+    // After the sale. The receipt prints at once; the sale goes through the outbox (decision 21)
+    doneTitle: '{{number}} is done',
+    giveChange: 'Give back {{amount}} in cash',
+    noChange: 'No change to give',
+    savedOnDevice: 'Saved on this device. It syncs when the connection is back.',
+    printAgain: 'Print again',
+    newSale: 'New sale',
+    // Keyboard shortcuts (decision 12)
+    shortcuts: 'Keyboard shortcuts',
+    keys: {
+      search: 'Search or scan',
+      customer: 'Pick a customer',
+      billDiscount: 'Bill discount',
+      pay: 'Pay',
+      complete: 'Complete the sale',
+      newSale: 'New sale',
+      help: 'Show these shortcuts',
+    },
+    // The thermal receipt (decision 6), 58 or 80 mm. The company lines reuse print.*
+    receipt: {
+      title: 'Receipt',
+      number: 'No. {{number}}',
+      register: 'Counter {{code}}',
+      cashier: 'Cashier: {{name}}',
+      customer: 'Customer: {{name}}',
+      item: 'Item',
+      quantity: 'Qty',
+      amount: 'Amount',
+      discount: 'Discount',
+      billDiscount: 'Bill discount',
+      net: 'Before VAT',
+      vat: 'VAT',
+      total: 'Total',
+      pricesWithVat: 'Prices include VAT',
+      paid: 'Paid',
+      change: 'Change',
+      thanks: 'Thank you. Please come again.',
+    },
+  },
+  // Step 20a: the managers' list of POS sales, as the server posted them
+  posSales: {
+    title: 'POS sales',
+    description: 'What the counters sold, as it reached the books',
+    back: 'POS sales',
+    register: 'Register',
+    allRegisters: 'All registers',
+    columns: {
+      number: 'Number',
+      date: 'Date',
+      register: 'Register',
+      customer: 'Customer',
+      cashier: 'Cashier',
+      total: 'Total',
+      status: 'Status',
+    },
+    walkIn: 'Walk-in',
+    posted: 'Posted',
+    soldShort: 'Sold short',
+    soldAt: 'Sold at',
+    device: 'Device',
+    cashier: 'Cashier',
+    customer: 'Customer',
+    lines: 'Items',
+    batches: 'Batch {{lot}} · {{quantity}}',
+    serials: 'Serial numbers: {{serials}}',
+    shortLine: '{{quantity}} sold below zero',
+    payments: 'Payments',
+    paid: 'Paid',
+    change: 'Change',
+    entry: 'Journal entry',
+    print: 'Print receipt',
+    // Decision 26: the day it was sold was closed, so the books hold it on the first open day
+    bookedLater: 'Sold on {{sold}}. That day was closed in the books, so the sale is on {{date}}.',
+    soldShortNotice:
+      'Some items were sold without stock at {{warehouse}}. They stay on the Sold short list until the stock is put right.',
+    notFound: "This POS sale doesn't exist.",
+    needsConnection: 'POS sales are read from the server. Connect to the internet to see them.',
+    emptyTitle: 'No POS sales yet',
+    emptyBody: 'Sales made at a counter show here once their device syncs.',
+    loadFailed: "Couldn't load the POS sales. Refresh the page to try again.",
+  },
+  // Step 20a: what the counters sold that the warehouse did not have (decision 30)
+  soldShort: {
+    title: 'Sold short',
+    description:
+      'POS sales that took more than the warehouse had. Count the shelf, then post an adjustment or receive the goods.',
+    warehouse: 'Warehouse',
+    allWarehouses: 'All warehouses',
+    columns: {
+      item: 'Item',
+      sale: 'Sale',
+      short: 'Sold short',
+      batch: 'Batch',
+      onHand: 'In stock now',
+      status: 'Status',
+    },
+    // warn while the stock is below zero, good once it is back at zero or above
+    statuses: { open: 'Below zero', fixed: 'Put right' },
+    noBatch: 'No batch',
+    serials: 'Left without a serial number: {{serials}}',
+    needsConnection: 'This list is read from the server. Connect to the internet to see it.',
+    emptyTitle: 'Nothing sold short',
+    emptyBody: 'When a counter sells more than its warehouse has, the item shows here.',
+    loadFailed: "Couldn't load the list. Refresh the page to try again.",
+  },
   approvals: {
     title: 'Approvals',
     description: 'Documents waiting for your decision, oldest first',
@@ -4351,6 +4614,7 @@ export const en = {
       inventory: 'Inventory',
       sales: 'Sales',
       purchase: 'Purchase',
+      pos: 'POS',
     },
     members_one: '{{count}} person',
     members_other: '{{count}} people',
@@ -4456,6 +4720,14 @@ export const en = {
       debit_note: { manage: 'Write and post debit notes, and apply them to bills' },
       refund: { manage: 'Record money suppliers pay back, and void supplier refunds' },
     },
+    // Step 20a (decisions 11, 31)
+    pos: {
+      sale: { create: 'Sell at a POS counter: take a register, ring up sales and take the money' },
+      price: {
+        override: 'At the POS, change a price or give more discount than the register allows',
+      },
+      register: { manage: 'Add, edit and archive POS registers' },
+    },
   },
   invite: {
     checking: 'Checking your invitation…',
@@ -4525,6 +4797,8 @@ export const en = {
       debit_note: 'Debit notes',
       supplier_refund: 'Supplier refunds',
       device: 'Devices',
+      pos_register: 'POS registers',
+      pos_sale: 'POS sales',
     },
     columns: {
       when: 'When',
@@ -4801,6 +5075,21 @@ export const en = {
         rejected: 'Rejected: sent back to draft',
         reopened: 'Reopened: back to draft',
       },
+      // Step 20a. claimed and released are a device taking a register and letting it go
+      // (decision 14); a release by a revoke or a move writes no row (decision 51)
+      pos_register: {
+        created: 'Added a POS register',
+        updated: 'Edited a POS register',
+        archived: 'Archived a POS register',
+        restored: 'Restored a POS register',
+        claimed: 'Took a register on a device',
+        released: 'Let go of a register on a device',
+      },
+      pos_sale: {
+        created: 'Sold at a POS counter',
+        overridden: 'Changed a price or gave more discount at the POS',
+        without_permission: 'Sold at a POS counter after losing the permission',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -4931,6 +5220,22 @@ export const en = {
       priceDifference: 'Purchase price difference',
       services: 'Purchased services',
       revokedAt: 'Revoked at',
+      // Step 20a: a register's form, and a POS sale's two rows
+      cashAccount: 'Cash account',
+      cardAccount: 'Card account',
+      bkashAccount: 'bKash account',
+      nagadAccount: 'Nagad account',
+      maxDiscountPercent: 'Most discount (%)',
+      paperWidth: 'Receipt paper',
+      receiptFooter: 'Receipt footer',
+      device: 'Device',
+      register: 'Register',
+      soldOn: 'Date on the device',
+      paid: 'Paid',
+      soldShort: 'Lines sold short',
+      overrides: 'Needs pos.price.override',
+      allowed: 'Permission',
+      missing: 'Missing permission',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -5023,6 +5328,12 @@ export const en = {
         requested: '{{document}} {{number}} is waiting for your approval.',
         approved: '{{document}} {{number}} is approved.',
         rejected: '{{document}} {{number}} was sent back to draft. Open it to see why.',
+      },
+      // Step 20a (decision 30). {{count}} is the number of items, so no plural keys: the sentence
+      // reads right for 1 and for many
+      pos: {
+        sold_short:
+          '{{number}} sold more than {{warehouse}} had. Items below zero: {{count}}. Count them and put the stock right.',
       },
     },
   },
@@ -5611,6 +5922,35 @@ export const en = {
     // params.count = the active devices in the branch (decision 20)
     branch_has_devices:
       'Active devices in this branch: {{count}}. Change their branch on each device, or revoke them, first.',
+    // Step 20a: POS registers and sales
+    pos_register_code_format:
+      'Use a capital letter, then 1 to 7 capital letters or digits, like POS1.',
+    pos_register_code_taken: 'Another register uses this code. Pick another one, like POS2.',
+    pos_register_name_required: 'Give the register a name, like Front counter.',
+    pos_register_warehouse_invalid: 'Pick an active warehouse for the register’s goods.',
+    pos_register_cash_required:
+      'Pick the cash account. Every register takes cash, because change is given in cash.',
+    pos_register_account_invalid:
+      'Pick an active account that holds money. Tick "Holds money" on it in the chart of accounts.',
+    pos_discount_limit_format: 'Type a percent from 0 to 100, with up to 2 decimals.',
+    pos_register_in_use:
+      'Another device holds this register. Sign out on that device first, or revoke it if it is lost.',
+    pos_register_archived: 'This register is archived. Restore it, or pick another one.',
+    pos_register_branch:
+      'A register and the device that holds it are in the same branch. Pick a register, or a warehouse, of that branch.',
+    pos_device_has_register:
+      'This device holds another register. Let go of it first with "Change register" on the POS screen.',
+    pos_register_not_held:
+      'This device no longer holds this register. Open the POS and take a register again.',
+    pos_payments_required: 'Add how the customer paid.',
+    pos_payment_amount_required: 'Type an amount above zero, or remove this payment.',
+    pos_payment_short: 'The payments are less than the total. Add what is still to pay.',
+    pos_change_not_cash:
+      'Change is given only from cash. Lower the card or wallet amount to what is still to pay.',
+    pos_method_not_set:
+      'The register has no account for this payment method now. Someone with pos.register.manage sets one in Settings → POS registers, then retry the sale.',
+    pos_number_taken:
+      'Another sale of this register has this number. This should not happen: keep the paper receipt and tell your Omnivo administrator.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',
     version_conflict:
       'Someone else saved changes while you were editing. Reload to see them, then make your change again.',

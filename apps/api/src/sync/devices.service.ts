@@ -49,11 +49,12 @@ function toDevice(row: DeviceFields): Device {
 
 // Another person's device, an unknown id and (through RLS) another workspace's device all answer
 // the same: nobody learns that an id exists somewhere else. The app registers the browser again.
-function deviceNotFound(): AppError {
+// Exported for the POS registers (step 20a), which a device claims and releases.
+export function deviceNotFound(): AppError {
   return new AppError(404, 'device_not_found', 'This device is not registered. Register it again.');
 }
 
-function deviceRevoked(): AppError {
+export function deviceRevoked(): AppError {
   return new AppError(403, 'device_revoked', 'This device was revoked. Its data is wiped.');
 }
 

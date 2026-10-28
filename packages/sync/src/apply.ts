@@ -3,6 +3,7 @@ import type {
   SyncChange,
   SyncCustomer,
   SyncCustomerGroup,
+  SyncPosRegister,
   SyncPriceList,
   SyncPull,
   SyncSettings,
@@ -38,6 +39,7 @@ export interface SealedChanges {
     productCategories: Unstamped<SealedRow<SyncCategory>>[];
     taxRates: Unstamped<SealedRow<TaxRate>>[];
     warehouses: Unstamped<SealedRow<Warehouse>>[];
+    posRegisters: Unstamped<SealedRow<SyncPosRegister>>[];
     priceLists: Unstamped<SealedRow<SyncPriceList>>[];
     customerGroups: Unstamped<SealedRow<SyncCustomerGroup>>[];
     products: Unstamped<ProductRow>[];
@@ -71,6 +73,7 @@ export async function sealChanges(
       productCategories: [],
       taxRates: [],
       warehouses: [],
+      posRegisters: [],
       priceLists: [],
       customerGroups: [],
       products: [],
@@ -105,6 +108,9 @@ export async function sealChanges(
           break;
         case 'warehouse':
           puts.warehouses.push(await boxed(copy, 'warehouses', key, change.data));
+          break;
+        case 'pos_register':
+          puts.posRegisters.push(await boxed(copy, 'posRegisters', key, change.data));
           break;
         case 'price_list':
           puts.priceLists.push(await boxed(copy, 'priceLists', key, change.data));
@@ -187,6 +193,7 @@ export async function writeSealed(
   await db.productCategories.bulkPut(stamp(puts.productCategories, gen));
   await db.taxRates.bulkPut(stamp(puts.taxRates, gen));
   await db.warehouses.bulkPut(stamp(puts.warehouses, gen));
+  await db.posRegisters.bulkPut(stamp(puts.posRegisters, gen));
   await db.priceLists.bulkPut(stamp(puts.priceLists, gen));
   await db.customerGroups.bulkPut(stamp(puts.customerGroups, gen));
   await db.products.bulkPut(stamp(puts.products, gen));

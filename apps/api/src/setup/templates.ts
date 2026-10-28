@@ -163,6 +163,13 @@ const SENDING_BACK = ['purchase.return.manage'] as const;
 const DEBITING = ['purchase.debit_note.manage'] as const;
 const TAKING_REFUNDS = ['purchase.refund.manage'] as const;
 
+// Step 20a. A cashier sells at the counter; the person who runs the shop also sets the registers up
+// and may change a price or give more than the register's discount (a cashier who could would give
+// any discount). Nobody else sells at a counter: an owner gives pos.sale.create to a role in
+// Settings → Roles where a depot also has a counter.
+const SELLING_AT_COUNTER = ['pos.sale.create'] as const;
+const RUNNING_COUNTERS = ['pos.register.manage', 'pos.price.override'] as const;
+
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
 const ACCOUNTANT: RoleTemplate = {
@@ -710,9 +717,15 @@ export const INDUSTRY_TEMPLATES = {
           ...PAYING,
           ...DEBITING,
           ...TAKING_REFUNDS,
+          ...SELLING_AT_COUNTER,
+          ...RUNNING_COUNTERS,
         ],
       },
-      { name: 'Cashier', description: 'Sells at the counter', permissions: [...COLLECTING] },
+      {
+        name: 'Cashier',
+        description: 'Sells at the counter',
+        permissions: [...COLLECTING, ...SELLING_AT_COUNTER],
+      },
     ],
     chart: standardChart({
       stock: TRADER_STOCK,

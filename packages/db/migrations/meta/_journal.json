@@ -358,6 +358,20 @@
       "when": 1792993965790,
       "tag": "0050_devices-secret-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793084203393,
+      "tag": "0051_pos-sales",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793084263606,
+      "tag": "0052_pos-sales-rules",
+      "breakpoints": true
     }
   ]
 }

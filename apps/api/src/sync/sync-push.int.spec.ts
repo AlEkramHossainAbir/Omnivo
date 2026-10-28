@@ -17,6 +17,7 @@ import {
   roleSchema,
   salesOrderSchema,
   setupSchema,
+  SYNC_PROTOCOL,
   type SyncChange,
   type SyncCommandInput,
   type SyncResult,
@@ -100,7 +101,7 @@ function pushRequest(
   {
     as = owner,
     device = laptop,
-    protocol = 1,
+    protocol = SYNC_PROTOCOL,
   }: { as?: SignedIn; device?: Device; protocol?: number } = {},
 ) {
   return send('POST', '/sync/push', { deviceId: device.id, protocol, commands }, as);
@@ -426,7 +427,7 @@ describe('the request', () => {
     // An old app is told to reload, whatever else is wrong
     const old = await pushRequest([newCustomer('Old App Store')], {
       device: stranger,
-      protocol: 2,
+      protocol: SYNC_PROTOCOL + 1,
     });
     expect(old.statusCode).toBe(409);
     expect(problemSchema.parse(old.json()).code).toBe('sync_protocol_mismatch');

@@ -10,6 +10,7 @@ import {
 import {
   customerGroups,
   parties,
+  posRegisters,
   priceLists,
   productCategories,
   products,
@@ -25,6 +26,7 @@ import { z } from 'zod';
 
 import type { Transaction } from '../common/tenant/with-tenant.js';
 import { toWarehouse } from '../inventory/warehouses.service.js';
+import { toSyncPosRegister } from '../pos/pos-registers.service.js';
 import { productsOf } from '../products/product-read.js';
 import { toUnit } from '../products/units.service.js';
 import { customersOf } from '../sales/customer-read.js';
@@ -111,6 +113,7 @@ const stockRowSchema = z.object({
 //   price_list_item     its product active and its list active (decision 27)
 //   customer            a customer (not only a supplier), active
 //   stock               in an active warehouse of the branch, not zero, its product active
+//   pos_register        active, its warehouse in the device's branch (step 20a)
 export const LOADERS: Record<SyncEntity, Loader> = {
   // One row, keyed by the workspace's id (the contract's settings key)
   settings: async (tx, scope, pick) => {
@@ -218,6 +221,43 @@ export const LOADERS: Record<SyncEntity, Loader> = {
     return rows.map((row) => ({
       sort: [row.id],
       change: { op: 'upsert', entity: 'warehouse', key: row.id, data: toWarehouse(row) },
+    }));
+  },
+
+  // Step 20a (decision 20): the registers of the branch, active ones, without the last number. The
+  // branch is the warehouse's, so the join decides it: a register whose warehouse moved to another
+  // branch drops out here (0052 logs it). Its warehouse may be archived: the register still is the
+  // branch's, and the device keeps it.
+  pos_register: async (tx, scope, pick) => {
+    const { where, limit } = byId(posRegisters.id, pick);
+    const rows = await tx
+      .select({ register: posRegisters, branchId: warehouses.branchId })
+      .from(posRegisters)
+      .innerJoin(
+        warehouses,
+        and(
+          eq(warehouses.tenantId, posRegisters.tenantId),
+          eq(warehouses.id, posRegisters.warehouseId),
+        ),
+      )
+      .where(
+        and(
+          eq(posRegisters.tenantId, scope.tenantId),
+          eq(warehouses.branchId, scope.branchId),
+          isNull(posRegisters.archivedAt),
+          where,
+        ),
+      )
+      .orderBy(asc(posRegisters.id))
+      .limit(limit);
+    return rows.map((row) => ({
+      sort: [row.register.id],
+      change: {
+        op: 'upsert',
+        entity: 'pos_register',
+        key: row.register.id,
+        data: toSyncPosRegister(row.register, row.branchId),
+      },
     }));
   },
 

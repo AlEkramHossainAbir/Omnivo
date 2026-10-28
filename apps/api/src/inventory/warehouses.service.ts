@@ -9,7 +9,7 @@ import { branches, stockBalances, stockMovements, stockTransfers, warehouses } f
 import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../common/audit/audit.js';
-import { isUniqueViolation } from '../common/db/pg-errors.js';
+import { isCheckViolation, isUniqueViolation } from '../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
@@ -33,6 +33,15 @@ export function toWarehouse(row: WarehouseRow): Warehouse {
 // What the audit log shows: the form's fields, with the branch by its code
 function snapshot(row: Pick<WarehouseRow, 'code' | 'name' | 'address'>, branch: string | null) {
   return { code: row.code, name: row.name, address: row.address, branch };
+}
+
+function branchLocked(): AppError {
+  return new AppError(
+    409,
+    'warehouse_branch_locked',
+    'A warehouse with stock history stays in its branch.',
+    { fieldErrors: { branchId: ['warehouse_branch_locked'] } },
+  );
 }
 
 function codeTaken(code: string): AppError {
@@ -100,12 +109,7 @@ export class WarehousesService {
         // Its history belongs to the branch it was in: moving a warehouse that already has
         // movements would move years of stock (and, from step 14, its value) to another branch
         if (fields.branchId !== before.branchId && (await this.hasMovements(tx, id))) {
-          throw new AppError(
-            409,
-            'warehouse_branch_locked',
-            'A warehouse with stock history stays in its branch.',
-            { fieldErrors: { branchId: ['warehouse_branch_locked'] } },
-          );
+          throw branchLocked();
         }
         const [after] = await tx
           .update(warehouses)
@@ -127,6 +131,10 @@ export class WarehousesService {
       });
     } catch (error) {
       if (isUniqueViolation(error, 'warehouses_tenant_code_idx')) throw codeTaken(input.code);
+      // Step 20a (migration 0052): a POS register on it is held by a device of the old branch,
+      // which may still have sales of it to send. Rare: hasMovements() above refuses a warehouse
+      // that sold anything, so this is a new warehouse a register was put on at once.
+      if (isCheckViolation(error, 'warehouses_register_held')) throw branchLocked();
       throw error;
     }
   }

@@ -312,8 +312,25 @@ import {
   renameDevice,
   revokeDevice,
 } from './device-data';
+import {
+  assertNoHeldRegister,
+  claimRegister,
+  createRegister,
+  findRegister,
+  findSale,
+  listRegisters,
+  listSales,
+  registerSnapshot,
+  releaseRegister,
+  setRegisterArchived,
+  soldShortList,
+  toPosSale,
+  toRegister,
+  updateRegister,
+  usedByPos,
+} from './pos-data';
 import { push } from './push-data';
-import { deviceKey, pull, registerDevice } from './sync-data';
+import { deviceFor, deviceKey, pull, registerDevice } from './sync-data';
 import {
   assertCodeFree,
   checkVersion,
@@ -1239,7 +1256,9 @@ export const handlers = [
       }
       if (
         data.journal.entries.some((entry) => entry.lines.some((line) => line.accountId === id)) ||
-        usedByPurchase(data, id)
+        usedByPurchase(data, id) ||
+        // Step 20a: a POS register's account, or one a POS sale was paid into
+        usedByPos(data, id)
       ) {
         throw new MockProblem(409, 'account_in_use');
       }
@@ -2080,6 +2099,8 @@ export const handlers = [
       if (data.stock.warehouses.some((place) => place.code === fields.code && place.id !== id)) {
         throw new MockProblem(409, 'warehouse_code_taken', { code: ['warehouse_code_taken'] });
       }
+      // Step 20a: a register a device holds keeps its warehouse in that device's branch
+      if (fields.branchId !== target.branchId) assertNoHeldRegister(data, id);
       Object.assign(target, fields, { version: version + 1, updatedAt: new Date().toISOString() });
       record(data, 'warehouse.updated', 'warehouse', id);
       return reply(routes.warehouses.update, target);
@@ -5077,4 +5098,144 @@ export const handlers = [
       return reply(routes.devices.revoke, device);
     }),
   ),
+
+  // Step 20a: the POS registers (pos-data.ts). Reading needs no permission, like the API; the
+  // mock's person is the owner, who has pos.register.manage and pos.sale.create.
+  mock(routes.pos.listRegisters, async ({ request }) => {
+    const query = readQuery(routes.pos.listRegisters.query, request);
+    await delay();
+    return reply(routes.pos.listRegisters, { items: listRegisters(current(), query) });
+  }),
+
+  mock(
+    routes.pos.getRegister,
+    guarded(({ params }) => {
+      const { id } = routes.pos.getRegister.params.parse(params);
+      const data = current();
+      return reply(routes.pos.getRegister, toRegister(data, findRegister(data, id)));
+    }),
+  ),
+
+  mock(
+    routes.pos.createRegister,
+    guarded(async ({ request }) => {
+      const input = await readBody(routes.pos.createRegister.body, request);
+      const data = current();
+      const created = createRegister(data, input);
+      record(
+        data,
+        'pos_register.created',
+        'pos_register',
+        created.id,
+        diff({}, { code: created.code, ...registerSnapshot(data, created) }),
+      );
+      await delay();
+      return reply(routes.pos.createRegister, toRegister(data, created));
+    }),
+  ),
+
+  mock(
+    routes.pos.updateRegister,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.pos.updateRegister.params.parse(params);
+      const { version, ...input } = await readBody(routes.pos.updateRegister.body, request);
+      const data = current();
+      const target = findRegister(data, id);
+      checkVersion(target.version, version);
+      const before = registerSnapshot(data, target);
+      updateRegister(data, target, input);
+      record(
+        data,
+        'pos_register.updated',
+        'pos_register',
+        id,
+        diff(before, registerSnapshot(data, target)),
+      );
+      await delay();
+      return reply(routes.pos.updateRegister, toRegister(data, target));
+    }),
+  ),
+
+  ...(['archiveRegister', 'restoreRegister'] as const).map((action) =>
+    mock(
+      routes.pos[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.pos[action].params.parse(params);
+        const { version } = await readBody(routes.pos[action].body, request);
+        const data = current();
+        const target = findRegister(data, id);
+        checkVersion(target.version, version);
+        const archived = action === 'archiveRegister';
+        const changes = (target.archivedAt !== null) !== archived;
+        setRegisterArchived(data, target, archived);
+        if (changes) {
+          record(
+            data,
+            archived ? 'pos_register.archived' : 'pos_register.restored',
+            'pos_register',
+            id,
+          );
+        }
+        return reply(routes.pos[action], toRegister(data, target));
+      }),
+    ),
+  ),
+
+  // Decision 14: the device is the signed-in person's own and not revoked (the pull's check)
+  mock(
+    routes.pos.claimRegister,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.pos.claimRegister.params.parse(params);
+      const { deviceId } = await readBody(routes.pos.claimRegister.body, request);
+      const data = current();
+      const device = deviceFor(data, OWNER.id, deviceId);
+      const target = findRegister(data, id);
+      if (claimRegister(data, target, device)) {
+        record(data, 'pos_register.claimed', 'pos_register', id, {
+          device: { from: null, to: device.name },
+        });
+      }
+      await delay();
+      return reply(routes.pos.claimRegister, toRegister(data, target));
+    }),
+  ),
+
+  mock(
+    routes.pos.releaseRegister,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.pos.releaseRegister.params.parse(params);
+      const { deviceId } = await readBody(routes.pos.releaseRegister.body, request);
+      const data = current();
+      const device = deviceFor(data, OWNER.id, deviceId);
+      const target = findRegister(data, id);
+      if (releaseRegister(target, device)) {
+        record(data, 'pos_register.released', 'pos_register', id, {
+          device: { from: device.name, to: null },
+        });
+      }
+      return reply(routes.pos.releaseRegister, toRegister(data, target));
+    }),
+  ),
+
+  // The sales the devices pushed (push-data.ts writes them), and the lines that went below zero
+  mock(routes.pos.listSales, async ({ request }) => {
+    const query = readQuery(routes.pos.listSales.query, request);
+    await delay();
+    return reply(routes.pos.listSales, listSales(current(), query));
+  }),
+
+  mock(
+    routes.pos.getSale,
+    guarded(({ params }) => {
+      const { id } = routes.pos.getSale.params.parse(params);
+      const data = current();
+      return reply(routes.pos.getSale, toPosSale(data, findSale(data, id)));
+    }),
+  ),
+
+  mock(routes.pos.soldShort, async ({ request }) => {
+    const query = readQuery(routes.pos.soldShort.query, request);
+    await delay();
+    return reply(routes.pos.soldShort, soldShortList(current(), query));
+  }),
 ];

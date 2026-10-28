@@ -26,6 +26,7 @@ import {
 import type { z } from 'zod';
 
 import { MockProblem } from './mock';
+import { createSale, keepNumber, overrideText } from './pos-data';
 import { type MockCustomer, refreshPartyRefs, saveCustomer } from './sales-data';
 import { createOrder } from './sales-document-data';
 import { copyToSupplier } from './supplier-data';
@@ -37,6 +38,7 @@ import { diff, record, transaction, type WorkspaceData } from './workspace-data'
 // does not stop the ones after it. Each answer is kept by the command's id (MockSync.answers), so
 // a batch sent again after a lost answer changes nothing twice. The mock's person is the owner,
 // who has every permission, so the per-command permission check (decision 17) is left out.
+// Step 20a: a POS sale (pos-data.ts's createSale) is posted when it arrives.
 
 type PushInput = z.output<typeof syncPushInputSchema>;
 type PushedCommand = PushInput['commands'][number];
@@ -91,6 +93,9 @@ function run(
   } catch (error) {
     // A rule of the mock refused it: kept as refused. Anything else is a bug in the mock.
     if (!(error instanceof MockProblem)) throw error;
+    // Step 20a (decision 37): the refused sale's receipt was printed, so its number stays used.
+    // After transaction() put everything back, like the API's keepNumber() after the savepoint.
+    if (command.type === 'pos_sale.create') keepNumber(data, command.input);
     const refusal: SyncCommandError = {
       code: error.code,
       ...(error.fieldErrors && { fieldErrors: error.fieldErrors }),
@@ -102,7 +107,14 @@ function run(
 }
 
 function entityOf(command: SyncCommand): string {
-  return command.type === 'sales_order.create_draft' ? command.orderId : command.customerId;
+  switch (command.type) {
+    case 'sales_order.create_draft':
+      return command.orderId;
+    case 'pos_sale.create':
+      return command.saleId;
+    default:
+      return command.customerId;
+  }
 }
 
 function refused(id: string, error: SyncCommandError): SyncResult {
@@ -111,14 +123,14 @@ function refused(id: string, error: SyncCommandError): SyncResult {
 
 // An accepted answer brings the customer as it is now, also when it is sent again (decision 18):
 // an old answer never puts an older row back on the device. Archived since: a delete, like in a
-// delta pull. An order brings nothing: orders are not on the device.
+// delta pull. An order and a POS sale bring nothing: they are not on the device.
 function answerOf(data: WorkspaceData, id: string, answer: MockAnswer): SyncResult {
   if (answer.status === 'rejected') return refused(id, answer.error);
   return { id, status: 'accepted', notices: answer.notices, changes: changesOf(data, answer) };
 }
 
 function changesOf(data: WorkspaceData, answer: MockAnswer): SyncChange[] {
-  if (answer.type === 'sales_order.create_draft') return [];
+  if (answer.type === 'sales_order.create_draft' || answer.type === 'pos_sale.create') return [];
   const found = data.sales.customers.find((item) => item.id === answer.entityId);
   // Not found (undefined), or archived
   if (found?.archivedAt !== null) {
@@ -182,6 +194,58 @@ function apply(
       // A draft only (decision 15): confirming it is done online, with the credit check
       const created = createOrder(data, command.input, null, command.orderId);
       record(data, 'sales_order.created', 'sales_order', created.id, {}, device);
+      return [];
+    }
+    case 'pos_sale.create': {
+      if (data.pos.sales.some((sale) => sale.id === command.saleId)) {
+        throw new MockProblem(409, 'sync_id_taken');
+      }
+      const { sale, overrides, shortLines } = createSale(
+        data,
+        device.id,
+        command.saleId,
+        command.input,
+      );
+      record(
+        data,
+        'pos_sale.created',
+        'pos_sale',
+        sale.id,
+        diff(
+          {},
+          {
+            number: sale.number,
+            date: sale.date,
+            soldOn: command.input.date,
+            register: sale.register.code,
+            customer: sale.customer?.code ?? null,
+            total: sale.total,
+            paid: sale.paid,
+            entry: sale.entry?.number ?? null,
+            soldShort: shortLines,
+          },
+        ),
+        device,
+      );
+      // Decision 25: written, never a refusal. The mock's owner has pos.price.override.
+      if (overrides.length > 0) {
+        const register = data.pos.registers.find((item) => item.id === sale.register.id);
+        record(
+          data,
+          'pos_sale.overridden',
+          'pos_sale',
+          sale.id,
+          diff(
+            {},
+            {
+              overrides: overrideText(overrides),
+              maxDiscountPercent: register?.maxDiscountPercent ?? null,
+              allowed: true,
+            },
+          ),
+          device,
+        );
+      }
       return [];
     }
   }

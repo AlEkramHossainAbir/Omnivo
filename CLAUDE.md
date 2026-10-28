@@ -363,6 +363,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `Alert02` icon. On the right, Edit (a text link), Retry (secondary `sm`, refused ones only) and Discard
   (secondary `sm`); none while it is Sending. Discard asks first in a dialog that says how many changes that need
   it go with it. With nothing waiting: the empty state with `CloudSavingDone01`, "Everything is synced".
+  A POS sale ("Sale POS1-000124", "3 lines · ৳2,300") has no Edit, and Discard only once the server refused it.
 - **Orders on the device:** above the sales orders list, a section header "On this device · not synced" and its
   own table (cards on a phone) of the drafts in the outbox, each with "No number yet" and its pill. Offline, the
   server's list below is the empty state "Needs a connection".
@@ -409,6 +410,46 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   sign-in with the password. The words never say "key" or "encryption".
 - **App icon badge:** the installed app's icon shows the changes waiting on the device (the sync line's count),
   where the browser has the badge API.
+- **POS screen (`/pos`):** full screen inside `AppFrame` (the lock, the sync and the update notice still work), no
+  sidebar. A 56px `surface` top bar with a 1px `line` rule: "Leave the POS" (`ArrowLeft01`), a `brand` register pill
+  (`CashierIcon`, "POS1 · Front counter"), the cashier and the next receipt number in `ink-3` `tabular-nums` (hidden
+  as the screen narrows), the sync line, Change register (`ArrowLeftRight`) and a shortcuts icon button
+  (`Keyboard`). Below it, from 860px, the products on the left and a 400px cart on the right, each scrolling inside
+  itself (`h-dvh`; the page never scrolls). The search box ("Scan or search") has the focus; a scanner types the
+  barcode and Enter. Tiles: radius 10px, 1px `line`, the name (13.5px/500, two lines), the SKU in `Geist Mono` `ink-3`,
+  the price (600) and the stock (`ink-2`, or "Out of stock" on a disabled `subtle` tile when the workspace does not
+  sell below zero), two columns on a phone. Keys: F2 search, F4 customer, F7 bill discount, F12 pay, Enter complete
+  and new sale, `?` the shortcuts dialog.
+- **POS cart:** the customer box (walk-in by default), then one row per line that opens on a click
+  (`aria-expanded`): a quantity stepper that never goes below 1, "× ৳420 · bag", a `brand` "5% off" pill, the batch;
+  open, the quantity, price, discount, batch and serial boxes. A price the cashier may not change is read-only with
+  a 12px `ink-3` sentence saying why; over the register's limit, the discount says it needs `pos.price.override` and
+  Pay waits. The totals block on `subtle`: bill discount (`DiscountInput`), line discounts only when there are any,
+  VAT, the total at the KPI size, and "Pay ৳2,300" (primary, full width). On a phone the cart is a bar at the bottom
+  (count, total, Pay) that opens it over the products.
+- **Pay and done dialogs:** "Take payment": rows of method select, amount and reference (each method's own
+  placeholder, "TrxID BK7XQ2M4"), a remove icon button; cash first with the focus; note chips ("Notes the customer
+  gave", the filter chip style) and "Exact amount"; "Add another method" starts at what is still to pay; Still to
+  pay / Paid / Change on `subtle`; "Complete sale" (primary). Then "POS1-000123 is done": a 40px `good-bg` tile with
+  `CheckmarkCircle02`, "Give back ৳200 in cash" at the KPI size (or "No change to give"), "Saved on this device…"
+  when offline, "Print again" (secondary, `Printer`) and "New sale" (primary, with the focus).
+- **Register chooser ("Which counter is this?"):** a card (max 440px) in the screen's place with a `brand-soft`
+  `CashierIcon` tile, a select of the branch's registers that starts empty ("Pick a register"), a register held by
+  another device named "POS2 · held by Store office PC", and "Use this register" (primary). Online only; offline a
+  sentence with `WifiDisconnected02`. The toast: "This device is POS1 now. The next receipt is POS1-000001."
+- **Thermal receipt:** `PosReceipt` (`apps/app/src/components/pos-receipt.tsx`), a print sheet like `PrintSheet`:
+  `@page { size: auto; margin: 0 }`, 72mm wide on 80mm paper and 48mm on 58mm, black on white, no fills and no
+  logo. The company (legal name, address, BIN, phone), the number, counter, cashier, date and customer, the lines,
+  the totals, the payments and change, the register's footer, then "Thank you. Please come again." Amounts always
+  with 2 decimals. It prints by itself after a sale, once; a sale's page prints it again from a button.
+- **POS sale statuses:** Posted (`good`, `CheckmarkCircle02`), plus a second `warn` "Sold short" pill (`Alert02`)
+  when a line went below zero. A sold-short line: Below zero (`warn`, `TimeQuarterPass`) until the stock there is
+  back at zero or above, then Put right (`good`, `CheckmarkCircle02`).
+- **POS registers (Settings):** a data table (code, name, warehouse, holder "Front counter PC · Sumi Akter" or
+  "Free", last number, status) and a dialog form: code (shown, not a box, once saved), name, warehouse (starts
+  empty), an account per method (cash required, the others "Not taken here"), the most a cashier may take off (%),
+  paper width (58 / 80 mm) and the receipt's footer. A held register cannot be archived. Read-only without
+  `pos.register.manage`.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -631,6 +672,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (journal entries, ledgers, opening balances and the financial statements) show 2
   decimals, because their totals must visibly add up; dashboards and lists stay without
   decimals.
+- **Money at the counter:** the POS screen shows whole taka unless an amount has paisa (`৳420`, `৳247.50`), so the
+  lines add up on the screen; the receipt always shows 2 decimals.
 - **Quantities:** decimal strings, never numbers, shown with the unit's decimals and code (`72 pcs`, `2.74 m`).
   Stock is always counted in the product's base unit.
 - **Stock values:** to the paisa, like money; a unit cost keeps 4 decimals and is shown with 2. Lists and the

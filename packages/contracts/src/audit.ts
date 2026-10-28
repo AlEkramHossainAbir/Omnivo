@@ -206,6 +206,21 @@ export const AUDIT_ACTIONS = [
   'approval.approved',
   'approval.rejected',
   'approval.reopened',
+  // step 20a. claimed/released: a device took the register or let it go (the changes name the
+  // device). A sale arrives from a device, so its rows name the device too (step 18b).
+  // pos_sale.overridden: what the cashier did that needs pos.price.override (posOverridesOf),
+  // written whether or not the cashier had it. The sale is never refused for it.
+  // pos_sale.without_permission: the cashier no longer had pos.sale.create when the sale arrived
+  // (it was taken away while the device was offline). The sale is posted anyway (decision 28).
+  'pos_register.created',
+  'pos_register.updated',
+  'pos_register.archived',
+  'pos_register.restored',
+  'pos_register.claimed',
+  'pos_register.released',
+  'pos_sale.created',
+  'pos_sale.overridden',
+  'pos_sale.without_permission',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -258,6 +273,8 @@ export const AUDIT_ENTITY_TYPES = [
   'debit_note',
   'supplier_refund',
   'device',
+  'pos_register',
+  'pos_sale',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

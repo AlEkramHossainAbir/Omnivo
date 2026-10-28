@@ -13,6 +13,7 @@ import {
   type SyncCommandType,
   type SyncEntity,
   type SyncNotice,
+  syncPosRegisterSchema,
   type SyncPull,
   syncSettingsSchema,
   type SyncStock,
@@ -296,6 +297,21 @@ function rowsOf(data: WorkspaceData, tenantId: string, branchId: string): SyncUp
       key: warehouse.id,
       data: warehouse,
     })),
+    // Step 20a: the active registers of the branch, by their warehouse's branch (an archived
+    // warehouse keeps its register, like the API's loader). The parse leaves out the last number:
+    // it moves with every sale, and the device counts its own.
+    ...data.pos.registers.flatMap((register) => {
+      const place = stock.warehouses.find((warehouse) => warehouse.id === register.warehouseId);
+      if (register.archivedAt !== null || place?.branchId !== branchId) return [];
+      return [
+        {
+          op: 'upsert' as const,
+          entity: 'pos_register' as const,
+          key: register.id,
+          data: syncPosRegisterSchema.parse({ ...register, branchId }),
+        },
+      ];
+    }),
     ...sales.priceLists.map((list) => ({
       op: 'upsert' as const,
       entity: 'price_list' as const,

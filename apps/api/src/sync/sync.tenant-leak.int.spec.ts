@@ -14,6 +14,7 @@ import {
   productSchema,
   problemSchema,
   setupSchema,
+  SYNC_PROTOCOL,
   type SyncChange,
   type SyncCommandInput,
   syncPullSchema,
@@ -81,7 +82,7 @@ function as(
 }
 
 function pull(who: SignedIn, deviceId: string, cursor?: string) {
-  const query = new URLSearchParams({ deviceId, protocol: '1', limit: '1000' });
+  const query = new URLSearchParams({ deviceId, protocol: String(SYNC_PROTOCOL), limit: '1000' });
   if (cursor !== undefined) query.set('cursor', cursor);
   return as(who, 'GET', `/sync/pull?${query.toString()}`);
 }
@@ -99,7 +100,7 @@ async function pulled(space: Pick<Workspace, 'who' | 'device'>, cursor?: string)
 async function pushed(space: Pick<Workspace, 'who' | 'device'>, commands: SyncCommandInput[]) {
   const res = await as(space.who, 'POST', '/sync/push', {
     deviceId: space.device.id,
-    protocol: 1,
+    protocol: SYNC_PROTOCOL,
     commands,
   });
   expect(res.statusCode, res.body).toBe(200);
@@ -408,7 +409,7 @@ describe('pushing over HTTP', () => {
   it("cannot push with tenant B's device", async () => {
     const res = await as(a.who, 'POST', '/sync/push', {
       deviceId: b.device.id,
-      protocol: 1,
+      protocol: SYNC_PROTOCOL,
       commands: [newCustomer('Through B')],
     });
     expect(res.statusCode).toBe(404);

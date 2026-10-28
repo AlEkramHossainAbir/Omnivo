@@ -22,6 +22,7 @@ import {
   outboxCounts,
   type PushOutcome,
   readDevice,
+  readClaim,
   readPullState,
   renewServerKey,
   saveDevice,
@@ -30,6 +31,7 @@ import {
   SyncEngine,
   syncedAtOf,
   type Unlock,
+  waitingSales,
   watch,
 } from '@omnivo/sync';
 import { toast } from '@omnivo/ui';
@@ -730,6 +732,25 @@ async function revoke(session: Session): Promise<void> {
   remember(session, readDevice(storage(), session.tenantId, session.userId));
   set({ device: { kind: 'starting' } });
   await setUp(session);
+}
+
+// Step 20a (decision 14): signing out lets go of the register this device holds, so the next
+// cashier's device can take it. Only with no sale of it waiting in the outbox: the server must
+// receive every number before another device goes on from its last one. logout() calls this
+// before the server's session ends (the release needs it). No copy open (locked, not set up), no
+// connection, or a refusal: the register stays with this device, and the sign-out goes on. The
+// next sign-in on this browser is the same device and takes it back; a lost PC is revoked, which
+// frees it (20a.2).
+export async function releaseRegister(): Promise<void> {
+  const session = current;
+  const { device } = localDataStore.getState();
+  if (!session || device.kind !== 'ready') return;
+  const claim = await readClaim(device.copy);
+  if (!claim || (await waitingSales(device.copy)) > 0) return;
+  await call(routes.pos.releaseRegister, {
+    params: { id: claim.registerId },
+    body: { deviceId: session.identity.id },
+  });
 }
 
 // Step 18c (decision 2): this device to another branch, from its own list. Only with an empty

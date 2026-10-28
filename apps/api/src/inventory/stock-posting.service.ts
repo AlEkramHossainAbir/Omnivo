@@ -95,6 +95,35 @@ export interface StockPosting {
   // A transfer's receipt: its serial numbers are on that transfer's lines, in transit, not "in
   // stock somewhere else"
   receivingTransferId?: string;
+  // Step 20a: a POS sale, which is never refused for stock (decision 7). planSale() already worked
+  // out where its goods leave from and what is missing; what is missing goes below zero.
+  belowZero?: boolean;
+}
+
+// Step 20a: one line of a POS sale that takes stock out, as planSale() gets it. batchId is the
+// batch the device chose; serialNumbers what the scanner read.
+export interface SaleDemand {
+  line: number;
+  variant: VariantInfo;
+  baseQuantity: string;
+  batchId: string | null;
+  serialNumbers: string[];
+}
+
+// Where that line's goods leave from: the moves to post, the batches they take (for
+// pos_sale_line_batches), and what the warehouse did not have
+export interface SalePlan {
+  moves: StockMove[];
+  batches: { batchId: string; quantity: string }[];
+  shortQuantity: string;
+  shortSerials: string[];
+}
+
+// What can be taken of `wanted` from `left`: the smaller of the two, and nothing from stock at
+// zero or below
+function takeable(left: string, wanted: string): string {
+  if (compareQuantity(left, '0') <= 0) return '0';
+  return compareQuantity(left, wanted) < 0 ? left : wanted;
 }
 
 // The trigger's refusals as the API's answers, without a field: the trigger does not know which
@@ -351,6 +380,186 @@ export class StockPostingService {
 
     if (before !== null) await this.reportLow(tx, posting, before);
     return values;
+  }
+
+  // Step 20a: where the goods of a POS sale leave from, worked out before post() (decision 15).
+  // The sale was paid and printed, so nothing here refuses it for stock:
+  //   no tracking  the line leaves as it is; what the warehouse does not have goes below zero
+  //   batch        the device's batch first, then the other batches here by FEFO (not expired on
+  //                the day of the sale), and what is still missing below zero on the device's batch
+  //   serial       a serial number in this warehouse leaves with it; one that is not here
+  //                (unknown, sold already, in another warehouse) leaves as a piece without one
+  // The rows are locked in post()'s order (serials, values, balances), so post() takes the same
+  // locks again without waiting, and the stock cannot change between the plan and the posting.
+  // Two lines of one variant count against the same stock, one after the other.
+  // shortQuantity is what went below zero against the rules: an untracked product in a workspace
+  // that allows negative stock is never short, because any document may take it there.
+  async planSale(
+    tx: Transaction,
+    warehouseId: string,
+    date: string,
+    demands: readonly SaleDemand[],
+  ): Promise<SalePlan[]> {
+    const tenantId = getTenantId();
+    if (demands.length === 0) return [];
+    const variantIds = [...new Set(demands.map((demand) => demand.variant.variantId))];
+
+    const numbers = [...new Set(demands.flatMap((demand) => demand.serialNumbers))];
+    const here = new Set<string>();
+    if (numbers.length > 0) {
+      const rows = await tx
+        .select({
+          variantId: serials.variantId,
+          serialNumber: serials.serialNumber,
+          warehouseId: serials.warehouseId,
+        })
+        .from(serials)
+        .where(
+          and(
+            eq(serials.tenantId, tenantId),
+            inArray(serials.variantId, variantIds),
+            inArray(serials.serialNumber, numbers),
+          ),
+        )
+        .orderBy(asc(serials.id))
+        .for('update');
+      for (const row of rows) {
+        if (row.warehouseId === warehouseId) here.add(`${row.variantId}|${row.serialNumber}`);
+      }
+    }
+
+    await this.lockValues(tx, variantIds);
+    // checkAvailable()'s order. The batch's expiry and lot come along for FEFO; only the balance
+    // rows are locked (a batch row never changes its expiry).
+    const balances = await tx
+      .select({
+        variantId: stockBalances.variantId,
+        batchId: stockBalances.batchId,
+        quantity: stockBalances.quantity,
+        lotNumber: batches.lotNumber,
+        expiresOn: batches.expiresOn,
+      })
+      .from(stockBalances)
+      .leftJoin(
+        batches,
+        and(eq(batches.tenantId, stockBalances.tenantId), eq(batches.id, stockBalances.batchId)),
+      )
+      .where(
+        and(
+          eq(stockBalances.tenantId, tenantId),
+          eq(stockBalances.warehouseId, warehouseId),
+          inArray(stockBalances.variantId, variantIds),
+        ),
+      )
+      .orderBy(
+        asc(stockBalances.warehouseId),
+        asc(stockBalances.variantId),
+        sql`${stockBalances.batchId} NULLS FIRST`,
+      )
+      .for('update', { of: stockBalances });
+    const left = new Map(
+      balances.map((row) => [balanceKey(warehouseId, row.variantId, row.batchId), row.quantity]),
+    );
+    const [settings] = await tx
+      .select({ allowNegativeStock: tenantSettings.allowNegativeStock })
+      .from(tenantSettings)
+      .where(eq(tenantSettings.tenantId, tenantId));
+
+    return demands.map((demand): SalePlan => {
+      const { variant } = demand;
+      const key = (batchId: string | null) => balanceKey(warehouseId, variant.variantId, batchId);
+      const leftOf = (batchId: string | null) => left.get(key(batchId)) ?? '0';
+      const take = (batchId: string | null, quantity: string) => {
+        left.set(key(batchId), subtractQuantity(leftOf(batchId), quantity));
+      };
+      const move = (batchId: string | null, quantity: string, serialNumbers: string[] = []) => ({
+        line: demand.line,
+        warehouseId,
+        variant,
+        batchId,
+        quantity,
+        serialNumbers,
+      });
+
+      if (variant.tracking === 'batch') {
+        const own = demand.batchId;
+        // The caller refuses a batch line without a batch (stock_batch_required)
+        if (own === null) throw new Error(`POS line ${String(demand.line)} has no batch`);
+        const taken = new Map<string, string>();
+        const add = (batchId: string, quantity: string) => {
+          if (compareQuantity(quantity, '0') <= 0) return;
+          taken.set(batchId, sumQuantity([taken.get(batchId) ?? '0', quantity]));
+          take(batchId, quantity);
+        };
+        let wanted = demand.baseQuantity;
+        const first = takeable(leftOf(own), wanted);
+        add(own, first);
+        wanted = subtractQuantity(wanted, first);
+        // FEFO: the batch that expires first, no expiry last, then by lot; an expired batch is
+        // not on the shelf, so the goods did not come from it
+        const others = balances
+          .filter(
+            (row): row is typeof row & { batchId: string } =>
+              row.variantId === variant.variantId &&
+              row.batchId !== null &&
+              row.batchId !== own &&
+              (row.expiresOn === null || row.expiresOn >= date),
+          )
+          .sort(
+            (a, b) =>
+              (a.expiresOn ?? '9999-12-31').localeCompare(b.expiresOn ?? '9999-12-31') ||
+              (a.lotNumber ?? '').toLowerCase().localeCompare((b.lotNumber ?? '').toLowerCase()) ||
+              a.batchId.localeCompare(b.batchId),
+          );
+        for (const other of others) {
+          if (compareQuantity(wanted, '0') <= 0) break;
+          const part = takeable(leftOf(other.batchId), wanted);
+          add(other.batchId, part);
+          wanted = subtractQuantity(wanted, part);
+        }
+        // What no batch had goes below zero on the device's batch: the batch the cashier sold
+        const short = wanted;
+        add(own, short);
+        const parts = [...taken].map(([batchId, quantity]) => ({ batchId, quantity }));
+        return {
+          moves: parts.map((part) => move(part.batchId, part.quantity)),
+          batches: parts,
+          shortQuantity: short,
+          shortSerials: [],
+        };
+      }
+
+      const available = leftOf(null);
+      const short = subtractQuantity(demand.baseQuantity, takeable(available, demand.baseQuantity));
+      take(null, demand.baseQuantity);
+
+      if (variant.tracking === 'serial') {
+        // A serial number is on one line at most (documentSerialRules)
+        const found = demand.serialNumbers.filter((serial) =>
+          here.has(`${variant.variantId}|${serial}`),
+        );
+        const missing = demand.serialNumbers.filter(
+          (serial) => !here.has(`${variant.variantId}|${serial}`),
+        );
+        return {
+          moves: [
+            ...(found.length > 0 ? [move(null, String(found.length), found)] : []),
+            ...(missing.length > 0 ? [move(null, String(missing.length))] : []),
+          ],
+          batches: [],
+          shortQuantity: short,
+          shortSerials: missing,
+        };
+      }
+
+      const allowed = settings?.allowNegativeStock === true;
+      return {
+        moves: [move(null, demand.baseQuantity)],
+        batches: [],
+        shortQuantity: allowed ? '0' : short,
+        shortSerials: [],
+      };
+    });
   }
 
   // A revaluation (step 14): each variant gets a new average cost, and its stock's value changes
@@ -615,7 +824,8 @@ export class StockPostingService {
       .from(tenantSettings)
       .where(eq(tenantSettings.tenantId, tenantId));
     const issues: LineIssue[] = [];
-    for (const move of posting.moves) {
+    // Step 20a: a POS sale's shortages were counted by planSale(); they go below zero
+    for (const move of posting.belowZero === true ? [] : posting.moves) {
       // Below zero is allowed only when the workspace says so, and never for a batch or an IMEI
       if (move.variant.tracking === 'none' && settings?.allowNegativeStock === true) continue;
       const key = balanceKey(move.warehouseId, move.variant.variantId, move.batchId);

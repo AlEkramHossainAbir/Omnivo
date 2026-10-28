@@ -74,6 +74,20 @@ export async function assertPeriodOpen(tx: Transaction, date: string): Promise<v
   }
 }
 
+// Step 20a: the day a POS sale is booked on. The sale was paid and printed on `date`, so it is
+// never refused for it: a closed period moves it to the day after the lock date. The same shared
+// lock as assertPeriodOpen(), taken first, so the lock date cannot move between this answer and
+// the posting (which takes the lock again; a lock already held is granted at once).
+export async function firstOpenDay(tx: Transaction, date: string): Promise<string> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock_shared(hashtextextended(${lockKey()}, 0))`);
+  const lockDate = (await readLock(tx))?.lockDate ?? null;
+  if (lockDate === null || date > lockDate) return date;
+  // Day arithmetic in UTC: a date has no time zone, and UTC has no summer time to skip a day
+  const next = new Date(`${lockDate}T00:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
 @Injectable()
 export class PeriodLockService {
   constructor(@Inject(WITH_TENANT) private readonly withTenant: WithTenant) {}

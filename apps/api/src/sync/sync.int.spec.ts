@@ -19,6 +19,7 @@ import {
   setupSchema,
   supplierSchema,
   SYNC_ENTITIES,
+  SYNC_PROTOCOL,
   type SyncChange,
   type SyncEntity,
   syncPullSchema,
@@ -239,7 +240,11 @@ async function newDevice(name: string, branch: Branch, as = owner): Promise<Devi
 }
 
 function pullPage(deviceId: string, cursor: string | undefined, limit: number, as = owner) {
-  const query = new URLSearchParams({ deviceId, protocol: '1', limit: String(limit) });
+  const query = new URLSearchParams({
+    deviceId,
+    protocol: String(SYNC_PROTOCOL),
+    limit: String(limit),
+  });
   if (cursor !== undefined) query.set('cursor', cursor);
   return send('GET', `/sync/pull?${query.toString()}`, undefined, as);
 }
@@ -555,7 +560,10 @@ describe('registering a device', () => {
     const again = await register({ id: lost.id, name: 'Lost phone', branchId: narsingdi.id });
     expect(deviceSchema.parse(again.json()).revokedAt).not.toBeNull();
 
-    const old = await send('GET', `/sync/pull?deviceId=${lost.id}&protocol=2`);
+    const old = await send(
+      'GET',
+      `/sync/pull?deviceId=${lost.id}&protocol=${String(SYNC_PROTOCOL + 1)}`,
+    );
     expect(old.statusCode).toBe(409);
     expect(problemOf(old).code).toBe('sync_protocol_mismatch');
   });
