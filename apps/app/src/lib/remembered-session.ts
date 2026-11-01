@@ -83,11 +83,24 @@ export function clearSignOutPending(): void {
 // the password (session.ts). A sign-out keeps it: another tab that sees it go would open its copy.
 export const LOCKED_KEY = 'omnivo.locked';
 
-export function markLocked(): void {
+// Step 20b: the POS's idle lock is the same lock, and keeps its minutes, so the lock screen says
+// why it locked (pin.lock.idleDescription), after a reload too. '1' = Lock now.
+export function markLocked(idleMinutes?: number): void {
   try {
-    storage()?.setItem(LOCKED_KEY, '1');
+    storage()?.setItem(LOCKED_KEY, idleMinutes === undefined ? '1' : `idle:${String(idleMinutes)}`);
   } catch {
     // The storage refused: the lock still holds in this page, but not after a reload
+  }
+}
+
+// The minutes of an idle lock; null = not locked, or locked with Lock now
+export function lockedIdleMinutes(): number | null {
+  try {
+    const saved = storage()?.getItem(LOCKED_KEY);
+    const minutes = saved?.startsWith('idle:') ? Number(saved.slice('idle:'.length)) : NaN;
+    return Number.isInteger(minutes) && minutes > 0 ? minutes : null;
+  } catch {
+    return null;
   }
 }
 

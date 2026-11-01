@@ -471,6 +471,9 @@ export const ERROR_CODES = [
   // Void refused while a supplier refund paid back some of the payment's advance
   'payment_has_refunds',
   'journal_is_purchase',
+  // Step 20b: a POS shift's entry (an opening or closing difference, a pay in or out) is put right
+  // by the next count or by a movement the other way, never by a reversal
+  'journal_is_pos',
   // Step 18a: devices and the sync. device_not_found also answers another person's device: the
   // app then registers this browser again.
   'device_id_invalid',
@@ -517,6 +520,33 @@ export const ERROR_CODES = [
   'pos_method_not_set',
   // Another sale of the register already has this number: a bug, never a cashier's mistake
   'pos_number_taken',
+  // Step 20b: shifts. The register's over/short account is not chosen, or is not an active income
+  // or expense account; the bell's limit is not whole taka
+  'pos_over_short_required',
+  'pos_over_short_invalid',
+  'pos_variance_alert_format',
+  // A pay in / pay out reason: no name, a name another reason has, an account it cannot use
+  'pos_reason_name_required',
+  'pos_reason_name_taken',
+  'pos_reason_account_invalid',
+  // The cashier's forms on the device: no reason picked, no amount, an empty count box, a total
+  // that is not what the notes add up to, a pay out of more than the drawer should hold, and a
+  // first shift's float with no reason
+  'pos_reason_required',
+  'pos_cash_amount_required',
+  'pos_count_required',
+  'pos_count_total_mismatch',
+  'pos_pay_out_too_large',
+  'pos_float_reason_required',
+  // The register's shift is still open: its device does not let go of it, does not move to
+  // another branch, and its person does not sign out, until it is closed
+  'pos_shift_still_open',
+  // A manager closes a shift that is closed already
+  'pos_shift_closed',
+  // Bugs, never a cashier's mistake: a shift opened while the server still has the register's
+  // last one open, and a sale, movement or close for a shift the server does not know
+  'pos_shift_already_open',
+  'pos_shift_unknown',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

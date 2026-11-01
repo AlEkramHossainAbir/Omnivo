@@ -59,6 +59,8 @@ export type DeviceState =
       reason: LockReason;
       status: KeyStatus;
       waiting: number;
+      // Step 20b: the number of the shift open on this device (decision 6); null = none
+      openShift: string | null;
       unlock: (pin: string) => Promise<UnlockAnswer>;
       forgetPin: () => Promise<void>;
     }
@@ -93,6 +95,8 @@ interface LocalDataState {
   // Closing the dialog. After set-up, any way of closing it is "Not now", like the branch dialog.
   closePin: () => void;
   lockNow: () => void;
+  // Step 20b (decision 7): the POS's idle lock, Lock now with the minutes it waited
+  lockIdle: (minutes: number) => void;
 }
 
 const noSession = () => Promise.reject(new Error('No device session'));
@@ -109,6 +113,7 @@ export const localDataStore = createStore<LocalDataState>()(() => ({
   savePin: noSession,
   closePin: () => undefined,
   lockNow: () => undefined,
+  lockIdle: () => undefined,
 }));
 
 export function useThisDeviceId(): string | null {
@@ -130,6 +135,10 @@ export function askForPin(kind: PinDialogKind): void {
 
 export function lockNow(): void {
   localDataStore.getState().lockNow();
+}
+
+export function lockIdle(minutes: number): void {
+  localDataStore.getState().lockIdle(minutes);
 }
 
 export function useDeviceState(): DeviceState {

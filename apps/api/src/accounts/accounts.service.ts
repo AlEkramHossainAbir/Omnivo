@@ -379,7 +379,10 @@ export class AccountsService {
         isForeignKeyViolation(error, 'pos_registers_card_account_fk') ||
         isForeignKeyViolation(error, 'pos_registers_bkash_account_fk') ||
         isForeignKeyViolation(error, 'pos_registers_nagad_account_fk') ||
-        isForeignKeyViolation(error, 'pos_sale_payments_account_fk')
+        isForeignKeyViolation(error, 'pos_sale_payments_account_fk') ||
+        isForeignKeyViolation(error, 'pos_registers_over_short_account_fk') ||
+        isForeignKeyViolation(error, 'pos_cash_reasons_account_fk') ||
+        isForeignKeyViolation(error, 'pos_cash_movements_account_fk')
       ) {
         throw new AppError(409, 'account_in_use', 'Archive this account instead: entries use it.');
       }

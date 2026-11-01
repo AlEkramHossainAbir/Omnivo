@@ -31,20 +31,54 @@ export const NO_PUSH: PushOutcome = { accepted: 0, rejected: 0, kept: 0 };
 // other customers go on. The batch stops at 50 commands or 512 KB of JSON; the first command
 // always goes, so a big order is never stuck. Step 19b: from the rows' clear fields only (the
 // command's size is counted when it is saved), so it runs inside takeBatch's transaction.
+//
+// Step 20b: a shift's commands go in their own order, the one the server needs (sync.ts). A sale
+// or a movement waits while its shift's open is still on the device (the server would not know the
+// shift), and the close waits while any command of its shift is (the server works out the expected
+// cash from all of them). An open waits while any command of an earlier shift is: the server opens
+// no shift while the register's last one is open. "Still on the device" counts the batch being
+// made too, as for a customer: the answer comes first. A walk-in sale holds back no other sale, so
+// a shift's hundred sales still go fifty at a time.
 export function pickBatch(rows: readonly OutboxRow[]): OutboxRow[] {
   const held = new Set<string>();
+  // The shifts with a command on the device before this row, and those of them whose open is
+  const shifts = new Set<string>();
+  const opening = new Set<string>();
   const batch: OutboxRow[] = [];
   let bytes = 0;
   for (const row of rows) {
     if (batch.length === MAX_PUSH_COMMANDS) break;
-    const free = row.status === 'waiting' && !held.has(row.customerId);
+    const free =
+      row.status === 'waiting' &&
+      !held.has(row.customerId) &&
+      (row.shiftId === undefined || shiftMayGo(row, row.shiftId, shifts, opening));
     held.add(row.customerId);
+    if (row.shiftId !== undefined) {
+      shifts.add(row.shiftId);
+      if (row.type === 'pos_shift.open') opening.add(row.shiftId);
+    }
     if (!free) continue;
     if (batch.length > 0 && bytes + row.bytes > MAX_PUSH_BYTES) break;
     bytes += row.bytes;
     batch.push(row);
   }
   return batch;
+}
+
+function shiftMayGo(
+  row: Pick<OutboxRow, 'type'>,
+  shiftId: string,
+  shifts: ReadonlySet<string>,
+  opening: ReadonlySet<string>,
+): boolean {
+  switch (row.type) {
+    case 'pos_shift.open':
+      return shifts.size === 0;
+    case 'pos_shift.close':
+      return !shifts.has(shiftId);
+    default:
+      return !opening.has(shiftId);
+  }
 }
 
 // Takes the next batch and marks it as being sent, in one transaction: a form that opens one of

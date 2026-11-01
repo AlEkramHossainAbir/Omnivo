@@ -3,35 +3,53 @@ import {
   ArrowLeftRightIcon,
   CashierIcon,
   KeyboardIcon,
+  LockKeyIcon,
   Wifi01Icon,
   WifiDisconnected02Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   formatPosNumber,
+  lockAfterMs,
   routes,
   type SyncPosRegister,
   type SyncSettings,
+  todayIn,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
   allRows,
+  type DeviceShift,
   dropClaim,
+  heldCount,
   type LocalCopy,
+  localCashReasons,
   localRegisters,
   readClaim,
+  readShift,
   type RegisterClaim,
-  waitingSales,
+  type ShiftCloseResult,
+  shiftStart,
+  waitingAtCounter,
 } from '@omnivo/sync';
-import { cn, EmptyState, IconButton, Logo, Pill, toast } from '@omnivo/ui';
-import { Link } from '@tanstack/react-router';
-import { lazy, Suspense, useState } from 'react';
+import { Button, cn, EmptyState, IconButton, Logo, Pill, toast } from '@omnivo/ui';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { LocalState, SyncNotice } from '../components/local-state';
-import { PosScreen } from '../components/pos-screen';
+import { ShiftButton } from '../components/pos-parts';
+import { PosScreen, type ShiftRequest } from '../components/pos-screen';
 import { ApiRequestError, call } from '../lib/api';
-import { useLocalData, useLocalQuery, useThisDeviceId } from '../lib/local-data';
+import {
+  askForPin,
+  lockIdle,
+  useKeyStatus,
+  useLocalData,
+  useLocalQuery,
+  useThisDeviceId,
+} from '../lib/local-data';
 import { useCan } from '../lib/permissions';
+import { logout } from '../lib/session';
 import { useSession } from '../lib/session-store';
 import { useSyncSummary } from '../lib/sync-summary';
 import { useOnline } from '../lib/use-online';
@@ -40,12 +58,31 @@ import { useOnline } from '../lib/use-online';
 // top, then the register this device sells on, then the products and the cart (pos-screen.tsx).
 // Everything it sells from is the device's copy, so it works the same with or without a
 // connection; only taking or changing a register needs one.
+// Step 20b: and between the register and the selling screen, the shift (decision 1): the open
+// card until one is open, the shift menu in the bar while it is, the result after its close.
 
 // "Which counter is this?": once per device, online, so in a chunk of its own (with the server
 // query it needs), and the selling screen's chunk stays in its budget
 const RegisterChooser = lazy(async () => ({
   default: (await import('../components/pos-register')).RegisterChooser,
 }));
+// Step 20b: the open card and the close's result, in the shift's chunk (pos-shift.tsx)
+const OpenShiftCard = lazy(async () => ({
+  default: (await import('../components/pos-shift')).OpenShiftCard,
+}));
+const ShiftClosedDialog = lazy(async () => ({
+  default: (await import('../components/pos-shift')).ShiftClosedDialog,
+}));
+// Step 20b: the shift menu brings the dropdown's code, which no other part of /pos has (the
+// shell's menus are not drawn here): its own chunk, with a look-alike button for the moment it loads
+const ShiftMenu = lazy(async () => ({
+  default: (await import('../components/pos-shift-menu')).ShiftMenu,
+}));
+const SignOutDialog = lazy(async () => ({
+  default: (await import('../components/sign-out-dialog')).SignOutDialog,
+}));
+
+type ClosedShift = Extract<ShiftCloseResult, { kind: 'closed' }>;
 
 // Module level, so they are stable for useLocalQuery (a new function is a new read)
 async function readSettings(copy: LocalCopy): Promise<SyncSettings | null> {
@@ -69,19 +106,95 @@ function heldRegister(
     : null;
 }
 
+// Step 20b (decision 7): the register's idle lock. No key, click, touch or scroll in this tab for
+// the register's minutes, and the device locks, the way Lock now does (the other tabs too). The
+// lock screen takes the AppFrame's place, so this screen goes; its cart is on the device
+// (pos-screen.tsx). A dialog open (the payment) does not stop it: a counter left alone locks.
+// null = off, or nothing to lock with (no PIN, no open shift).
+function useIdleLock(lockAfter: SyncPosRegister['lockAfter'] | null) {
+  useEffect(() => {
+    if (lockAfter === null) return;
+    const ms = lockAfterMs(lockAfter);
+    if (ms === null) return;
+    let last = Date.now();
+    const seen = () => {
+      last = Date.now();
+    };
+    const events = ['keydown', 'pointerdown', 'pointermove', 'touchstart', 'wheel'] as const;
+    for (const name of events) window.addEventListener(name, seen, { passive: true });
+    // A check every few seconds, not a timer reset on every move of the mouse
+    const timer = setInterval(() => {
+      if (Date.now() - last >= ms) lockIdle(Number(lockAfter));
+    }, 5_000);
+    return () => {
+      for (const name of events) window.removeEventListener(name, seen);
+      clearInterval(timer);
+    };
+  }, [lockAfter]);
+}
+
 export function PosPage() {
   const { t } = useLocale();
   const can = useCan();
   const deviceId = useThisDeviceId();
+  const navigate = useNavigate();
+  const search = useSearch({ strict: false });
   const { view, notice } = useLocalData();
   const ready = view.kind === 'ready';
   const registers = useLocalQuery(ready ? localRegisters : null);
   const claim = useLocalQuery(ready ? readClaim : null);
   const settings = useLocalQuery(ready ? readSettings : null);
+  const shift = useLocalQuery(ready ? readShift : null);
+  const reasons = useLocalQuery(ready ? localCashReasons : null);
+  const keys = useKeyStatus();
   const [shortcuts, setShortcuts] = useState(false);
+  const [request, setRequest] = useState<ShiftRequest | null>(null);
+  const [closed, setClosed] = useState<ClosedShift | null>(null);
+  const [asking, setAsking] = useState(false);
+  const { waiting: unsynced } = useSyncSummary();
 
   const register =
     registers && claim !== undefined ? heldRegister(registers, claim, deviceId) : undefined;
+  // The shift this screen sells on: open, and of the register the device holds
+  const openShift = shift?.status === 'open' && shift.registerId === register?.id ? shift : null;
+
+  // By the id: the shift's row is a new object after every write (each sale), the same read
+  const openShiftId = openShift?.id ?? null;
+  const readHeld = useCallback(
+    (copy: LocalCopy) => (openShiftId ? heldCount(copy, openShiftId) : Promise.resolve(0)),
+    [openShiftId],
+  );
+  const held = useLocalQuery(ready ? readHeld : null) ?? 0;
+
+  // The sign-out's "Close shift" (decision 6) comes here with ?close=true: the close opens once,
+  // and the address loses the flag, so a reload does not open it again
+  const wantsClose = search.close === true;
+  const closeHere = openShift !== null;
+  useEffect(() => {
+    if (!wantsClose || shift === undefined) return;
+    void navigate({ to: '/pos', search: {}, replace: true }).then(() => {
+      if (closeHere) setRequest('close');
+    });
+  }, [wantsClose, shift, closeHere, navigate]);
+
+  useIdleLock(
+    openShift && register && keys?.hasPin && register.lockAfter !== 'off'
+      ? register.lockAfter
+      : null,
+  );
+
+  const signOut = () => {
+    setClosed(null);
+    if (unsynced > 0) setAsking(true);
+    else void logout();
+  };
+
+  // "Sign out" sits right after the close, whose command may still wait a moment when it is
+  // pressed. Once nothing waits, there is nothing to lose: the question goes (it is drawn only
+  // while something waits) and the sign-out goes on by itself, instead of asking about "0 changes".
+  useEffect(() => {
+    if (asking && unsynced === 0) void logout();
+  }, [asking, unsynced]);
 
   const content = () => {
     if (view.kind !== 'ready') return <LocalState view={view} />;
@@ -108,14 +221,64 @@ export function PosPage() {
         </Suspense>
       );
     }
+    if (shift === undefined || reasons === undefined) return null;
+    if (openShift) {
+      return (
+        <PosScreen
+          copy={view.copy}
+          register={register}
+          settings={settings}
+          shift={openShift}
+          reasons={reasons}
+          request={request}
+          onRequest={setRequest}
+          onClosed={setClosed}
+          shortcuts={shortcuts}
+          onShortcuts={setShortcuts}
+        />
+      );
+    }
+    // Decision 13: no account for a difference, no shift (a register made before 20b)
+    if (register.overShortAccountId === null) {
+      return (
+        <EmptyState
+          icon={CashierIcon}
+          title={t('pos.shift.openTitle')}
+          description={t('pos.shift.needsOverShort', { code: register.code })}
+        />
+      );
+    }
+    // Decision 7: a register that locks itself needs the device's PIN to lock with
+    if (register.lockAfter !== 'off' && !keys?.hasPin) {
+      return (
+        <EmptyState
+          icon={LockKeyIcon}
+          title={t('pos.shift.openTitle')}
+          description={t('pos.shift.needsPin', { code: register.code })}
+          action={
+            keys && (
+              <Button
+                onClick={() => {
+                  askForPin(keys.pinBlocked ? 'new' : 'set-up');
+                }}
+              >
+                {t('pin.card.set')}
+              </Button>
+            )
+          }
+        />
+      );
+    }
     return (
-      <PosScreen
-        copy={view.copy}
-        register={register}
-        settings={settings}
-        shortcuts={shortcuts}
-        onShortcuts={setShortcuts}
-      />
+      <Suspense fallback={null}>
+        <OpenShiftCard
+          copy={view.copy}
+          register={register}
+          start={shiftStart(register, shift)}
+          reasons={reasons}
+          today={todayIn(settings.timezone)}
+        />
+      </Suspense>
     );
   };
 
@@ -127,8 +290,12 @@ export function PosPage() {
         copy={view.kind === 'ready' ? view.copy : null}
         register={register ?? null}
         claim={claim ?? null}
+        shift={openShift}
+        held={held}
+        timeZone={settings?.timezone ?? 'Asia/Dhaka'}
+        onRequest={setRequest}
         onShortcuts={
-          register
+          openShift
             ? () => {
                 setShortcuts(true);
               }
@@ -141,27 +308,57 @@ export function PosPage() {
         </div>
       )}
       <main className="flex min-h-0 flex-1 flex-col">
-        {view.kind === 'ready' && register && claim && settings ? (
+        {view.kind === 'ready' && openShift ? (
           content()
         ) : (
           <div className="grid flex-1 place-items-center overflow-y-auto p-4">{content()}</div>
         )}
       </main>
+      {closed && (
+        <Suspense fallback={null}>
+          <ShiftClosedDialog
+            result={closed}
+            onSignOut={signOut}
+            onNext={() => {
+              setClosed(null);
+            }}
+          />
+        </Suspense>
+      )}
+      {asking && unsynced > 0 && (
+        <Suspense fallback={null}>
+          <SignOutDialog
+            count={unsynced}
+            onClose={() => {
+              setAsking(false);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
 
-// The bar: the logo, the register and who sells, the next number, the sync line and the way out.
-// On a phone only what fits: the register's code, the sync icon and the exit icon.
+// The bar: the logo, the register and who sells, the shift, the next number, the sync line and
+// the way out. On a phone only what fits: the register's code, the shift, the sync icon and the
+// exit icon.
 function PosTopBar({
   copy,
   register,
   claim,
+  shift,
+  held,
+  timeZone,
+  onRequest,
   onShortcuts,
 }: {
   copy: LocalCopy | null;
   register: SyncPosRegister | null;
   claim: RegisterClaim | null;
+  shift: DeviceShift | null;
+  held: number;
+  timeZone: string;
+  onRequest: (request: ShiftRequest) => void;
   onShortcuts: (() => void) | undefined;
 }) {
   const { t } = useLocale();
@@ -169,13 +366,27 @@ function PosTopBar({
   return (
     <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 print:hidden">
       <Logo />
-      <Pill tone="brand" icon={CashierIcon}>
-        {t('pos.title')}
-      </Pill>
+      {/* Step 20b: not on a phone, where the shift's button (POS1-S0042) says it is the POS */}
+      <span className={cn('inline-flex', shift && 'max-sm:hidden')}>
+        <Pill tone="brand" icon={CashierIcon}>
+          {t('pos.title')}
+        </Pill>
+      </span>
       {register && claim && copy && (
         <>
           <span aria-hidden="true" className="h-6 w-px bg-line max-sm:hidden" />
-          <ChangeRegister copy={copy} register={register} />
+          <ChangeRegister copy={copy} register={register} shift={shift} />
+          {shift && (
+            <Suspense fallback={<ShiftButton number={shift.number} />}>
+              <ShiftMenu
+                shift={shift}
+                held={held}
+                cashier={cashier}
+                timeZone={timeZone}
+                onRequest={onRequest}
+              />
+            </Suspense>
+          )}
           <span className="text-body-sm text-ink-2 max-lg:hidden">
             {t('pos.cashier', { name: cashier })}
           </span>
@@ -209,14 +420,28 @@ function PosTopBar({
 // The register's name, and the way to let it go (decision 14). Only online, and only with no sale
 // of it waiting on the device: the server must have every number before another device goes on
 // from its last one. The claim goes after the server let go, so the chooser comes back.
-function ChangeRegister({ copy, register }: { copy: LocalCopy; register: SyncPosRegister }) {
+// Step 20b: and only with no shift open (decision 32): the server refuses it, so the screen says
+// what to do first.
+function ChangeRegister({
+  copy,
+  register,
+  shift,
+}: {
+  copy: LocalCopy;
+  register: SyncPosRegister;
+  shift: DeviceShift | null;
+}) {
   const { t, errorText } = useLocale();
   const online = useOnline();
   const deviceId = useThisDeviceId();
   const [busy, setBusy] = useState(false);
   const change = async () => {
     if (!deviceId) return;
-    if ((await waitingSales(copy)) > 0) {
+    if (shift) {
+      toast(t('pos.shift.changeRegisterOpen', { number: shift.number }));
+      return;
+    }
+    if ((await waitingAtCounter(copy)) > 0) {
       toast(t('pos.changeRegisterWaiting', { code: register.code }));
       return;
     }

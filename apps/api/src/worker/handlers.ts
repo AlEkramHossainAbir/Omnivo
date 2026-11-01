@@ -7,6 +7,7 @@ import { DocumentFileHandler } from '../documents/file.handler.js';
 import { LowStockHandler } from '../inventory/low-stock.handler.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
+import { ShiftVarianceHandler } from '../pos/shift-variance.handler.js';
 import { SoldShortHandler } from '../pos/sold-short.handler.js';
 import { ProductImportHandler } from '../products/import.handler.js';
 import { ReportExportHandler } from '../reports/export.handler.js';
@@ -42,6 +43,7 @@ export class EventHandlers {
     documentFile: DocumentFileHandler,
     documentEmail: DocumentEmailHandler,
     soldShort: SoldShortHandler,
+    shiftVariance: ShiftVarianceHandler,
   ) {
     this.byType = {
       'workspace.created': welcome,
@@ -58,6 +60,7 @@ export class EventHandlers {
       'document.file_requested': documentFile,
       'document.email_requested': documentEmail,
       'pos.sold_short': soldShort,
+      'pos.shift_variance': shiftVariance,
     };
   }
 

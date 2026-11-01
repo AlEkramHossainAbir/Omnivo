@@ -60,6 +60,11 @@ import { TAX_RATE_FORMAT } from './tax-rates.js';
 // and its stock movements. It never refuses a sale for stock (you chose this): the money was taken
 // and the receipt printed, so stock that is not there goes below zero, and the sale is listed as
 // "sold short" for someone to put right.
+//
+// Step 20b: shifts. A register sells only inside a shift: one cashier on one device, from the
+// count of the drawer at the start to the count at the end (pos-shifts.ts). The register holds
+// what its shifts need: the account a difference in the cash goes to, how big a difference rings
+// a bell, and how long /pos waits before it locks the screen.
 
 // ---------------------------------------------------------------------------------------------
 // Registers
@@ -74,6 +79,35 @@ export type PosPaymentMethod = (typeof POS_PAYMENT_METHODS)[number];
 // supermarket's. The receipt's layout follows it (@page size).
 export const POS_PAPER_WIDTHS = ['58', '80'] as const;
 export type PosPaperWidth = (typeof POS_PAPER_WIDTHS)[number];
+
+// Step 20b: how long /pos waits with no key, click or touch before it locks the screen (step 19b's
+// lock screen and the device's PIN). Minutes as text, like the paper width, so the form's select
+// sends them as they are. 'off' = it never locks by itself.
+export const POS_LOCK_AFTER = ['off', '2', '5', '10', '15'] as const;
+export type PosLockAfter = (typeof POS_LOCK_AFTER)[number];
+
+// For the screen's timer, in milliseconds; null = off
+export function lockAfterMs(value: PosLockAfter): number | null {
+  return value === 'off' ? null : Number(value) * 60_000;
+}
+
+// A shift (pos-shifts.ts) is open until its cashier counts the drawer and closes it. A shift whose
+// device was revoked, or that a manager closed online, is closed without a count: nobody counted
+// the drawer, so no difference was posted, and the next shift's opening count finds it.
+export const POS_SHIFT_STATUSES = ['open', 'closed', 'closed_without_count'] as const;
+export type PosShiftStatus = (typeof POS_SHIFT_STATUSES)[number];
+
+// The register's latest shift, as the server knows it. A device that takes the register numbers
+// its next shift after this one, and compares its first count with cashLeft.
+export const posLastShiftSchema = z.object({
+  id: z.uuid(),
+  sequence: z.number().int().min(1),
+  status: z.enum(POS_SHIFT_STATUSES),
+  // What should be in the drawer now: the count at the close, or, for a shift closed without a
+  // count, what the server expected. null while the shift is open.
+  cashLeft: z.string().nullable(),
+});
+export type PosLastShift = z.infer<typeof posLastShiftSchema>;
 
 // POS1-000123: the register's code and the sale's number in it, 6 digits. The series never
 // restarts (no year, you chose this), and a register that passes 999999 simply gets 7 digits.
@@ -115,11 +149,19 @@ export const posRegisterSchema = z.object({
   paperWidth: z.enum(POS_PAPER_WIDTHS),
   // A line or two at the end of the receipt: "Goods once sold are exchanged within 7 days"
   receiptFooter: z.string().nullable(),
+  // Step 20b. Where a difference in the cash count goes: an income or expense account, "Cash
+  // over/short". null on a register made before 20b: it opens no shift until someone sets one.
+  overShortAccountId: z.uuid().nullable(),
+  // A difference bigger than this, either way, rings a bell to the managers. Whole taka: "500".
+  varianceAlert: z.string(),
+  lockAfter: z.enum(POS_LOCK_AFTER),
   // The device that holds it now; null = free
   deviceId: z.uuid().nullable(),
   // The highest number the server has received from it; 0 = none yet. A device that takes the
   // register goes on from here.
   lastNumber: z.number().int().min(0),
+  // Step 20b: its latest shift; null = it never had one
+  lastShift: posLastShiftSchema.nullable(),
   archivedAt: z.iso.datetime().nullable(),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),
@@ -155,6 +197,13 @@ const discountLimitSchema = z
   )
   .transform((value) => (value === '' ? '0' : value));
 
+// Whole taka, up to 9 digits. '' (an empty box) = 0: a bell for any difference at all.
+const varianceAlertSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{0,9}$/, errorCode('pos_variance_alert_format'))
+  .transform((value) => (value === '' ? '0' : value));
+
 const registerFieldsSchema = z.object({
   name: z.string().trim().min(2, errorCode('pos_register_name_required')).max(60),
   // The form's empty select sends '' — "not chosen", with its own message
@@ -168,6 +217,10 @@ const registerFieldsSchema = z.object({
   maxDiscountPercent: discountLimitSchema,
   paperWidth: z.enum(POS_PAPER_WIDTHS),
   receiptFooter: optionalText(200),
+  // Required in the form, also for a register made before 20b: a shift needs it
+  overShortAccountId: z.uuid(errorCode('pos_over_short_required')),
+  varianceAlert: varianceAlertSchema,
+  lockAfter: z.enum(POS_LOCK_AFTER),
 });
 
 export const posRegisterInputSchema = registerFieldsSchema.extend({ code: registerCodeSchema });
@@ -378,6 +431,9 @@ const posSaleFieldsSchema = z.object({
   // The register it was sold on, and its number in that register's series (formatPosNumber)
   registerId: z.uuid(),
   sequence: z.number().int().min(1),
+  // Step 20b: the shift it was sold in. null only for a sale made before 20b and still in a
+  // device's outbox when the app was updated; since then the device sends a shift with every sale.
+  shiftId: z.uuid().nullable().default(null),
   // The device's today in the workspace's time zone, and the moment, by the device's clock. The
   // receipt prints them. The server books the sale on `date`, unless the date is after the server's
   // own today (a clock set ahead) or in a closed period (step 11): then on the first day it can.
@@ -465,6 +521,8 @@ export const posSaleSummarySchema = z.object({
   id: z.uuid(),
   number: z.string(),
   register: z.object({ id: z.uuid(), code: z.string(), name: z.string() }),
+  // Step 20b: the shift it was sold in, "POS1-S0042"; null for a sale from before 20b
+  shift: z.object({ id: z.uuid(), number: z.string() }).nullable(),
   branchId: z.uuid(),
   warehouseId: z.uuid(),
   // The day it is in the books (see posSaleInputSchema), and when it was sold by the device's clock
@@ -606,7 +664,7 @@ export const posRoutes = {
   updateRegister: defineRoute({
     method: 'PUT',
     path: '/pos/registers/:id',
-    summary: "Change a POS register's name, warehouse, accounts, discount limit or receipt",
+    summary: "Change a POS register's name, warehouse, accounts, limits, receipt or lock",
     auth: 'bearer',
     permission: 'pos.register.manage',
     status: 200,
@@ -650,7 +708,8 @@ export const posRoutes = {
   releaseRegister: defineRoute({
     method: 'POST',
     path: '/pos/registers/:id/release',
-    summary: 'This device lets go of its register, so another device can take it',
+    summary:
+      'This device lets go of its register so another can take it; not while a shift is open',
     auth: 'bearer',
     status: 200,
     params: posParamsSchema,

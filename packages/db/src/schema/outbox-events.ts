@@ -21,6 +21,7 @@ export const OUTBOX_EVENT_TYPES = [
   'document.file_requested',
   'document.email_requested',
   'pos.sold_short',
+  'pos.shift_variance',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

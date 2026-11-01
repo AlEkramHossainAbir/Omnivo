@@ -168,7 +168,8 @@ const TAKING_REFUNDS = ['purchase.refund.manage'] as const;
 // any discount). Nobody else sells at a counter: an owner gives pos.sale.create to a role in
 // Settings → Roles where a depot also has a counter.
 const SELLING_AT_COUNTER = ['pos.sale.create'] as const;
-const RUNNING_COUNTERS = ['pos.register.manage', 'pos.price.override'] as const;
+// Step 20b: they also read every counter's shifts and close one nobody can close
+const RUNNING_COUNTERS = ['pos.register.manage', 'pos.price.override', 'pos.shift.manage'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -735,6 +736,9 @@ export const INDUSTRY_TEMPLATES = {
       selling: [
         account('5330', 'Card and wallet charges'),
         account('5340', 'Shrinkage and damaged goods'),
+        // Step 20b: what the counters' drawers were over or short at the counts (a register's
+        // over/short account, Settings → POS)
+        account('5350', 'Cash over and short'),
       ],
     }),
     catalog: {

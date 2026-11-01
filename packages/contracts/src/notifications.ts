@@ -18,6 +18,9 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // pos.sold_short: params { id, number, warehouse, count } — a POS sale (step 20a) took count
 // variants below zero in that warehouse; sent to the people who adjust stock, and the bell opens
 // the sale
+// pos.shift_variance: params { id, number, register, difference } — a shift's closing count was
+// more than its register's limit over or short (difference: counted less expected, signed); sent
+// to the owners and the people with pos.shift.manage, and the bell opens the shift
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
@@ -32,6 +35,7 @@ export const NOTIFICATION_TYPES = [
   'approval.approved',
   'approval.rejected',
   'pos.sold_short',
+  'pos.shift_variance',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

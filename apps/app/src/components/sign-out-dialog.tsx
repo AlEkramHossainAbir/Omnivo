@@ -42,3 +42,50 @@ export function SignOutDialog({ count, onClose }: { count: number; onClose: () =
     </Dialog>
   );
 }
+
+// Step 20b (decision 6): a POS shift is open on this device. Signing out would delete its count
+// and its sales not synced yet, and keep the register held, so it waits for the close. From the
+// shell, "Close shift" goes to the POS screen with the close open; on the lock screen there is no
+// way to the POS until the PIN is typed, so it only says why.
+export function ShiftOpenDialog({
+  number,
+  onClose,
+  onCloseShift,
+}: {
+  number: string;
+  onClose: () => void;
+  onCloseShift?: () => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent
+        title={t('pos.close.signOutTitle')}
+        footer={
+          <>
+            <DialogClose asChild>
+              <Button variant={onCloseShift ? 'secondary' : 'primary'}>{t('common.cancel')}</Button>
+            </DialogClose>
+            {onCloseShift && (
+              <Button
+                onClick={() => {
+                  onClose();
+                  onCloseShift();
+                }}
+              >
+                {t('pos.close.signOutClose')}
+              </Button>
+            )}
+          </>
+        }
+      >
+        <p className="text-body-sm text-ink-2">{t('pos.close.signOutBody', { number })}</p>
+      </DialogContent>
+    </Dialog>
+  );
+}

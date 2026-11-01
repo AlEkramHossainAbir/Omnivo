@@ -72,7 +72,8 @@ export function useFieldList(): (fields: readonly string[]) => string {
 }
 
 // The two lines of an entry: what it is ("Changes to Rahman Traders") and how big ("Changed:
-// Phone and Credit limit", "3 lines · ৳4,140"). A POS sale's name is its number (pos.ts in sync).
+// Phone and Credit limit", "3 lines · ৳4,140"). A POS sale's name is its number (pos.ts in sync),
+// a shift's too (shift.ts).
 export function useCommandText(): (entry: OutboxEntry) => { title: string; detail: string } {
   const { t, format } = useLocale();
   const fieldList = useFieldList();
@@ -102,6 +103,14 @@ export function useCommandText(): (entry: OutboxEntry) => { title: string; detai
               total: format.money(entry.total ?? '0'),
             }),
           };
+        // Step 20b: the title says it all. A shift's name is its number ("Shift POS1-S0042
+        // opened"); a movement's is the toast's sentence ("৳10,000 paid out for Bank deposit"). The
+        // counts stay off this page: the close is blind, and the drawer's money is not the device
+        // user's to read here.
+        case 'pos_shift.open':
+        case 'pos_shift.close':
+        case 'pos_cash_movement.create':
+          return { title, detail: '' };
       }
     },
     [t, format, fieldList],

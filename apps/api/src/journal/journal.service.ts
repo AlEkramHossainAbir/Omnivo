@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  isPosJournalSource,
   isPurchaseJournalSource,
   isSalesJournalSource,
   isStockJournalSource,
@@ -219,6 +220,15 @@ export class JournalService {
             409,
             'journal_is_purchase',
             'This entry belongs to a purchase document. Correct it from that document.',
+          );
+        }
+        if (isPosJournalSource(entry.source)) {
+          // A POS shift's cash (step 20b, decision 28): it was counted or moved at the counter. The
+          // next count puts a wrong one right, and a pay in or pay out the other way a movement.
+          throw new AppError(
+            409,
+            'journal_is_pos',
+            'This entry belongs to a POS shift. Correct it with the next count or a pay in or out.',
           );
         }
         if (entry.version !== input.version) throw versionConflict();

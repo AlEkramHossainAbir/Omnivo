@@ -6,6 +6,7 @@ import {
   type Branch,
   contractErrorMap,
   isJournalSource,
+  isPosJournalSource,
   isPurchaseJournalSource,
   isSalesJournalSource,
   isStockJournalSource,
@@ -167,6 +168,10 @@ function documentLinkOf(entry: JournalEntry) {
   if (entry.source === 'purchase_refund') {
     return { to: '/supplier-refunds/$refundId', params: { refundId: id } } as const;
   }
+  // Step 20b: an opening or closing difference, a float, a pay in or out: its shift
+  if (entry.source === 'pos_shift') {
+    return { to: '/pos/shifts/$shiftId', params: { shiftId: id } } as const;
+  }
   return null;
 }
 
@@ -185,7 +190,8 @@ export function EntryView({
   const navigate = useNavigate();
   const refresh = useJournalRefresh();
   const showDate = useIsoDate();
-  const canPost = useCan()('accounting.journal.post');
+  const can = useCan();
+  const canPost = can('accounting.journal.post');
   const [reversing, setReversing] = useState(false);
   const accountOf = useMemo(() => new Map(accounts.map((item) => [item.id, item])), [accounts]);
   const branchOf = useMemo(() => new Map(branches.map((item) => [item.id, item])), [branches]);
@@ -205,7 +211,11 @@ export function EntryView({
   // credit note for an invoice, Void for a receipt) — not from here. Step 17c: a purchase
   // document's the same way (Void for a supplier payment; a posted bill stays, journal_is_purchase).
   const fromStock = isStockJournalSource(entry.source);
-  const fromDocument = isSalesJournalSource(entry.source) || isPurchaseJournalSource(entry.source);
+  // Step 20b: a shift's too (journal_is_pos): a wrong count is put right by the next count
+  const fromDocument =
+    isSalesJournalSource(entry.source) ||
+    isPurchaseJournalSource(entry.source) ||
+    isPosJournalSource(entry.source);
   const canReverse =
     canPost &&
     entry.status === 'posted' &&
@@ -214,7 +224,9 @@ export function EntryView({
     entry.source !== 'year_close' &&
     !fromStock &&
     !fromDocument;
-  const documentLink = documentLinkOf(entry);
+  // A shift's page needs pos.shift.manage (decision 26): without it the number stays plain text
+  const documentLink =
+    entry.source === 'pos_shift' && !can('pos.shift.manage') ? null : documentLinkOf(entry);
   const failure = failureOf(post.error);
   const amount = (value: string) =>
     value === '0.0000' ? '' : format.money(value, { decimals: 2 });
@@ -275,13 +287,18 @@ export function EntryView({
             {t('journal.reversedBy', { number: entry.reversedBy.number })}
           </Link>
         )}
-        {documentLink && (
+        {documentLink ? (
           <Link
             {...documentLink}
             className="font-medium text-brand underline-offset-3 hover:underline"
           >
             {t('journal.fromDocument', { document: entry.document?.number ?? '' })}
           </Link>
+        ) : (
+          entry.source === 'pos_shift' &&
+          entry.document && (
+            <span>{t('journal.fromDocument', { document: entry.document.number })}</span>
+          )
         )}
       </div>
       {fromStock && <p className="text-label text-ink-3">{t('journal.stockEntryHint')}</p>}
@@ -310,6 +327,9 @@ export function EntryView({
       )}
       {entry.source === 'purchase_refund' && (
         <p className="text-label text-ink-3">{t('journal.supplierRefundEntryHint')}</p>
+      )}
+      {entry.source === 'pos_shift' && (
+        <p className="text-label text-ink-3">{t('journal.posShiftEntryHint')}</p>
       )}
       {entry.narration && <p className="text-body text-ink">{entry.narration}</p>}
       {/* A plain table in its own scroll box: four columns, a handful of rows, a totals row */}

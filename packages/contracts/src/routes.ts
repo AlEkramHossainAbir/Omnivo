@@ -25,6 +25,7 @@ import { deviceRoutes } from './devices.js';
 import { documentOutputRoutes, publicDocumentRoutes } from './document-output.js';
 import { goodsReceiptRoutes } from './goods-receipts.js';
 import { posRoutes } from './pos.js';
+import { posShiftRoutes } from './pos-shifts.js';
 import { priceListRoutes } from './price-lists.js';
 import { productCategoryRoutes } from './product-categories.js';
 import { productImportRoutes } from './product-imports.js';
@@ -137,4 +138,5 @@ export const routes = {
   sync: syncRoutes,
   devices: deviceRoutes,
   pos: posRoutes,
+  posShifts: posShiftRoutes,
 };

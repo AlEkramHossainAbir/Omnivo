@@ -69,6 +69,38 @@ describe('pickBatch', () => {
     // The first always goes, even alone
     expect(pickBatch([one, two])).toEqual([one]);
   });
+
+  // Step 20b: open → sales and movements → close, and the next open after the close
+  it('sends a shift’s commands in the order the server needs them', () => {
+    const shift = '01928c4e-5555-7000-8000-000000000001';
+    const next = '01928c4e-5555-7000-8000-000000000002';
+    const counter = (type: OutboxRow['type'], shiftId: string, chain: string) =>
+      row(`01928c4e-6666-7000-8000-${chain.padStart(12, '0')}`, { type, shiftId });
+    const open = counter('pos_shift.open', shift, '1');
+    const sale = counter('pos_sale.create', shift, '2');
+    const otherSale = counter('pos_sale.create', shift, '3');
+    const payOut = counter('pos_cash_movement.create', shift, '4');
+    const close = counter('pos_shift.close', shift, '5');
+    const nextOpen = counter('pos_shift.open', next, '6');
+    const rows = [open, sale, otherSale, payOut, close, nextOpen];
+    // The open alone: the server must know the shift before its sales
+    expect(pickBatch(rows)).toEqual([open]);
+    // Then every sale and movement together (a walk-in sale holds back no other), not the close
+    expect(pickBatch(rows.slice(1))).toEqual([sale, otherSale, payOut]);
+    // Then the close, and only after it the next shift's open
+    expect(pickBatch(rows.slice(4))).toEqual([close]);
+    expect(pickBatch(rows.slice(5))).toEqual([nextOpen]);
+    // A refused sale keeps the close on the device: the server's expected cash would miss it
+    expect(pickBatch([{ ...sale, status: 'failed' }, close])).toEqual([]);
+    // A customer's command and a 20a sale without a shift go as before
+    const customerCommand = row('01928c4e-7777-7000-8000-000000000001');
+    const oldSale = row('01928c4e-7777-7000-8000-000000000002', { type: 'pos_sale.create' });
+    expect(pickBatch([open, sale, customerCommand, oldSale])).toEqual([
+      open,
+      customerCommand,
+      oldSale,
+    ]);
+  });
 });
 
 async function engineWith(push: (input: SyncPushInput) => Promise<SyncPush>) {

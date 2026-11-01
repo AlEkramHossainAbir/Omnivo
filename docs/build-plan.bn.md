@@ -365,6 +365,10 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
   ভাংতি), `pos_sale.create` সবসময় outbox দিয়ে; সার্ভারে নিজস্ব `pos_sales` ডকুমেন্ট, একটা journal entry আর স্টক,
   স্টকের জন্য কখনো refuse না ("Sold short" + bell)। ব্রাউজার প্রিন্টে থার্মাল রিসিট। POS sales তালিকা, Settings →
   POS registers।
+- **শিফট (২০b):** শিফট খোলা থাকলেই বিক্রি; open আর close দুটোতেই drawer গোনা (নোট বা মোট, blind), পার্থক্য
+  register-এর over/short account-এ নিজে থেকে post, সীমার বেশি হলে managers-কে bell। কারণসহ pay in/out (Settings
+  → POS cash reasons, কারণের account-এ), hold/resume বিল (F8/F9, শুধু ডিভাইসে), register-এর idle lock (PIN), sign-out
+  আগে শিফট close। Sales → POS shifts (তালিকা, শিফটের পাতা, close without a count)।
 
 **দেখবেন:** ওয়াইফাই বন্ধ করে ট্যাবলেটে ১০টা বিক্রি করে, রিসিট প্রিন্ট করে, তারপর ওয়াইফাই চালু করলে সব সার্ভারে গিয়ে হিসাবে বসল। 🎉 **এটাই Omnivo-র সবচেয়ে বড় প্রতিযোগিতামূলক সুবিধা।**
 **শিখবেন:** offline-first আর্কিটেকচার, conflict কৌশল, service worker, idempotency, Web Crypto।

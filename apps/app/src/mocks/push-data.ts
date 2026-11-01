@@ -2,6 +2,7 @@ import {
   ADDRESS_KINDS,
   type AddressKind,
   type AuditEntry,
+  compareMoney,
   contractErrorMap,
   type CustomerAddressChanges,
   type CustomerChanges,
@@ -27,6 +28,7 @@ import type { z } from 'zod';
 
 import { MockProblem } from './mock';
 import { createSale, keepNumber, overrideText } from './pos-data';
+import { closeShift, moveCash, openShift } from './pos-shift-data';
 import { type MockCustomer, refreshPartyRefs, saveCustomer } from './sales-data';
 import { createOrder } from './sales-document-data';
 import { copyToSupplier } from './supplier-data';
@@ -38,7 +40,8 @@ import { diff, record, transaction, type WorkspaceData } from './workspace-data'
 // does not stop the ones after it. Each answer is kept by the command's id (MockSync.answers), so
 // a batch sent again after a lost answer changes nothing twice. The mock's person is the owner,
 // who has every permission, so the per-command permission check (decision 17) is left out.
-// Step 20a: a POS sale (pos-data.ts's createSale) is posted when it arrives.
+// Step 20a: a POS sale (pos-data.ts's createSale) is posted when it arrives. Step 20b: so are a
+// shift's open, its pay ins and outs, and its close (pos-shift-data.ts).
 
 type PushInput = z.output<typeof syncPushInputSchema>;
 type PushedCommand = PushInput['commands'][number];
@@ -51,18 +54,17 @@ export function push(data: WorkspaceData, userId: string, input: PushInput): Syn
   // The protocol first, like the pull: an old app is told to reload before anything else
   if (input.protocol !== SYNC_PROTOCOL) throw new MockProblem(409, 'sync_protocol_mismatch');
   const device = deviceFor(data, userId, input.deviceId);
-  const from = { id: device.id, name: device.name };
+  const from = { id: device.id, name: device.name, userId };
   return {
     results: input.commands.map((pushed) => run(data, from, pushed)),
     serverTime: new Date().toISOString(),
   };
 }
 
-function run(
-  data: WorkspaceData,
-  device: NonNullable<AuditEntry['device']>,
-  pushed: PushedCommand,
-): SyncResult {
+// The device the commands came from, as the audit rows name it, and its person (a shift's cashier)
+type From = NonNullable<AuditEntry['device']> & { userId: string };
+
+function run(data: WorkspaceData, device: From, pushed: PushedCommand): SyncResult {
   // A command the mock cannot read is refused alone and keeps no answer (decision 24). The app's
   // forms check the same schemas, so only a bug gets here: the paths are the command's own, not
   // the form's (the API's decision 22 is not repeated here).
@@ -108,12 +110,18 @@ function run(
 
 function entityOf(command: SyncCommand): string {
   switch (command.type) {
+    case 'customer.create':
+    case 'customer.update':
+      return command.customerId;
     case 'sales_order.create_draft':
       return command.orderId;
     case 'pos_sale.create':
       return command.saleId;
-    default:
-      return command.customerId;
+    case 'pos_shift.open':
+    case 'pos_shift.close':
+      return command.shiftId;
+    case 'pos_cash_movement.create':
+      return command.movementId;
   }
 }
 
@@ -123,14 +131,15 @@ function refused(id: string, error: SyncCommandError): SyncResult {
 
 // An accepted answer brings the customer as it is now, also when it is sent again (decision 18):
 // an old answer never puts an older row back on the device. Archived since: a delete, like in a
-// delta pull. An order and a POS sale bring nothing: they are not on the device.
+// delta pull. An order, a POS sale and a shift's command bring nothing: they are not on the device
+// as rows (the register's latest shift comes with the next pull).
 function answerOf(data: WorkspaceData, id: string, answer: MockAnswer): SyncResult {
   if (answer.status === 'rejected') return refused(id, answer.error);
   return { id, status: 'accepted', notices: answer.notices, changes: changesOf(data, answer) };
 }
 
 function changesOf(data: WorkspaceData, answer: MockAnswer): SyncChange[] {
-  if (answer.type === 'sales_order.create_draft' || answer.type === 'pos_sale.create') return [];
+  if (answer.type !== 'customer.create' && answer.type !== 'customer.update') return [];
   const found = data.sales.customers.find((item) => item.id === answer.entityId);
   // Not found (undefined), or archived
   if (found?.archivedAt !== null) {
@@ -141,11 +150,8 @@ function changesOf(data: WorkspaceData, answer: MockAnswer): SyncChange[] {
 
 // --- The commands -------------------------------------------------------------------------------
 
-function apply(
-  data: WorkspaceData,
-  device: NonNullable<AuditEntry['device']>,
-  command: SyncCommand,
-): SyncNotice[] {
+function apply(data: WorkspaceData, from: From, command: SyncCommand): SyncNotice[] {
+  const device = { id: from.id, name: from.name };
   switch (command.type) {
     case 'customer.create': {
       assertIdsFree(data, [command.customerId], command.input.addresses);
@@ -243,6 +249,118 @@ function apply(
               allowed: true,
             },
           ),
+          device,
+        );
+      }
+      return [];
+    }
+    // Step 20b: the audit rows are the API's. The mock's person is the owner, who has
+    // pos.sale.create, so pos_shift.without_permission is never written.
+    case 'pos_shift.open': {
+      const { shift, floatReason } = openShift(data, from, command.shiftId, command.input);
+      record(
+        data,
+        'pos_shift.opened',
+        'pos_shift',
+        shift.id,
+        diff(
+          {},
+          {
+            number: shift.number,
+            date: shift.opening.date,
+            openedOn: command.input.date,
+            opening: command.input.opening.total,
+            comparedWith: shift.opening.comparedWith,
+            floatReason,
+            entry: shift.opening.entry?.number ?? null,
+          },
+        ),
+        device,
+      );
+      return [];
+    }
+    case 'pos_cash_movement.create': {
+      const { shift, movement, reason } = moveCash(
+        data,
+        device.id,
+        command.movementId,
+        command.input,
+      );
+      record(
+        data,
+        'pos_shift.cash_moved',
+        'pos_shift',
+        shift.id,
+        diff(
+          {},
+          {
+            reason: reason.name,
+            direction: movement.direction,
+            amount: command.input.amount,
+            note: movement.note,
+            date: movement.date,
+            entry: movement.entry.number,
+            shiftStatus: shift.status,
+          },
+        ),
+        device,
+      );
+      return [];
+    }
+    case 'pos_shift.close': {
+      const { input } = command;
+      const closed = closeShift(data, device.id, command.shiftId, input);
+      const { shift } = closed;
+      if (!closed.kept) {
+        // Decision 38: never a refusal, the cashier did count
+        record(
+          data,
+          'pos_shift.closed',
+          'pos_shift',
+          shift.id,
+          diff(
+            {},
+            {
+              number: shift.number,
+              counted: input.counted.total,
+              deviceExpected: input.deviceExpected,
+              closedOn: input.date,
+              kept: false,
+              statusBefore: closed.statusBefore,
+            },
+          ),
+          device,
+        );
+        return [];
+      }
+      record(
+        data,
+        'pos_shift.closed',
+        'pos_shift',
+        shift.id,
+        diff(
+          {},
+          {
+            number: shift.number,
+            date: closed.date,
+            closedOn: input.date,
+            counted: input.counted.total,
+            expected: closed.expected,
+            difference: closed.difference,
+            heldDropped: input.heldDropped,
+            entry: closed.entry?.number ?? null,
+          },
+        ),
+        device,
+      );
+      // Decision 22: the books keep the server's number
+      if (compareMoney(input.deviceExpected, closed.expected) !== 0) {
+        record(
+          data,
+          'pos_shift.expected_differs',
+          'pos_shift',
+          shift.id,
+          diff({}, { device: input.deviceExpected, server: closed.expected }),
           device,
         );
       }

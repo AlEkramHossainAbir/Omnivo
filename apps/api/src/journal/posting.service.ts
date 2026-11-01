@@ -311,11 +311,17 @@ export class PostingService {
       );
     }
     // A reversal undoes old work, and a year-end close empties every income and expense account
-    // that holds a balance: both must reach an account that was archived since. A supplier's bill
+    // that holds a balance: both must reach an account that was archived since. So does a POS
+    // shift's entry (step 20b): the money was counted or moved at the counter already, and a
+    // reason or a register may keep an account archived since; refusing it would leave the cash
+    // out of the books (decision 25). A supplier's bill
     // (step 17c) clears "goods received not billed", the stock account its goods receipts credited,
     // and a debit note (step 17d) clears what a purchase return put back on it.
     await this.checkLines(tx, lines, {
-      allowArchived: entry.source === 'reversal' || entry.source === 'year_close',
+      allowArchived:
+        entry.source === 'reversal' ||
+        entry.source === 'year_close' ||
+        entry.source === 'pos_shift',
       allowStock:
         entry.source === 'reversal' ||
         entry.source === 'year_close' ||

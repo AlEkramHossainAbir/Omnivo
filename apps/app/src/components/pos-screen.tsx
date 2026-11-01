@@ -1,9 +1,11 @@
 import { Search01Icon } from '@hugeicons/core-free-icons';
 import {
   compareQuantity,
+  MAX_HELD_CARTS,
   type Product,
   type ProductVariant,
   SYNC_BLOCK_AFTER_DAYS,
+  type SyncPosCashReason,
   type SyncPosRegister,
   type SyncSettings,
   type TaxRate,
@@ -13,13 +15,19 @@ import {
 import { useLocale } from '@omnivo/i18n';
 import {
   allRows,
+  type DeviceShift,
+  heldCount,
+  holdCart,
   type LocalCopy,
   lookUpPrices,
   productByBarcode,
   productPage,
+  saveScreenCart,
+  screenCart,
+  type ShiftCloseResult,
   stockOf,
 } from '@omnivo/sync';
-import { cn, Input } from '@omnivo/ui';
+import { cn, Input, toast } from '@omnivo/ui';
 import {
   lazy,
   Suspense,
@@ -41,14 +49,17 @@ import {
   changeLine,
   EMPTY_CART,
   fefoBatch,
+  heldCartOf,
   itemName,
   lineReady,
   newLineKey,
   onHandOf,
   overridesOf,
+  rekeyed,
   removeLine,
   shortLines,
 } from '../lib/pos';
+import { leftOpen } from '../lib/pos-shift';
 import { useSession } from '../lib/session-store';
 import { useSyncAge } from '../lib/sync-summary';
 import { useOnline } from '../lib/use-online';
@@ -66,6 +77,19 @@ const ShortcutsDialog = lazy(async () => ({
   default: (await import('./pos-pay')).ShortcutsDialog,
 }));
 const PosReceipt = lazy(async () => ({ default: (await import('./pos-receipt')).PosReceipt }));
+// Step 20b: the shift's dialogs and the held bills, each its own chunk too
+const CashMoveDialog = lazy(async () => ({
+  default: (await import('./pos-shift')).CashMoveDialog,
+}));
+const CloseShiftDialog = lazy(async () => ({
+  default: (await import('./pos-shift')).CloseShiftDialog,
+}));
+const HoldDialog = lazy(async () => ({ default: (await import('./pos-held')).HoldDialog }));
+const HeldDialog = lazy(async () => ({ default: (await import('./pos-held')).HeldDialog }));
+
+// Step 20b: what the top bar's shift menu asks the screen for. The screen opens the dialogs, because
+// they need its cart: Hold takes it, Resume replaces it, Close holds it first.
+export type ShiftRequest = 'pay-in' | 'pay-out' | 'held' | 'close';
 
 // Step 20a (decision 12): the products on the left, the cart on the right; on a phone the products
 // alone, with the cart as a bar at the bottom that opens over them. A whole sale works from the
@@ -112,12 +136,23 @@ export function PosScreen({
   copy,
   register,
   settings,
+  shift,
+  reasons,
+  request,
+  onRequest,
+  onClosed,
   shortcuts,
   onShortcuts,
 }: {
   copy: LocalCopy;
   register: SyncPosRegister;
   settings: SyncSettings;
+  // Step 20b: the open shift the screen sells on, and the reasons for pay in and pay out
+  shift: DeviceShift;
+  reasons: readonly SyncPosCashReason[];
+  request: ShiftRequest | null;
+  onRequest: (request: ShiftRequest | null) => void;
+  onClosed: (result: Extract<ShiftCloseResult, { kind: 'closed' }>) => void;
   shortcuts: boolean;
   onShortcuts: (open: boolean) => void;
 }) {
@@ -136,6 +171,10 @@ export function PosScreen({
   const [done, setDone] = useState<DoneSale | null>(null);
   // A phone: the cart over the products
   const [cartOpen, setCartOpen] = useState(false);
+  // Step 20b: F8's dialog. The cart on the screen comes back from the device once (restored):
+  // until then nothing is saved over it.
+  const [holding, setHolding] = useState(false);
+  const [restored, setRestored] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLButtonElement>(null);
   const billDiscountRef = useRef<HTMLInputElement>(null);
@@ -148,6 +187,8 @@ export function PosScreen({
   const canOverride = can('pos.price.override');
   // Step 18c's limit: offline more than 7 days after the last sync, no new work on this device
   const blocked = !online && age?.age === 'blocked';
+  // Decision 6: a shift left open on an earlier day sells nothing more; the menu's Close is the way
+  const stale = leftOpen(shift.openingDate, today);
 
   const findTiles = useCallback(
     async (open: LocalCopy) =>
@@ -203,7 +244,70 @@ export function PosScreen({
     cart.lines.every(lineReady) &&
     short.size === 0 &&
     overrides.length === 0 &&
-    !blocked;
+    !blocked &&
+    !stale;
+
+  // Step 20b: the cart a reload or the idle lock left, once per shift. The idle lock unmounts this
+  // screen (the AppFrame draws the lock screen in its place), so the cart lives on the device.
+  useEffect(() => {
+    let stopped = false;
+    void screenCart(copy, shift.id)
+      .then((saved) => {
+        if (!stopped && saved) setCart(rekeyed(saved));
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!stopped) setRestored(true);
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [copy, shift.id]);
+
+  // Every change is saved, one write after the other, so the last one wins. A save that fails
+  // (the copy closed for a lock) changes nothing: the next change saves again.
+  const writes = useRef(Promise.resolve());
+  const total = amounts.totals.total;
+  useEffect(() => {
+    if (!restored) return;
+    const saved = cart.lines.length === 0 ? null : heldCartOf(cart, total, null);
+    writes.current = writes.current
+      .then(() => saveScreenCart(copy, shift.id, saved))
+      .catch(() => undefined);
+  }, [copy, shift.id, cart, total, restored]);
+
+  const readHeld = useCallback((open: LocalCopy) => heldCount(open, shift.id), [shift.id]);
+  const held = useLocalQuery(readHeld) ?? 0;
+
+  // The shift menu's Close: the cart on the screen is held first, so the close's notice counts it
+  // with the other held bills and nothing is dropped without being said. Once per request: the
+  // cart is read from a ref, so a change to it does not hold it again. The close dialog shows once
+  // the cart is empty (below).
+  const latest = useRef({ cart, total });
+  useEffect(() => {
+    latest.current = { cart, total };
+  });
+  useEffect(() => {
+    if (request !== 'close') return;
+    const now = latest.current;
+    if (now.cart.lines.length === 0) return;
+    void holdCart(copy, shift.id, heldCartOf(now.cart, now.total, null)).then(
+      (answer) => {
+        if (answer === 'held') {
+          setCart(EMPTY_CART);
+          setSelected(null);
+          setCartOpen(false);
+          return;
+        }
+        toast(t('pos.hold.full', { max: format.number(MAX_HELD_CARTS) }));
+        onRequest(null);
+      },
+      () => {
+        toast(t('sync.saveFailed'));
+        onRequest(null);
+      },
+    );
+  }, [request, copy, shift.id, t, format, onRequest]);
 
   // A tile's click, a scan or Enter: the line with its price, VAT rate and batch, from the copy.
   // The price as the customer's price list has it now (lookUpPrices, step 18b).
@@ -298,9 +402,11 @@ export function PosScreen({
 
   // The shortcuts (decision 12). Not while a dialog is open: it has its own keys (Enter completes
   // the sale, or starts the next one). F12 opens the browser's tools in some browsers; the page
-  // asks first, and Chrome lets it.
+  // asks first, and Chrome lets it. Step 20b: F8 holds the cart, F9 lists the held bills
+  // (decision 68).
+  const dialogOpen = paying || done !== null || shortcuts || holding || request !== null;
   useEffect(() => {
-    if (paying || done || shortcuts) return;
+    if (dialogOpen) return;
     const onKey = (event: KeyboardEvent) => {
       switch (event.key) {
         case 'F2':
@@ -319,6 +425,14 @@ export function PosScreen({
           event.preventDefault();
           if (payable) setPaying(true);
           break;
+        case 'F8':
+          event.preventDefault();
+          if (cart.lines.length > 0) setHolding(true);
+          break;
+        case 'F9':
+          event.preventDefault();
+          onRequest('held');
+          break;
         case '?':
           if (isTyping(event.target)) return;
           event.preventDefault();
@@ -330,7 +444,7 @@ export function PosScreen({
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [paying, done, shortcuts, payable, onShortcuts]);
+  }, [dialogOpen, payable, onShortcuts, cart.lines.length, onRequest]);
 
   const newSale = () => {
     setDone(null);
@@ -344,6 +458,14 @@ export function PosScreen({
         {blocked && (
           <DocumentNotice tone="warn">
             {t('sync.blockedFormNotice', { days: format.number(SYNC_BLOCK_AFTER_DAYS) })}
+          </DocumentNotice>
+        )}
+        {stale && (
+          <DocumentNotice tone="warn">
+            {t('pos.shift.leftOpen', {
+              number: shift.number,
+              time: format.dateTime(new Date(shift.openedAt), settings.timezone),
+            })}
           </DocumentNotice>
         )}
         <label className="grid gap-1.5">
@@ -447,12 +569,20 @@ export function PosScreen({
         onOpen={setCartOpen}
         customerRef={customerRef}
         billDiscountRef={billDiscountRef}
+        onHold={() => {
+          setHolding(true);
+        }}
+        held={held}
+        onHeld={() => {
+          onRequest('held');
+        }}
       />
       <Suspense fallback={null}>
         {paying && (
           <PayDialog
             copy={copy}
             register={register}
+            shiftId={shift.id}
             cart={cart}
             total={amounts.totals.total}
             date={today}
@@ -486,6 +616,66 @@ export function PosScreen({
           <ShortcutsDialog
             onClose={() => {
               onShortcuts(false);
+            }}
+          />
+        )}
+        {holding && (
+          <HoldDialog
+            copy={copy}
+            shiftId={shift.id}
+            screen={{ cart, total }}
+            onClose={() => {
+              setHolding(false);
+            }}
+            onHeld={() => {
+              setHolding(false);
+              setCart(EMPTY_CART);
+              setSelected(null);
+              setCartOpen(false);
+              searchRef.current?.focus();
+            }}
+          />
+        )}
+        {request === 'held' && (
+          <HeldDialog
+            copy={copy}
+            shiftId={shift.id}
+            screen={{ cart, total }}
+            timeZone={settings.timezone}
+            onClose={() => {
+              onRequest(null);
+            }}
+            onResume={(resumed) => {
+              onRequest(null);
+              setCart(rekeyed(resumed));
+              setSelected(null);
+            }}
+          />
+        )}
+        {(request === 'pay-in' || request === 'pay-out') && (
+          <CashMoveDialog
+            copy={copy}
+            shift={shift}
+            direction={request === 'pay-in' ? 'in' : 'out'}
+            reasons={reasons}
+            today={today}
+            onClose={() => {
+              onRequest(null);
+            }}
+          />
+        )}
+        {request === 'close' && cart.lines.length === 0 && (
+          <CloseShiftDialog
+            copy={copy}
+            shift={shift}
+            held={held}
+            today={today}
+            onClose={() => {
+              onRequest(null);
+            }}
+            onClosed={(result) => {
+              onRequest(null);
+              onClosed(result);
             }}
           />
         )}

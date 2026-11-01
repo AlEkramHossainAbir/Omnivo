@@ -31,6 +31,11 @@ const SCREENS = [
   () => import('../routes/pos'),
   () => import('../components/pos-pay'),
   () => import('../components/pos-receipt'),
+  // Step 20b: the shift works offline too: the open card, pay in and out, the close and its
+  // result (one chunk), the held bills, and the top bar's shift menu
+  () => import('../components/pos-shift'),
+  () => import('../components/pos-held'),
+  () => import('../components/pos-shift-menu'),
 ];
 
 // Once, by main.tsx's enableMocking. The dev server is on this computer, so it does not fail.

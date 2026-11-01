@@ -1,4 +1,12 @@
-import { DISCOUNT_TYPES, POS_PAPER_WIDTHS, POS_PAYMENT_METHODS } from '@omnivo/contracts';
+import {
+  type CashNotes,
+  DISCOUNT_TYPES,
+  POS_CASH_DIRECTIONS,
+  POS_LOCK_AFTER,
+  POS_PAPER_WIDTHS,
+  POS_PAYMENT_METHODS,
+  POS_SHIFT_STATUSES,
+} from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
 import {
   boolean,
@@ -7,6 +15,7 @@ import {
   foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgTable,
   primaryKey,
@@ -18,6 +27,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
 import { batches } from './batches.js';
+import { journalEntries } from './journal.js';
 import { ledgerAccounts } from './ledger-accounts.js';
 import { parties } from './parties.js';
 import { productVariants } from './products.js';
@@ -26,12 +36,18 @@ import { devices } from './sync.js';
 import { taxRates } from './tax-rates.js';
 import { tenants } from './tenants.js';
 import { units } from './units.js';
+import { users } from './users.js';
 import { warehouses } from './warehouses.js';
 
 // Step 20a: the point of sale. A register is a counter; a POS sale is made on a device, already
 // paid, and arrives as a sync command (pos_sale.create). The server writes the sale, its lines,
 // the batches they left from and its payments in one go, and never changes them afterwards. The
 // rules live in migration 0052.
+//
+// Step 20b: shifts. A register sells inside a shift: one cashier on one device, from the count of
+// the drawer at the start to the count at the end, with money put in or taken out for a reason in
+// between. The shift's tables sit between the registers and the sales, because a sale points at
+// its shift. The rules live in migration 0054.
 
 // ---------------------------------------------------------------------------------------------
 // Registers
@@ -63,6 +79,13 @@ export const posRegisters = pgTable(
       .default('0'),
     paperWidth: text('paper_width', { enum: POS_PAPER_WIDTHS }).notNull(),
     receiptFooter: text('receipt_footer'),
+    // Step 20b. Where a difference in a cash count goes ("Cash over/short"). NULL on a register made
+    // before 20b: the device opens no shift on it until someone picks one.
+    overShortAccountId: uuid('over_short_account_id'),
+    // A difference bigger than this, either way, rings a bell to the managers. Whole taka.
+    varianceAlert: numeric('variance_alert', { precision: 12, scale: 0 }).notNull().default('500'),
+    // Minutes of no key, click or touch before /pos locks the screen; 'off' = never
+    lockAfter: text('lock_after', { enum: POS_LOCK_AFTER }).notNull().default('5'),
     // The device that holds it (decision 14); NULL = free. Set by a claim, cleared by a release,
     // and by the database itself when that device is revoked or moved to another branch (0052).
     deviceId: uuid('device_id'),
@@ -117,16 +140,268 @@ export const posRegisters = pgTable(
       columns: [table.tenantId, table.nagadAccountId],
       foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
     }),
+    foreignKey({
+      name: 'pos_registers_over_short_account_fk',
+      columns: [table.tenantId, table.overShortAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
     // The contract's format: the code is split from the number at the hyphen
     check('pos_registers_code_check', sql`${table.code} ~ '^[A-Z][A-Z0-9]{1,7}$'`),
     check('pos_registers_discount_check', sql`${table.maxDiscountPercent} BETWEEN 0 AND 100`),
     check('pos_registers_paper_check', sql`${table.paperWidth} IN ('58', '80')`),
     check('pos_registers_last_number_check', sql`${table.lastNumber} >= 0`),
+    check('pos_registers_variance_alert_check', sql`${table.varianceAlert} >= 0`),
+    check(
+      'pos_registers_lock_after_check',
+      sql`${table.lockAfter} IN ('off', '2', '5', '10', '15')`,
+    ),
     // An archived register is held by no device: the last word on archiving a held one
     check(
       'pos_registers_archived_check',
       sql`${table.archivedAt} IS NULL OR ${table.deviceId} IS NULL`,
     ),
+  ],
+);
+
+// ---------------------------------------------------------------------------------------------
+// Pay in and pay out reasons (step 20b)
+
+// Why a cashier puts money into the drawer or takes it out, and the account on the other side of
+// the cash: "Bank deposit" (out, the bank account), "Float from safe" (in, the safe). Archived,
+// never deleted: movements point at them. Every device keeps the active ones (sync entity
+// pos_cash_reason, migration 0054).
+export const posCashReasons = pgTable(
+  'pos_cash_reasons',
+  {
+    ...baseColumns(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    name: text('name').notNull(),
+    // Never changes (0054): a pay in turned into a pay out would change every movement made with it
+    direction: text('direction', { enum: POS_CASH_DIRECTIONS }).notNull(),
+    // May change; a movement keeps the account it was posted to
+    accountId: uuid('account_id').notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  (table) => [
+    // The last word on pos_reason_name_taken, in any case. The archived ones count too, so
+    // restoring one never fails on its name.
+    uniqueIndex('pos_cash_reasons_tenant_name_idx').on(table.tenantId, sql`lower(${table.name})`),
+    // The target of the first shifts' FK
+    uniqueIndex('pos_cash_reasons_tenant_id_idx').on(table.tenantId, table.id),
+    // The target of the movements' FK, which carries the direction: a movement's direction is
+    // always its reason's
+    uniqueIndex('pos_cash_reasons_direction_idx').on(table.tenantId, table.id, table.direction),
+    // No index for the account FK: a workspace has a handful of reasons
+    foreignKey({
+      name: 'pos_cash_reasons_account_fk',
+      columns: [table.tenantId, table.accountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    check('pos_cash_reasons_direction_check', sql`${table.direction} IN ('in', 'out')`),
+  ],
+);
+
+// ---------------------------------------------------------------------------------------------
+// Shifts (step 20b)
+
+// One cashier on one device at one register. The id is made by the device (the command's
+// shiftId), so its sales and movements point at it before the server has seen it. created_by is
+// the cashier, like a sale's.
+// The row is written by pos_shift.open with the opening columns, and changed once: by the close
+// (pos_shift.close), or by a close without a count (a revoke of its device, or a manager online).
+// After that it never changes (0054).
+export const posShifts = pgTable(
+  'pos_shifts',
+  {
+    ...baseColumns(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    registerId: uuid('register_id').notNull(),
+    deviceId: uuid('device_id').notNull(),
+    // Its place in the register's series of shifts, and the number it makes (formatShiftNumber):
+    // the journal entries show the number
+    sequence: integer('sequence').notNull(),
+    number: text('number').notNull(),
+    status: text('status', { enum: POS_SHIFT_STATUSES }).notNull().default('open'),
+
+    // The open. opened_at is by the device's clock; opening_date is the day its entry is in the
+    // books (the device's day, or the first open day after it).
+    openedAt: timestamp('opened_at', { withTimezone: true }).notNull(),
+    openingDate: date('opening_date', { mode: 'string' }).notNull(),
+    // The count: the notes counted, or NULL when it was typed as a total; and its total
+    openingNotes: jsonb('opening_notes').$type<CashNotes>(),
+    openingCash: numeric('opening_cash', { precision: 19, scale: 4 }).notNull(),
+    // What the last shift left in the drawer (its count, or what the server expected when it was
+    // closed without a count). NULL = the register's first shift, with nothing to compare with.
+    openingComparedWith: numeric('opening_compared_with', { precision: 19, scale: 4 }),
+    // A first shift's float: the "in" reason it came by (decision 12)
+    floatReasonId: uuid('float_reason_id'),
+    // The opening difference (or the float) in the books; NULL when there was none
+    openingEntryId: uuid('opening_entry_id'),
+
+    // The close. All NULL while the shift is open.
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    // A close with a count: the day of its entry, the count, what the device expected and how
+    // many held carts it dropped
+    closingDate: date('closing_date', { mode: 'string' }),
+    closingNotes: jsonb('closing_notes').$type<CashNotes>(),
+    countedCash: numeric('counted_cash', { precision: 19, scale: 4 }),
+    deviceExpected: numeric('device_expected', { precision: 19, scale: 4 }),
+    heldDropped: smallint('held_dropped'),
+    // What the drawer should have held, worked out by the server when the shift closed, with or
+    // without a count (pos_shift_cash() in 0054). The books use this number, not the device's.
+    expectedCash: numeric('expected_cash', { precision: 19, scale: 4 }),
+    // The closing difference in the books; NULL when the count matched
+    closingEntryId: uuid('closing_entry_id'),
+    // Who closed it without a count: a manager, or the person who revoked its device
+    closedBy: uuid('closed_by').references(() => users.id),
+  },
+  (table) => [
+    // The target of the movements' FK
+    uniqueIndex('pos_shifts_tenant_id_idx').on(table.tenantId, table.id),
+    // The target of the sales' FK, which carries the register and the device: a shift's sale is
+    // from its own register and device
+    uniqueIndex('pos_shifts_sale_key_idx').on(
+      table.tenantId,
+      table.id,
+      table.registerId,
+      table.deviceId,
+    ),
+    // A register gives a shift number once; also the register's latest shift (its lastShift)
+    uniqueIndex('pos_shifts_register_sequence_idx').on(
+      table.tenantId,
+      table.registerId,
+      table.sequence,
+    ),
+    uniqueIndex('pos_shifts_tenant_number_idx').on(table.tenantId, table.number),
+    // One open shift per register (decision 1): the last word on pos_shift_already_open
+    uniqueIndex('pos_shifts_register_open_idx')
+      .on(table.tenantId, table.registerId)
+      .where(sql`${table.status} = 'open'`),
+    // A device has one open shift at most: what a revoke closes, and what sign-out looks for
+    uniqueIndex('pos_shifts_device_open_idx')
+      .on(table.tenantId, table.deviceId)
+      .where(sql`${table.status} = 'open'`),
+    // The list: newest first, keyset on (opened_at, id); and the same for one register
+    index('pos_shifts_tenant_opened_idx').on(table.tenantId, table.openedAt, table.id),
+    index('pos_shifts_register_opened_idx').on(
+      table.tenantId,
+      table.registerId,
+      table.openedAt,
+      table.id,
+    ),
+    foreignKey({
+      name: 'pos_shifts_register_fk',
+      columns: [table.tenantId, table.registerId],
+      foreignColumns: [posRegisters.tenantId, posRegisters.id],
+    }),
+    // Devices are revoked, never deleted
+    foreignKey({
+      name: 'pos_shifts_device_fk',
+      columns: [table.tenantId, table.deviceId],
+      foreignColumns: [devices.tenantId, devices.id],
+    }),
+    // Reasons are archived, never deleted
+    foreignKey({
+      name: 'pos_shifts_float_reason_fk',
+      columns: [table.tenantId, table.floatReasonId],
+      foreignColumns: [posCashReasons.tenantId, posCashReasons.id],
+    }),
+    // A posted entry is never deleted, so these two need no index: deleting a draft entry reads
+    // the few shifts of a workspace
+    foreignKey({
+      name: 'pos_shifts_opening_entry_fk',
+      columns: [table.tenantId, table.openingEntryId],
+      foreignColumns: [journalEntries.tenantId, journalEntries.id],
+    }),
+    foreignKey({
+      name: 'pos_shifts_closing_entry_fk',
+      columns: [table.tenantId, table.closingEntryId],
+      foreignColumns: [journalEntries.tenantId, journalEntries.id],
+    }),
+    check('pos_shifts_sequence_check', sql`${table.sequence} >= 1`),
+    // Each status has its own columns: open has no close; a close with a count has the count and
+    // the device's numbers; a close without a count has only when, who and the expected cash
+    check(
+      'pos_shifts_status_check',
+      sql`(${table.status} = 'open' AND ${table.closedAt} IS NULL AND ${table.closingDate} IS NULL AND ${table.closingNotes} IS NULL AND ${table.countedCash} IS NULL AND ${table.deviceExpected} IS NULL AND ${table.heldDropped} IS NULL AND ${table.expectedCash} IS NULL AND ${table.closingEntryId} IS NULL AND ${table.closedBy} IS NULL)
+      OR (${table.status} = 'closed' AND ${table.closedAt} IS NOT NULL AND ${table.closingDate} IS NOT NULL AND ${table.countedCash} IS NOT NULL AND ${table.deviceExpected} IS NOT NULL AND ${table.heldDropped} IS NOT NULL AND ${table.expectedCash} IS NOT NULL AND ${table.closedBy} IS NULL)
+      OR (${table.status} = 'closed_without_count' AND ${table.closedAt} IS NOT NULL AND ${table.closingDate} IS NULL AND ${table.closingNotes} IS NULL AND ${table.countedCash} IS NULL AND ${table.deviceExpected} IS NULL AND ${table.heldDropped} IS NULL AND ${table.expectedCash} IS NOT NULL AND ${table.closingEntryId} IS NULL AND ${table.closedBy} IS NOT NULL)`,
+    ),
+    // A drawer holds 0 or more; the expected cash may be below zero through a bug or a sale that
+    // came after a close without a count, so it has no check
+    check(
+      'pos_shifts_cash_check',
+      sql`${table.openingCash} >= 0 AND ${table.countedCash} >= 0 AND ${table.heldDropped} BETWEEN 0 AND 20`,
+    ),
+    // Notes are an object of counts; the API checks the keys and that they add up (cashCountSchema)
+    check(
+      'pos_shifts_notes_check',
+      sql`jsonb_typeof(${table.openingNotes}) = 'object' AND jsonb_typeof(${table.closingNotes}) = 'object'`,
+    ),
+    // Only a first shift brings a float in
+    check(
+      'pos_shifts_float_check',
+      sql`${table.floatReasonId} IS NULL OR ${table.openingComparedWith} IS NULL`,
+    ),
+  ],
+);
+
+// Money put into the drawer or taken out during a shift. The id is made by the device (the
+// command's movementId). Posted when it arrives, with an entry of its own, and never changed
+// (0054); a mistake is put right by a movement the other way. created_by is the cashier.
+export const posCashMovements = pgTable(
+  'pos_cash_movements',
+  {
+    ...baseColumns(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    shiftId: uuid('shift_id').notNull(),
+    reasonId: uuid('reason_id').notNull(),
+    // The reason's direction, kept here so the shift's cash is added up without the reasons; the
+    // FK makes sure it is the reason's
+    direction: text('direction', { enum: POS_CASH_DIRECTIONS }).notNull(),
+    amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
+    note: text('note'),
+    // The day in the books, and when it happened by the device's clock
+    date: date('date', { mode: 'string' }).notNull(),
+    movedAt: timestamp('moved_at', { withTimezone: true }).notNull(),
+    // The reason's account when it was posted: a later change of the reason moves no old money
+    accountId: uuid('account_id').notNull(),
+    entryId: uuid('entry_id').notNull(),
+  },
+  (table) => [
+    // The shift's movements: its page, and its expected cash
+    index('pos_cash_movements_shift_idx').on(table.tenantId, table.shiftId),
+    // One entry per movement; also the entry FK's check when a draft entry is deleted
+    uniqueIndex('pos_cash_movements_entry_idx').on(table.tenantId, table.entryId),
+    // The account FK's check when an account is deleted: a few rows a day per register add up
+    index('pos_cash_movements_account_idx').on(table.tenantId, table.accountId),
+    foreignKey({
+      name: 'pos_cash_movements_shift_fk',
+      columns: [table.tenantId, table.shiftId],
+      foreignColumns: [posShifts.tenantId, posShifts.id],
+    }),
+    foreignKey({
+      name: 'pos_cash_movements_reason_fk',
+      columns: [table.tenantId, table.reasonId, table.direction],
+      foreignColumns: [posCashReasons.tenantId, posCashReasons.id, posCashReasons.direction],
+    }),
+    foreignKey({
+      name: 'pos_cash_movements_account_fk',
+      columns: [table.tenantId, table.accountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    foreignKey({
+      name: 'pos_cash_movements_entry_fk',
+      columns: [table.tenantId, table.entryId],
+      foreignColumns: [journalEntries.tenantId, journalEntries.id],
+    }),
+    check('pos_cash_movements_amount_check', sql`${table.amount} > 0`),
   ],
 );
 
@@ -147,6 +422,9 @@ export const posSales = pgTable(
       .notNull()
       .references(() => tenants.id),
     registerId: uuid('register_id').notNull(),
+    // Step 20b: the shift it was sold in. NULL for a sale from before 20b (and one still in an
+    // outbox when the app was updated).
+    shiftId: uuid('shift_id'),
     // Its place in the register's series, and the number it makes (formatPosNumber): stored, so
     // the list, the journal and the stock card show it without the register's code
     sequence: integer('sequence').notNull(),
@@ -193,6 +471,16 @@ export const posSales = pgTable(
       name: 'pos_sales_register_fk',
       columns: [table.tenantId, table.registerId],
       foreignColumns: [posRegisters.tenantId, posRegisters.id],
+    }),
+    // A shift's sales: its page, its totals and its expected cash. Partial: 20a's sales have none.
+    index('pos_sales_shift_idx')
+      .on(table.tenantId, table.shiftId)
+      .where(sql`${table.shiftId} IS NOT NULL`),
+    // The shift is of this sale's register and device. A NULL shift skips the check (MATCH SIMPLE).
+    foreignKey({
+      name: 'pos_sales_shift_fk',
+      columns: [table.tenantId, table.shiftId, table.registerId, table.deviceId],
+      foreignColumns: [posShifts.tenantId, posShifts.id, posShifts.registerId, posShifts.deviceId],
     }),
     // No ON DELETE: a customer with a sale cannot be deleted (customer_in_use)
     foreignKey({

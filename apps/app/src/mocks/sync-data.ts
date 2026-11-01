@@ -13,6 +13,7 @@ import {
   type SyncCommandType,
   type SyncEntity,
   type SyncNotice,
+  syncPosCashReasonSchema,
   syncPosRegisterSchema,
   type SyncPull,
   syncSettingsSchema,
@@ -22,6 +23,7 @@ import {
 
 import { OWNER } from './fixtures';
 import { MockProblem } from './mock';
+import { lastShiftOf } from './pos-data';
 // Type-only: workspace-data.ts imports this file for emptySync(), and a type import is erased
 // when the code is built, so it makes no circle
 import type { WorkspaceData } from './workspace-data';
@@ -299,7 +301,8 @@ function rowsOf(data: WorkspaceData, tenantId: string, branchId: string): SyncUp
     })),
     // Step 20a: the active registers of the branch, by their warehouse's branch (an archived
     // warehouse keeps its register, like the API's loader). The parse leaves out the last number:
-    // it moves with every sale, and the device counts its own.
+    // it moves with every sale, and the device counts its own. Step 20b: with the latest shift,
+    // so a shift's open or close (anyone's) sends the register again.
     ...data.pos.registers.flatMap((register) => {
       const place = stock.warehouses.find((warehouse) => warehouse.id === register.warehouseId);
       if (register.archivedAt !== null || place?.branchId !== branchId) return [];
@@ -308,10 +311,28 @@ function rowsOf(data: WorkspaceData, tenantId: string, branchId: string): SyncUp
           op: 'upsert' as const,
           entity: 'pos_register' as const,
           key: register.id,
-          data: syncPosRegisterSchema.parse({ ...register, branchId }),
+          data: syncPosRegisterSchema.parse({
+            ...register,
+            branchId,
+            lastShift: lastShiftOf(data, register.id),
+          }),
         },
       ];
     }),
+    // Step 20b: the active pay in and pay out reasons, every one (a reason has no branch). An
+    // archived one is a delete, as for every row that leaves what the device keeps.
+    ...data.pos.reasons.flatMap((reason) =>
+      reason.archivedAt === null
+        ? [
+            {
+              op: 'upsert' as const,
+              entity: 'pos_cash_reason' as const,
+              key: reason.id,
+              data: syncPosCashReasonSchema.parse(reason),
+            },
+          ]
+        : [],
+    ),
     ...sales.priceLists.map((list) => ({
       op: 'upsert' as const,
       entity: 'price_list' as const,

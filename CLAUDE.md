@@ -364,6 +364,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (secondary `sm`); none while it is Sending. Discard asks first in a dialog that says how many changes that need
   it go with it. With nothing waiting: the empty state with `CloudSavingDone01`, "Everything is synced".
   A POS sale ("Sale POS1-000124", "3 lines · ৳2,300") has no Edit, and Discard only once the server refused it.
+  A shift's open and close are named by the shift's number, a pay in or out by its sentence; none shows an amount.
 - **Orders on the device:** above the sales orders list, a section header "On this device · not synced" and its
   own table (cards on a phone) of the drafts in the outbox, each with "No number yet" and its pill. Offline, the
   server's list below is the empty state "Needs a connection".
@@ -414,12 +415,14 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   sidebar. A 56px `surface` top bar with a 1px `line` rule: "Leave the POS" (`ArrowLeft01`), a `brand` register pill
   (`CashierIcon`, "POS1 · Front counter"), the cashier and the next receipt number in `ink-3` `tabular-nums` (hidden
   as the screen narrows), the sync line, Change register (`ArrowLeftRight`) and a shortcuts icon button
-  (`Keyboard`). Below it, from 860px, the products on the left and a 400px cart on the right, each scrolling inside
+  (`Keyboard`). With a shift open, the bar also has the shift's button ("Shift POS1-S0042" and an `ArrowDown01` icon,
+  the input's look at 36px; on a phone the number alone, and the `brand` register pill hides so the bar fits 390px).
+  Below it, from 860px, the products on the left and a 400px cart on the right, each scrolling inside
   itself (`h-dvh`; the page never scrolls). The search box ("Scan or search") has the focus; a scanner types the
   barcode and Enter. Tiles: radius 10px, 1px `line`, the name (13.5px/500, two lines), the SKU in `Geist Mono` `ink-3`,
   the price (600) and the stock (`ink-2`, or "Out of stock" on a disabled `subtle` tile when the workspace does not
-  sell below zero), two columns on a phone. Keys: F2 search, F4 customer, F7 bill discount, F12 pay, Enter complete
-  and new sale, `?` the shortcuts dialog.
+  sell below zero), two columns on a phone. Keys: F2 search, F4 customer, F7 bill discount, F8 hold, F9 held bills,
+  F12 pay, Enter complete and new sale, `?` the shortcuts dialog.
 - **POS cart:** the customer box (walk-in by default), then one row per line that opens on a click
   (`aria-expanded`): a quantity stepper that never goes below 1, "× ৳420 · bag", a `brand` "5% off" pill, the batch;
   open, the quantity, price, discount, batch and serial boxes. A price the cashier may not change is read-only with
@@ -448,8 +451,50 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **POS registers (Settings):** a data table (code, name, warehouse, holder "Front counter PC · Sumi Akter" or
   "Free", last number, status) and a dialog form: code (shown, not a box, once saved), name, warehouse (starts
   empty), an account per method (cash required, the others "Not taken here"), the most a cashier may take off (%),
-  paper width (58 / 80 mm) and the receipt's footer. A held register cannot be archived. Read-only without
-  `pos.register.manage`.
+  paper width (58 / 80 mm), the receipt's footer, and a "Shifts" group: the cash over and short account (an income
+  or expense account, required), the bell for a difference over (whole taka) and "Lock the POS after". A held
+  register cannot be archived. Read-only without `pos.register.manage`.
+- **POS shift (`/pos`):** a register sells only inside a shift. Without one, the screen's place is the "Open a shift"
+  card (max 560px, the wizard panel's padding): a "By notes" / "As a total" segmented control, ten note boxes in two
+  columns (`৳1,000` … `৳1`, each "= ৳3,000" in `ink-3` `tabular-nums`) with the total on `subtle`, or one money input;
+  on a register's first shift a neutral document notice and a "Brought in as" select of the "in" reasons; "Open shift"
+  (primary, full width). The count is blind: what the last shift left shows only in the toast after the open. A
+  register with no over/short account, or one that locks without the device's PIN, shows an empty state that says
+  why (with "Set a PIN" for the second).
+- **Shift menu:** the bar's shift button opens a dropdown: "Opened 23 Sep 2026, 09:02 · Sumi Akter" (group label),
+  Pay in (`MoneyAdd01`), Pay out (`MoneyRemove01`), Held bills with the count (`Note01`), Close shift (`Lock`).
+- **Pay in and pay out dialog:** a reason select (that direction's reasons only, never an account), a money input
+  and a note; the primary button says the amount ("Pay out ৳500"). The toast is the Sync page's name for it ("৳500
+  paid out for Bank deposit"). The drawer's amount is never shown (the count stays blind).
+- **Held bills:** the cart's header has Hold (secondary `sm`, `Pause`, F8) and "Held (2)" (`Note01`, F9). Hold asks
+  for an optional name ("Customer in the blue shirt"); the list dialog has rows in a 1px `line` box (the name or "Held
+  at 10:42", "2 items · ৳736" in 12px `ink-3`), Resume (secondary `sm`) and a drop icon button (`Cancel01`). At most
+  20 on a device; resuming holds the cart on the screen first.
+- **Close shift dialog and its result:** the same count as the open, a neutral notice when held bills will be dropped,
+  and "The count can’t change after the shift is closed." in 13px `ink-3` on the left of the footer, "Close the
+  shift" (primary). Then "POS1-S0042 is closed": a 40px `good-bg` tile with `CheckmarkCircle02`, a KPI strip
+  (Counted, Expected, Difference in words: "৳520 short", "৳20 over", "No difference"), a `warn` document notice
+  (`Coins01`) only when there is a difference, then Sign out (secondary, pushed left) and "Open the next shift"
+  (primary, with the focus).
+- **Shift before sign-out:** with a shift open, sign-out shows "Close the shift first" (Cancel, "Close shift"
+  primary, which opens the close on `/pos`); on the lock screen the dialog only says why. "Change register" says the
+  same.
+- **Idle lock:** a register's "Lock the POS after" (Never, 2, 5, 10, 15 minutes) locks `/pos` with the device's PIN
+  after that long with no key, click, touch or scroll; the lock screen's line says why.
+- **POS shift statuses:** Open (`brand`, `Clock01`), Closed (`good`, `CheckmarkCircle02`), Not counted (neutral,
+  `MinusSignCircle`). Not counted is not `warn`: the next shift's opening count finds any missing money.
+- **POS shifts (Sales, `pos.shift.manage`):** a data table (shift number in `Geist Mono`, register, cashier,
+  opened, closed, expected, counted, difference in words, status), filtered by a register select and a status
+  select that starts with "All shifts". A shift's page: the page header with "Close without a count" (secondary,
+  open shifts only, a dialog with an optional "Why"), the KPI strip, the opening and closing counts (notes in a
+  table, or "Counted as a total"), the cash in the drawer (opening, cash taken, change given, paid in, paid out,
+  expected), what each method took, the pay ins and outs, and its journal entries. Every amount with paisa. A
+  neutral document notice when the device and the server expected different cash (the books use the server's), and
+  for a shift closed without a count.
+- **POS cash reasons (Settings, after POS registers):** a data table (reason, kind as a neutral pill with the menu's
+  icons, account by code, status), an Active / Archived segmented control, and a dialog form: name, kind (a select
+  when new, shown but not offered once saved), account (active, not a group, not receivable, payable or stock).
+  Read-only without `pos.register.manage`.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside

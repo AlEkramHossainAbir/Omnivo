@@ -18,6 +18,9 @@ import {
 //
 // The receipt prints with window.print(), which would open the browser's print dialog: each test
 // replaces it with a counter on <body> before the app starts, and reads the counter.
+//
+// Step 20b: a register sells only inside a shift. POS1 never had one, so its first shift asks
+// where the cash in the drawer came from; the shift's own tests are in pos-shifts.e2e.ts.
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -42,12 +45,22 @@ async function openPos(page: Page): Promise<void> {
   await page.getByRole('navigation').getByRole('link', { name: 'POS', exact: true }).click();
 }
 
-// The register chooser, once per device (decision 14)
+// The register chooser, once per device (decision 14). Step 20b: then the shift's open card.
 async function takeRegister(page: Page, label: string, toast: string): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Which counter is this?' })).toBeVisible();
   await page.getByLabel('Register').selectOption({ label });
   await page.getByRole('button', { name: 'Use this register' }).click();
   await toastShown(page, toast);
+  await expect(page.getByRole('heading', { name: 'Open a shift' })).toBeVisible();
+}
+
+// POS1's first shift: ৳2,000 in the drawer, from the owner
+async function openFirstShift(page: Page): Promise<void> {
+  await page.getByText('As a total').click();
+  await page.getByLabel('Cash in the drawer').fill('2000');
+  await page.getByLabel('Brought in as').selectOption({ label: 'Float from the owner' });
+  await page.getByRole('button', { name: 'Open shift' }).click();
+  await toastShown(page, 'Shift POS1-S0001 is open');
   await expect(page.getByRole('searchbox', { name: 'Scan or search' })).toBeFocused();
 }
 
@@ -81,6 +94,7 @@ test('takes a register, sells for cash and prints the receipt', async ({ page },
     'POS1 · Showroom counter',
     'This device is POS1 now. The next receipt is POS1-000001.',
   );
+  await openFirstShift(page);
 
   // A scanner types the barcode and Enter; the box empties for the next scan
   const search = page.getByRole('searchbox', { name: 'Scan or search' });
@@ -137,7 +151,9 @@ test('sells offline, and lists the serial number that was not in the store', asy
     'POS1 · Showroom counter',
     'This device is POS1 now. The next receipt is POS1-000001.',
   );
+  // The shift's open waits in the outbox too: it goes before the sale (step 20b)
   await page.context().setOffline(true);
+  await openFirstShift(page);
 
   // The sewing machine has no price: the cashier types one (not an override). Its line opens at
   // once for the serial numbers; 0199 is not in the main store, so the server lets it leave
@@ -168,7 +184,7 @@ test('sells offline, and lists the serial number that was not in the store', asy
   await expectPrinted(page, 1);
   await done.getByRole('button', { name: 'New sale' }).click();
   await expect(
-    page.getByRole('link', { name: 'Sync: Offline, 1 change waiting', exact: true }),
+    page.getByRole('link', { name: 'Sync: Offline, 2 changes waiting', exact: true }),
   ).toBeVisible();
   // The sale is not in the copy's stock yet, but the screen counts it: 1 machine is left, so the
   // last one cannot be sold twice
@@ -234,6 +250,14 @@ test('adds a register, and keeps a held one from being archived', async ({ page 
   await dialog.getByLabel('Name').fill('Export surplus counter');
   await dialog.getByLabel('Warehouse').selectOption({ label: 'MAIN · Main store' });
   await dialog.getByLabel('Cash', { exact: true }).selectOption({ label: '1110 · Cash in hand' });
+  // Step 20b: required, also when the form is otherwise done
+  await dialog.getByRole('button', { name: 'Add register' }).click();
+  await expect(
+    dialog.getByText(/^Pick the account a difference in the drawer goes to/),
+  ).toBeVisible();
+  await dialog
+    .getByLabel('Cash over and short account')
+    .selectOption({ label: '5340 · Cash over and short' });
   await dialog.getByRole('button', { name: 'Add register' }).click();
   await toastShown(page, 'Export surplus counter added');
   // The code is upper case, as on every receipt
@@ -245,6 +269,9 @@ test('adds a register, and keeps a held one from being archived', async ({ page 
   await dialog.getByLabel('Name').fill('Second outlet counter');
   await dialog.getByLabel('Warehouse').selectOption({ label: 'MAIN · Main store' });
   await dialog.getByLabel('Cash', { exact: true }).selectOption({ label: '1110 · Cash in hand' });
+  await dialog
+    .getByLabel('Cash over and short account')
+    .selectOption({ label: '5340 · Cash over and short' });
   await dialog.getByRole('button', { name: 'Add register' }).click();
   await expect(dialog.getByText('Another register uses this code.')).toBeVisible();
   await dialog.getByRole('button', { name: 'Cancel' }).click();

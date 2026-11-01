@@ -1,12 +1,6 @@
 import 'fake-indexeddb/auto';
 
-import {
-  type PosSaleInput,
-  stockKey,
-  type SyncPosRegister,
-  type SyncStock,
-  syncCommandSchema,
-} from '@omnivo/contracts';
+import { type PosSaleInput, stockKey, type SyncStock, syncCommandSchema } from '@omnivo/contracts';
 import { uuidv7 } from 'uuidv7';
 import { describe, expect, it } from 'vitest';
 
@@ -21,35 +15,25 @@ import {
   readClaim,
   savePosSale,
   stockOf,
-  waitingSales,
+  waitingAtCounter,
 } from './pos.js';
 import { outboxEntries } from './queries.js';
 import { sealEntry } from './sealed.js';
-import { newCopy, page, product, upsertProduct, VAT_15, WAREHOUSE } from './test-fixtures.js';
+import {
+  newCopy,
+  page,
+  posRegister as register,
+  product,
+  upsertProduct,
+  VAT_15,
+  WAREHOUSE,
+} from './test-fixtures.js';
 
 const SAVED = '2026-10-27T10:15:00.000Z';
 const OTHER_WAREHOUSE = '01928c4e-7777-7000-8000-000000000009';
 const VARIANT = '01928c4e-8888-7000-8000-000000000001';
 const BASE_UNIT = '01928c4e-0000-7000-8000-000000000001';
 const BOX = '01928c4e-0000-7000-8000-000000000002';
-
-function register(fields: Partial<SyncPosRegister> & Pick<SyncPosRegister, 'code'>) {
-  return {
-    id: uuidv7(),
-    name: 'Front counter',
-    branchId: '01928c4e-6666-7000-8000-000000000001',
-    warehouseId: WAREHOUSE,
-    accounts: { cash: uuidv7(), card: null, bkash: null, nagad: null },
-    maxDiscountPercent: '10.00',
-    paperWidth: '80',
-    receiptFooter: null,
-    deviceId: null,
-    archivedAt: null,
-    version: 1,
-    updatedAt: '2026-10-27T04:00:00.000Z',
-    ...fields,
-  } satisfies SyncPosRegister;
-}
 
 function stock(fields: Partial<SyncStock>): SyncStock {
   return {
@@ -73,6 +57,8 @@ function sale(
 ): Omit<PosSaleInput, 'sequence'> {
   return {
     registerId,
+    // A sale of 20a's screen: no shift (shift.spec.ts has the shift's own)
+    shiftId: null,
     date: '2026-10-27',
     soldAt: SAVED,
     customerId,
@@ -194,7 +180,7 @@ describe('savePosSale', () => {
     expect(results.map((result) => result.kind === 'saved' && result.sequence).sort()).toEqual([
       42, 43,
     ]);
-    expect(await waitingSales(copy)).toBe(2);
+    expect(await waitingAtCounter(copy)).toBe(2);
   });
 
   it('saves nothing without the claim of that register', async () => {
@@ -202,7 +188,7 @@ describe('savePosSale', () => {
     expect(await save(copy, uuidv7())).toEqual({ kind: 'not-held' });
     await keepClaim(copy, { id: uuidv7(), lastNumber: 3 });
     expect(await save(copy, uuidv7())).toEqual({ kind: 'not-held' });
-    expect(await waitingSales(copy)).toBe(0);
+    expect(await waitingAtCounter(copy)).toBe(0);
   });
 });
 
@@ -225,7 +211,7 @@ describe('discarding a POS sale', () => {
       }),
     );
     expect(await discardEntry(copy, entry.seq)).toBe('saved');
-    expect(await waitingSales(copy)).toBe(0);
+    expect(await waitingAtCounter(copy)).toBe(0);
   });
 });
 

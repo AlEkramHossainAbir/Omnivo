@@ -1,7 +1,7 @@
-import { devices, sessions } from '@omnivo/db';
+import { devices, posShifts, sessions } from '@omnivo/db';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 
-import { audit } from '../common/audit/audit.js';
+import { audit, created } from '../common/audit/audit.js';
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction } from '../common/tenant/with-tenant.js';
 
@@ -18,6 +18,18 @@ export async function revokeDevices(tx: Transaction, rows: readonly DeviceRow[])
   const revokedBy = currentPrincipal().userId;
   const ended: string[] = [];
   for (const row of rows) {
+    // Step 20b (decision 11): the database closes the device's open shift without a count in the
+    // same update (0054). Read it before, so the audit log can say so after.
+    const [open] = await tx
+      .select({ id: posShifts.id, number: posShifts.number })
+      .from(posShifts)
+      .where(
+        and(
+          eq(posShifts.tenantId, getTenantId()),
+          eq(posShifts.deviceId, row.id),
+          eq(posShifts.status, 'open'),
+        ),
+      );
     // revoked_at IS NULL: a device revoked already keeps who and when (migration 0048 refuses a
     // change anyway). A plain update, so version and updated_at move like any other change.
     // Step 19b: the device's key goes in the same update, for good. The server can then never
@@ -43,6 +55,23 @@ export async function revokeDevices(tx: Transaction, rows: readonly DeviceRow[])
       entityId: row.id,
       changes: { revokedAt: { from: null, to: after.revokedAt.toISOString() } },
     });
+    if (open) {
+      const [closed] = await tx
+        .select({ expectedCash: posShifts.expectedCash })
+        .from(posShifts)
+        .where(and(eq(posShifts.tenantId, getTenantId()), eq(posShifts.id, open.id)));
+      await audit(tx, {
+        action: 'pos_shift.closed_without_count',
+        entityType: 'pos_shift',
+        entityId: open.id,
+        changes: created({
+          number: open.number,
+          expected: closed?.expectedCash ?? null,
+          by: 'revoke',
+          device: row.name,
+        }),
+      });
+    }
   }
   // The sign-in of that browser ends with the revoke, in the same transaction: its refresh tokens
   // go with it (ON DELETE CASCADE), so the browser cannot get a new access token. The one it has

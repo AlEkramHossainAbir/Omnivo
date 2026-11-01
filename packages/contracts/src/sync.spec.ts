@@ -5,6 +5,7 @@ import {
   customerUpdateCommandSchema,
   deviceKeySchema,
   posSaleCommandSchema,
+  posShiftOpenCommandSchema,
   priceListItemKey,
   registerDeviceInputSchema,
   salesOrderDraftCommandSchema,
@@ -432,8 +433,12 @@ describe('POS on the device', () => {
     maxDiscountPercent: '10.00',
     paperWidth: '58',
     receiptFooter: null,
+    overShortAccountId: RATE,
+    varianceAlert: '500',
+    lockAfter: '5',
     deviceId: COMMAND,
     lastNumber: 122,
+    lastShift: { id: CUSTOMER, sequence: 41, status: 'closed', cashLeft: '5000.0000' },
     archivedAt: null,
     version: 4,
     updatedAt: AT,
@@ -448,6 +453,77 @@ describe('POS on the device', () => {
     });
     expect(change.entity === 'pos_register' && change.data.code).toBe('POS1');
     expect(change.data).not.toHaveProperty('lastNumber');
+    expect(change.entity === 'pos_register' && change.data.lastShift?.sequence).toBe(41);
+  });
+
+  it('keeps the pay in and pay out reasons', () => {
+    const reason = {
+      id: ADDRESS,
+      name: 'Bank deposit',
+      direction: 'out',
+      accountId: RATE,
+      archivedAt: null,
+      version: 1,
+      updatedAt: AT,
+    };
+    const change = syncUpsertSchema.parse({
+      op: 'upsert',
+      entity: 'pos_cash_reason',
+      key: ADDRESS,
+      data: reason,
+    });
+    expect(change.entity === 'pos_cash_reason' && change.data.direction).toBe('out');
+  });
+
+  it('opens a shift under an id the device made, so its sales can point at it', () => {
+    const command = {
+      id: COMMAND,
+      type: 'pos_shift.open',
+      shiftId: CUSTOMER,
+      input: {
+        registerId: ORDER,
+        sequence: 42,
+        date: '2026-10-28',
+        openedAt: AT,
+        opening: { notes: null, total: '5000' },
+        floatReasonId: '',
+      },
+    };
+    const parsed = syncCommandSchema.parse(command);
+    expect(parsed.type === 'pos_shift.open' && parsed.input.floatReasonId).toBeNull();
+    expect(errorsOf(posShiftOpenCommandSchema.safeParse({ ...command, shiftId: V4 }))).toEqual({
+      shiftId: 'Invalid UUID',
+    });
+  });
+
+  it('takes a movement and a close in the same union', () => {
+    const movement = {
+      id: COMMAND,
+      type: 'pos_cash_movement.create',
+      movementId: ADDRESS,
+      input: {
+        shiftId: CUSTOMER,
+        reasonId: RATE,
+        amount: '10000',
+        note: 'Deposit slip 0042',
+        date: '2026-10-28',
+        movedAt: AT,
+      },
+    };
+    const close = {
+      id: COMMAND,
+      type: 'pos_shift.close',
+      shiftId: CUSTOMER,
+      input: {
+        date: '2026-10-28',
+        closedAt: AT,
+        counted: { notes: null, total: '7640' },
+        deviceExpected: '8160.0000',
+        heldDropped: 1,
+      },
+    };
+    expect(syncCommandSchema.parse(movement).type).toBe('pos_cash_movement.create');
+    expect(syncCommandSchema.parse(close).type).toBe('pos_shift.close');
   });
 
   it('sends a sale under an id the device made, and refuses one of another kind', () => {
@@ -479,7 +555,10 @@ describe('POS on the device', () => {
       payments: [{ method: 'cash', amount: '120', reference: '' }],
     };
     const command = { id: COMMAND, type: 'pos_sale.create', saleId: CUSTOMER, input };
-    expect(syncCommandSchema.parse(command).type).toBe('pos_sale.create');
+    const parsed = syncCommandSchema.parse(command);
+    expect(parsed.type).toBe('pos_sale.create');
+    // A sale made before 20b, still in an outbox when the app was updated, has no shift
+    expect(parsed.type === 'pos_sale.create' && parsed.input.shiftId).toBeNull();
     expect(errorsOf(posSaleCommandSchema.safeParse({ ...command, saleId: V4 }))).toEqual({
       saleId: 'Invalid UUID',
     });

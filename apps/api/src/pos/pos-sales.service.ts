@@ -16,7 +16,6 @@ import {
   posChangeOf,
   type SoldShortItem,
   sumMoney,
-  todayIn,
   wholeCount,
 } from '@omnivo/contracts';
 import {
@@ -27,7 +26,7 @@ import {
   posSaleLines,
   posSalePayments,
   posSales,
-  tenantSettings,
+  posShifts,
   users,
   warehouses,
 } from '@omnivo/db';
@@ -49,7 +48,6 @@ import {
   type SalePlan,
   StockPostingService,
 } from '../inventory/stock-posting.service.js';
-import { firstOpenDay } from '../journal/period-lock.service.js';
 import type { Access } from '../rbac/permission.service.js';
 import {
   assertCustomer,
@@ -60,7 +58,9 @@ import {
   toSalesLine,
   withVariants,
 } from '../sales/sales-lines.js';
+import { bookingDay } from './booking-day.js';
 import { accountOf } from './pos-registers.service.js';
+import { deviceShift } from './pos-shifts.service.js';
 
 type SaleRow = typeof posSales.$inferSelect;
 
@@ -147,6 +147,12 @@ export class PosSalesService {
     // bug or a register of another workspace
     if (register?.deviceId !== deviceId) throw notHeld();
     const number = formatPosNumber(register.code, input.sequence);
+    // Step 20b: the shift it was sold in, of this register and this device (pos_sales_shift_fk
+    // says the same; this answers it as a refusal instead of a database error). A shift closed
+    // since still takes it: a sale is never refused (decision 39). null: a sale from before 20b.
+    if (input.shiftId !== null) {
+      await deviceShift(tx, input.shiftId, deviceId, register.id);
+    }
 
     // The register's account for each method now: the money goes where the register says today
     const issues: LineIssue[] = [];
@@ -189,21 +195,15 @@ export class PosSalesService {
     const paid = sumMoney(input.payments.map((payment) => payment.amount));
     const change = posChangeOf(input.payments, amounts.totals.total);
 
-    // Decision 26: on the device's day, unless the device's clock is ahead of the server's today,
-    // or the books are closed for that day: then on the first day they take
-    const [settings] = await tx
-      .select({ timezone: tenantSettings.timezone })
-      .from(tenantSettings)
-      .where(eq(tenantSettings.tenantId, tenantId));
-    if (!settings) throw new Error(`tenant_settings row missing for tenant ${tenantId}`);
-    const today = todayIn(settings.timezone);
-    const date = await firstOpenDay(tx, input.date > today ? today : input.date);
+    // Decision 26: on the device's day, or the first day the books take
+    const date = await bookingDay(tx, input.date);
 
     try {
       await tx.insert(posSales).values({
         id: saleId,
         tenantId,
         registerId: register.id,
+        shiftId: input.shiftId,
         sequence: input.sequence,
         number,
         date,
@@ -670,6 +670,7 @@ export class PosSalesService {
       .select({
         sale: posSales,
         register: { id: posRegisters.id, code: posRegisters.code, name: posRegisters.name },
+        shiftNumber: posShifts.number,
         branchId: warehouses.branchId,
         cashierName: users.fullName,
         lineCount: sql<number>`(SELECT count(*)::int FROM pos_sale_lines l
@@ -687,6 +688,10 @@ export class PosSalesService {
         warehouses,
         and(eq(warehouses.tenantId, posSales.tenantId), eq(warehouses.id, posSales.warehouseId)),
       )
+      .leftJoin(
+        posShifts,
+        and(eq(posShifts.tenantId, posSales.tenantId), eq(posShifts.id, posSales.shiftId)),
+      )
       .leftJoin(users, eq(users.id, posSales.createdBy))
       .where(and(eq(posSales.tenantId, getTenantId()), where))
       .orderBy(desc(posSales.date), desc(posSales.id))
@@ -703,6 +708,7 @@ function toSummary(
   row: {
     sale: SaleRow;
     register: { id: string; code: string; name: string };
+    shiftNumber: string | null;
     branchId: string;
     cashierName: string | null;
     lineCount: number;
@@ -717,6 +723,10 @@ function toSummary(
     id: sale.id,
     number: sale.number,
     register: row.register,
+    shift:
+      sale.shiftId === null || row.shiftNumber === null
+        ? null
+        : { id: sale.shiftId, number: row.shiftNumber },
     branchId: row.branchId,
     warehouseId: sale.warehouseId,
     date: sale.date,

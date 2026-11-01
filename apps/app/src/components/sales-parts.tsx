@@ -51,7 +51,8 @@ export function SalesBackLink({
     | '/sales-returns'
     | '/credit-notes'
     | '/refunds'
-    | '/pos/sales';
+    | '/pos/sales'
+    | '/pos/shifts';
   label: string;
 }) {
   return (

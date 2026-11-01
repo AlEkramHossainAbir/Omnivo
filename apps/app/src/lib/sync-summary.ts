@@ -16,9 +16,18 @@ export interface SyncSummary {
   // Step 18c: when the last pull ended, on this device's clock (syncedAtOf in @omnivo/sync). null =
   // no pull has ended, or no copy is open.
   syncedAt: number | null;
+  // Step 20b (decision 6): the number of the POS shift open on this device (POS1-S0042), for the
+  // sign-out, which asks to close it first. null = none.
+  openShift: string | null;
 }
 
-export const NO_SUMMARY: SyncSummary = { syncing: false, waiting: 0, failed: 0, syncedAt: null };
+export const NO_SUMMARY: SyncSummary = {
+  syncing: false,
+  waiting: 0,
+  failed: 0,
+  syncedAt: null,
+  openShift: null,
+};
 
 export const syncSummaryStore = createStore<SyncSummary>()(() => NO_SUMMARY);
 

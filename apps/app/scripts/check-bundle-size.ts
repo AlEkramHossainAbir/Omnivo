@@ -11,8 +11,9 @@ import { z } from 'zod';
 // from growing the first load unnoticed. Step 19a: 215 KB (you chose this). 19a's words and the
 // offline sign-in took it to 211.6 KB; from now on the service worker keeps these files, so only
 // the very first visit downloads them. Step 20a: 220 KB (you chose this). 20a's words (the
-// registers, the POS screen, its sales and the sold-short list) took it to 217.9 KB.
-const INITIAL_BUDGET = 220 * 1024;
+// registers, the POS screen, its sales and the sold-short list) took it to 217.9 KB. Step 20b: 225 KB
+// (you chose this). 20b's words (the shift, the count, held bills, the shifts pages) took it to 222.0 KB.
+const INITIAL_BUDGET = 225 * 1024;
 // Step 17d: a lazy chunk is 105 KB for now. Almost every page loads the contracts' whole route
 // table (about 28 KB gz) to call the API, and 17d's three documents grew it enough to push pages
 // that 17d never touched (team, units) over 100 KB. Loading each module's routes with its own
@@ -20,8 +21,10 @@ const INITIAL_BUDGET = 220 * 1024;
 // The customer box and the pickers now read the device's customers with the outbox on top, and the
 // line editors and the shell were already at 104–105 KB. Step 20a: 115 KB (you chose this). The
 // script counts a lazy chunk together with the chunk it loads from, so the POS screen with its
-// payment dialog is one number: 112.3 KB.
-const CHUNK_BUDGET = 115 * 1024;
+// payment dialog is one number: 112.3 KB. Step 20b: 125 KB (you chose this). The screen sells inside a
+// shift now (the shift's cash, the cart kept on the device), so /pos is 115.9 KB and its dialogs with
+// it 120–124 KB, after the shift menu moved to a chunk of its own.
+const CHUNK_BUDGET = 125 * 1024;
 // Step 19a: everything the service worker downloads the first time, gz (the fonts do not shrink).
 // 1.3 MB at 19a. It is downloaded once per device; a new version downloads only the files that
 // changed.

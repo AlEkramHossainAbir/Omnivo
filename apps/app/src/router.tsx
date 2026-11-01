@@ -655,6 +655,10 @@ const syncRoute = createRoute({
 const posRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/pos',
+  // Step 20b: ?close=true opens the shift's close at once (the sign-out's "Close shift")
+  validateSearch: (search: Record<string, unknown>): { close?: true } => ({
+    ...(search.close === true && { close: true }),
+  }),
   component: lazyRouteComponent(() => import('./routes/pos'), 'PosPage'),
 });
 
@@ -677,6 +681,26 @@ const posSaleRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/pos/sales/$saleId',
   component: lazyRouteComponent(() => import('./routes/pos-sale'), 'PosSalePage'),
+});
+
+// Step 20b: the managers' shifts (pos.shift.manage) and the pay in / pay out reasons (a workspace
+// setting, next to the registers). In the shell too: only '/pos' itself is bare.
+const posShiftsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos/shifts',
+  component: lazyRouteComponent(() => import('./routes/pos-shifts'), 'PosShiftsPage'),
+});
+
+const posShiftRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos/shifts/$shiftId',
+  component: lazyRouteComponent(() => import('./routes/pos-shift'), 'PosShiftPage'),
+});
+
+const posCashReasonsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos/cash-reasons',
+  component: lazyRouteComponent(() => import('./routes/pos-cash-reasons'), 'PosCashReasonsPage'),
 });
 
 const soldShortRoute = createRoute({
@@ -1004,6 +1028,9 @@ const routeTree = rootRoute.addChildren([
     posRegistersRoute,
     posSalesRoute,
     posSaleRoute,
+    posShiftsRoute,
+    posShiftRoute,
+    posCashReasonsRoute,
     soldShortRoute,
     myDevicesRoute,
     devicesRoute,

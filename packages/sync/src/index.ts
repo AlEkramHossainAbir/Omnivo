@@ -1,16 +1,34 @@
 // Two kinds of module. The pages of the app import the reads (queries, records, state, problems),
 // the outbox's saves (outbox, overlay, prices; step 18b), the key's code (crypto, keys; step 19b),
-// the POS's register and sale (pos; step 20a) and the types: none of them loads Dexie at run time, so a page that searches customers or a
+// the POS's register and sale (pos; step 20a), its shift and carts (shift, carts; step 20b) and the
+// types: none of them loads Dexie at run time, so a page that searches customers or a
 // form that saves offline stays small. The code that opens the database and syncs (database,
 // copy, apply, push, engine, live, device) brings Dexie, and the app loads it once, lazily, after
 // sign-in. `sideEffects: false` in package.json lets the bundler leave out the modules a chunk
 // does not use.
 export { applyPage, type SealedChanges, sealChanges, writeSealed } from './apply.js';
+export {
+  dropCart,
+  type HeldCartItem,
+  heldCarts,
+  heldCount,
+  holdCart,
+  type PosCart,
+  type PosCartCustomer,
+  type PosCartLine,
+  resumeCart,
+  saveScreenCart,
+  SCREEN_CART,
+  screenCart,
+} from './carts.js';
 export { LocalCopy, Mirror } from './copy.js';
 export { type Box, isPin, PIN_ITERATIONS, PIN_LENGTH } from './crypto.js';
 export {
+  type CartRow,
   databaseName,
   deleteLocalDatabase,
+  type DeviceShift,
+  type HeldCart,
   type MirroredTable,
   type NoticeRow,
   type OutboxBody,
@@ -22,6 +40,7 @@ export {
   type PullState,
   type RegisterClaim,
   type SealedRow,
+  type ShiftRow,
   type StockRow,
   SyncDatabase,
   type SyncNoticeRecord,
@@ -63,6 +82,7 @@ export {
   dependentsOf,
   discardEntry,
   dismissNotice,
+  isCounterCommand,
   isOpen,
   type OrderSave,
   retryEntry,
@@ -81,7 +101,7 @@ export {
   readClaim,
   savePosSale,
   stockOf,
-  waitingSales,
+  waitingAtCounter,
 } from './pos.js';
 export { lookUpPrices, productsOfVariants } from './prices.js';
 export { STORAGE_FAILED } from './problems.js';
@@ -124,4 +144,22 @@ export {
   productRecord,
   searchText,
 } from './records.js';
+export {
+  cashAfterSale,
+  type CashMoveResult,
+  type CashMoveSave,
+  closeShift,
+  localCashReasons,
+  moveCash,
+  openShift,
+  readShift,
+  type ShiftCloseResult,
+  type ShiftCloseSave,
+  type ShiftOpenResult,
+  type ShiftOpenSave,
+  type ShiftStart,
+  shiftStart,
+  type ShiftState,
+  shiftState,
+} from './shift.js';
 export { NO_PULL, readPullState, syncedAtOf } from './state.js';

@@ -131,6 +131,10 @@ export const en = {
     registers: 'POS registers',
     posSales: 'POS sales',
     soldShort: 'Sold short',
+    // Step 20b: the managers' shifts (under Sales) and the pay in / pay out reasons (a workspace
+    // setting, next to POS registers)
+    posShifts: 'POS shifts',
+    cashReasons: 'POS cash reasons',
   },
   auth: {
     workspace: 'Workspace',
@@ -535,6 +539,10 @@ export const en = {
       },
       // Step 20a: {{name}} is the sale's number (POS1-000123)
       pos_sale: { create: 'Sale {{name}}' },
+      // Step 20b: {{name}} is the shift's number (POS1-S0042), or for a movement the words of
+      // pos.cash.done ("৳10,000 paid out for Bank deposit")
+      pos_shift: { open: 'Shift {{name}} opened', close: 'Shift {{name}} closed' },
+      pos_cash_movement: { create: 'Drawer: {{name}}' },
     },
     savedAt: 'Saved {{time}}',
     // fields = the form's own labels, joined in the page's language ("Phone and Credit limit")
@@ -672,6 +680,9 @@ export const en = {
       // The server's key no longer opens the copy (key-changed): the PIN opens it once, and the
       // copy then follows the server's new key
       keyChangedDescription: 'Omnivo needs the PIN once to open the work saved on this device.',
+      // Step 20b (decision 7): the register's idle lock on /pos. {{minutes}} in the page's digits
+      idleDescription:
+        'Nobody used the POS for {{minutes}} minutes, so it locked itself. Type the PIN of this device to go on.',
       unlock: 'Unlock',
       unlocking: 'Unlocking…',
       forgot: 'Forgot PIN? Sign in with your password',
@@ -872,6 +883,7 @@ export const en = {
       purchase_debit_note: 'Debit note',
       purchase_refund: 'Supplier refund',
       pos_sale: 'POS sale',
+      pos_shift: 'POS shift',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
@@ -891,6 +903,9 @@ export const en = {
       'A debit note made this entry. A posted debit note stays as it is, so the entry is not reversed here.',
     supplierRefundEntryHint:
       'A supplier refund made this entry. To undo it, void the refund on its own page.',
+    // Step 20b (decision 28): the journal's Reverse refuses a shift's entries
+    posShiftEntryHint:
+      'A POS shift made this entry. It is not reversed: a wrong count is put right by the next shift’s opening count, and a wrong pay in or pay out by one the other way.',
     draftSaved: 'Draft saved',
     posted: '{{number}} posted',
     deleted: 'Draft deleted',
@@ -3969,6 +3984,25 @@ export const en = {
     paperWidthHint: 'The width of the roll in this counter’s receipt printer.',
     receiptFooter: 'Receipt footer',
     receiptFooterPlaceholder: 'Goods once sold are exchanged within 7 days with this receipt.',
+    // Step 20b: the shift settings (decisions 5, 7, 13–15)
+    shiftTitle: 'Shifts',
+    shiftHint: 'A cashier counts the drawer when a shift opens and again when it closes.',
+    overShortAccount: 'Cash over and short account',
+    overShortHint:
+      'A difference in a count posts here. An income or expense account, like 5350 Cash over and short.',
+    varianceAlert: 'Bell for a difference over (৳)',
+    varianceAlertHint:
+      'Whole taka. The managers get a bell when a close is off by more than this. Empty or 0 means any difference.',
+    lockAfter: 'Lock the POS after',
+    lockAfterHint:
+      'Time with no touch, click or key on the POS. The cashier unlocks it with this device’s PIN.',
+    lockAfters: {
+      off: 'Never',
+      '2': '2 minutes',
+      '5': '5 minutes',
+      '10': '10 minutes',
+      '15': '15 minutes',
+    },
     show: 'Show',
     statuses: { active: 'Active', archived: 'Archived' },
     columns: {
@@ -4089,6 +4123,114 @@ export const en = {
     savedOnDevice: 'Saved on this device. It syncs when the connection is back.',
     printAgain: 'Print again',
     newSale: 'New sale',
+    // Step 20b: the shift on the counter (decisions 1, 3, 6, 8, 12). The opening and the close
+    // are both counts, and both are blind: what the drawer should hold shows after the count
+    shift: {
+      number: 'Shift {{number}}',
+      openTitle: 'Open a shift',
+      openDescription:
+        'Count the cash in the drawer before the first sale. You sell on this shift until you close it.',
+      // The count, by notes or as one total (decision 8). {{note}} is a note's value (৳500)
+      countBy: 'Count',
+      countModes: { notes: 'By notes', total: 'As a total' },
+      notesLegend: 'Notes and coins in the drawer',
+      noteCount: 'How many {{note}}',
+      noteAmount: '= {{amount}}',
+      countTotal: 'Cash in the drawer',
+      notesTotal: 'Total {{amount}}',
+      // A register's first shift (decision 12): the count comes in as a pay in
+      firstShift: 'This is the first shift of {{code}}. Where does this cash come from?',
+      floatReason: 'Brought in as',
+      floatReasonPlaceholder: 'Pick a reason',
+      noInReasons:
+        'No pay in reason yet. Someone with pos.register.manage adds one in Settings → POS cash reasons, like Float from the safe.',
+      open: 'Open shift',
+      opened: 'Shift {{number}} is open',
+      // After the open: what the last shift left, and the difference ("৳100 short", posShifts.*)
+      openedEven: 'The drawer has what the last shift left: {{amount}}.',
+      openedDifference:
+        'The last shift left {{expected}}. Your count is {{difference}}, and that goes to the books.',
+      // Why a shift cannot open (decisions 7 and 13)
+      needsOverShort:
+        '{{code}} has no cash over and short account, so no shift can open. Someone with pos.register.manage picks one in Settings → POS registers.',
+      needsPin:
+        '{{code}} locks itself when nobody uses it, so this device needs a PIN before a shift opens.',
+      // Decision 6: a shift left open (yesterday's) is closed before the next sale
+      leftOpen: 'Shift {{number}} has been open since {{time}}. Close it before the next sale.',
+      // The top bar's shift menu; openedBy is its first line, when and by whom
+      menu: 'Shift {{number}} menu',
+      openedBy: 'Opened {{time}} · {{name}}',
+      payIn: 'Pay in',
+      payOut: 'Pay out',
+      close: 'Close shift',
+      changeRegisterOpen: 'Shift {{number}} is open. Close it, then change the register.',
+    },
+    // Pay in and pay out (decision 4), keyed by the reason's direction. The cashier never sees
+    // what the drawer holds: that would end the blind count
+    cash: {
+      titles: { in: 'Pay in', out: 'Pay out' },
+      descriptions: {
+        in: 'Money put into the drawer. Pick why it comes in.',
+        out: 'Money taken out of the drawer. Pick why it goes, and keep the slip.',
+      },
+      reason: 'Reason',
+      reasonPlaceholder: 'Pick a reason',
+      amount: 'Amount',
+      note: 'Note',
+      notePlaceholder: 'Deposit slip 0042',
+      noReasons: {
+        in: 'No pay in reason yet. Someone with pos.register.manage adds one in Settings → POS cash reasons.',
+        out: 'No pay out reason yet. Someone with pos.register.manage adds one in Settings → POS cash reasons.',
+      },
+      save: { in: 'Pay in {{amount}}', out: 'Pay out {{amount}}' },
+      // The toast, and the Sync page's name of the waiting movement
+      done: { in: '{{amount}} paid in for {{reason}}', out: '{{amount}} paid out for {{reason}}' },
+    },
+    // Held bills (step 20 decision 10): on this device only, never sent, dropped at the close
+    hold: {
+      hold: 'Hold',
+      title: 'Hold this bill',
+      description:
+        'The cart waits on this device while you serve the next customer. Its prices stay; the stock is checked again when the customer pays.',
+      name: 'Name',
+      namePlaceholder: 'Customer in the blue shirt',
+      save: 'Hold bill',
+      held: 'Bill held',
+      list: 'Held ({{formatted}})',
+      listTitle: 'Held bills',
+      listDescription: 'They stay on this device only, and are dropped when the shift closes.',
+      unnamed: 'Held at {{time}}',
+      row: '{{items}} · {{total}}',
+      resume: 'Resume',
+      drop: 'Drop {{name}}',
+      dropped: 'Held bill dropped',
+      resumeHolds: 'The cart on the screen is held first, so nothing is lost.',
+      full: 'This device holds {{max}} bills already. Resume or drop one first.',
+      emptyTitle: 'No held bills',
+      emptyBody: 'Press F8 to hold a cart while you serve the next customer.',
+    },
+    // Closing the shift (decisions 3, 6, 9): the count, then the result
+    close: {
+      title: 'Close shift {{number}}',
+      description: 'Count the cash in the drawer. What Omnivo expects shows after you close.',
+      heldDropped_one: '{{formatted}} held bill is dropped when the shift closes.',
+      heldDropped_other: '{{formatted}} held bills are dropped when the shift closes.',
+      final: 'The count can’t change after the shift is closed.',
+      confirm: 'Close the shift',
+      doneTitle: '{{number}} is closed',
+      counted: 'Counted',
+      expected: 'Expected',
+      difference: 'Difference',
+      even: 'The drawer has exactly what was expected.',
+      over: 'The drawer has {{amount}} more than expected. It goes to the books as cash over.',
+      short: 'The drawer has {{amount}} less than expected. It goes to the books as cash short.',
+      next: 'Open the next shift',
+      // Decision 6: sign-out waits for the close
+      signOutTitle: 'Close the shift first',
+      signOutBody:
+        'Shift {{number}} is open on this device. Count the drawer and close the shift, then sign out.',
+      signOutClose: 'Close shift',
+    },
     // Keyboard shortcuts (decision 12)
     shortcuts: 'Keyboard shortcuts',
     keys: {
@@ -4099,6 +4241,8 @@ export const en = {
       complete: 'Complete the sale',
       newSale: 'New sale',
       help: 'Show these shortcuts',
+      hold: 'Hold the bill',
+      held: 'Held bills',
     },
     // The thermal receipt (decision 6), 58 or 80 mm. The company lines reuse print.*
     receipt: {
@@ -4144,6 +4288,8 @@ export const en = {
     device: 'Device',
     cashier: 'Cashier',
     customer: 'Customer',
+    // Step 20b: a sale's shift; 20a's sales have none
+    shift: 'Shift',
     lines: 'Items',
     batches: 'Batch {{lot}} · {{quantity}}',
     serials: 'Serial numbers: {{serials}}',
@@ -4186,6 +4332,138 @@ export const en = {
     emptyTitle: 'Nothing sold short',
     emptyBody: 'When a counter sells more than its warehouse has, the item shows here.',
     loadFailed: "Couldn't load the list. Refresh the page to try again.",
+  },
+  // Step 20b: the managers' list of shifts and a shift's page (pos.shift.manage, decision 26)
+  posShifts: {
+    title: 'POS shifts',
+    description: 'Each cashier’s count of the drawer, and the cash the books expected',
+    back: 'POS shifts',
+    register: 'Register',
+    allRegisters: 'All registers',
+    show: 'Show',
+    // 20b.6b: the status filter's first choice
+    allStatuses: 'All shifts',
+    // Decision 11: a shift closed without a count has its own pill
+    statuses: { open: 'Open', closed: 'Closed', closed_without_count: 'Not counted' },
+    columns: {
+      shift: 'Shift',
+      register: 'Register',
+      cashier: 'Cashier',
+      opened: 'Opened',
+      closed: 'Closed',
+      expected: 'Expected',
+      counted: 'Counted',
+      difference: 'Difference',
+      status: 'Status',
+    },
+    // A difference in words (counted less expected), also for the bell and the POS screen
+    over: '{{amount}} over',
+    short: '{{amount}} short',
+    even: 'No difference',
+    // The page
+    device: 'Device',
+    cashier: 'Cashier',
+    openedAt: 'Opened',
+    closedAt: 'Closed',
+    opening: 'Opening',
+    openingCounted: 'Counted at the open',
+    lastLeft: 'The last shift left',
+    firstShift: 'The register’s first shift',
+    floatReason: 'Brought in as',
+    closing: 'Closing',
+    deviceExpected: 'The device expected',
+    heldDropped: 'Held bills dropped',
+    countColumns: { note: 'Note', count: 'Count', amount: 'Amount' },
+    asTotal: 'Counted as a total',
+    cash: {
+      title: 'Cash in the drawer',
+      opening: 'Opening count',
+      cashTaken: 'Cash taken',
+      changeGiven: 'Change given',
+      paidIn: 'Paid in',
+      paidOut: 'Paid out',
+      expected: 'Expected',
+    },
+    payments: 'Taken by method',
+    sales_one: '{{formatted}} sale · {{total}}',
+    sales_other: '{{formatted}} sales · {{total}}',
+    movements: 'Pay ins and pay outs',
+    movementColumns: {
+      time: 'Time',
+      reason: 'Reason',
+      direction: 'Kind',
+      amount: 'Amount',
+      note: 'Note',
+      entry: 'Journal entry',
+    },
+    directions: { in: 'Pay in', out: 'Pay out' },
+    noMovements: 'No money was put in or taken out.',
+    entriesTitle: 'Journal entries',
+    entries: { opening: 'Opening difference', float: 'Float', closing: 'Closing difference' },
+    // Decision 22: the books keep the server's number
+    expectedDiffers:
+      'The device expected {{device}} and the server {{server}}: a sale or a pay in or out is missing on one side. The books use the server’s number.',
+    withoutCount:
+      'Nobody counted this drawer, so no difference was posted. The next shift’s opening count finds any money that is missing.',
+    closedBy: 'Closed by {{name}} · {{time}}',
+    stillOpen: 'Open since {{time}}. The expected cash counts what has synced so far.',
+    // Decisions 11 and 27: a manager closes a stuck shift online, with a note for the audit log
+    closeWithoutCount: 'Close without a count',
+    closeTitle: 'Close {{number}} without a count?',
+    closeBody:
+      'For a shift its cashier can’t close: a lost device, or someone who went home. Nothing posts now; the next shift’s opening count finds any money that is missing.',
+    closeNote: 'Why',
+    closeNotePlaceholder: 'Sumi went home sick; the drawer went to the safe.',
+    closeConfirm: 'Close without a count',
+    closedToast: '{{number}} closed without a count',
+    notFound: "This POS shift doesn't exist.",
+    needsConnection: 'POS shifts are read from the server. Connect to the internet to see them.',
+    emptyTitle: 'No shifts yet',
+    emptyBody: 'A shift starts when a cashier counts the drawer on the POS screen.',
+    loadFailed: "Couldn't load the POS shifts. Refresh the page to try again.",
+  },
+  // Step 20b: why money goes into or out of a drawer (decisions 4, 20, 46)
+  posCashReasons: {
+    title: 'POS cash reasons',
+    description:
+      'Why a cashier puts money into the drawer or takes it out, and the account it moves to',
+    add: 'Add reason',
+    newTitle: 'Add a reason',
+    editTitle: 'Edit {{name}}',
+    name: 'Name',
+    namePlaceholder: 'Bank deposit',
+    direction: 'Kind',
+    directions: {
+      in: 'Pay in: money comes into the drawer',
+      out: 'Pay out: money goes out of the drawer',
+    },
+    // Decision 20: the edit form shows the kind, but not as a choice
+    directionLocked:
+      'A reason stays a pay in or a pay out, so the money it moved keeps its meaning. Add another reason for the other way.',
+    account: 'Account',
+    accountHints: {
+      in: 'Where the money comes from: the safe, a bank, the owner.',
+      out: 'Where the money goes: a bank, the safe, or an expense like tea for the staff.',
+    },
+    accountPlaceholder: 'Pick an account',
+    show: 'Show',
+    statuses: { active: 'Active', archived: 'Archived' },
+    columns: { reason: 'Reason', direction: 'Kind', account: 'Account', status: 'Status' },
+    pills: { in: 'Pay in', out: 'Pay out' },
+    archive: 'Archive',
+    restore: 'Restore',
+    created: '{{name}} added',
+    updated: 'Changes to {{name}} saved',
+    archivedToast: '{{name}} archived',
+    restoredToast: '{{name}} restored',
+    readOnly: 'Ask a workspace owner for the pos.register.manage permission to change the reasons.',
+    emptyTitle: 'No reasons yet',
+    emptyBody:
+      'Add why your cashiers move money: a float from the safe, a bank deposit, tea for the staff.',
+    emptyArchivedTitle: 'No archived reasons',
+    emptyArchivedBody:
+      'A reason you no longer use can be archived. The money it moved stays in the books.',
+    loadFailed: "Couldn't load the reasons. Refresh the page to try again.",
   },
   approvals: {
     title: 'Approvals',
@@ -4727,6 +5005,10 @@ export const en = {
         override: 'At the POS, change a price or give more discount than the register allows',
       },
       register: { manage: 'Add, edit and archive POS registers' },
+      // Step 20b (decision 10)
+      shift: {
+        manage: 'See every register’s shifts and counts, and close a stuck shift without a count',
+      },
     },
   },
   invite: {
@@ -4799,6 +5081,8 @@ export const en = {
       device: 'Devices',
       pos_register: 'POS registers',
       pos_sale: 'POS sales',
+      pos_cash_reason: 'POS cash reasons',
+      pos_shift: 'POS shifts',
     },
     columns: {
       when: 'When',
@@ -5090,6 +5374,22 @@ export const en = {
         overridden: 'Changed a price or gave more discount at the POS',
         without_permission: 'Sold at a POS counter after losing the permission',
       },
+      // Step 20b. cash_moved: a pay in or pay out. closed_without_count: by a manager online or by
+      // a device's revoke (decision 11). expected_differs: decision 22
+      pos_cash_reason: {
+        created: 'Added a POS cash reason',
+        updated: 'Edited a POS cash reason',
+        archived: 'Archived a POS cash reason',
+        restored: 'Restored a POS cash reason',
+      },
+      pos_shift: {
+        opened: 'Opened a POS shift',
+        cash_moved: 'Put money into a drawer or took it out',
+        closed: 'Closed a POS shift',
+        closed_without_count: 'Closed a POS shift without a count',
+        expected_differs: 'The device and the server expected different cash at a close',
+        without_permission: 'Worked a POS shift after losing the permission',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -5236,6 +5536,27 @@ export const en = {
       overrides: 'Needs pos.price.override',
       allowed: 'Permission',
       missing: 'Missing permission',
+      // Step 20b: a register's shift settings, a reason, and a shift's rows
+      overShortAccount: 'Over and short account',
+      varianceAlert: 'Bell over (৳)',
+      lockAfter: 'Lock after (minutes)',
+      account: 'Account',
+      openedOn: 'Date on the device',
+      closedOn: 'Date on the device',
+      on: 'Date on the device',
+      opening: 'Opening count',
+      comparedWith: 'The last shift left',
+      floatReason: 'Brought in as',
+      note: 'Note',
+      shiftStatus: 'Shift status then',
+      statusBefore: 'Shift status then',
+      counted: 'Counted',
+      deviceExpected: 'The device expected',
+      expected: 'Expected',
+      server: 'The server expected',
+      heldDropped: 'Held bills dropped',
+      kept: 'Saved on the shift',
+      by: 'Closed by',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -5334,6 +5655,10 @@ export const en = {
       pos: {
         sold_short:
           '{{number}} sold more than {{warehouse}} had. Items below zero: {{count}}. Count them and put the stock right.',
+        // Step 20b (decision 29). {{difference}} arrives signed; the bell turns it into
+        // posShifts.over / posShifts.short ("৳520 short"), so one sentence reads right both ways
+        shift_variance:
+          '{{number}} on {{register}} closed {{difference}}. Open the shift to see the count.',
       },
     },
   },
@@ -5419,6 +5744,9 @@ export const en = {
     journal_not_draft: "This entry is posted and can't change. Reverse it instead.",
     journal_not_posted: 'Only a posted entry can be reversed. Delete the draft instead.',
     journal_is_reversal: "A reversal can't be reversed. Post a new entry instead.",
+    // Step 20b (decision 28)
+    journal_is_pos:
+      'A POS shift’s entry can’t be reversed. A wrong count is put right by the next shift’s count, and a wrong pay in or pay out by one the other way.',
     journal_already_reversed: 'This entry has been reversed already. Reload to see the reversal.',
     journal_reversal_date: "Pick a date on or after the entry's own date.",
     opening_date_required: 'Pick your first day on Omnivo.',
@@ -5951,6 +6279,34 @@ export const en = {
       'The register has no account for this payment method now. Someone with pos.register.manage sets one in Settings → POS registers, then retry the sale.',
     pos_number_taken:
       'Another sale of this register has this number. This should not happen: keep the paper receipt and tell your Omnivo administrator.',
+    // Step 20b: shifts
+    pos_over_short_required:
+      'Pick the account a difference in the drawer goes to, like 5350 Cash over and short.',
+    pos_over_short_invalid: 'Pick an active income or expense account that is not a group.',
+    pos_variance_alert_format:
+      'Type whole taka, like 500. Leave it empty for a bell at any difference.',
+    pos_reason_name_required: 'Give the reason a name, like Bank deposit.',
+    pos_reason_name_taken:
+      'Another reason has this name, maybe an archived one. Pick another name, or restore that reason.',
+    pos_reason_account_invalid:
+      'Pick an active account that is not a group, a stock account, or the account of what customers owe or what you owe suppliers.',
+    pos_reason_required: 'Pick why the money moves.',
+    pos_cash_amount_required: 'Type an amount above zero.',
+    pos_count_required: 'Type what you counted. Type 0 if the drawer is empty.',
+    pos_count_total_mismatch: 'The total is not what the notes add up to. Count the notes again.',
+    pos_pay_out_too_large:
+      'The drawer should not hold this much. Count what is there, and pay out no more than that.',
+    pos_float_reason_required:
+      'This is the register’s first shift. Pick where the cash comes from, like Float from the safe.',
+    // Decision 32: letting go of the register, moving the device, signing out
+    pos_shift_still_open:
+      'A shift is open on this register. Close it on the POS screen first. If its device is lost, someone with pos.shift.manage closes it without a count.',
+    pos_shift_closed: 'This shift is closed already. Reload the page to see how it closed.',
+    // Bugs (decision 25): never a cashier's mistake
+    pos_shift_already_open:
+      'The server still has the last shift of this register open. This should not happen: keep the drawer as it is and tell your Omnivo administrator.',
+    pos_shift_unknown:
+      'The server doesn’t know this shift. This should not happen: keep the paper receipts and tell your Omnivo administrator.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',
     version_conflict:
       'Someone else saved changes while you were editing. Reload to see them, then make your change again.',

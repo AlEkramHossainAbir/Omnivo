@@ -11,7 +11,7 @@ import type {
   RegisterDeviceInput,
   RenameDeviceInput,
 } from '@omnivo/contracts';
-import { branches, devices, users } from '@omnivo/db';
+import { branches, devices, posShifts, users } from '@omnivo/db';
 import { and, asc, desc, eq, isNotNull, isNull, or, type SQL, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
@@ -56,6 +56,16 @@ export function deviceNotFound(): AppError {
 
 export function deviceRevoked(): AppError {
   return new AppError(403, 'device_revoked', 'This device was revoked. Its data is wiped.');
+}
+
+// Step 20b (decision 32): the device that runs a shift keeps its register, and its branch, until
+// the shift closes. Here and not in pos/: the POS services import this file already.
+export function shiftStillOpen(): AppError {
+  return new AppError(
+    409,
+    'pos_shift_still_open',
+    'A shift is open on this register. Close the shift first.',
+  );
 }
 
 // Step 18c: the person who revoked a device, next to the person it belongs to (both in users)
@@ -333,6 +343,19 @@ export class DevicesService {
       if (before.version !== input.version) throw versionConflict();
       // The branch it is in already: nothing changes, no audit row (decision 10)
       if (before.branchId === input.branchId) return this.item(tx, id);
+      // Step 20b (decision 32): a device that runs a shift stays where its register is. The
+      // device is locked, so no shift opens on it before we commit (0054's guard waits for it).
+      const [open] = await tx
+        .select({ id: posShifts.id })
+        .from(posShifts)
+        .where(
+          and(
+            eq(posShifts.tenantId, getTenantId()),
+            eq(posShifts.deviceId, id),
+            eq(posShifts.status, 'open'),
+          ),
+        );
+      if (open) throw shiftStillOpen();
 
       // FOR SHARE on the new branch, like registering: an archive of it waits for this commit,
       // and then sees the device in it (branch_has_devices)

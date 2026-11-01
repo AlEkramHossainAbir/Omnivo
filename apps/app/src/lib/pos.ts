@@ -1,7 +1,6 @@
 import {
   compareMoney,
   compareQuantity,
-  type DiscountType,
   isMoneyAmount,
   isQuantity,
   type PosLineAmounts,
@@ -21,59 +20,18 @@ import {
   type SyncStock,
   toBaseQuantity,
 } from '@omnivo/contracts';
+import type { HeldCart, PosCart as Cart, PosCartLine as CartLine } from '@omnivo/sync';
 
 // Step 20a: the POS screen's cart, worked out without React, so the rules are tested on their own
 // (pos.spec.ts). The screen keeps one Cart in state and changes it only through these functions.
 
-// One line of the cart. Everything the receipt and the sale need is copied in when the line is
-// added (the product may change in the copy while the cart is open; the line keeps what the
-// cashier saw).
-export interface CartLine {
-  // For React and for picking a line; never sent
-  key: string;
-  productId: string;
-  variantId: string;
-  // The base unit, the product's sales unit or the pack a barcode named, and its size in the base
-  // unit ("1", "10"): stock is counted in base units
-  unitId: string;
-  factor: string;
-  name: string;
-  sku: string;
-  unitCode: string;
-  // The unit's decimals (0 for pcs, 3 for kg): quantities show with them
-  decimals: number;
-  // 'none' | 'batch' | 'serial' (a string in the contract, so a newer server's mode does not break)
-  tracking: string;
-  // A service has no stock: no check, no batch
-  goods: boolean;
-  // As the cashier types them: they may be half typed ("1.") until the sale is paid
-  quantity: string;
-  // '' while there is no price (a product without one); the cashier types it
-  unitPrice: string;
-  // The price the line started with (posOverridesOf); null = there was none
-  startingPrice: string | null;
-  discountType: DiscountType;
-  discount: string;
-  taxRateId: string;
-  // The rate in percent ("15.00"), kept with the line: the receipt is printed with it
-  rate: string;
-  batchId: string | null;
-  serialNumbers: string[];
-}
-
-export interface CartCustomer {
-  id: string;
-  name: string;
-  priceListId: string | null;
-}
-
-export interface Cart {
-  // null = walk-in
-  customer: CartCustomer | null;
-  lines: CartLine[];
-  billDiscountType: DiscountType;
-  billDiscount: string;
-}
+// Step 20b: the cart's shape moved to @omnivo/sync (carts.ts), because the device stores it now (a
+// held bill, the cart on the screen). The names stay the ones the screen uses.
+export type {
+  PosCart as Cart,
+  PosCartCustomer as CartCustomer,
+  PosCartLine as CartLine,
+} from '@omnivo/sync';
 
 export const EMPTY_CART: Cart = {
   customer: null,
@@ -82,12 +40,26 @@ export const EMPTY_CART: Cart = {
   billDiscount: '',
 };
 
+// Step 20b: the cart as the device keeps it, held or on the screen (@omnivo/sync carts.ts), with
+// what the held list shows of it. Here, not in pos-held.tsx: the screen saves its cart on every
+// change, and must not load the held bills' chunk for that.
+export function heldCartOf(cart: Cart, total: string, name: string | null): HeldCart {
+  return { name, heldAt: new Date().toISOString(), items: cart.lines.length, total, cart };
+}
+
 let lineKeys = 0;
 
 // A counter, not crypto.randomUUID(): a key only has to be unique on this screen
 export function newLineKey(): string {
   lineKeys += 1;
   return `line-${String(lineKeys)}`;
+}
+
+// Step 20b: a cart that comes back from the device (a held bill, the screen's cart after a reload)
+// has keys from an earlier page load's counter, which starts again at 1: new keys, so a line added
+// now never shares one with it
+export function rekeyed(cart: Cart): Cart {
+  return { ...cart, lines: cart.lines.map((line) => ({ ...line, key: newLineKey() })) };
 }
 
 // "Polo shirt — M, Navy blue", like the sales documents' line (description null)
@@ -280,6 +252,8 @@ export function quickCash(total: string): string[] {
 export function saleValues(input: {
   cart: Cart;
   registerId: string;
+  // Step 20b: the open shift the sale is made in
+  shiftId: string;
   date: string;
   soldAt: string;
   pricesIncludeVat: boolean;
@@ -288,6 +262,7 @@ export function saleValues(input: {
   const { cart } = input;
   return {
     registerId: input.registerId,
+    shiftId: input.shiftId,
     date: input.date,
     soldAt: input.soldAt,
     customerId: cart.customer?.id ?? null,

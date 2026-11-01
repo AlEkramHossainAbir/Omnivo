@@ -1,16 +1,22 @@
 import {
   addMoney,
   addQuantity,
+  type CashCount,
   compareMoney,
   compareQuantity,
   type Device,
+  type EntryRef,
   type ErrorCode,
+  expectedCashOf,
   formatPosNumber,
   isZeroMoney,
   isWholeQuantity,
   moneyAccountIds,
   negateMoney,
   POS_PAYMENT_METHODS,
+  type PosCashDirection,
+  type PosCashReason,
+  type PosLastShift,
   type PosOverride,
   posChangeOf,
   posOverridesOf,
@@ -26,6 +32,8 @@ import {
   type posSaleListQuerySchema,
   type PosSalePage,
   posSaleSummarySchema,
+  type PosShiftStatus,
+  type ShiftCash,
   shiftIsoDate,
   type SoldShortItem,
   soldShortItemSchema,
@@ -61,10 +69,14 @@ import type { WorkspaceData } from './workspace-data';
 // written only by the push (push-data.ts calls createSale), like the API (decision 21). The audit
 // rows are written by the callers (handlers.ts, push-data.ts), which import workspace-data.ts:
 // this file is imported by it, for the seed.
+// Step 20b: the shifts, their pay ins and outs, and the reasons, kept here beside the registers
+// and the sales, because a register's latest shift and a sale's shift are read with them. What
+// the devices and the managers do with a shift is pos-shift-data.ts.
 
 // A register without its branch: the branch is its warehouse's, worked out when it is read, so a
-// warehouse moved to another branch takes its free registers along (the API joins warehouses)
-export type MockRegister = Omit<PosRegister, 'branchId'>;
+// warehouse moved to another branch takes its free registers along (the API joins warehouses).
+// Step 20b: and without its latest shift, which is read from the shifts (the API's lastShiftsOf).
+export type MockRegister = Omit<PosRegister, 'branchId' | 'lastShift'>;
 
 // A sale's line as the mock keeps it: the contract's line, plus what the Sold short list reads
 // (the API's short_serials column, and the lot of the batch that went below zero)
@@ -79,14 +91,66 @@ export type MockPosSale = Omit<PosSale, 'lines' | 'device'> & {
   lines: MockPosLine[];
 };
 
+// A shift as the API's pos_shifts row keeps it (step 20b). The cashier is the device's person
+// (created_by); the counts keep the device's notes and a 4-decimal total.
+export interface MockShift {
+  id: string;
+  registerId: string;
+  deviceId: string;
+  cashierId: string;
+  sequence: number;
+  number: string;
+  status: PosShiftStatus;
+  openedAt: string;
+  closedAt: string | null;
+  opening: {
+    count: CashCount;
+    date: string;
+    // null = the register's first shift
+    comparedWith: string | null;
+    floatReasonId: string | null;
+    entry: EntryRef | null;
+  };
+  // A counted close; null while open and for a close without a count
+  closing: {
+    count: CashCount;
+    date: string;
+    deviceExpected: string;
+    heldDropped: number;
+    entry: EntryRef | null;
+  } | null;
+  // What the drawer should have held at the close, either close; null while open
+  expectedCash: string | null;
+  // Who closed it without a count
+  closedBy: string | null;
+}
+
+export interface MockMovement {
+  id: string;
+  shiftId: string;
+  reasonId: string;
+  direction: PosCashDirection;
+  amount: string;
+  note: string | null;
+  date: string;
+  movedAt: string;
+  // The reason's account when it was posted
+  accountId: string;
+  entry: EntryRef;
+}
+
 export interface MockPos {
   registers: MockRegister[];
   // Newest first: a new sale is put first
   sales: MockPosSale[];
+  // Step 20b: in the order they were added; the lists sort them
+  reasons: PosCashReason[];
+  shifts: MockShift[];
+  movements: MockMovement[];
 }
 
 export function emptyPos(): MockPos {
-  return { registers: [], sales: [] };
+  return { registers: [], sales: [], reasons: [], shifts: [], movements: [] };
 }
 
 function now(): string {
@@ -102,8 +166,30 @@ function percentText(value: string): string {
 
 // --- The seed -----------------------------------------------------------------------------------
 
-function register(fields: Omit<MockRegister, 'id' | 'archivedAt' | 'version' | 'updatedAt'>) {
-  return { id: crypto.randomUUID(), ...fields, archivedAt: null, version: 1, updatedAt: now() };
+type SeedRegister = Omit<
+  MockRegister,
+  | 'id'
+  | 'archivedAt'
+  | 'version'
+  | 'updatedAt'
+  | 'overShortAccountId'
+  | 'varianceAlert'
+  | 'lockAfter'
+>;
+
+// Step 20b: every seeded counter has the over/short account, so a shift opens on it, a bell for a
+// difference over ৳500, and no idle lock: the device in the tests has no PIN until a test sets one
+function register(fields: SeedRegister, overShortAccountId: string | null): MockRegister {
+  return {
+    id: crypto.randomUUID(),
+    ...fields,
+    overShortAccountId,
+    varianceAlert: '500',
+    lockAfter: 'off',
+    archivedAt: null,
+    version: 1,
+    updatedAt: now(),
+  };
 }
 
 // The garments maker sells its export surplus at a factory outlet in the head office: the
@@ -119,63 +205,101 @@ export function seedPos(data: WorkspaceData, garments: boolean): void {
   const cash = account('1110');
   if (!main || cash === null) return;
   const card = account('1121');
+  const overShort = addOverShortAccount(data);
   if (!garments) {
     data.pos.registers.push(
-      register({
-        code: 'POS1',
-        name: 'Pharmacy counter',
-        warehouseId: main.id,
-        accounts: { cash, card, bkash: null, nagad: null },
-        maxDiscountPercent: '5.00',
-        paperWidth: '80',
-        receiptFooter: 'Medicines once sold are not taken back. Keep this receipt for your doctor.',
-        deviceId: null,
-        lastNumber: 0,
-      }),
+      register(
+        {
+          code: 'POS1',
+          name: 'Pharmacy counter',
+          warehouseId: main.id,
+          accounts: { cash, card, bkash: null, nagad: null },
+          maxDiscountPercent: '5.00',
+          paperWidth: '80',
+          receiptFooter:
+            'Medicines once sold are not taken back. Keep this receipt for your doctor.',
+          deviceId: null,
+          lastNumber: 0,
+        },
+        overShort,
+      ),
     );
     return;
   }
   const storePc = data.sync.devices.find((device) => device.name === 'Store office PC');
   const depot = byCode('CTG');
   data.pos.registers.push(
-    register({
-      code: 'POS1',
-      name: 'Showroom counter',
-      warehouseId: main.id,
-      accounts: { cash, card, bkash: null, nagad: null },
-      maxDiscountPercent: '10.00',
-      paperWidth: '80',
-      receiptFooter: 'Goods once sold are exchanged within 7 days with this receipt.',
-      deviceId: null,
-      lastNumber: 0,
-    }),
-    register({
-      code: 'POS2',
-      name: 'Factory outlet counter',
-      warehouseId: main.id,
-      accounts: { cash, card: null, bkash: null, nagad: null },
-      maxDiscountPercent: '5.00',
-      paperWidth: '58',
-      receiptFooter: null,
-      deviceId: storePc?.id ?? null,
-      lastNumber: 214,
-    }),
+    register(
+      {
+        code: 'POS1',
+        name: 'Showroom counter',
+        warehouseId: main.id,
+        accounts: { cash, card, bkash: null, nagad: null },
+        maxDiscountPercent: '10.00',
+        paperWidth: '80',
+        receiptFooter: 'Goods once sold are exchanged within 7 days with this receipt.',
+        deviceId: null,
+        lastNumber: 0,
+      },
+      overShort,
+    ),
+    register(
+      {
+        code: 'POS2',
+        name: 'Factory outlet counter',
+        warehouseId: main.id,
+        accounts: { cash, card: null, bkash: null, nagad: null },
+        maxDiscountPercent: '5.00',
+        paperWidth: '58',
+        receiptFooter: null,
+        deviceId: storePc?.id ?? null,
+        lastNumber: 214,
+      },
+      overShort,
+    ),
   );
   if (depot) {
     data.pos.registers.push(
-      register({
-        code: 'CTG1',
-        name: 'Depot counter',
-        warehouseId: depot.id,
-        accounts: { cash, card: null, bkash: null, nagad: null },
-        maxDiscountPercent: '0.00',
-        paperWidth: '80',
-        receiptFooter: null,
-        deviceId: null,
-        lastNumber: 1260,
-      }),
+      register(
+        {
+          code: 'CTG1',
+          name: 'Depot counter',
+          warehouseId: depot.id,
+          accounts: { cash, card: null, bkash: null, nagad: null },
+          maxDiscountPercent: '0.00',
+          paperWidth: '80',
+          receiptFooter: null,
+          deviceId: null,
+          lastNumber: 1260,
+        },
+        overShort,
+      ),
     );
   }
+}
+
+// Step 20b: the account a counter's cash difference goes to. Not in the chart template (the API's
+// garments and pharma templates have none, and the sign-up's setup counts the template's
+// accounts): the company added it under its selling expenses when it set up its counters.
+function addOverShortAccount(data: WorkspaceData): string | null {
+  const parent = data.accounts.find((row) => row.code === '5300');
+  if (!parent) return null;
+  const id = crypto.randomUUID();
+  data.accounts.push({
+    id,
+    parentId: parent.id,
+    code: '5340',
+    name: 'Cash over and short',
+    type: parent.type,
+    isGroup: false,
+    purpose: null,
+    holdsMoney: false,
+    description: null,
+    archivedAt: null,
+    version: 1,
+    updatedAt: now(),
+  });
+  return id;
 }
 
 // --- Registers ----------------------------------------------------------------------------------
@@ -188,7 +312,63 @@ function branchOfRegister(data: WorkspaceData, stored: MockRegister): string {
 }
 
 export function toRegister(data: WorkspaceData, stored: MockRegister): PosRegister {
-  return { ...stored, branchId: branchOfRegister(data, stored) };
+  return {
+    ...stored,
+    branchId: branchOfRegister(data, stored),
+    lastShift: lastShiftOf(data, stored.id),
+  };
+}
+
+// --- A shift's cash (step 20b) ------------------------------------------------------------------
+
+// The API's pos_shift_cash(): the opening count, the cash the shift's sales took and the change
+// they gave, its pay ins and pay outs, read from the rows now. A sale that arrives after a close
+// without a count is counted too (decision 63).
+export function shiftCash(data: WorkspaceData, shift: MockShift): ShiftCash & { expected: string } {
+  const sales = data.pos.sales.filter((sale) => sale.shift?.id === shift.id);
+  const moved = (direction: PosCashDirection) =>
+    sumMoney(
+      data.pos.movements
+        .filter((movement) => movement.shiftId === shift.id && movement.direction === direction)
+        .map((movement) => movement.amount),
+    );
+  const cash: ShiftCash = {
+    opening: addMoney(shift.opening.count.total, '0'),
+    cashTaken: sumMoney(
+      sales.flatMap((sale) =>
+        sale.payments
+          .filter((payment) => payment.method === 'cash')
+          .map((payment) => payment.amount),
+      ),
+    ),
+    changeGiven: sumMoney(sales.map((sale) => sale.change)),
+    paidIn: moved('in'),
+    paidOut: moved('out'),
+  };
+  return { ...cash, expected: expectedCashOf(cash) };
+}
+
+// The register's latest shift, by the highest number (the API's lastShiftsOf). cashLeft: the
+// count at the close, or, when nobody counted, what the server expects now.
+export function lastShiftOf(data: WorkspaceData, registerId: string): PosLastShift | null {
+  const last = data.pos.shifts
+    .filter((shift) => shift.registerId === registerId)
+    .reduce<MockShift | null>(
+      (latest, shift) => (latest === null || shift.sequence > latest.sequence ? shift : latest),
+      null,
+    );
+  if (last === null) return null;
+  return {
+    id: last.id,
+    sequence: last.sequence,
+    status: last.status,
+    cashLeft:
+      last.status === 'open'
+        ? null
+        : last.status === 'closed'
+          ? (last.closing?.count.total ?? null)
+          : shiftCash(data, last).expected,
+  };
 }
 
 export function findRegister(data: WorkspaceData, id: string): MockRegister {
@@ -233,13 +413,17 @@ export function registerSnapshot(
     maxDiscountPercent: stored.maxDiscountPercent,
     paperWidth: stored.paperWidth,
     receiptFooter: stored.receiptFooter,
+    overShortAccount: codeOf(data.accounts, stored.overShortAccountId),
+    varianceAlert: stored.varianceAlert,
+    lockAfter: stored.lockAfter,
   };
 }
 
 type RegisterFields = Omit<PosRegisterInput, 'code'>;
 
 // The API's create() and update() checks, all but the code: an active warehouse when it is new or
-// changed, a held register kept in its device's branch, and every account a money account
+// changed, a held register kept in its device's branch, every account a money account, and (step
+// 20b) an over/short account that is an active income or expense account, not a group
 function checkFields(data: WorkspaceData, fields: RegisterFields, before?: MockRegister): void {
   if (before?.warehouseId !== fields.warehouseId) {
     const place = data.stock.warehouses.find(
@@ -264,6 +448,15 @@ function checkFields(data: WorkspaceData, fields: RegisterFields, before?: MockR
       ),
     );
   }
+  const overShort = data.accounts.find((account) => account.id === fields.overShortAccountId);
+  if (
+    !overShort ||
+    overShort.isGroup ||
+    overShort.archivedAt !== null ||
+    (overShort.type !== 'income' && overShort.type !== 'expense')
+  ) {
+    throw fieldProblem('pos_over_short_invalid', 'overShortAccountId');
+  }
 }
 
 function formOf(fields: RegisterFields) {
@@ -274,6 +467,9 @@ function formOf(fields: RegisterFields) {
     maxDiscountPercent: percentText(fields.maxDiscountPercent),
     paperWidth: fields.paperWidth,
     receiptFooter: fields.receiptFooter,
+    overShortAccountId: fields.overShortAccountId,
+    varianceAlert: fields.varianceAlert,
+    lockAfter: fields.lockAfter,
   };
 }
 
@@ -347,16 +543,25 @@ export function claimRegister(data: WorkspaceData, target: MockRegister, device:
 }
 
 // A free register answers as it is (a release sent again); one another device holds is not this
-// device's to free. Returns whether it was let go now.
-export function releaseRegister(target: MockRegister, device: Device): boolean {
+// device's to free. Step 20b: not while a shift is open on it (the sign-out stops here). Returns
+// whether it was let go now.
+export function releaseRegister(
+  data: WorkspaceData,
+  target: MockRegister,
+  device: Device,
+): boolean {
   if (target.deviceId === null) return false;
   if (target.deviceId !== device.id) throw new MockProblem(409, 'pos_register_not_held');
+  if (lastShiftOf(data, target.id)?.status === 'open') {
+    throw new MockProblem(409, 'pos_shift_still_open');
+  }
   Object.assign(target, { deviceId: null, updatedAt: now() });
   return true;
 }
 
 // Migration 0052's triggers: revoking a device, or moving it to another branch, frees the register
-// it holds. No audit row (decision 51).
+// it holds. No audit row (decision 51). Step 20b: a revoke closes the device's open shift first
+// (pos-shift-data.ts), and a move is refused while one is open.
 export function releaseHeldBy(data: WorkspaceData, deviceId: string): void {
   for (const item of data.pos.registers) {
     if (item.deviceId === deviceId) Object.assign(item, { deviceId: null, updatedAt: now() });
@@ -373,13 +578,20 @@ export function assertNoHeldRegister(data: WorkspaceData, warehouseId: string): 
   }
 }
 
-// An account a register or a POS payment names stays (the API's foreign keys, account_in_use)
+// An account a register or a POS payment names stays (the API's foreign keys, account_in_use).
+// Step 20b: also a register's over/short account, a reason's, and a pay in or out's.
 export function usedByPos(data: WorkspaceData, accountId: string): boolean {
   return (
-    data.pos.registers.some((item) =>
-      POS_PAYMENT_METHODS.some((method) => item.accounts[method] === accountId),
+    data.pos.registers.some(
+      (item) =>
+        item.overShortAccountId === accountId ||
+        POS_PAYMENT_METHODS.some((method) => item.accounts[method] === accountId),
     ) ||
-    data.pos.sales.some((sale) => sale.payments.some((payment) => payment.accountId === accountId))
+    data.pos.sales.some((sale) =>
+      sale.payments.some((payment) => payment.accountId === accountId),
+    ) ||
+    data.pos.reasons.some((reason) => reason.accountId === accountId) ||
+    data.pos.movements.some((movement) => movement.accountId === accountId)
   );
 }
 
@@ -523,6 +735,10 @@ export function createSale(
   if (target?.deviceId !== deviceId) throw fieldProblem('pos_register_not_held', 'registerId');
   const register = toRegister(data, target);
   const number = formatPosNumber(register.code, input.sequence);
+  // Step 20b: the shift it was sold in, this device's on this register (the API's deviceShift()).
+  // A closed one too: a late sale still counts in its cash (decision 63).
+  const shift =
+    input.shiftId === null ? null : deviceShift(data, input.shiftId, deviceId, register.id);
 
   // Decision 34: the register's account for each method now
   const missing = input.payments.flatMap((payment, index) =>
@@ -586,11 +802,7 @@ export function createSale(
   );
   const paid = sumMoney(input.payments.map((payment) => payment.amount));
   const change = posChangeOf(input.payments, amounts.totals.total);
-  // Decision 26: the device's day, unless its clock is ahead of today or the day is locked
-  const today = todayIn(data.settings.timezone);
-  const soldOn = input.date > today ? today : input.date;
-  const { lockDate } = data.journal;
-  const date = lockDate !== null && soldOn <= lockDate ? shiftIsoDate(lockDate, 1) : soldOn;
+  const date = bookingDay(data, input.date);
 
   const lines = resolved.map(({ line }, index) => {
     const sent = input.lines[index];
@@ -696,6 +908,7 @@ export function createSale(
     id: saleId,
     number,
     register: { id: register.id, code: register.code, name: register.name },
+    shift: shift && { id: shift.id, number: shift.number },
     branchId,
     warehouseId: register.warehouseId,
     date,
@@ -752,6 +965,33 @@ export function createSale(
     overrides: posOverridesOf(input, register.maxDiscountPercent),
     shortLines: short.length,
   };
+}
+
+// Decision 26, for every POS command (step 20b: a shift's open, pay ins and outs, close too): the
+// device's day, unless its clock is ahead of today or the day is locked (the API's bookingDay())
+export function bookingDay(data: WorkspaceData, deviceDate: string): string {
+  const today = todayIn(data.settings.timezone);
+  const day = deviceDate > today ? today : deviceDate;
+  const { lockDate } = data.journal;
+  return lockDate !== null && day <= lockDate ? shiftIsoDate(lockDate, 1) : day;
+}
+
+// The device's own shift (the API's deviceShift()): one of another device or another register is
+// the same answer as one the server does not have, a bug on the device either way
+export function deviceShift(
+  data: WorkspaceData,
+  shiftId: string,
+  deviceId: string,
+  registerId?: string,
+): MockShift {
+  const found = data.pos.shifts.find((shift) => shift.id === shiftId);
+  if (
+    found?.deviceId !== deviceId ||
+    (registerId !== undefined && found.registerId !== registerId)
+  ) {
+    throw fieldProblem('pos_shift_unknown', 'shiftId');
+  }
+  return found;
 }
 
 // Decision 37: a refused sale's receipt was printed, so its number is used too. Only up, without a

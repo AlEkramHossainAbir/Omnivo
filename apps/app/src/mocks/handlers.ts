@@ -329,6 +329,18 @@ import {
   updateRegister,
   usedByPos,
 } from './pos-data';
+import {
+  closeWithoutCount,
+  createCashReason,
+  findCashReason,
+  findShift,
+  listCashReasons,
+  listShifts,
+  reasonSnapshot,
+  setReasonArchived,
+  toShift,
+  updateCashReason,
+} from './pos-shift-data';
 import { push } from './push-data';
 import { deviceFor, deviceKey, pull, registerDevice } from './sync-data';
 import {
@@ -5208,7 +5220,7 @@ export const handlers = [
       const data = current();
       const device = deviceFor(data, OWNER.id, deviceId);
       const target = findRegister(data, id);
-      if (releaseRegister(target, device)) {
+      if (releaseRegister(data, target, device)) {
         record(data, 'pos_register.released', 'pos_register', id, {
           device: { from: device.name, to: null },
         });
@@ -5238,4 +5250,118 @@ export const handlers = [
     await delay();
     return reply(routes.pos.soldShort, soldShortList(current(), query));
   }),
+
+  // Step 20b: the pay in and pay out reasons (pos-shift-data.ts). Reading needs no permission,
+  // like the API; the mock's owner has pos.register.manage.
+  mock(routes.posShifts.listCashReasons, async ({ request }) => {
+    const query = readQuery(routes.posShifts.listCashReasons.query, request);
+    await delay();
+    return reply(routes.posShifts.listCashReasons, {
+      items: listCashReasons(current(), query),
+    });
+  }),
+
+  mock(
+    routes.posShifts.createCashReason,
+    guarded(async ({ request }) => {
+      const input = await readBody(routes.posShifts.createCashReason.body, request);
+      const data = current();
+      const created = createCashReason(data, input);
+      record(
+        data,
+        'pos_cash_reason.created',
+        'pos_cash_reason',
+        created.id,
+        diff({}, reasonSnapshot(data, created)),
+      );
+      await delay();
+      return reply(routes.posShifts.createCashReason, created);
+    }),
+  ),
+
+  mock(
+    routes.posShifts.updateCashReason,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.posShifts.updateCashReason.params.parse(params);
+      const { version, ...input } = await readBody(routes.posShifts.updateCashReason.body, request);
+      const data = current();
+      const target = findCashReason(data, id);
+      checkVersion(target.version, version);
+      const before = reasonSnapshot(data, target);
+      updateCashReason(data, target, input);
+      record(
+        data,
+        'pos_cash_reason.updated',
+        'pos_cash_reason',
+        id,
+        diff(before, reasonSnapshot(data, target)),
+      );
+      await delay();
+      return reply(routes.posShifts.updateCashReason, target);
+    }),
+  ),
+
+  ...(['archiveCashReason', 'restoreCashReason'] as const).map((action) =>
+    mock(
+      routes.posShifts[action],
+      guarded(async ({ request, params }) => {
+        const { id } = routes.posShifts[action].params.parse(params);
+        const { version } = await readBody(routes.posShifts[action].body, request);
+        const data = current();
+        const target = findCashReason(data, id);
+        checkVersion(target.version, version);
+        const archived = action === 'archiveCashReason';
+        const changes = (target.archivedAt !== null) !== archived;
+        setReasonArchived(data, target, archived);
+        if (changes) {
+          record(
+            data,
+            archived ? 'pos_cash_reason.archived' : 'pos_cash_reason.restored',
+            'pos_cash_reason',
+            id,
+          );
+        }
+        return reply(routes.posShifts[action], target);
+      }),
+    ),
+  ),
+
+  // The shifts the devices pushed (push-data.ts writes them). The mock's owner has
+  // pos.shift.manage.
+  mock(routes.posShifts.listShifts, async ({ request }) => {
+    const query = readQuery(routes.posShifts.listShifts.query, request);
+    await delay();
+    return reply(routes.posShifts.listShifts, listShifts(current(), query));
+  }),
+
+  mock(
+    routes.posShifts.getShift,
+    guarded(({ params }) => {
+      const { id } = routes.posShifts.getShift.params.parse(params);
+      const data = current();
+      return reply(routes.posShifts.getShift, toShift(data, findShift(data, id)));
+    }),
+  ),
+
+  // Decision 11: a stuck shift, closed online. A close from its device that arrives later finds it
+  // closed, and its count goes to the audit log only (push-data.ts).
+  mock(
+    routes.posShifts.closeWithoutCount,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.posShifts.closeWithoutCount.params.parse(params);
+      const { note } = await readBody(routes.posShifts.closeWithoutCount.body, request);
+      const data = current();
+      const target = findShift(data, id);
+      const expected = closeWithoutCount(data, target, OWNER.id);
+      record(
+        data,
+        'pos_shift.closed_without_count',
+        'pos_shift',
+        id,
+        diff({}, { number: target.number, expected, note, by: 'manager' }),
+      );
+      await delay();
+      return reply(routes.posShifts.closeWithoutCount, toShift(data, target));
+    }),
+  ),
 ];

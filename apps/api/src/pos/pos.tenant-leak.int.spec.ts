@@ -8,12 +8,17 @@ import {
   customerSchema,
   type Device,
   deviceSchema,
+  type PosCashReason,
+  posCashReasonListSchema,
+  posCashReasonSchema,
   type PosRegister,
   posRegisterListSchema,
   posRegisterSchema,
   type PosSale,
   posSalePageSchema,
   posSaleSchema,
+  posShiftPageSchema,
+  posShiftSchema,
   problemSchema,
   type Product,
   productSchema,
@@ -51,7 +56,7 @@ import { bearer, type SignedIn, signUp } from '../testing/http.js';
 // Step 20a. Two shops: A must never see, change, take or let go of B's registers, nor read B's
 // sales or what B sold short; and a sale A's counter pushes takes none of B's registers,
 // customers, items, VAT rates or batches. Every answer is 404, or the same refusal as for an id
-// that does not exist.
+// that does not exist. Step 20b: the same for B's pay in and pay out reasons and B's shifts.
 let pg: TestPostgres;
 let redis: TestRedis;
 let app: NestFastifyApplication;
@@ -78,6 +83,9 @@ let a: Shop;
 let b: Shop;
 // B's sale: Napa it did not have enough of, for its customer
 let saleOfB: PosSale;
+// B's float reason, and the shift B's counter has open
+let reasonOfB: PosCashReason;
+let shiftOfB: string;
 
 type SaleCommand = Extract<SyncCommandInput, { type: 'pos_sale.create' }>;
 type SaleLine = SaleCommand['input']['lines'][number];
@@ -112,7 +120,51 @@ function variantOf(product: Product): string {
   return variant.id;
 }
 
-function registerForm(code: string, warehouseId: string, cash: string) {
+function accountOf(shop: Pick<Shop, 'accounts'>, code: string): string {
+  const account = shop.accounts.find((item) => item.code === code);
+  if (!account) throw new Error(`no account ${code}`);
+  return account.id;
+}
+
+function shiftOpen(shop: Shop, sequence: number, total: string, floatReasonId = '') {
+  return {
+    id: v7(),
+    type: 'pos_shift.open',
+    shiftId: v7(),
+    input: {
+      registerId: shop.register.id,
+      sequence,
+      date: '2026-10-27',
+      openedAt: '2026-10-27T03:00:00.000Z',
+      opening: { notes: null, total },
+      floatReasonId,
+    },
+  } satisfies SyncCommandInput;
+}
+
+function shiftMove(shiftId: string, reasonId: string) {
+  return {
+    id: v7(),
+    type: 'pos_cash_movement.create',
+    movementId: v7(),
+    input: {
+      shiftId,
+      reasonId,
+      amount: '100',
+      note: '',
+      date: '2026-10-27',
+      movedAt: '2026-10-27T05:00:00.000Z',
+    },
+  } satisfies SyncCommandInput;
+}
+
+function overShortOf(shop: Pick<Shop, 'accounts'>): string {
+  const account = shop.accounts.find((item) => item.code === '5350');
+  if (!account) throw new Error('no over/short account');
+  return account.id;
+}
+
+function registerForm(code: string, warehouseId: string, cash: string, overShort: string) {
   return {
     code,
     name: `Counter ${code}`,
@@ -121,6 +173,9 @@ function registerForm(code: string, warehouseId: string, cash: string) {
     maxDiscountPercent: '',
     paperWidth: '80',
     receiptFooter: '',
+    overShortAccountId: overShort,
+    varianceAlert: '500',
+    lockAfter: '5',
   };
 }
 
@@ -224,7 +279,7 @@ async function open(company: string, slug: string, fullName: string, email: stri
     who,
     'POST',
     '/pos/registers',
-    registerForm('POS1', store.id, cashOf({ accounts })),
+    registerForm('POS1', store.id, cashOf({ accounts }), overShortOf({ accounts })),
   );
   expect(made1.statusCode, made1.body).toBe(201);
   const shop: Shop = {
@@ -289,7 +344,7 @@ function sale(
   };
 }
 
-async function pushed(shop: Shop, commands: SaleCommand[]) {
+async function pushed(shop: Shop, commands: SyncCommandInput[]) {
   const res = await as(shop.who, 'POST', '/sync/push', {
     deviceId: shop.device.id,
     protocol: SYNC_PROTOCOL,
@@ -327,6 +382,19 @@ beforeAll(async () => {
   if (!first) throw new Error('B has no sale');
   saleOfB = posSaleSchema.parse((await as(b.who, 'GET', `/pos/sales/${first.id}`)).json());
   expect(saleOfB.soldShort).toBe(true);
+
+  // B's counter opens its first shift with ৳2,000 from the owner
+  const reason = await as(b.who, 'POST', '/pos/cash-reasons', {
+    name: 'Float from the owner',
+    direction: 'in',
+    accountId: accountOf(b, '3100'),
+  });
+  expect(reason.statusCode, reason.body).toBe(201);
+  reasonOfB = posCashReasonSchema.parse(reason.json());
+  const opening = shiftOpen(b, 1, '2000', reasonOfB.id);
+  shiftOfB = opening.shiftId;
+  const [opened] = await pushed(b, [opening]);
+  expect(opened?.status, JSON.stringify(opened)).toBe('accepted');
 }, 180_000);
 
 afterAll(async () => {
@@ -344,7 +412,7 @@ describe("another workspace's registers", () => {
       as(a.who, 'GET', `/pos/registers/${id}`),
       // A valid form of A's own, so the answer is about whose register it is
       as(a.who, 'PUT', `/pos/registers/${id}`, {
-        ...registerForm('POS1', a.store.id, cashOf(a)),
+        ...registerForm('POS1', a.store.id, cashOf(a), overShortOf(a)),
         ...version,
       }),
       as(a.who, 'POST', `/pos/registers/${id}/archive`, version),
@@ -353,8 +421,12 @@ describe("another workspace's registers", () => {
       as(a.who, 'POST', `/pos/registers/${id}/release`, { deviceId: a.device.id }),
     ]);
     expect(answers.map((res) => res.statusCode)).toEqual([404, 404, 404, 404, 404, 404]);
-    // Still B's, held by B's counter, with B's one sale
-    expect(await registerOfBNow()).toEqual({ ...b.register, lastNumber: 1 });
+    // Still B's, held by B's counter, with B's one sale and B's open shift
+    expect(await registerOfBNow()).toEqual({
+      ...b.register,
+      lastNumber: 1,
+      lastShift: { id: shiftOfB, sequence: 1, status: 'open', cashLeft: null },
+    });
     const list = posRegisterListSchema.parse((await as(a.who, 'GET', '/pos/registers')).json());
     expect(list.items.map((item) => item.id)).toEqual([a.register.id]);
     const branch = posRegisterListSchema.parse(
@@ -383,7 +455,7 @@ describe("another workspace's registers", () => {
       a.who,
       'POST',
       '/pos/registers',
-      registerForm('POS2', b.store.id, cashOf(a)),
+      registerForm('POS2', b.store.id, cashOf(a), overShortOf(a)),
     );
     expect(problemOf(store).fieldErrors).toEqual({
       warehouseId: ['pos_register_warehouse_invalid'],
@@ -392,7 +464,7 @@ describe("another workspace's registers", () => {
       a.who,
       'POST',
       '/pos/registers',
-      registerForm('POS2', a.store.id, cashOf(b)),
+      registerForm('POS2', a.store.id, cashOf(b), overShortOf(a)),
     );
     expect(problemOf(cash).fieldErrors).toEqual({
       'accounts.cash': ['pos_register_account_invalid'],
@@ -461,5 +533,128 @@ describe("another workspace's sales", () => {
       (await as(a.who, 'GET', `/pos/registers/${a.register.id}`)).json(),
     );
     expect(own.lastNumber).toBe(5);
+  });
+});
+
+describe("another workspace's reasons and shifts", () => {
+  it('are not read, changed, archived, restored or closed', async () => {
+    const own = await as(a.who, 'POST', '/pos/cash-reasons', {
+      name: 'Float from the owner',
+      direction: 'in',
+      accountId: accountOf(a, '3100'),
+    });
+    expect(own.statusCode, own.body).toBe(201);
+    const ownReason = posCashReasonSchema.parse(own.json());
+    const version = { version: reasonOfB.version };
+    const answers = await Promise.all([
+      as(a.who, 'PUT', `/pos/cash-reasons/${reasonOfB.id}`, {
+        name: 'Taken over',
+        accountId: accountOf(a, '3100'),
+        ...version,
+      }),
+      as(a.who, 'POST', `/pos/cash-reasons/${reasonOfB.id}/archive`, version),
+      as(a.who, 'POST', `/pos/cash-reasons/${reasonOfB.id}/restore`, version),
+      as(a.who, 'GET', `/pos/shifts/${shiftOfB}`),
+      as(a.who, 'POST', `/pos/shifts/${shiftOfB}/close-without-count`, { note: '' }),
+    ]);
+    expect(answers.map((res) => res.statusCode)).toEqual([404, 404, 404, 404, 404]);
+    for (const status of ['', '?status=archived']) {
+      const list = posCashReasonListSchema.parse(
+        (await as(a.who, 'GET', `/pos/cash-reasons${status}`)).json(),
+      );
+      expect(list.items.map((item) => item.id)).toEqual(status === '' ? [ownReason.id] : []);
+    }
+    for (const query of ['', `?registerId=${b.register.id}`, '?status=open']) {
+      const page = posShiftPageSchema.parse((await as(a.who, 'GET', `/pos/shifts${query}`)).json());
+      expect(page.items).toEqual([]);
+    }
+    // Still B's, as it was, and still open
+    const reasonNow = posCashReasonListSchema.parse(
+      (await as(b.who, 'GET', '/pos/cash-reasons')).json(),
+    );
+    expect(reasonNow.items).toEqual([reasonOfB]);
+    const shift = posShiftSchema.parse((await as(b.who, 'GET', `/pos/shifts/${shiftOfB}`)).json());
+    expect(shift).toMatchObject({ status: 'open', movements: [], closedBy: null });
+  });
+
+  it("are not made with B's accounts", async () => {
+    const reason = await as(a.who, 'POST', '/pos/cash-reasons', {
+      name: 'Cash to the bank',
+      direction: 'out',
+      accountId: accountOf(b, '3100'),
+    });
+    expect(problemOf(reason).fieldErrors).toEqual({ accountId: ['pos_reason_account_invalid'] });
+    const register = await as(
+      a.who,
+      'POST',
+      '/pos/registers',
+      registerForm('POS2', a.store.id, cashOf(a), overShortOf(b)),
+    );
+    expect(problemOf(register).fieldErrors).toEqual({
+      overShortAccountId: ['pos_over_short_invalid'],
+    });
+  });
+
+  it("are not in A's pull", async () => {
+    const query = new URLSearchParams({
+      deviceId: a.device.id,
+      protocol: String(SYNC_PROTOCOL),
+      limit: '1000',
+    });
+    const res = await as(a.who, 'GET', `/sync/pull?${query.toString()}`);
+    expect(res.statusCode, res.body).toBe(200);
+    const changes = syncPullSchema.parse(res.json()).changes;
+    const reasons = changes.filter((change) => change.entity === 'pos_cash_reason');
+    expect(reasons.map((change) => change.key)).not.toContain(reasonOfB.id);
+    expect(JSON.stringify(changes)).not.toContain(shiftOfB);
+  });
+
+  it("are not used by A's counter", async () => {
+    // A's first shift with B's float reason: the same refusal as a reason nobody has
+    const [float] = await pushed(a, [shiftOpen(a, 1, '1500', reasonOfB.id)]);
+    expect(float?.status === 'rejected' ? float.error.code : float?.status).toBe(
+      'pos_float_reason_required',
+    );
+    const opening = shiftOpen(a, 1, '0');
+    const [opened] = await pushed(a, [opening]);
+    expect(opened?.status, JSON.stringify(opened)).toBe('accepted');
+    const [ownReason] = posCashReasonListSchema.parse(
+      (await as(a.who, 'GET', '/pos/cash-reasons')).json(),
+    ).items;
+    if (!ownReason) throw new Error('A has no reason');
+    const onB = sale(a, 6, [line(a)]);
+    const results = await pushed(a, [
+      shiftMove(shiftOfB, ownReason.id),
+      shiftMove(opening.shiftId, reasonOfB.id),
+      { ...onB, input: { ...onB.input, shiftId: shiftOfB } },
+      {
+        id: v7(),
+        type: 'pos_shift.close',
+        shiftId: shiftOfB,
+        input: {
+          date: '2026-10-27',
+          closedAt: '2026-10-27T15:00:00.000Z',
+          counted: { notes: null, total: '0' },
+          deviceExpected: '0',
+          heldDropped: 0,
+        },
+      },
+    ]);
+    expect(
+      results.map((result) => (result.status === 'rejected' ? result.error.code : null)),
+    ).toEqual([
+      'pos_shift_unknown',
+      'pos_reason_required',
+      'pos_shift_unknown',
+      'pos_shift_unknown',
+    ]);
+    // B's shift took nothing of it
+    const shift = posShiftSchema.parse((await as(b.who, 'GET', `/pos/shifts/${shiftOfB}`)).json());
+    expect(shift).toMatchObject({
+      status: 'open',
+      saleCount: 0,
+      movements: [],
+      expectedCash: '2000.0000',
+    });
   });
 });

@@ -4,6 +4,8 @@ import type {
   SalesOrderDraftInput,
   SyncChange,
   SyncCustomer,
+  SyncPosCashReason,
+  SyncPosRegister,
   SyncPull,
 } from '@omnivo/contracts';
 import { uuidv7 } from 'uuidv7';
@@ -181,5 +183,45 @@ export function orderDraft(customerId: string, variantId: string): SalesOrderDra
         taxRateId: VAT_15,
       },
     ],
+  };
+}
+
+// Step 20a: a register of the branch, as the pull sends it. Step 20b: with its shift settings, an
+// over/short account and no shift yet.
+export function posRegister(
+  fields: Partial<SyncPosRegister> & Pick<SyncPosRegister, 'code'>,
+): SyncPosRegister {
+  return {
+    id: uuidv7(),
+    name: 'Front counter',
+    branchId: '01928c4e-6666-7000-8000-000000000001',
+    warehouseId: WAREHOUSE,
+    accounts: { cash: uuidv7(), card: null, bkash: null, nagad: null },
+    maxDiscountPercent: '10.00',
+    paperWidth: '80',
+    receiptFooter: null,
+    overShortAccountId: uuidv7(),
+    varianceAlert: '500',
+    lockAfter: '5',
+    deviceId: null,
+    lastShift: null,
+    archivedAt: null,
+    version: 1,
+    updatedAt: '2026-10-27T04:00:00.000Z',
+    ...fields,
+  };
+}
+
+// Step 20b: a pay in or pay out reason
+export function cashReason(
+  fields: Partial<SyncPosCashReason> & Pick<SyncPosCashReason, 'name' | 'direction'>,
+): SyncPosCashReason {
+  return {
+    id: uuidv7(),
+    accountId: uuidv7(),
+    archivedAt: null,
+    version: 1,
+    updatedAt: UPDATED,
+    ...fields,
   };
 }

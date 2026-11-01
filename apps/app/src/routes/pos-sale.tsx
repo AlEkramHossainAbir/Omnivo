@@ -14,7 +14,7 @@ import {
 import { useLocale } from '@omnivo/i18n';
 import { Button, Card, CardHeader, EmptyState, PageHeader } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from '@tanstack/react-router';
+import { Link, useParams } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
 
 import { Fact } from '../components/adjustment-view';
@@ -33,6 +33,7 @@ import {
   warehouseLabel,
 } from '../components/stock-parts';
 import type { ReceiptData } from '../lib/pos';
+import { useCan } from '../lib/permissions';
 import { posRegisterQuery, posSaleQuery } from '../lib/pos-queries';
 import { settingsQuery, unitsQuery } from '../lib/queries';
 import { useOnline } from '../lib/use-online';
@@ -174,6 +175,7 @@ function PosSaleView({ sale }: { sale: PosSale }) {
         />
         <Fact label={t('posSales.cashier')} value={sale.cashier.fullName} />
         <Fact label={t('posSales.device')} value={sale.device.name} />
+        <ShiftFact shift={sale.shift} />
         <EntryLinks label={t('posSales.entry')} entries={sale.entry ? [sale.entry] : []} none="—" />
       </Card>
       <SalesLinesTable
@@ -240,6 +242,31 @@ function PosSaleView({ sale }: { sale: PosSale }) {
         <Suspense fallback={null}>
           <ReprintSheet sale={sale} register={register} units={units} settings={settings} />
         </Suspense>
+      )}
+    </div>
+  );
+}
+
+// Step 20b: the shift the sale was made in, a link for the people who read the shifts
+// (pos.shift.manage, decision 26). A sale made before step 20b has none.
+function ShiftFact({ shift }: { shift: PosSale['shift'] }) {
+  const { t } = useLocale();
+  const canRead = useCan()('pos.shift.manage');
+  return (
+    <div className="grid min-w-0 gap-0.5">
+      <span className="text-caption font-medium text-ink-3">{t('posSales.shift')}</span>
+      {shift === null ? (
+        <span className="text-body-sm text-ink-3">—</span>
+      ) : canRead ? (
+        <Link
+          to="/pos/shifts/$shiftId"
+          params={{ shiftId: shift.id }}
+          className="w-fit font-mono text-body-sm font-medium text-brand tabular-nums underline-offset-3 hover:underline"
+        >
+          {shift.number}
+        </Link>
+      ) : (
+        <span className="font-mono text-body-sm tabular-nums">{shift.number}</span>
       )}
     </div>
   );

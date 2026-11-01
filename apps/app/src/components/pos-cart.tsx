@@ -3,6 +3,8 @@ import {
   ArrowLeft01Icon,
   Delete02Icon,
   MinusSignIcon,
+  Note01Icon,
+  PauseIcon,
   PlusSignIcon,
   UserIcon,
 } from '@hugeicons/core-free-icons';
@@ -67,6 +69,10 @@ interface PosCartProps {
   onOpen: (open: boolean) => void;
   customerRef: Ref<HTMLButtonElement>;
   billDiscountRef: Ref<HTMLInputElement>;
+  // Step 20b: hold this cart (F8) and the held bills of the shift (F9)
+  onHold: () => void;
+  held: number;
+  onHeld: () => void;
 }
 
 // Money on the screen: whole taka unless it has paisa (hasPaisa)
@@ -97,6 +103,9 @@ export function PosCart({
   onOpen,
   customerRef,
   billDiscountRef,
+  onHold,
+  held,
+  onHeld,
 }: PosCartProps) {
   const { t, format } = useLocale();
   const money = useScreenMoney();
@@ -131,6 +140,21 @@ export function PosCart({
           <h2 className="text-h3 font-semibold">{t('pos.cart')}</h2>
           <span className="text-caption text-ink-3 tabular-nums">{count}</span>
           <span className="flex-1" />
+          <Button
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            disabled={cart.lines.length === 0}
+            onClick={onHold}
+          >
+            <HugeiconsIcon icon={PauseIcon} size={16} strokeWidth={1.5} />
+            {t('pos.hold.hold')}
+            <Kbd>F8</Kbd>
+          </Button>
+          <Button variant="secondary" size="sm" className="gap-1.5" onClick={onHeld}>
+            <HugeiconsIcon icon={Note01Icon} size={16} strokeWidth={1.5} />
+            {t('pos.hold.list', { formatted: format.number(held) })}
+          </Button>
           <IconButton
             icon={Delete02Icon}
             label={t('pos.clear')}

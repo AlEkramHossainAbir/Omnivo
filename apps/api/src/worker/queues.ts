@@ -27,6 +27,7 @@ const QUEUE_OF = {
   'workspace.tax_rates_requested': 'jobs',
   'document.file_requested': 'jobs',
   'pos.sold_short': 'jobs',
+  'pos.shift_variance': 'jobs',
 } satisfies Record<OutboxEventType, QueueName>;
 
 // The hourly maintenance job. Not an outbox event: no request asks for it, a scheduler adds it.

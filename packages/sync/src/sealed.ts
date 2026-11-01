@@ -32,6 +32,8 @@ export async function sealEntry(copy: LocalCopy, entry: OutboxEntry): Promise<Ou
   return {
     // exactOptionalPropertyTypes: a missing seq must be left out, not set to undefined
     ...(seq !== undefined && { seq }),
+    // Step 20b: clear, like the customer's id: the push orders a shift's commands by it
+    ...(entry.shiftId !== undefined && { shiftId: entry.shiftId }),
     commandId: command.id,
     type: command.type,
     status,
@@ -55,6 +57,7 @@ export async function openEntry(copy: LocalCopy, row: OutboxRow): Promise<Outbox
   const body = await copy.open('outbox', row.commandId, row.box);
   return {
     ...(row.seq !== undefined && { seq: row.seq }),
+    ...(row.shiftId !== undefined && { shiftId: row.shiftId }),
     status: row.status,
     sent: row.sent,
     customerId: row.customerId,

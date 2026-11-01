@@ -27,6 +27,7 @@ import { getTenantId, runFromDevice } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { PosSalesService } from '../pos/pos-sales.service.js';
+import { PosShiftsService } from '../pos/pos-shifts.service.js';
 import { type Access, PermissionService } from '../rbac/permission.service.js';
 import { CustomersService } from '../sales/customers.service.js';
 import { SalesOrdersService } from '../sales/sales-orders.service.js';
@@ -45,7 +46,21 @@ const PERMISSION_OF = {
   // Step 20a: no route writes a sale (decision 21), so the cashier's permission comes from the
   // route that takes a register, which is the same one (decision 31)
   'pos_sale.create': routes.pos.claimRegister.permission,
+  // Step 20b (decision 10): the cashier's own shift, with the same permission
+  'pos_shift.open': routes.pos.claimRegister.permission,
+  'pos_cash_movement.create': routes.pos.claimRegister.permission,
+  'pos_shift.close': routes.pos.claimRegister.permission,
 } satisfies Record<SyncCommandType, PermissionKey>;
+
+// Step 20a (decision 28), step 20b (decision 25): never refused for the permission. The money is
+// in the drawer (and the goods have left), so a refusal would only leave it out of the books; each
+// writes its own audit row instead.
+const DONE_AT_THE_COUNTER: ReadonlySet<SyncCommandType> = new Set([
+  'pos_sale.create',
+  'pos_shift.open',
+  'pos_cash_movement.create',
+  'pos_shift.close',
+]);
 
 // The ids a device makes (decision 12). One already used — in this workspace or another, the
 // primary keys are global — fails the insert on its primary key, and the command is refused.
@@ -54,20 +69,29 @@ const DEVICE_ID_KEYS = [
   'party_addresses_pkey',
   'sales_orders_pkey',
   'pos_sales_pkey',
+  'pos_shifts_pkey',
+  'pos_cash_movements_pkey',
 ] as const;
 
 function isSyncCommandType(type: string): type is SyncCommandType {
   return SYNC_COMMAND_TYPES.some((known) => known === type);
 }
 
-// The customer, the order or the POS sale a command is about: the answer's entity_id
+// The customer, the order, the POS sale, the shift or the pay in / pay out a command is about:
+// the answer's entity_id
 function entityOf(command: SyncCommand): string {
   switch (command.type) {
     case 'sales_order.create_draft':
       return command.orderId;
     case 'pos_sale.create':
       return command.saleId;
-    default:
+    case 'pos_shift.open':
+    case 'pos_shift.close':
+      return command.shiftId;
+    case 'pos_cash_movement.create':
+      return command.movementId;
+    case 'customer.create':
+    case 'customer.update':
       return command.customerId;
   }
 }
@@ -89,6 +113,7 @@ export class SyncPushService {
     private readonly customers: CustomersService,
     private readonly orders: SalesOrdersService,
     private readonly posSales: PosSalesService,
+    private readonly posShifts: PosShiftsService,
   ) {}
 
   async push(input: z.output<typeof syncPushInputSchema>): Promise<SyncPush> {
@@ -175,10 +200,7 @@ export class SyncPushService {
     command: SyncCommand,
   ): Promise<SyncNotice[]> {
     const permission = PERMISSION_OF[command.type];
-    // Step 20a (decision 28): a POS sale is never refused for it. The money is in the drawer and
-    // the goods have left, so refusing would only leave them out of the books; the sale writes
-    // its own audit row instead.
-    if (!access.permissions.includes(permission) && command.type !== 'pos_sale.create') {
+    if (!access.permissions.includes(permission) && !DONE_AT_THE_COUNTER.has(command.type)) {
       throw new AppError(403, 'permission_missing', `Missing permission: ${permission}.`, {
         params: { permissions: permission },
       });
@@ -194,6 +216,15 @@ export class SyncPushService {
         return [];
       case 'pos_sale.create':
         await this.posSales.createFromDevice(tx, access, command.saleId, command.input);
+        return [];
+      case 'pos_shift.open':
+        await this.posShifts.openFromDevice(tx, access, command.shiftId, command.input);
+        return [];
+      case 'pos_cash_movement.create':
+        await this.posShifts.moveCashFromDevice(tx, access, command.movementId, command.input);
+        return [];
+      case 'pos_shift.close':
+        await this.posShifts.closeFromDevice(tx, access, command.shiftId, command.input);
         return [];
     }
   }
@@ -229,14 +260,15 @@ export class SyncPushService {
 
   // The customer a command made or changed, in the pull's shape: the device writes it at once. A
   // customer the device may not keep (archived since) goes as a delete, like in a delta pull. An
-  // order and a POS sale send nothing: neither is on the device (decision 35).
+  // order, a POS sale and a shift's commands send nothing: none is on the device as a row
+  // (decision 35; step 20b, decision 30: the register's new lastShift comes with the next pull).
   private async changesOf(
     tx: Transaction,
     device: DeviceRow,
     type: SyncCommandType,
     entityId: string,
   ): Promise<SyncChange[]> {
-    if (type === 'sales_order.create_draft' || type === 'pos_sale.create') return [];
+    if (type !== 'customer.create' && type !== 'customer.update') return [];
     // The customer loader reads only the tenant; the branch's warehouses do not matter to it
     const scope = { tenantId: getTenantId(), branchId: device.branchId, warehouseIds: [] };
     const rows = await LOADERS.customer(tx, scope, { by: 'keys', keys: [entityId] });

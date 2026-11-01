@@ -12,6 +12,7 @@ import type { z } from 'zod';
 import { OWNER } from './fixtures';
 import { MockProblem } from './mock';
 import { releaseHeldBy } from './pos-data';
+import { closeWithoutCount, openShiftOf } from './pos-shift-data';
 import { checkVersion, diff, record, type WorkspaceData } from './workspace-data';
 
 // The mock's step 18c (decisions 1–4): the two device lists, rename, move and revoke. The devices
@@ -145,6 +146,8 @@ export function moveDevice(
     throw new MockProblem(409, 'device_branch_invalid', { branchId: ['device_branch_invalid'] });
   }
   if (device.branchId !== branch.id) {
+    // Step 20b (decision 32): a device that runs a shift stays where its register is
+    if (openShiftOf(data, id)) throw new MockProblem(409, 'pos_shift_still_open');
     const before = data.branches.find((candidate) => candidate.id === device.branchId);
     record(
       data,
@@ -174,6 +177,19 @@ export function revokeDevice(
   const revokedAt = now();
   Object.assign(device, { revokedAt, version: device.version + 1 });
   data.sync.revokedBy.set(id, OWNER.id);
+  // Step 20b (decision 11): its open shift closes without a count first, by the person who
+  // revoked it, at the revoke's moment (the API's database does it in the revoke's update)
+  const open = openShiftOf(data, id);
+  if (open) {
+    const expected = closeWithoutCount(data, open, OWNER.id, revokedAt);
+    record(
+      data,
+      'pos_shift.closed_without_count',
+      'pos_shift',
+      open.id,
+      diff({}, { number: open.number, expected, by: 'revoke', device: device.name }),
+    );
+  }
   // Step 20a: a lost or broken PC is revoked, and its counter is free for the next one
   releaseHeldBy(data, id);
   record(data, 'device.revoked', 'device', id, { revokedAt: { from: null, to: revokedAt } });

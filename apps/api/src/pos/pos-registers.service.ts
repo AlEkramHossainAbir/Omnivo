@@ -3,6 +3,7 @@ import {
   type ErrorCode,
   moneyAccountIds,
   POS_PAYMENT_METHODS,
+  type PosLastShift,
   type PosPaymentMethod,
   type PosRegister,
   type PosRegisterInput,
@@ -11,8 +12,8 @@ import {
   type SyncPosRegister,
   type UpdatePosRegisterInput,
 } from '@omnivo/contracts';
-import { devices, ledgerAccounts, posRegisters, users, warehouses } from '@omnivo/db';
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import { devices, ledgerAccounts, posRegisters, posShifts, users, warehouses } from '@omnivo/db';
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../common/audit/audit.js';
 import { isCheckViolation, isUniqueViolation } from '../common/db/pg-errors.js';
@@ -20,7 +21,7 @@ import { AppError, notFound, versionConflict } from '../common/http/app-error.js
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
-import { deviceNotFound, deviceRevoked } from '../sync/devices.service.js';
+import { deviceNotFound, deviceRevoked, shiftStillOpen } from '../sync/devices.service.js';
 
 export type PosRegisterRow = typeof posRegisters.$inferSelect;
 
@@ -38,8 +39,13 @@ export function accountOf(row: PosRegisterRow, method: PosPaymentMethod): string
 }
 
 // A register as the devices keep it (decision 20): without the last number, which changes with
-// every sale. branchId is the warehouse's (decision 17): the caller reads it with the row.
-export function toSyncPosRegister(row: PosRegisterRow, branchId: string): SyncPosRegister {
+// every sale. branchId is the warehouse's (decision 17): the caller reads it with the row, and
+// since step 20b its latest shift too (lastShiftsOf).
+export function toSyncPosRegister(
+  row: PosRegisterRow,
+  branchId: string,
+  lastShift: PosLastShift | null,
+): SyncPosRegister {
   return {
     id: row.id,
     code: row.code,
@@ -55,15 +61,69 @@ export function toSyncPosRegister(row: PosRegisterRow, branchId: string): SyncPo
     maxDiscountPercent: row.maxDiscountPercent,
     paperWidth: row.paperWidth,
     receiptFooter: row.receiptFooter,
+    overShortAccountId: row.overShortAccountId,
+    varianceAlert: row.varianceAlert,
+    lockAfter: row.lockAfter,
     deviceId: row.deviceId,
+    lastShift,
     archivedAt: row.archivedAt?.toISOString() ?? null,
     version: row.version,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
 
-export function toPosRegister(row: PosRegisterRow, branchId: string): PosRegister {
-  return { ...toSyncPosRegister(row, branchId), lastNumber: row.lastNumber };
+export function toPosRegister(
+  row: PosRegisterRow,
+  branchId: string,
+  lastShift: PosLastShift | null,
+): PosRegister {
+  return { ...toSyncPosRegister(row, branchId, lastShift), lastNumber: row.lastNumber };
+}
+
+// Step 20b (decision 36): each register's latest shift, by the highest sequence, read and not
+// stored. DISTINCT ON keeps the first row of each register in the ORDER BY, which
+// pos_shifts_register_sequence_idx reads backwards. cashLeft is what should be in the drawer now:
+// what the cashier counted at the close, or, when nobody counted, what the server expects now with
+// the sales that came after that close (decision 63).
+export async function lastShiftsOf(
+  tx: Transaction,
+  registerIds: readonly string[],
+): Promise<Map<string, PosLastShift>> {
+  if (registerIds.length === 0) return new Map();
+  const rows = await tx
+    .selectDistinctOn([posShifts.registerId], {
+      registerId: posShifts.registerId,
+      id: posShifts.id,
+      sequence: posShifts.sequence,
+      status: posShifts.status,
+      countedCash: posShifts.countedCash,
+      expectedNow: sql<string | null>`CASE WHEN ${posShifts.status} = 'closed_without_count'
+        THEN (SELECT c.expected::text FROM pos_shift_cash(${posShifts.tenantId}, ${posShifts.id}) c)
+        END`,
+    })
+    .from(posShifts)
+    .where(and(eq(posShifts.tenantId, getTenantId()), inArray(posShifts.registerId, registerIds)))
+    .orderBy(posShifts.registerId, desc(posShifts.sequence));
+  return new Map(
+    rows.map((row) => [
+      row.registerId,
+      {
+        id: row.id,
+        sequence: row.sequence,
+        status: row.status,
+        cashLeft:
+          row.status === 'closed'
+            ? row.countedCash
+            : row.status === 'closed_without_count'
+              ? row.expectedNow
+              : null,
+      },
+    ]),
+  );
+}
+
+async function lastShiftOf(tx: Transaction, registerId: string): Promise<PosLastShift | null> {
+  return (await lastShiftsOf(tx, [registerId])).get(registerId) ?? null;
 }
 
 // What the audit log shows of a register's form: the warehouse by its code, the accounts by
@@ -156,8 +216,12 @@ export class PosRegistersService {
           ),
         )
         .orderBy(asc(posRegisters.code));
+      const lastShifts = await lastShiftsOf(
+        tx,
+        rows.map((row) => row.register.id),
+      );
       return rows.map((row) => ({
-        ...toPosRegister(row.register, row.branchId),
+        ...toPosRegister(row.register, row.branchId, lastShifts.get(row.register.id) ?? null),
         holder:
           row.deviceName === null || row.userName === null
             ? null
@@ -169,7 +233,7 @@ export class PosRegistersService {
   get(id: string): Promise<PosRegister> {
     return this.withTenant(async (tx) => {
       const row = await this.find(tx, id);
-      return toPosRegister(row, await this.branchOf(tx, row.warehouseId));
+      return this.answer(tx, row, await this.branchOf(tx, row.warehouseId));
     });
   }
 
@@ -178,6 +242,7 @@ export class PosRegistersService {
       return await this.withTenant(async (tx) => {
         const warehouse = await this.activeWarehouse(tx, input.warehouseId);
         await this.checkAccounts(tx, input.accounts);
+        await this.checkOverShort(tx, input.overShortAccountId);
         const [row] = await tx
           .insert(posRegisters)
           .values({
@@ -189,6 +254,7 @@ export class PosRegistersService {
             maxDiscountPercent: input.maxDiscountPercent,
             paperWidth: input.paperWidth,
             receiptFooter: input.receiptFooter,
+            ...this.shiftColumns(input),
             createdBy: currentPrincipal().userId,
             updatedBy: currentPrincipal().userId,
           })
@@ -200,7 +266,8 @@ export class PosRegistersService {
           entityId: row.id,
           changes: created({ code: row.code, ...(await this.snapshot(tx, row)) }),
         });
-        return toPosRegister(row, warehouse.branchId);
+        // A new register has had no shift
+        return toPosRegister(row, warehouse.branchId, null);
       });
     } catch (error) {
       throw databaseError(error);
@@ -226,6 +293,7 @@ export class PosRegistersService {
           throw wrongBranch();
         }
         await this.checkAccounts(tx, input.accounts);
+        await this.checkOverShort(tx, input.overShortAccountId);
         const [after] = await tx
           .update(posRegisters)
           .set({
@@ -235,6 +303,7 @@ export class PosRegistersService {
             maxDiscountPercent: input.maxDiscountPercent,
             paperWidth: input.paperWidth,
             receiptFooter: input.receiptFooter,
+            ...this.shiftColumns(input),
             version: sql`${posRegisters.version} + 1`,
             updatedBy: currentPrincipal().userId,
           })
@@ -247,7 +316,7 @@ export class PosRegistersService {
           entityId: id,
           changes: diff(await this.snapshot(tx, before), await this.snapshot(tx, after)),
         });
-        return toPosRegister(after, warehouse.branchId);
+        return this.answer(tx, after, warehouse.branchId);
       });
     } catch (error) {
       throw databaseError(error);
@@ -260,7 +329,7 @@ export class PosRegistersService {
         const before = await this.lock(tx, id);
         if (before.version !== version) throw versionConflict();
         if ((before.archivedAt !== null) === archived) {
-          return toPosRegister(before, await this.branchOf(tx, before.warehouseId));
+          return this.answer(tx, before, await this.branchOf(tx, before.warehouseId));
         }
         // Decision 33: only the device knows whether a sale of it still waits in its outbox
         if (archived && before.deviceId !== null) throw inUse();
@@ -283,7 +352,7 @@ export class PosRegistersService {
           entityType: 'pos_register',
           entityId: id,
         });
-        return toPosRegister(after, branchId);
+        return this.answer(tx, after, branchId);
       });
     } catch (error) {
       throw databaseError(error);
@@ -301,7 +370,7 @@ export class PosRegistersService {
         const device = await this.ownDevice(tx, deviceId);
         const before = await this.lock(tx, id);
         const branchId = await this.branchOf(tx, before.warehouseId);
-        if (before.deviceId === device.id) return toPosRegister(before, branchId);
+        if (before.deviceId === device.id) return this.answer(tx, before, branchId);
         if (before.archivedAt !== null) {
           throw new AppError(409, 'pos_register_archived', 'This register is archived.');
         }
@@ -327,7 +396,9 @@ export class PosRegistersService {
           entityId: id,
           changes: { device: { from: null, to: device.name } },
         });
-        return toPosRegister(after, branchId);
+        // Step 20b (decision 17): with its latest shift, so the device numbers its first shift on
+        // from it and compares the opening count with what it left
+        return this.answer(tx, after, branchId);
       });
     } catch (error) {
       throw databaseError(error);
@@ -337,15 +408,20 @@ export class PosRegistersService {
   // The device lets go of its register: the app calls it at sign-out, after it checked that no
   // sale of the register waits in its outbox (decision 32). A register that is free already
   // answers as it is (a release sent again); one another device holds is not this device's to free.
+  // Step 20b (decision 32): not while a shift is open on it. The sign-out itself does not reach the
+  // server for this: the app lets go of the register first, so this refusal stops the sign-out.
   release(id: string, deviceId: string): Promise<PosRegister> {
     return this.withTenant(async (tx) => {
       const device = await this.ownDevice(tx, deviceId);
       const before = await this.lock(tx, id);
       const branchId = await this.branchOf(tx, before.warehouseId);
-      if (before.deviceId === null) return toPosRegister(before, branchId);
+      if (before.deviceId === null) return this.answer(tx, before, branchId);
       if (before.deviceId !== device.id) {
         throw new AppError(409, 'pos_register_not_held', 'This device does not hold the register.');
       }
+      // The register is locked FOR UPDATE: a shift that opens now waits (0054's guard), then finds
+      // the register free and is refused
+      if ((await lastShiftOf(tx, id))?.status === 'open') throw shiftStillOpen();
       const after = await this.setHolder(tx, id, null);
       await audit(tx, {
         action: 'pos_register.released',
@@ -353,8 +429,17 @@ export class PosRegistersService {
         entityId: id,
         changes: { device: { from: device.name, to: null } },
       });
-      return toPosRegister(after, branchId);
+      return this.answer(tx, after, branchId);
     });
+  }
+
+  // The register as the API answers it, with its latest shift
+  private async answer(
+    tx: Transaction,
+    row: PosRegisterRow,
+    branchId: string,
+  ): Promise<PosRegister> {
+    return toPosRegister(row, branchId, await lastShiftOf(tx, row.id));
   }
 
   // No version: see the class's comment
@@ -496,6 +581,41 @@ export class PosRegistersService {
       .for('share');
   }
 
+  // Step 20b (decision 13): where a difference in the cash count goes. An active income or expense
+  // account that is not a group: a difference is a gain or a loss of the shop, never money kept
+  // somewhere. FOR SHARE like the payment accounts. One answer for every reason it is not usable.
+  private async checkOverShort(tx: Transaction, id: string): Promise<void> {
+    const [account] = await tx
+      .select({
+        type: ledgerAccounts.type,
+        isGroup: ledgerAccounts.isGroup,
+        archivedAt: ledgerAccounts.archivedAt,
+      })
+      .from(ledgerAccounts)
+      .where(and(eq(ledgerAccounts.tenantId, getTenantId()), eq(ledgerAccounts.id, id)))
+      .for('share');
+    if (
+      !account ||
+      account.isGroup ||
+      account.archivedAt !== null ||
+      (account.type !== 'income' && account.type !== 'expense')
+    ) {
+      throw fieldError(
+        'pos_over_short_invalid',
+        'overShortAccountId',
+        'Pick an active income or expense account.',
+      );
+    }
+  }
+
+  private shiftColumns(input: PosRegisterInput | UpdatePosRegisterInput) {
+    return {
+      overShortAccountId: input.overShortAccountId,
+      varianceAlert: input.varianceAlert,
+      lockAfter: input.lockAfter,
+    };
+  }
+
   private accountColumns(accounts: PosRegisterInput['accounts']) {
     return {
       cashAccountId: accounts.cash,
@@ -506,10 +626,13 @@ export class PosRegistersService {
   }
 
   private async snapshot(tx: Transaction, row: PosRegisterRow): Promise<Snapshot> {
-    const ids = POS_PAYMENT_METHODS.flatMap((method) => {
-      const id = accountOf(row, method);
-      return id === null ? [] : [id];
-    });
+    const ids = [
+      ...POS_PAYMENT_METHODS.flatMap((method) => {
+        const id = accountOf(row, method);
+        return id === null ? [] : [id];
+      }),
+      ...(row.overShortAccountId === null ? [] : [row.overShortAccountId]),
+    ];
     const codes = new Map(
       (
         await tx
@@ -536,6 +659,10 @@ export class PosRegistersService {
       maxDiscountPercent: row.maxDiscountPercent,
       paperWidth: row.paperWidth,
       receiptFooter: row.receiptFooter,
+      overShortAccount:
+        row.overShortAccountId === null ? null : (codes.get(row.overShortAccountId) ?? null),
+      varianceAlert: row.varianceAlert,
+      lockAfter: row.lockAfter,
     };
   }
 }

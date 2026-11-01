@@ -306,8 +306,21 @@ function later<E extends Pick<OutboxEntry, 'seq' | 'customerId'>>(
 // number of a refused sale (the register's last number counts it), so the next device on the
 // register never prints it again. A sale never sent has a number the server does not know yet, and
 // a paper receipt already has it.
+// Step 20b: so does a shift's command. The drawer was counted, the money moved: the books must get
+// it, and only a refusal (a bug, decision 25) lets the person throw it away.
+const DONE_AT_THE_COUNTER: ReadonlySet<OutboxRow['type']> = new Set([
+  'pos_sale.create',
+  'pos_shift.open',
+  'pos_cash_movement.create',
+  'pos_shift.close',
+]);
+
+export function isCounterCommand(type: OutboxRow['type']): boolean {
+  return DONE_AT_THE_COUNTER.has(type);
+}
+
 function mayGo(item: Pick<OutboxRow, 'type' | 'status'>): boolean {
-  return item.status !== 'sending' && (item.type !== 'pos_sale.create' || item.status === 'failed');
+  return item.status !== 'sending' && (!isCounterCommand(item.type) || item.status === 'failed');
 }
 
 // What goes with an entry when it is discarded: a new customer takes every later command on that

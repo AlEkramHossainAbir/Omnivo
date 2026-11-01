@@ -10,6 +10,7 @@ import {
   contractErrorMap,
   formatPosNumber,
   moneyAccountIds,
+  POS_LOCK_AFTER,
   POS_PAPER_WIDTHS,
   POS_PAYMENT_METHODS,
   POS_REGISTER_STATUSES,
@@ -79,6 +80,9 @@ const FIELD_NAMES = [
   'maxDiscountPercent',
   'paperWidth',
   'receiptFooter',
+  'overShortAccountId',
+  'varianceAlert',
+  'lockAfter',
 ] as const satisfies readonly Path<FormValues>[];
 
 function RegisterForm({
@@ -103,6 +107,20 @@ function RegisterForm({
       .filter((account) => ids.has(account.id))
       .toSorted((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   }, [accounts]);
+  // Step 20b: where a count's difference goes. The API takes an active income or expense account
+  // that is not a group (pos_over_short_invalid), so the select offers only those.
+  const overShortAccounts = useMemo(
+    () =>
+      (accounts ?? [])
+        .filter(
+          (account) =>
+            !account.isGroup &&
+            account.archivedAt === null &&
+            (account.type === 'income' || account.type === 'expense'),
+        )
+        .toSorted((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })),
+    [accounts],
+  );
   const {
     register,
     handleSubmit,
@@ -124,6 +142,11 @@ function RegisterForm({
       maxDiscountPercent: current?.maxDiscountPercent ?? '',
       paperWidth: current?.paperWidth ?? '80',
       receiptFooter: current?.receiptFooter ?? '',
+      // Step 20b: a register made in 20a has no over/short account yet (decision 42), so the select
+      // starts empty and the save asks for one. A new register starts with ৳500 and 5 minutes.
+      overShortAccountId: current?.overShortAccountId ?? '',
+      varianceAlert: current?.varianceAlert ?? '500',
+      lockAfter: current?.lockAfter ?? '5',
       version: current?.version ?? 1,
     } satisfies FormValues,
   });
@@ -297,6 +320,45 @@ function RegisterForm({
             error={errors.paperWidth?.message}
           />
         </div>
+        {/* Step 20b: what a shift needs from its register (decisions 5, 7, 13–15) */}
+        <fieldset className="grid gap-4">
+          <legend className="text-label font-medium">{t('registers.shiftTitle')}</legend>
+          <p className="-mt-2 text-label text-ink-3">{t('registers.shiftHint')}</p>
+          <SelectField
+            label={t('registers.overShortAccount')}
+            hint={t('registers.overShortHint')}
+            options={[
+              { value: '', label: t('registers.accountPlaceholder') },
+              ...overShortAccounts.map((account) => ({
+                value: account.id,
+                label: `${account.code} · ${account.name}`,
+              })),
+            ]}
+            {...register('overShortAccountId')}
+            error={errors.overShortAccountId?.message}
+          />
+          <div className="grid gap-5 sm:grid-cols-2 sm:gap-x-4">
+            <TextField
+              label={t('registers.varianceAlert')}
+              hint={t('registers.varianceAlertHint')}
+              inputMode="numeric"
+              align="end"
+              placeholder="500"
+              {...register('varianceAlert')}
+              error={errors.varianceAlert?.message}
+            />
+            <SelectField
+              label={t('registers.lockAfter')}
+              hint={t('registers.lockAfterHint')}
+              options={POS_LOCK_AFTER.map((value) => ({
+                value,
+                label: t(`registers.lockAfters.${value}`),
+              }))}
+              {...register('lockAfter')}
+              error={errors.lockAfter?.message}
+            />
+          </div>
+        </fieldset>
         <TextAreaField
           label={t('registers.receiptFooter')}
           optional

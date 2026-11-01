@@ -10,6 +10,7 @@ import {
 import {
   customerGroups,
   parties,
+  posCashReasons,
   posRegisters,
   priceLists,
   productCategories,
@@ -26,7 +27,8 @@ import { z } from 'zod';
 
 import type { Transaction } from '../common/tenant/with-tenant.js';
 import { toWarehouse } from '../inventory/warehouses.service.js';
-import { toSyncPosRegister } from '../pos/pos-registers.service.js';
+import { toPosCashReason } from '../pos/pos-cash-reasons.service.js';
+import { lastShiftsOf, toSyncPosRegister } from '../pos/pos-registers.service.js';
 import { productsOf } from '../products/product-read.js';
 import { toUnit } from '../products/units.service.js';
 import { customersOf } from '../sales/customer-read.js';
@@ -113,7 +115,9 @@ const stockRowSchema = z.object({
 //   price_list_item     its product active and its list active (decision 27)
 //   customer            a customer (not only a supplier), active
 //   stock               in an active warehouse of the branch, not zero, its product active
-//   pos_register        active, its warehouse in the device's branch (step 20a)
+//   pos_register        active, its warehouse in the device's branch (step 20a), with its latest
+//                       shift (step 20b)
+//   pos_cash_reason     active, all of them (step 20b): a reason belongs to no branch
 export const LOADERS: Record<SyncEntity, Loader> = {
   // One row, keyed by the workspace's id (the contract's settings key)
   settings: async (tx, scope, pick) => {
@@ -227,7 +231,8 @@ export const LOADERS: Record<SyncEntity, Loader> = {
   // Step 20a (decision 20): the registers of the branch, active ones, without the last number. The
   // branch is the warehouse's, so the join decides it: a register whose warehouse moved to another
   // branch drops out here (0052 logs it). Its warehouse may be archived: the register still is the
-  // branch's, and the device keeps it.
+  // branch's, and the device keeps it. Step 20b (decision 36): with its latest shift, read for the
+  // page's registers in one query; a shift that opens or closes logs its register (0054).
   pos_register: async (tx, scope, pick) => {
     const { where, limit } = byId(posRegisters.id, pick);
     const rows = await tx
@@ -250,14 +255,39 @@ export const LOADERS: Record<SyncEntity, Loader> = {
       )
       .orderBy(asc(posRegisters.id))
       .limit(limit);
+    const lastShifts = await lastShiftsOf(
+      tx,
+      rows.map((row) => row.register.id),
+    );
     return rows.map((row) => ({
       sort: [row.register.id],
       change: {
         op: 'upsert',
         entity: 'pos_register',
         key: row.register.id,
-        data: toSyncPosRegister(row.register, row.branchId),
+        data: toSyncPosRegister(
+          row.register,
+          row.branchId,
+          lastShifts.get(row.register.id) ?? null,
+        ),
       },
+    }));
+  },
+
+  // Step 20b (decision 20): every active reason; an archived one is a delete (0054 logs it)
+  pos_cash_reason: async (tx, scope, pick) => {
+    const { where, limit } = byId(posCashReasons.id, pick);
+    const rows = await tx
+      .select()
+      .from(posCashReasons)
+      .where(
+        and(eq(posCashReasons.tenantId, scope.tenantId), isNull(posCashReasons.archivedAt), where),
+      )
+      .orderBy(asc(posCashReasons.id))
+      .limit(limit);
+    return rows.map((row) => ({
+      sort: [row.id],
+      change: { op: 'upsert', entity: 'pos_cash_reason', key: row.id, data: toPosCashReason(row) },
     }));
   },
 

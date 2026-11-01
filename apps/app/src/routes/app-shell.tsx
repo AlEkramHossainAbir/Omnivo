@@ -28,6 +28,7 @@ import {
   LockKeyIcon,
   Logout01Icon,
   MoneyExchange01Icon,
+  MoneyExchange03Icon,
   MoneyReceive02Icon,
   MoneyReceiveCircleIcon,
   MoneySend02Icon,
@@ -61,6 +62,7 @@ import {
   UserGroup03Icon,
   UserGroupIcon,
   UserMultiple02Icon,
+  UserTime01Icon,
   WarehouseIcon,
   Wifi01Icon,
   WifiDisconnected02Icon,
@@ -106,6 +108,10 @@ import { useOnline } from '../lib/use-online';
 // budget, for a dialog most sessions never open.
 const SignOutDialog = lazy(async () => ({
   default: (await import('../components/sign-out-dialog')).SignOutDialog,
+}));
+// Step 20b: "Close the shift first", from the same chunk
+const ShiftOpenDialog = lazy(async () => ({
+  default: (await import('../components/sign-out-dialog')).ShiftOpenDialog,
 }));
 // Step 19a: Safari's how-to, the same way: opened once per device at most
 const InstallDialog = lazy(async () => ({
@@ -340,11 +346,15 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
   const can = useCan();
   // Step 17a: how many documents wait for this person's decision, polled like the bell's badge
   const { data: waiting = 0 } = useQuery(waitingCountQuery(me?.tenant.id ?? ''));
-  // Step 18b: sign out at once with nothing on the device, else ask
-  const { waiting: unsynced } = useSyncSummary();
+  // Step 18b: sign out at once with nothing on the device, else ask. Step 20b (decision 6): an
+  // open POS shift comes first: it is closed before anything else.
+  const { waiting: unsynced, openShift } = useSyncSummary();
   const [asking, setAsking] = useState(false);
+  const [shiftOpen, setShiftOpen] = useState(false);
+  const navigate = useNavigate();
   const signOut = () => {
-    if (unsynced > 0) setAsking(true);
+    if (openShift !== null) setShiftOpen(true);
+    else if (unsynced > 0) setAsking(true);
     else void logout();
   };
   // Step 19a (decision 20): Chrome's own prompt, or the dialog with Safari's steps
@@ -443,6 +453,13 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
             <NavLink to="/pos/sales" icon={ReceiptDollarIcon}>
               {t('nav.posSales')}
             </NavLink>
+            {/* Step 20b (decision 26): the shifts show how short a drawer was, so only for the
+                people who look after the counters */}
+            {can('pos.shift.manage') && (
+              <NavLink to="/pos/shifts" icon={UserTime01Icon}>
+                {t('nav.posShifts')}
+              </NavLink>
+            )}
             <NavLink to="/quotations" icon={Note01Icon}>
               {t('nav.quotations')}
             </NavLink>
@@ -605,6 +622,10 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
             <NavLink to="/pos/registers" icon={Cashier02Icon}>
               {t('nav.registers')}
             </NavLink>
+            {/* Step 20b (decision 67): next to the registers, read by everyone like them */}
+            <NavLink to="/pos/cash-reasons" icon={MoneyExchange03Icon}>
+              {t('nav.cashReasons')}
+            </NavLink>
             <NavLink to="/branches" icon={Store01Icon}>
               {t('nav.branches')}
             </NavLink>
@@ -667,6 +688,19 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
             count={unsynced}
             onClose={() => {
               setAsking(false);
+            }}
+          />
+        </Suspense>
+      )}
+      {shiftOpen && openShift !== null && (
+        <Suspense fallback={null}>
+          <ShiftOpenDialog
+            number={openShift}
+            onClose={() => {
+              setShiftOpen(false);
+            }}
+            onCloseShift={() => {
+              void navigate({ to: '/pos', search: { close: true } });
             }}
           />
         </Suspense>

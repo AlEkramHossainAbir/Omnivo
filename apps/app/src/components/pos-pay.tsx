@@ -66,6 +66,7 @@ function firstRow(): PaymentRow {
 export function PayDialog({
   copy,
   register,
+  shiftId,
   cart,
   total,
   date,
@@ -76,6 +77,8 @@ export function PayDialog({
 }: {
   copy: LocalCopy;
   register: SyncPosRegister;
+  // Step 20b: the open shift the sale is made in
+  shiftId: string;
   cart: Cart;
   total: string;
   date: string;
@@ -121,6 +124,7 @@ export function PayDialog({
       ...saleValues({
         cart,
         registerId: register.id,
+        shiftId,
         date,
         soldAt,
         pricesIncludeVat,
@@ -142,6 +146,11 @@ export function PayDialog({
       });
       if (result.kind === 'not-held') {
         setError('pos_register_not_held');
+        return;
+      }
+      // Step 20b: the shift was closed in another tab meanwhile; this screen shows the open card
+      if (result.kind === 'no-shift') {
+        setError('pos_shift_closed');
         return;
       }
       // Online it goes at once; offline it waits in the outbox (the done dialog says so)
@@ -408,6 +417,8 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
     ['F2', t('pos.keys.search')],
     ['F4', t('pos.keys.customer')],
     ['F7', t('pos.keys.billDiscount')],
+    ['F8', t('pos.keys.hold')],
+    ['F9', t('pos.keys.held')],
     ['F12', t('pos.keys.pay')],
     ['Enter', t('pos.keys.complete')],
     ['Enter', t('pos.keys.newSale')],

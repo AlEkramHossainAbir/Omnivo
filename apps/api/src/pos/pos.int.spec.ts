@@ -271,6 +271,10 @@ function registerForm(code: string, warehouse: Warehouse, extra: object = {}) {
     maxDiscountPercent: '',
     paperWidth: '80',
     receiptFooter: '',
+    // Step 20b: a register needs its over/short account; the limit and the lock as the form starts
+    overShortAccountId: accountId('5350'),
+    varianceAlert: '500',
+    lockAfter: '5',
     ...extra,
   };
 }
@@ -293,6 +297,9 @@ function editForm(register: PosRegister, extra: object = {}) {
     maxDiscountPercent: register.maxDiscountPercent,
     paperWidth: register.paperWidth,
     receiptFooter: register.receiptFooter ?? '',
+    overShortAccountId: register.overShortAccountId ?? '',
+    varianceAlert: register.varianceAlert,
+    lockAfter: register.lockAfter,
     version: register.version,
     ...extra,
   };

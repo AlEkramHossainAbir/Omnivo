@@ -39,6 +39,9 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // pos_sale (step 20a): a POS sale books everything in one entry: Dr each payment's account, Cr Sales
 // and VAT payable, and Dr Cost of goods sold / Cr Inventory for its goods. It moves stock, so it is
 // a stock document's entry too: only a POS return (step 20c) undoes it.
+// pos_shift (step 20b): the cash of a shift. Its opening difference (or a first shift's float),
+// each pay in and pay out, and its closing difference, each an entry of its own, all pointing at
+// the shift.
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -60,6 +63,7 @@ export const JOURNAL_SOURCES = [
   'purchase_debit_note',
   'purchase_refund',
   'pos_sale',
+  'pos_shift',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -114,12 +118,23 @@ export function isPurchaseJournalSource(value: string): value is PurchaseJournal
   return PURCHASE_JOURNAL_SOURCES.some((source) => source === value);
 }
 
+// The sources of a POS shift (step 20b). The journal's Reverse refuses them (journal_is_pos): the
+// cash was counted or moved, so a mistake is put right by the next count, or by a pay in or pay
+// out the other way.
+export const POS_JOURNAL_SOURCES = ['pos_shift'] as const satisfies readonly JournalSource[];
+export type PosJournalSource = (typeof POS_JOURNAL_SOURCES)[number];
+
+export function isPosJournalSource(value: string): value is PosJournalSource {
+  return POS_JOURNAL_SOURCES.some((source) => source === value);
+}
+
 // Every source whose entry points at the document that made it (journal_entries_document_check in
 // the database holds the same list)
 export const DOCUMENT_JOURNAL_SOURCES = [
   ...STOCK_JOURNAL_SOURCES,
   ...SALES_JOURNAL_SOURCES,
   ...PURCHASE_JOURNAL_SOURCES,
+  ...POS_JOURNAL_SOURCES,
 ] as const satisfies readonly JournalSource[];
 
 // '2026-07-01' and -1 → '2026-06-30'. The arithmetic runs in UTC, so no time zone can move the

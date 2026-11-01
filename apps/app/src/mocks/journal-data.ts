@@ -7,6 +7,7 @@ import {
   fiscalYearOf,
   formatDocumentNumber,
   isNegativeMoney,
+  isPosJournalSource,
   isPurchaseJournalSource,
   isSalesJournalSource,
   isStockJournalSource,
@@ -276,7 +277,9 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
   if (debits !== credits) throw new MockProblem(409, 'journal_unbalanced');
   const oldWork = entry.source === 'reversal' || entry.source === 'year_close';
   checkLines(data, entry.lines.map(asInput), {
-    allowArchived: oldWork,
+    // Step 20b (decision 44): a shift's cash was counted or moved already, so it posts to an
+    // account archived since, like the API's posting for pos_shift
+    allowArchived: oldWork || entry.source === 'pos_shift',
     // Step 17c: a bill clears "goods received not billed", like the API's allowStock. Step 17d: so
     // does a debit note, for goods that went back.
     allowStock:
@@ -330,6 +333,8 @@ export function reverseEntry(
   if (isPurchaseJournalSource(entry.source) && !allowPurchase) {
     throw new MockProblem(409, 'journal_is_purchase');
   }
+  // Step 20b: a shift's cash is put right by the next count, or a pay in or out the other way
+  if (isPosJournalSource(entry.source)) throw new MockProblem(409, 'journal_is_pos');
   if (entry.reversedBy !== null) throw new MockProblem(409, 'journal_already_reversed');
   if (date < entry.date) {
     throw new MockProblem(409, 'journal_reversal_date', { date: ['journal_reversal_date'] });

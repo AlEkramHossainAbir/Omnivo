@@ -27,11 +27,12 @@ import {
   renewServerKey,
   saveDevice,
   setPin,
+  shiftState,
   SyncDatabase,
   SyncEngine,
   syncedAtOf,
   type Unlock,
-  waitingSales,
+  waitingAtCounter,
   watch,
 } from '@omnivo/sync';
 import { toast } from '@omnivo/ui';
@@ -153,6 +154,9 @@ export function startLocalData(input: { tenantId: string; userId: string }): () 
     lockNow: () => {
       lockNow(session);
     },
+    lockIdle: (minutes) => {
+      lockNow(session, minutes);
+    },
   });
   void setUp(session);
   return () => {
@@ -177,6 +181,7 @@ export function stopLocalData(): void {
     savePin: ended,
     closePin: () => undefined,
     lockNow: () => undefined,
+    lockIdle: () => undefined,
   });
   syncSummaryStore.setState(NO_SUMMARY);
 }
@@ -457,10 +462,12 @@ async function showLock(
   serverKey: Uint8Array<ArrayBuffer> | null,
 ): Promise<void> {
   const { db } = opening;
-  const [status, waiting, legacy] = await Promise.all([
+  const [status, waiting, legacy, shift] = await Promise.all([
     keyStatus(db),
     db.outbox.count(),
     db.legacyOutbox.count(),
+    // Step 20b: from the row's clear fields, so the lock screen's Sign out can say it first
+    shiftState(db),
   ]);
   if (closed(opening)) return;
   set({
@@ -469,6 +476,7 @@ async function showLock(
       reason,
       status,
       waiting: waiting + legacy,
+      openShift: shift?.status === 'open' ? shift.number : null,
       unlock: (pin) => unlock(session, opening, reason, serverKey, pin),
       // Decision 35: the PIN goes (a PIN nobody remembers only helps someone guessing it). The
       // lock screen then ends the sign-in: session.ts imports this module (logout), so this one
@@ -591,6 +599,14 @@ async function start(
     engine.subscribe(() => {
       syncSummaryStore.setState({ syncing: engine.getStatus().syncing });
     }),
+    // Step 20b (decision 6): the open shift, for the sign-out (sync-summary.ts)
+    watch(
+      () => shiftState(db),
+      (shift) => {
+        syncSummaryStore.setState({ openShift: shift?.status === 'open' ? shift.number : null });
+      },
+      () => undefined,
+    ),
     // Step 18c: the time of the last sync, for the limits (sync-summary.ts: useSyncAge)
     watch(
       () => readPullState(db),
@@ -670,10 +686,11 @@ function reopen(session: Session): void {
 
 // Step 19b (decision 4): "Lock now". The flag first, so a reload from here on shows the lock screen
 // too, and the other tabs lock (followLock). Closing the copy drops its key and its in-memory
-// tables; it then opens again only as far as the lock screen.
-function lockNow(session: Session): void {
+// tables; it then opens again only as far as the lock screen. Step 20b: the POS's idle lock is
+// this too, with its minutes in the flag.
+function lockNow(session: Session, idleMinutes?: number): void {
   session.locked = true;
-  markLocked();
+  markLocked(idleMinutes);
   reopen(session);
 }
 
@@ -736,7 +753,9 @@ async function revoke(session: Session): Promise<void> {
 
 // Step 20a (decision 14): signing out lets go of the register this device holds, so the next
 // cashier's device can take it. Only with no sale of it waiting in the outbox: the server must
-// receive every number before another device goes on from its last one. logout() calls this
+// receive every number before another device goes on from its last one. Step 20b: nor a shift's
+// command, nor an open shift (the server refuses that, pos_shift_still_open; the sign-out asks
+// to close it first anyway, decision 6). logout() calls this
 // before the server's session ends (the release needs it). No copy open (locked, not set up), no
 // connection, or a refusal: the register stays with this device, and the sign-out goes on. The
 // next sign-in on this browser is the same device and takes it back; a lost PC is revoked, which
@@ -746,7 +765,8 @@ export async function releaseRegister(): Promise<void> {
   const { device } = localDataStore.getState();
   if (!session || device.kind !== 'ready') return;
   const claim = await readClaim(device.copy);
-  if (!claim || (await waitingSales(device.copy)) > 0) return;
+  if (!claim || (await waitingAtCounter(device.copy)) > 0) return;
+  if ((await shiftState(device.copy.db))?.status === 'open') return;
   await call(routes.pos.releaseRegister, {
     params: { id: claim.registerId },
     body: { deviceId: session.identity.id },

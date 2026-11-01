@@ -1,11 +1,14 @@
 import type {
+  CashCount,
   Product,
+  ShiftCash,
   SyncCategory,
   SyncCommand,
   SyncCommandError,
   SyncCustomer,
   SyncCustomerGroup,
   SyncEntity,
+  SyncPosCashReason,
   SyncPosRegister,
   SyncPriceList,
   SyncPriceListItem,
@@ -17,6 +20,7 @@ import type {
 } from '@omnivo/contracts';
 import { Dexie, type Table } from 'dexie';
 
+import type { PosCart } from './carts.js';
 import type { Box } from './crypto.js';
 import type { KeyRecord } from './keys.js';
 
@@ -116,6 +120,10 @@ export interface OutboxEntry {
   total: string | null;
   // When it was saved, by this device's clock: shown, never sent (decision 6)
   savedAt: string;
+  // Step 20b: the shift a POS command belongs to (its open, its sales, its movements, its close),
+  // for the order the push sends them in (push.ts). Missing on every other command, and on a sale
+  // saved before 20b.
+  shiftId?: string;
 }
 
 // The part of an entry that is sealed: everything a person typed or read
@@ -129,7 +137,7 @@ export type OutboxBody = Pick<
 // outbox from these alone, inside one transaction (a transaction cannot wait for Web Crypto).
 export interface OutboxRow extends Pick<
   OutboxEntry,
-  'seq' | 'status' | 'sent' | 'customerId' | 'key'
+  'seq' | 'status' | 'sent' | 'customerId' | 'key' | 'shiftId'
 > {
   // The command's id: the box is sealed under it, and an answer finds its row by it
   commandId: string;
@@ -166,6 +174,62 @@ export interface RegisterClaim {
   last: number;
 }
 
+// Step 20b: this device's latest shift, opened: the open one it sells on, or the last one it closed
+// (the next open numbers on from it and compares with what it counted). Its cash is added up here
+// as the sales and the movements are saved, so the close's result needs no sale the outbox has
+// sent already.
+export interface DeviceShift {
+  id: string;
+  registerId: string;
+  sequence: number;
+  // POS1-S0042 (formatShiftNumber)
+  number: string;
+  status: 'open' | 'closed';
+  // The device's clock, and the day it opened on (a shift still open on a later day was left open)
+  openedAt: string;
+  openingDate: string;
+  opening: CashCount;
+  cash: ShiftCash;
+  // Set by the close: the count and what the device expected
+  closedAt: string | null;
+  counted: string | null;
+  expected: string | null;
+}
+
+// One row, under the key 'shift'. The shift's ids, its number and whether it is open stay clear:
+// the lock screen's Sign out and the sidebar's sign-out ask about an open shift without the key,
+// and a number like POS1-S0042 says nothing about the money. `rev` counts every write: a save
+// that read the shift writes only if nobody wrote it since (another tab sold meanwhile).
+export interface ShiftRow {
+  key: 'shift';
+  shiftId: string;
+  registerId: string;
+  number: string;
+  status: DeviceShift['status'];
+  rev: number;
+  box: Box<DeviceShift>;
+}
+
+// Step 20b: a held cart (decision 10), or the cart on the screen (key 'current'), so a reload or
+// the idle lock does not lose it. Never sent. The shift's id and the time are clear, for the
+// close's count and the list's order.
+export interface HeldCart {
+  // What the cashier typed ("Customer in the blue shirt"); null = none
+  name: string | null;
+  heldAt: string;
+  // For the list's row: "4 items · ৳1,501"
+  items: number;
+  total: string;
+  cart: PosCart;
+}
+
+export interface CartRow {
+  key: string;
+  shiftId: string;
+  heldAt: string;
+  box: Box<HeldCart>;
+}
+
 // The tables, by entity. The names are the ones the app reads (db.products, db.customers).
 export const TABLE_OF = {
   settings: 'settings',
@@ -174,6 +238,7 @@ export const TABLE_OF = {
   tax_rate: 'taxRates',
   warehouse: 'warehouses',
   pos_register: 'posRegisters',
+  pos_cash_reason: 'posCashReasons',
   price_list: 'priceLists',
   customer_group: 'customerGroups',
   product: 'products',
@@ -221,6 +286,7 @@ export class SyncDatabase extends Dexie {
   taxRates!: Table<SealedRow<TaxRate>, string>;
   warehouses!: Table<SealedRow<Warehouse>, string>;
   posRegisters!: Table<SealedRow<SyncPosRegister>, string>;
+  posCashReasons!: Table<SealedRow<SyncPosCashReason>, string>;
   priceLists!: Table<SealedRow<SyncPriceList>, string>;
   customerGroups!: Table<SealedRow<SyncCustomerGroup>, string>;
   products!: Table<ProductRow, string>;
@@ -239,6 +305,9 @@ export class SyncDatabase extends Dexie {
   legacyNotices!: Table<SyncNoticeRecord, string>;
   // Step 20a: one row (RegisterClaim)
   registerClaim!: Table<RegisterClaim, string>;
+  // Step 20b: one row (ShiftRow), and the carts
+  posShift!: Table<ShiftRow, string>;
+  posCarts!: Table<CartRow, string>;
 
   constructor(name: string) {
     super(name);
@@ -313,6 +382,13 @@ export class SyncDatabase extends Dexie {
     this.version(4).stores({
       posRegisters: 'key, gen',
       registerClaim: 'key',
+    });
+    // Step 20b: the reasons, the shift and the carts. No upgrade, like version 4: SYNC_PROTOCOL is 3
+    // now, so the next pull is a full one and brings every reason. `shiftId` finds a shift's carts.
+    this.version(5).stores({
+      posCashReasons: 'key, gen',
+      posShift: 'key',
+      posCarts: 'key, shiftId',
     });
   }
 

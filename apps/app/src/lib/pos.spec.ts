@@ -25,6 +25,7 @@ const PHONE = '01928c4e-8888-7000-8000-000000000002';
 const BAG = '01928c4e-0000-7000-8000-000000000001';
 const VAT_15 = '01928c4e-7777-7000-8000-000000000002';
 const REGISTER = '01928c4e-5555-7000-8000-000000000001';
+const SHIFT = '01928c4e-5555-7000-8000-000000000002';
 const WAREHOUSE = '01928c4e-7777-7000-8000-000000000001';
 
 function line(fields: Partial<CartLine> = {}): CartLine {
@@ -192,13 +193,14 @@ describe('the payment', () => {
     const values = saleValues({
       cart: { ...cartOf(line({ quantity: '2' })), billDiscount: '' },
       registerId: REGISTER,
+      shiftId: SHIFT,
       date: '2026-10-27',
       soldAt: '2026-10-27T10:15:00.000Z',
       pricesIncludeVat: true,
       payments: [{ key: 'a', method: 'cash', amount: '1000', reference: '' }],
     });
     const parsed = posSaleInputSchema.parse({ ...values, sequence: 1 });
-    expect(parsed).toMatchObject({ customerId: null, billDiscount: '0' });
+    expect(parsed).toMatchObject({ customerId: null, billDiscount: '0', shiftId: SHIFT });
     expect(parsed.payments[0]?.reference).toBeNull();
   });
 });

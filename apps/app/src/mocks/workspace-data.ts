@@ -42,6 +42,7 @@ import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
 import { type People, seedPeople } from './people-data';
 import { emptyPos, type MockPos, seedPos } from './pos-data';
+import { seedPosShifts } from './pos-shift-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import { seedPurchaseOrders } from './purchase-order-data';
 import type { MockExport } from './report-data';
@@ -217,6 +218,8 @@ function seed(workspace: Workspace): WorkspaceData {
   if (garments) seedDevices(data);
   // Step 20a: after the devices and the stock: a counter is held by one of them, in a warehouse
   seedPos(data, garments);
+  // Step 20b: after the counters and the accounts: a shift is open on one of them
+  seedPosShifts(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -309,7 +312,8 @@ export function transaction<T>(data: WorkspaceData, fn: () => T): T {
     // Step 17b: a goods receipt moves its order's received quantities and takes a number. Step
     // 17c: a bill makes a goods receipt and marks receipt lines billed; a payment pays bills.
     purchase: data.purchase,
-    // Step 20a: a POS sale moves stock, posts an entry and writes the sale; a refused one none
+    // Step 20a: a POS sale moves stock, posts an entry and writes the sale; a refused one none.
+    // Step 20b: the shifts and their pay ins and outs are in it too.
     pos: data.pos,
     audit: data.audit,
   });

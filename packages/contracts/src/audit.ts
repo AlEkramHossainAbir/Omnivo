@@ -221,6 +221,21 @@ export const AUDIT_ACTIONS = [
   'pos_sale.created',
   'pos_sale.overridden',
   'pos_sale.without_permission',
+  // step 20b. A shift's rows name its device like a sale's. cash_moved: a pay in or pay out (the
+  // changes name the reason and the amount). closed_without_count: by a manager online, or by the
+  // revoke of its device. expected_differs: the device's expected cash at the close was not the
+  // server's (a sale or a movement missing on one side). without_permission: like a sale's, for
+  // any of the three commands.
+  'pos_cash_reason.created',
+  'pos_cash_reason.updated',
+  'pos_cash_reason.archived',
+  'pos_cash_reason.restored',
+  'pos_shift.opened',
+  'pos_shift.cash_moved',
+  'pos_shift.closed',
+  'pos_shift.closed_without_count',
+  'pos_shift.expected_differs',
+  'pos_shift.without_permission',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -275,6 +290,8 @@ export const AUDIT_ENTITY_TYPES = [
   'device',
   'pos_register',
   'pos_sale',
+  'pos_cash_reason',
+  'pos_shift',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

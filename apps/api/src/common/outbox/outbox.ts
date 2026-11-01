@@ -42,6 +42,9 @@ export const outboxPayloadSchemas = {
   // Step 20a: a POS sale took stock below zero when it was posted. The sale's lines say what and
   // where (short_quantity, short_serials); the worker tells the people who put stock right.
   'pos.sold_short': z.object({ saleId: z.uuid() }),
+  // Step 20b: a shift's closing count was further from the expected cash than its register's
+  // limit. The shift's row has the numbers; the worker tells the managers.
+  'pos.shift_variance': z.object({ shiftId: z.uuid() }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

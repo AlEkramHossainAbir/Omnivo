@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { contractErrorMap } from './errors.js';
 import {
   formatPosNumber,
+  lockAfterMs,
   posChangeOf,
   posOverridesOf,
   posRegisterInputSchema,
@@ -20,6 +21,7 @@ const REGISTER = '0192f1d0-0000-7000-8000-000000000004';
 const VARIANT = '0192f1d0-0000-7000-8000-000000000005';
 const UNIT = '0192f1d0-0000-7000-8000-000000000006';
 const RATE = '0192f1d0-0000-7000-8000-000000000007';
+const OVER_SHORT = '0192f1d0-0000-7000-8000-000000000008';
 
 // The error codes where the form will show them: field path → code
 function errorsOf(result: { error?: { issues: { path: PropertyKey[]; message: string }[] } }) {
@@ -45,6 +47,9 @@ describe('register input', () => {
     maxDiscountPercent: '',
     paperWidth: '80',
     receiptFooter: '',
+    overShortAccountId: OVER_SHORT,
+    varianceAlert: '',
+    lockAfter: '5',
   };
 
   it('upper-cases the code, and reads the empty boxes as nothing', () => {
@@ -53,16 +58,19 @@ describe('register input', () => {
     expect(input.accounts).toEqual({ cash: CASH, card: null, bkash: BKASH, nagad: null });
     expect(input.maxDiscountPercent).toBe('0');
     expect(input.receiptFooter).toBeNull();
+    expect(input.varianceAlert).toBe('0');
     expect(registerMethods({ ...input.accounts, cash: CASH })).toEqual(['cash', 'bkash']);
   });
 
-  it('refuses a hyphen in the code, no cash account and a limit over 100%, each with its code', () => {
+  it('refuses a hyphen in the code, no cash or over/short account, a limit over 100% and a bell in paisa', () => {
     const result = posRegisterInputSchema.safeParse(
       {
         ...counter,
         code: 'POS-1',
         accounts: { ...counter.accounts, cash: '' },
         maxDiscountPercent: '100.5',
+        overShortAccountId: '',
+        varianceAlert: '500.50',
       },
       { error: contractErrorMap },
     );
@@ -70,7 +78,14 @@ describe('register input', () => {
       code: 'pos_register_code_format',
       'accounts.cash': 'pos_register_cash_required',
       maxDiscountPercent: 'pos_discount_limit_format',
+      overShortAccountId: 'pos_over_short_required',
+      varianceAlert: 'pos_variance_alert_format',
     });
+  });
+
+  it('locks the screen after the minutes chosen, or never', () => {
+    expect(lockAfterMs('5')).toBe(300_000);
+    expect(lockAfterMs('off')).toBeNull();
   });
 
   it('never changes the code once the register exists', () => {

@@ -9,13 +9,14 @@ import { Controller, useForm } from 'react-hook-form';
 
 import { type LockReason, useDeviceState } from '../lib/local-data';
 import { unlockFormSchema } from '../lib/pin';
+import { lockedIdleMinutes } from '../lib/remembered-session';
 import { logout, signInAgain } from '../lib/session';
 import { useSession } from '../lib/session-store';
 import { useOnline } from '../lib/use-online';
 import { AuthLayout } from './auth-layout';
 import { DocumentNotice } from './document-notice';
 import { PinField } from './pin-field';
-import { SignOutDialog } from './sign-out-dialog';
+import { ShiftOpenDialog, SignOutDialog } from './sign-out-dialog';
 
 const DESCRIPTIONS = {
   locked: 'pin.lock.description',
@@ -35,6 +36,7 @@ export function LockScreen() {
   const openedOffline = useSession((state) => state.openedOffline);
   const online = useOnline();
   const [asking, setAsking] = useState(false);
+  const [shiftOpen, setShiftOpen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const {
     control,
@@ -52,6 +54,12 @@ export function LockScreen() {
   const lock = device.kind === 'locked' ? device : null;
   const reason = lock?.reason ?? (openedOffline ? 'offline' : 'locked');
   const max = format.number(MAX_WRONG_PINS);
+  // Step 20b (decision 7): the POS locked itself; read once, the flag does not change while locked
+  const [idleMinutes] = useState(lockedIdleMinutes);
+  const description =
+    reason === 'locked' && idleMinutes !== null
+      ? t('pin.lock.idleDescription', { minutes: format.number(idleMinutes) })
+      : t(DESCRIPTIONS[reason]);
 
   const onSubmit = handleSubmit(async ({ pin }) => {
     if (!lock) return;
@@ -74,15 +82,17 @@ export function LockScreen() {
     await signInAgain();
   };
 
+  // Step 20b (decision 6): an open POS shift first, then the changes waiting
   const signOut = () => {
-    if (lock && lock.waiting > 0) setAsking(true);
+    if (lock?.openShift) setShiftOpen(true);
+    else if (lock && lock.waiting > 0) setAsking(true);
     else void logout();
   };
 
   return (
     <AuthLayout>
       <h1 className="text-[28px] leading-[1.2]">{t('pin.lock.title')}</h1>
-      <p className="mt-2 text-ink-2">{t(DESCRIPTIONS[reason])}</p>
+      <p className="mt-2 text-ink-2">{description}</p>
 
       {me && (
         <p className="mt-6 grid rounded-control border border-line px-3 py-2.5">
@@ -170,6 +180,15 @@ export function LockScreen() {
             {t('common.signOut')}
           </button>
         </p>
+      )}
+
+      {shiftOpen && lock?.openShift && (
+        <ShiftOpenDialog
+          number={lock.openShift}
+          onClose={() => {
+            setShiftOpen(false);
+          }}
+        />
       )}
 
       {asking && lock && (

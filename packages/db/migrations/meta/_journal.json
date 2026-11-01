@@ -372,6 +372,20 @@
       "when": 1793084263606,
       "tag": "0052_pos-sales-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793183790646,
+      "tag": "0053_pos-shifts",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793183791725,
+      "tag": "0054_pos-shifts-rules",
+      "breakpoints": true
     }
   ]
 }

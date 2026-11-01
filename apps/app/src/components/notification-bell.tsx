@@ -4,6 +4,7 @@ import {
   DEFAULT_SETTINGS,
   isApprovalDocument,
   isExportFormat,
+  isMoneyAmount,
   isNotificationType,
   isOutputDocument,
   isReportKind,
@@ -21,6 +22,7 @@ import { useState } from 'react';
 import { call } from '../lib/api';
 import { notificationsQuery, settingsQuery, unreadCountQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
+import { differenceWords } from './pos-shift-parts';
 
 // The notifications that open their own document (useOpenDocument below): step 16's failed email,
 // and step 17a's approvals (a requisition waiting for you, yours approved or sent back)
@@ -49,6 +51,9 @@ const TARGET = {
   'stock.low': '/stock/reorder',
   // Step 20a: the list that has every line a counter sold short, the one to act on (decision 30)
   'pos.sold_short': '/stock/sold-short',
+  // Step 20b: the list, for an old notification without the shift's id; one with it opens the
+  // shift (shiftOf below)
+  'pos.shift_variance': '/pos/shifts',
 } as const satisfies Record<Exclude<NotificationType, DocumentNotificationType>, string>;
 
 // A document's page from the notification's kind and id. The list of that kind when the id is
@@ -111,6 +116,14 @@ function useOpenDocument(): (params: NotificationParams) => Promise<void> {
   };
 }
 
+// Step 20b (decision 29): the variance bell opens its shift. Its id is the shift's.
+function shiftOf(notification: Notification): string | null {
+  const { id } = notification.params;
+  return notification.type === 'pos.shift_variance' && typeof id === 'string' && id !== ''
+    ? id
+    : null;
+}
+
 // The badge stops at 9+: a two-digit count would not fit the 18px circle, and past nine the exact
 // number no longer changes what you do
 function badgeText(count: number): string {
@@ -120,11 +133,16 @@ function badgeText(count: number): string {
 // An export's report and format arrive as keys (trial_balance, xlsx): their words go into the text.
 // A key this app does not know (a newer server) stays as it is.
 function useWords() {
-  const { t } = useLocale();
+  const { t, format: locale } = useLocale();
   return (params: NotificationParams): NotificationParams => {
-    const { report, format, document: kind } = params;
+    const { report, format, document: kind, difference } = params;
     return {
       ...params,
+      // Step 20b (decision 66): the variance bell's signed difference becomes "৳520 short"
+      ...(typeof difference === 'string' &&
+        isMoneyAmount(difference.replace(/^-/, '')) && {
+          difference: differenceWords(t, locale, difference),
+        }),
       // Step 16: a document's kind (invoice) becomes its name; step 17a: a requisition's too
       ...(typeof kind === 'string' &&
         isOutputDocument(kind) && { document: t(`documentOutput.kinds.${kind}`) }),
@@ -268,8 +286,11 @@ export function NotificationBell() {
                 onOpen={() => {
                   if (notification.readAt === null) markRead.mutate(notification.id);
                   setOpen(false);
+                  const shiftId = shiftOf(notification);
                   if (opensDocument(notification.type)) {
                     void openDocument(notification.params);
+                  } else if (shiftId !== null) {
+                    void navigate({ to: '/pos/shifts/$shiftId', params: { shiftId } });
                   } else {
                     void navigate({ to: TARGET[notification.type] });
                   }
