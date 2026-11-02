@@ -17,6 +17,7 @@ import { AppError } from '../common/http/app-error.js';
 import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction } from '../common/tenant/with-tenant.js';
 import { type LineInput, PostingService } from '../journal/posting.service.js';
+import { salesReturnsAccount } from '../sales/sales-books.service.js';
 
 // One amount on one side of the entry before lines are summed: + debit, − credit
 interface Amount {
@@ -330,6 +331,55 @@ export class StockBooksService {
         : [
             { accountId: accounts.costOfGoodsSold(), branchId, amount: input.cost },
             { accountId: accounts.inventory, branchId, amount: negateMoney(input.cost) },
+          ]),
+    ]);
+  }
+
+  // A POS return (step 20c): the sale's entry the other way round, for what came back. Dr the
+  // sales returns account (Settings → Sales; the Sales account itself when none is chosen) for the
+  // net / Dr Output VAT for the VAT / Cr each refund's account (an exchange's: the register's
+  // exchange account), and Dr Inventory / Cr Cost of goods sold for what the goods cost when sold.
+  // Two branches, like a sales return of 15d: the money and the goods are where they came back
+  // (the register's warehouse), the sale and its cost come off where it was made (the sale's
+  // warehouse). Online a counter takes back another branch's receipt, and that branch's sales
+  // should fall, not this one's. A return of ৳0 that cost nothing has no entry.
+  async posReturn(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: {
+      warehouseId: string;
+      saleWarehouseId: string;
+      refunds: readonly { accountId: string; amount: string }[];
+      net: string;
+      vat: string;
+      cost: string;
+    },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const returns = (await salesReturnsAccount(tx)) ?? accounts.sales();
+    const branchOf = await this.branches(tx, [
+      { warehouseId: input.warehouseId, value: '0' },
+      { warehouseId: input.saleWarehouseId, value: '0' },
+    ]);
+    const here = branchOf(input.warehouseId);
+    const sold = branchOf(input.saleWarehouseId);
+    return this.write(tx, document, 'pos_return', `POS return ${document.number}`, [
+      { accountId: returns, branchId: sold, amount: input.net },
+      { accountId: accounts.vatOutput(), branchId: sold, amount: input.vat },
+      ...input.refunds.map((refund) => ({
+        accountId: refund.accountId,
+        branchId: here,
+        amount: negateMoney(refund.amount),
+      })),
+      ...(isZeroMoney(input.cost)
+        ? []
+        : [
+            { accountId: accounts.inventory, branchId: here, amount: input.cost },
+            {
+              accountId: accounts.costOfGoodsSold(),
+              branchId: sold,
+              amount: negateMoney(input.cost),
+            },
           ]),
     ]);
   }

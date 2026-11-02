@@ -210,6 +210,9 @@ function registerForm(code: string, extra: object = {}) {
     overShortAccountId: accountId('5350'),
     varianceAlert: '500',
     lockAfter: '5',
+    // Step 20c: no exchanges, and the form's 7 days
+    exchangeAccountId: '',
+    returnDays: '7',
     ...extra,
   };
 }
@@ -924,6 +927,8 @@ describe('A shift at the front counter', () => {
       changeGiven: '0.0000',
       paidIn: '500.0000',
       paidOut: '3200.0000',
+      // Step 20c: what returns paid back in cash
+      cashRefunded: '0.0000',
     });
     expect(shift.expectedCash).toBe('2300.0000');
     // A pay in brings cash in from the reason's account; a pay out the other way
@@ -1428,6 +1433,8 @@ describe('What a shift posts', () => {
       overShortAccountId: spare.id,
       varianceAlert: now.varianceAlert,
       lockAfter: now.lockAfter,
+      exchangeAccountId: now.exchangeAccountId ?? '',
+      returnDays: String(now.returnDays),
       version: now.version,
     });
     expect(edited.statusCode, edited.body).toBe(200);

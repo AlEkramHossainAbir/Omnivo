@@ -4,6 +4,7 @@ import { contractErrorMap } from './errors.js';
 import {
   customerUpdateCommandSchema,
   deviceKeySchema,
+  posReturnCommandSchema,
   posSaleCommandSchema,
   posShiftOpenCommandSchema,
   priceListItemKey,
@@ -436,15 +437,18 @@ describe('POS on the device', () => {
     overShortAccountId: RATE,
     varianceAlert: '500',
     lockAfter: '5',
+    exchangeAccountId: null,
+    returnDays: 7,
     deviceId: COMMAND,
     lastNumber: 122,
+    lastReturnNumber: 11,
     lastShift: { id: CUSTOMER, sequence: 41, status: 'closed', cashLeft: '5000.0000' },
     archivedAt: null,
     version: 4,
     updatedAt: AT,
   };
 
-  it('keeps a register without its last number, which changes with every sale', () => {
+  it('keeps a register without its last numbers, which change with every sale and return', () => {
     const change = syncUpsertSchema.parse({
       op: 'upsert',
       entity: 'pos_register',
@@ -453,6 +457,7 @@ describe('POS on the device', () => {
     });
     expect(change.entity === 'pos_register' && change.data.code).toBe('POS1');
     expect(change.data).not.toHaveProperty('lastNumber');
+    expect(change.data).not.toHaveProperty('lastReturnNumber');
     expect(change.entity === 'pos_register' && change.data.lastShift?.sequence).toBe(41);
   });
 
@@ -557,10 +562,86 @@ describe('POS on the device', () => {
     const command = { id: COMMAND, type: 'pos_sale.create', saleId: CUSTOMER, input };
     const parsed = syncCommandSchema.parse(command);
     expect(parsed.type).toBe('pos_sale.create');
-    // A sale made before 20b, still in an outbox when the app was updated, has no shift
+    // A sale made before 20b, still in an outbox when the app was updated, has no shift; one
+    // made before 20c has no return on its payments
     expect(parsed.type === 'pos_sale.create' && parsed.input.shiftId).toBeNull();
+    expect(parsed.type === 'pos_sale.create' && parsed.input.payments[0]?.returnId).toBeNull();
     expect(errorsOf(posSaleCommandSchema.safeParse({ ...command, saleId: V4 }))).toEqual({
       saleId: 'Invalid UUID',
+    });
+  });
+
+  // Ten strips of Napa sold at POS1 on 27 October, three of them brought back since
+  const sold = {
+    id: CUSTOMER,
+    number: 'POS1-000123',
+    registerId: ORDER,
+    date: '2026-10-27',
+    soldAt: AT,
+    customer: null,
+    pricesIncludeVat: true,
+    total: '120.0000',
+    lines: [
+      {
+        id: ADDRESS,
+        variantId: VARIANT,
+        productId: PRODUCT,
+        productCode: 'P-0012',
+        productName: 'Napa 500 mg',
+        optionValues: [],
+        sku: 'NAPA-500',
+        baseUnitId: UNIT,
+        tracking: 'batch',
+        unitId: UNIT,
+        quantity: '10.0000',
+        baseQuantity: '10.0000',
+        description: 'Napa 500 mg',
+        unitPrice: '12.0000',
+        taxRate: { id: RATE, name: 'Exempt', kind: 'exempt', rate: '0.00' },
+        net: '120.0000',
+        vat: '0.0000',
+        total: '120.0000',
+        serialNumbers: [],
+        returnedSerialNumbers: [],
+        returnedQuantity: '3.0000',
+      },
+    ],
+    payments: [{ method: 'cash', amount: '120.0000' }],
+  };
+
+  it("keeps the register's recent sales, with what came back of each line", () => {
+    const change = syncUpsertSchema.parse({
+      op: 'upsert',
+      entity: 'pos_sale',
+      key: CUSTOMER,
+      data: sold,
+    });
+    expect(change.entity === 'pos_sale' && change.data.lines[0]?.returnedQuantity).toBe('3.0000');
+  });
+
+  it('takes a return back under an id the device made, so its exchange can point at it', () => {
+    const command = {
+      id: COMMAND,
+      type: 'pos_return.create',
+      returnId: BATCH,
+      input: {
+        registerId: ORDER,
+        sequence: 12,
+        shiftId: PRODUCT,
+        date: '2026-10-28',
+        returnedAt: AT,
+        saleId: CUSTOMER,
+        lines: [
+          { saleLineId: ADDRESS, quantity: '2', net: '24.0000', vat: '0.0000', serialNumbers: [] },
+        ],
+        refunds: [{ method: 'cash', amount: '24', reference: '' }],
+        note: '',
+      },
+    };
+    const parsed = syncCommandSchema.parse(command);
+    expect(parsed.type === 'pos_return.create' && parsed.input.note).toBeNull();
+    expect(errorsOf(posReturnCommandSchema.safeParse({ ...command, returnId: V4 }))).toEqual({
+      returnId: 'Invalid UUID',
     });
   });
 });

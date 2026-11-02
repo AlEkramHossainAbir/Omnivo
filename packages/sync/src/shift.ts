@@ -8,16 +8,26 @@ import {
   type PosCashMovementInput,
   type PosShiftCloseInput,
   type PosShiftOpenInput,
-  type ShiftCash,
+  type PosShiftReport,
+  type PosShiftReportKind,
   type SyncCommand,
   type SyncPosCashReason,
   type SyncPosRegister,
+  type TenderAmount,
+  tenderAmountsOf,
 } from '@omnivo/contracts';
 import { uuidv7 } from 'uuidv7';
 
 import { SCREEN_CART } from './carts.js';
 import type { LocalCopy } from './copy.js';
-import type { DeviceShift, OutboxEntry, ShiftRow, SyncDatabase } from './database.js';
+import type {
+  DeviceShift,
+  OutboxEntry,
+  ShiftRow,
+  ShiftTally,
+  StoredShift,
+  SyncDatabase,
+} from './database.js';
 import { openRows, sealEntry } from './sealed.js';
 
 // Step 20b: the shift on the device. The device opens it, adds up its cash as it sells and moves
@@ -34,9 +44,36 @@ export async function shiftState(db: SyncDatabase): Promise<ShiftState | null> {
     : null;
 }
 
+// Step 20c: nothing counted yet. A shift opened before the update starts its X report from here.
+export const EMPTY_TALLY: ShiftTally = {
+  saleCount: 0,
+  salesTotal: '0',
+  salesDiscount: '0',
+  salesVat: '0',
+  returnCount: 0,
+  returnsTotal: '0',
+  returnsVat: '0',
+  taken: [],
+  refunded: [],
+};
+
+// Step 20c: a box as a DeviceShift. A shift opened before the update was saved without the cash
+// refunded and the tally: no return was made in it, so they start at nothing.
+function deviceShiftOf(stored: StoredShift): DeviceShift {
+  return {
+    ...stored,
+    cash: { ...stored.cash, cashRefunded: stored.cash.cashRefunded ?? '0' },
+    tally: stored.tally ?? EMPTY_TALLY,
+  };
+}
+
+async function openStored(copy: LocalCopy, row: ShiftRow): Promise<DeviceShift> {
+  return deviceShiftOf(await copy.open('posShift', 'shift', row.box));
+}
+
 export async function readShift(copy: LocalCopy): Promise<DeviceShift | null> {
   const row = await copy.db.posShift.get('shift');
-  return row ? copy.open('posShift', 'shift', row.box) : null;
+  return row ? openStored(copy, row) : null;
 }
 
 // The reasons the cashier picks from, "in" first, then by name, like the settings page (decision
@@ -70,7 +107,7 @@ async function openShiftOf(
 ): Promise<{ row: ShiftRow; shift: DeviceShift } | null> {
   const row = await copy.db.posShift.get('shift');
   if (row?.shiftId !== shiftId || row.status !== 'open') return null;
-  return { row, shift: await copy.open('posShift', 'shift', row.box) };
+  return { row, shift: await openStored(copy, row) };
 }
 
 // A command of the shift, as the outbox keeps it. `chain` is its customerId: the push holds a
@@ -161,7 +198,7 @@ export async function openShift(copy: LocalCopy, save: ShiftOpenSave): Promise<S
     const claim = await db.registerClaim.get('claim');
     if (claim?.registerId !== register.id) return { kind: 'not-held' };
     const before = await db.posShift.get('shift');
-    const own = before ? await copy.open('posShift', 'shift', before.box) : null;
+    const own = before ? await openStored(copy, before) : null;
     if (own?.status === 'open') return { kind: 'open-already' };
     const start = shiftStart(register, own);
     const shift: DeviceShift = {
@@ -180,7 +217,9 @@ export async function openShift(copy: LocalCopy, save: ShiftOpenSave): Promise<S
         changeGiven: '0',
         paidIn: '0',
         paidOut: '0',
+        cashRefunded: '0',
       },
+      tally: EMPTY_TALLY,
       closedAt: null,
       counted: null,
       expected: null,
@@ -225,31 +264,74 @@ export async function openShift(copy: LocalCopy, save: ShiftOpenSave): Promise<S
 }
 
 // ---------------------------------------------------------------------------------------------
-// A sale's cash (pos.ts calls this inside its own save)
+// A sale's and a return's money (pos.ts and returns.ts call these inside their own saves)
 
-// The cash a sale brings into the shift: what it took in cash, and the change it gave back
-export function cashAfterSale(
-  cash: ShiftCash,
-  sale: { cashTaken: string; changeGiven: string },
-): ShiftCash {
+// What a sale brings into its shift: the cash it took and the change it gave back, and for the X
+// report its total, its discounts (the lines' and the bill's), its VAT and what each tender paid
+export interface SaleEffect {
+  cashTaken: string;
+  changeGiven: string;
+  total: string;
+  discount: string;
+  vat: string;
+  payments: readonly TenderAmount[];
+}
+
+// Step 20c: what a return takes out of its shift: the cash given back, and for the X report its
+// total, its VAT and what each tender paid back (an exchange's money as `exchange`)
+export interface ReturnEffect {
+  cashRefunded: string;
+  total: string;
+  vat: string;
+  refunds: readonly TenderAmount[];
+}
+
+export function shiftAfterSale(shift: DeviceShift, sale: SaleEffect): DeviceShift {
+  const { cash, tally } = shift;
   return {
-    ...cash,
-    cashTaken: addMoney(cash.cashTaken, sale.cashTaken),
-    changeGiven: addMoney(cash.changeGiven, sale.changeGiven),
+    ...shift,
+    cash: {
+      ...cash,
+      cashTaken: addMoney(cash.cashTaken, sale.cashTaken),
+      changeGiven: addMoney(cash.changeGiven, sale.changeGiven),
+    },
+    tally: {
+      ...tally,
+      saleCount: tally.saleCount + 1,
+      salesTotal: addMoney(tally.salesTotal, sale.total),
+      salesDiscount: addMoney(tally.salesDiscount, sale.discount),
+      salesVat: addMoney(tally.salesVat, sale.vat),
+      taken: tenderAmountsOf([...tally.taken, ...sale.payments]),
+    },
   };
 }
 
-// The sale's save reads the shift and writes it back with the sale; null = no open shift with
-// this id. pos.ts checks the rev inside its transaction.
-export async function shiftForSale(
+export function shiftAfterReturn(shift: DeviceShift, given: ReturnEffect): DeviceShift {
+  const { cash, tally } = shift;
+  return {
+    ...shift,
+    cash: { ...cash, cashRefunded: addMoney(cash.cashRefunded, given.cashRefunded) },
+    tally: {
+      ...tally,
+      returnCount: tally.returnCount + 1,
+      returnsTotal: addMoney(tally.returnsTotal, given.total),
+      returnsVat: addMoney(tally.returnsVat, given.vat),
+      refunded: tenderAmountsOf([...tally.refunded, ...given.refunds]),
+    },
+  };
+}
+
+// The save reads the shift and writes it back changed, with its sale or its return; null = no open
+// shift with this id. The save checks the rev inside its transaction.
+export async function shiftAfter(
   copy: LocalCopy,
   shiftId: string,
-  sale: { cashTaken: string; changeGiven: string },
-): Promise<{ before: ShiftRow; row: ShiftRow } | null> {
+  change: (shift: DeviceShift) => DeviceShift,
+): Promise<{ before: ShiftRow; row: ShiftRow; shift: DeviceShift } | null> {
   const open = await openShiftOf(copy, shiftId);
   if (!open) return null;
-  const shift = { ...open.shift, cash: cashAfterSale(open.shift.cash, sale) };
-  return { before: open.row, row: await sealShift(copy, shift, open.row.rev + 1) };
+  const shift = change(open.shift);
+  return { before: open.row, row: await sealShift(copy, shift, open.row.rev + 1), shift };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -383,4 +465,52 @@ export async function closeShift(copy: LocalCopy, save: ShiftCloseSave): Promise
     }
   }
   return tooManyTries();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 20c: the shift's reports
+
+export interface ShiftReportFields {
+  kind: PosShiftReportKind;
+  register: { code: string; name: string };
+  cashierName: string;
+  printedAt: string;
+}
+
+// The X report (the shift still open) or the Z report (closed), from the device's own shift: the
+// device prints it offline too. The X report is blind (decision 9): no drawer, so it never tells
+// the cashier what the count should come to. The Z report has the drawer, once the shift is closed
+// with a count.
+export function shiftReportOf(shift: DeviceShift, fields: ShiftReportFields): PosShiftReport {
+  const { cash, tally } = shift;
+  const drawer =
+    fields.kind === 'z' && shift.counted !== null && shift.expected !== null
+      ? {
+          ...cash,
+          expected: shift.expected,
+          counted: shift.counted,
+          difference: cashDifferenceOf(shift.counted, shift.expected),
+        }
+      : null;
+  return {
+    kind: fields.kind,
+    register: fields.register,
+    shiftNumber: shift.number,
+    cashierName: fields.cashierName,
+    openedAt: shift.openedAt,
+    closedAt: fields.kind === 'z' ? shift.closedAt : null,
+    printedAt: fields.printedAt,
+    saleCount: tally.saleCount,
+    salesTotal: tally.salesTotal,
+    salesDiscount: tally.salesDiscount,
+    salesVat: tally.salesVat,
+    returnCount: tally.returnCount,
+    returnsTotal: tally.returnsTotal,
+    returnsVat: tally.returnsVat,
+    taken: tally.taken,
+    refunded: tally.refunded,
+    paidIn: cash.paidIn,
+    paidOut: cash.paidOut,
+    drawer,
+  };
 }

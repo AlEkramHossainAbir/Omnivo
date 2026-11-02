@@ -26,6 +26,7 @@ export * from './notifications.js';
 export * from './numbering.js';
 export * from './pagination.js';
 export * from './pos.js';
+export * from './pos-returns.js';
 export * from './pos-shifts.js';
 export * from './permissions.js';
 export * from './preferences.js';

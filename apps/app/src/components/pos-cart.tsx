@@ -1,6 +1,7 @@
 import {
   Alert02Icon,
   ArrowLeft01Icon,
+  ArrowLeftRightIcon,
   Delete02Icon,
   MinusSignIcon,
   Note01Icon,
@@ -73,6 +74,9 @@ interface PosCartProps {
   onHold: () => void;
   held: number;
   onHeld: () => void;
+  // Step 20c: the number an exchange's return will most likely get, and "Drop the exchange"
+  returnNumber: string;
+  onDropExchange: () => void;
 }
 
 // Money on the screen: whole taka unless it has paisa (hasPaisa)
@@ -106,6 +110,8 @@ export function PosCart({
   onHold,
   held,
   onHeld,
+  returnNumber,
+  onDropExchange,
 }: PosCartProps) {
   const { t, format } = useLocale();
   const money = useScreenMoney();
@@ -115,6 +121,9 @@ export function PosCart({
     formatted: format.number(cart.lines.length),
   });
   const billOver = overrides.some((override) => override.kind === 'bill_discount');
+  // Step 20c: a cart with an exchange is not held or swapped for a held one: the goods came back
+  // already, and the close drops held carts. It is finished or dropped.
+  const exchange = cart.exchange ?? null;
 
   return (
     <>
@@ -144,14 +153,20 @@ export function PosCart({
             variant="secondary"
             size="sm"
             className="gap-1.5"
-            disabled={cart.lines.length === 0}
+            disabled={cart.lines.length === 0 || exchange !== null}
             onClick={onHold}
           >
             <HugeiconsIcon icon={PauseIcon} size={16} strokeWidth={1.5} />
             {t('pos.hold.hold')}
             <Kbd>F8</Kbd>
           </Button>
-          <Button variant="secondary" size="sm" className="gap-1.5" onClick={onHeld}>
+          <Button
+            variant="secondary"
+            size="sm"
+            className="gap-1.5"
+            disabled={exchange !== null}
+            onClick={onHeld}
+          >
             <HugeiconsIcon icon={Note01Icon} size={16} strokeWidth={1.5} />
             {t('pos.hold.list', { formatted: format.number(held) })}
           </Button>
@@ -160,11 +175,40 @@ export function PosCart({
             label={t('pos.clear')}
             disabled={cart.lines.length === 0}
             onClick={() => {
-              onCart(() => EMPTY_CART);
+              // The lines go; an exchange stays (it is dropped with its own link, which asks)
+              onCart((current) =>
+                current.exchange ? { ...EMPTY_CART, exchange: current.exchange } : EMPTY_CART,
+              );
               onSelect(null);
             }}
           />
         </div>
+        {/* Step 20c: an exchange cart starts with the return's money */}
+        {exchange && (
+          <div className="mx-4 mt-3 flex items-start gap-3 rounded-control border border-brand-line bg-brand-soft px-3.5 py-3">
+            <HugeiconsIcon
+              icon={ArrowLeftRightIcon}
+              size={17}
+              strokeWidth={1.5}
+              className="mt-0.5 shrink-0 text-brand"
+            />
+            <div className="grid min-w-0 flex-1 gap-0.5">
+              <span className="text-body-sm font-medium">
+                {t('pos.exchange.title', { number: returnNumber })}
+              </span>
+              <span className="text-label text-ink-2 tabular-nums">
+                {t('pos.exchange.credit', { amount: money(exchange.total) })}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={onDropExchange}
+              className="text-label font-medium whitespace-nowrap text-brand underline-offset-[3px] hover:underline"
+            >
+              {t('pos.exchange.drop')}
+            </button>
+          </div>
+        )}
         <div className="border-b border-line px-4 py-3">
           <CustomerBox cart={cart} onCart={onCart} buttonRef={customerRef} />
         </div>

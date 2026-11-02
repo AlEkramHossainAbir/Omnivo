@@ -10,11 +10,13 @@ import type {
   SyncEntity,
   SyncPosCashReason,
   SyncPosRegister,
+  SyncPosSale,
   SyncPriceList,
   SyncPriceListItem,
   SyncSettings,
   SyncStock,
   TaxRate,
+  TenderAmount,
   Unit,
   Warehouse,
 } from '@omnivo/contracts';
@@ -54,6 +56,15 @@ export interface PriceListItemRow extends SealedRow<SyncPriceListItem> {
 export interface StockRow extends SealedRow<SyncStock> {
   warehouseId: string;
   variantId: string;
+}
+
+// Step 20c: a sale of the register this device holds, for returns without a connection. The receipt
+// number is clear, for the return screen's exact search (like a barcode), and the day, for dropping
+// the rows older than POS_SALES_ON_DEVICE_DAYS. What was sold, to whom and for how much is in the
+// box.
+export interface PosSaleRow extends SealedRow<SyncPosSale> {
+  number: string;
+  date: string;
 }
 
 // Step 19b: the two tables the app keeps opened in memory (copy.ts), and how many times each was
@@ -124,6 +135,10 @@ export interface OutboxEntry {
   // for the order the push sends them in (push.ts). Missing on every other command, and on a sale
   // saved before 20b.
   shiftId?: string;
+  // Step 20c: the key of another entry this one waits for while it is on the device: a return waits
+  // for its sale (sold offline, still in the outbox), and an exchange's sale for its return. Missing
+  // on every other command.
+  after?: string;
 }
 
 // The part of an entry that is sealed: everything a person typed or read
@@ -137,7 +152,7 @@ export type OutboxBody = Pick<
 // outbox from these alone, inside one transaction (a transaction cannot wait for Web Crypto).
 export interface OutboxRow extends Pick<
   OutboxEntry,
-  'seq' | 'status' | 'sent' | 'customerId' | 'key' | 'shiftId'
+  'seq' | 'status' | 'sent' | 'customerId' | 'key' | 'shiftId' | 'after'
 > {
   // The command's id: the box is sealed under it, and an answer finds its row by it
   commandId: string;
@@ -172,12 +187,33 @@ export interface RegisterClaim {
   key: 'claim';
   registerId: string;
   last: number;
+  // Step 20c: the last number it gave a return (POS1-R000012), counted up the same way. Missing on a
+  // claim made before 20c: no return was made then, so it counts from 0.
+  lastReturn?: number;
+  // Step 20c: the register's recent sales are on the device (returns.ts → loadRegisterSales). A new
+  // claim starts without them; the POS screen reads them as soon as it is online. Missing = no.
+  salesLoaded?: boolean;
 }
 
 // Step 20b: this device's latest shift, opened: the open one it sells on, or the last one it closed
 // (the next open numbers on from it and compares with what it counted). Its cash is added up here
 // as the sales and the movements are saved, so the close's result needs no sale the outbox has
 // sent already.
+// Step 20c: what the shift's X report adds up (shift.ts → shiftReportOf), counted as the sales and
+// the returns are saved, like the cash. Per tender, only the tenders with an amount
+// (tenderAmountsOf).
+export interface ShiftTally {
+  saleCount: number;
+  salesTotal: string;
+  salesDiscount: string;
+  salesVat: string;
+  returnCount: number;
+  returnsTotal: string;
+  returnsVat: string;
+  taken: TenderAmount[];
+  refunded: TenderAmount[];
+}
+
 export interface DeviceShift {
   id: string;
   registerId: string;
@@ -190,11 +226,19 @@ export interface DeviceShift {
   openingDate: string;
   opening: CashCount;
   cash: ShiftCash;
+  tally: ShiftTally;
   // Set by the close: the count and what the device expected
   closedAt: string | null;
   counted: string | null;
   expected: string | null;
 }
+
+// Step 20c: a shift as its box may hold it. A shift opened before the update has no cash refunded
+// and no tally yet; shift.ts reads every box through deviceShiftOf(), which fills them in.
+export type StoredShift = Omit<DeviceShift, 'cash' | 'tally'> & {
+  cash: Omit<ShiftCash, 'cashRefunded'> & Partial<Pick<ShiftCash, 'cashRefunded'>>;
+  tally?: ShiftTally;
+};
 
 // One row, under the key 'shift'. The shift's ids, its number and whether it is open stay clear:
 // the lock screen's Sign out and the sidebar's sign-out ask about an open shift without the key,
@@ -207,7 +251,7 @@ export interface ShiftRow {
   number: string;
   status: DeviceShift['status'];
   rev: number;
-  box: Box<DeviceShift>;
+  box: Box<StoredShift>;
 }
 
 // Step 20b: a held cart (decision 10), or the cart on the screen (key 'current'), so a reload or
@@ -245,6 +289,7 @@ export const TABLE_OF = {
   price_list_item: 'priceListItems',
   customer: 'customers',
   stock: 'stock',
+  pos_sale: 'posSales',
 } as const satisfies Record<SyncEntity, string>;
 export type SyncTableName = (typeof TABLE_OF)[SyncEntity];
 
@@ -308,6 +353,8 @@ export class SyncDatabase extends Dexie {
   // Step 20b: one row (ShiftRow), and the carts
   posShift!: Table<ShiftRow, string>;
   posCarts!: Table<CartRow, string>;
+  // Step 20c: the register's recent sales (PosSaleRow)
+  posSales!: Table<PosSaleRow, string>;
 
   constructor(name: string) {
     super(name);
@@ -389,6 +436,11 @@ export class SyncDatabase extends Dexie {
       posCashReasons: 'key, gen',
       posShift: 'key',
       posCarts: 'key, shiftId',
+    });
+    // Step 20c: the register's recent sales. No upgrade: SYNC_PROTOCOL is 4 now, so the next pull is
+    // a full one. `number` finds a receipt, `date` the rows to drop.
+    this.version(6).stores({
+      posSales: 'key, gen, number, date',
     });
   }
 

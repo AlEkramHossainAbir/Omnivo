@@ -1,8 +1,11 @@
 import {
+  addMoney,
   addQuantity,
   formatPosNumber,
+  formatReturnNumber,
   type PosRegister,
   posChangeOf,
+  posSaleAmounts,
   type PosSaleInput,
   type Product,
   subtractQuantity,
@@ -18,8 +21,17 @@ import { SCREEN_CART } from './carts.js';
 import type { LocalCopy } from './copy.js';
 import type { RegisterClaim } from './database.js';
 import { isCounterCommand } from './outbox.js';
+import {
+  localSaleOf,
+  nextReturnSequence,
+  type PosReturnSave,
+  returnEffectOf,
+  returnEntry,
+  sealSale,
+} from './returns.js';
 import { openEntries, openRows, sealEntry } from './sealed.js';
-import { shiftForSale } from './shift.js';
+import { type SaleEffect, shiftAfter, shiftAfterReturn, shiftAfterSale } from './shift.js';
+import { readPullState } from './state.js';
 
 // Step 20a: the POS on the device. The registers of the branch come with the pull; the claim says
 // which one this device holds and the last number it gave; a sale goes into the outbox with the
@@ -43,27 +55,37 @@ export async function readClaim(copy: LocalCopy): Promise<RegisterClaim | null> 
 // (a reload that lost nothing, the claim is idempotent) answers the last number the server has
 // received, and the sales still in the outbox are past it. A claim of another register starts
 // from the server's number alone: the device let the old one go only with no sale of it waiting.
+// Step 20c: the return numbers the same way, and the register's recent sales are still to read
+// (returns.ts → loadRegisterSales) unless the claim is the one the device had.
 export async function keepClaim(
   copy: LocalCopy,
-  register: Pick<PosRegister, 'id' | 'lastNumber'>,
+  register: Pick<PosRegister, 'id' | 'lastNumber' | 'lastReturnNumber'>,
 ): Promise<RegisterClaim> {
   const { db } = copy;
   return db.transaction('rw', db.registerClaim, async () => {
     const old = await db.registerClaim.get('claim');
-    const own = old?.registerId === register.id ? old.last : 0;
+    const same = old?.registerId === register.id ? old : null;
     const claim: RegisterClaim = {
       key: 'claim',
       registerId: register.id,
-      last: Math.max(own, register.lastNumber),
+      last: Math.max(same?.last ?? 0, register.lastNumber),
+      lastReturn: Math.max(same?.lastReturn ?? 0, register.lastReturnNumber),
+      salesLoaded: same?.salesLoaded ?? false,
     };
     await db.registerClaim.put(claim);
     return claim;
   });
 }
 
-// After the server let the register go (Change register, sign-out)
+// After the server let the register go (Change register, sign-out). Step 20c: its sales go with
+// it, in the same transaction: the device keeps only the sales of the register it holds, and no
+// pull would delete them (the server sends a register's sales to its holder only).
 export async function dropClaim(copy: LocalCopy): Promise<void> {
-  await copy.db.registerClaim.delete('claim');
+  const { db } = copy;
+  await db.transaction('rw', [db.registerClaim, db.posSales], async () => {
+    await db.registerClaim.delete('claim');
+    await db.posSales.clear();
+  });
 }
 
 // The POS commands still on the device. A device holds one register at a time and lets it go only
@@ -83,16 +105,41 @@ export interface PosSaleSave {
   total: string;
   // This device's clock, for the Sync page only
   savedAt: string;
+  // Step 20c: the return whose money pays for this sale (an exchange), saved with it and before it.
+  // The sale's exchange payment names its returnId. Missing = no exchange.
+  exchange?: PosReturnSave;
 }
 
 // saved: in the outbox, with this number and the sale's id (a UUIDv7 made here, like every id the
-// device makes; step 20c's return points at it). not-held: the claim is gone or is another
-// register's (another tab changed the register meanwhile); the screen asks for a register again.
-// no-shift (step 20b): the sale's shift is not open on the device any more (closed in another tab).
+// device makes; step 20c's return points at it), and the number of its exchange's return (null =
+// none). not-held: the claim is gone or is another register's (another tab changed the register
+// meanwhile); the screen asks for a register again. no-shift (step 20b): the sale's shift is not
+// open on the device any more (closed in another tab).
 export type PosSaveResult =
-  | { kind: 'saved'; saleId: string; sequence: number; number: string }
+  | { kind: 'saved'; saleId: string; sequence: number; number: string; returnNumber: string | null }
   | { kind: 'not-held' }
   | { kind: 'no-shift' };
+
+// Step 20c: what a sale brings into its shift, for the cash and the X report. Change is given in
+// cash, whatever the methods.
+function saleEffectOf(input: Omit<PosSaleInput, 'sequence'>, total: string): SaleEffect {
+  const { totals } = posSaleAmounts(
+    input.lines,
+    { type: input.billDiscountType, value: input.billDiscount },
+    input.pricesIncludeVat,
+  );
+  const { payments } = input;
+  return {
+    cashTaken: sumMoney(
+      payments.filter((payment) => payment.method === 'cash').map((payment) => payment.amount),
+    ),
+    changeGiven: posChangeOf(payments, total),
+    total: totals.total,
+    discount: addMoney(totals.discount, totals.billDiscount),
+    vat: totals.vat,
+    payments: payments.map(({ method, amount }) => ({ method, amount })),
+  };
+}
 
 const SAVE_ATTEMPTS = 3;
 
@@ -103,31 +150,50 @@ const SAVE_ATTEMPTS = 3;
 // next number. Three times in a row would take three tabs selling at the same moment.
 // Step 20b: the shift's cash goes in the same transaction (the cash the sale took, the change it
 // gave), checked the same way, so the close's expected cash counts every sale exactly once.
+//
+// Step 20c: every line gets its id here (decision 64), and the sale goes into the device's own
+// sales (posSales) in the same transaction, so its goods can come back before it syncs. An
+// exchange's return is saved first in the same transaction, with the next return number: the two
+// are in the outbox together or not at all, and the return's cash and the sale's go into the shift
+// together.
 export async function savePosSale(copy: LocalCopy, save: PosSaleSave): Promise<PosSaveResult> {
   const { db } = copy;
   const saleId = uuidv7();
-  const { payments } = save.input;
-  const sale = {
-    cashTaken: sumMoney(
-      payments.filter((payment) => payment.method === 'cash').map((payment) => payment.amount),
-    ),
-    // Change is given in cash, whatever the methods
-    changeGiven: posChangeOf(payments, save.total),
+  const input = {
+    ...save.input,
+    lines: save.input.lines.map((line) => ({ ...line, id: line.id ?? uuidv7() })),
   };
+  const sale = saleEffectOf(input, save.total);
+  const exchange = save.exchange ?? null;
+  const given = exchange && returnEffectOf(exchange.input);
+  // Made once, without its number: the number is added at each attempt
+  const local = await localSaleOf(copy, { id: saleId, number: '', input });
   for (let attempt = 1; ; attempt += 1) {
     const claim = await db.registerClaim.get('claim');
-    if (claim?.registerId !== save.input.registerId) return { kind: 'not-held' };
-    // A sale saved before 20b's screen has no shift; every new one has
+    if (claim?.registerId !== input.registerId) return { kind: 'not-held' };
+    // A sale saved before 20b's screen has no shift; every new one has. An exchange's return is in
+    // the same shift: it is the same cart.
     const shift =
-      save.input.shiftId === null ? null : await shiftForSale(copy, save.input.shiftId, sale);
-    if (save.input.shiftId !== null && !shift) return { kind: 'no-shift' };
+      input.shiftId === null
+        ? null
+        : await shiftAfter(copy, input.shiftId, (open) =>
+            shiftAfterSale(given ? shiftAfterReturn(open, given) : open, sale),
+          );
+    if (input.shiftId !== null && !shift) return { kind: 'no-shift' };
     const sequence = claim.last + 1;
     const number = formatPosNumber(save.registerCode, sequence);
+    const returnSequence = nextReturnSequence(claim);
+    const returnNumber = exchange && formatReturnNumber(exchange.registerCode, returnSequence);
+    const returnRow =
+      exchange &&
+      returnNumber !== null &&
+      (await sealEntry(copy, returnEntry(exchange, returnSequence, returnNumber)));
+    const saleRow = local && (await sealSale(copy, { ...local, number }));
     const command: SyncCommand = {
       id: uuidv7(),
       type: 'pos_sale.create',
       saleId,
-      input: { ...save.input, sequence },
+      input: { ...input, sequence },
     };
     const row = await sealEntry(copy, {
       command,
@@ -138,29 +204,48 @@ export async function savePosSale(copy: LocalCopy, save: PosSaleSave): Promise<P
       // A sale to a customer made on this device waits for that customer, like an order. A walk-in
       // sale waits for nothing: its own id here, so a hundred walk-in sales go in one push, and a
       // refused one holds back no other.
-      customerId: save.input.customerId ?? saleId,
+      customerId: input.customerId ?? saleId,
       key: saleId,
       base: null,
       // The Sync page says "Sale POS1-000124" (sync.commands.pos_sale.create)
       name: number,
-      lines: save.input.lines.length,
+      lines: input.lines.length,
       total: save.total,
       savedAt: save.savedAt,
-      ...(save.input.shiftId !== null && { shiftId: save.input.shiftId }),
+      ...(input.shiftId !== null && { shiftId: input.shiftId }),
+      // Step 20c: an exchange's sale waits for its return, which the server must have first
+      ...(exchange && { after: exchange.returnId }),
     });
-    const tables = [db.registerClaim, db.outbox, db.posShift, db.posCarts];
+    const tables = [db.registerClaim, db.outbox, db.posShift, db.posCarts, db.posSales, db.meta];
     const saved = await db.transaction('rw', tables, async () => {
       const now = await db.registerClaim.get('claim');
-      if (now?.registerId !== claim.registerId || now.last !== claim.last) return false;
+      if (
+        now?.registerId !== claim.registerId ||
+        now.last !== claim.last ||
+        now.lastReturn !== claim.lastReturn
+      ) {
+        return false;
+      }
       if (shift && (await db.posShift.get('shift'))?.rev !== shift.before.rev) return false;
-      await db.registerClaim.put({ ...claim, last: sequence });
+      await db.registerClaim.put({
+        ...now,
+        last: sequence,
+        ...(exchange && { lastReturn: returnSequence }),
+      });
+      // The return first: the outbox sends in this order, and the sale's payment names it
+      if (returnRow) await db.outbox.add(returnRow);
       await db.outbox.add(row);
       if (shift) await db.posShift.put(shift.row);
       // The cart on the screen is this sale now: a reload must not bring it back to be sold twice
       await db.posCarts.delete(SCREEN_CART);
+      // At the generation of the pull, like a row the pull wrote: a full pull under way keeps it
+      if (saleRow) {
+        const { generation } = await readPullState(db);
+        await db.posSales.put({ ...saleRow, gen: generation });
+      }
       return true;
     });
-    if (saved) return { kind: 'saved', saleId, sequence, number };
+    if (saved) return { kind: 'saved', saleId, sequence, number, returnNumber };
     if (attempt === SAVE_ATTEMPTS) throw new Error('The register kept changing during the save');
   }
 }

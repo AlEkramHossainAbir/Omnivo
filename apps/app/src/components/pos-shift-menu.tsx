@@ -3,6 +3,7 @@ import {
   MoneyAdd01Icon,
   MoneyRemove01Icon,
   Note01Icon,
+  PrinterIcon,
 } from '@hugeicons/core-free-icons';
 import { useLocale } from '@omnivo/i18n';
 import type { DeviceShift } from '@omnivo/sync';
@@ -19,6 +20,7 @@ import type { ShiftRequest } from './pos-screen';
 
 // Step 20b: "Shift POS1-S0042 ▾": who opened it and when, pay in, pay out, the held bills and the
 // close. The screen opens the dialogs (they need its cart). A chunk of its own (routes/pos.tsx).
+// Step 20c: Print X report, before the close (the mockup's shift menu).
 export function ShiftMenu({
   shift,
   held,
@@ -69,6 +71,14 @@ export function ShiftMenu({
         >
           <span className="flex-1">{t('pos.hold.listTitle')}</span>
           <span className="text-caption text-ink-3 tabular-nums">{format.number(held)}</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          icon={PrinterIcon}
+          onSelect={() => {
+            onRequest('x-report');
+          }}
+        >
+          {t('pos.shift.xReport')}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

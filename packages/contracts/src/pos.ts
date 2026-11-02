@@ -65,6 +65,12 @@ import { TAX_RATE_FORMAT } from './tax-rates.js';
 // count of the drawer at the start to the count at the end (pos-shifts.ts). The register holds
 // what its shifts need: the account a difference in the cash goes to, how big a difference rings
 // a bell, and how long /pos waits before it locks the screen.
+//
+// Step 20c: returns (pos-returns.ts). A customer brings goods back with the receipt; the counter
+// pays the money back by cash or by a way the sale was paid, or gives it as an exchange: the money
+// pays for the next sale at once. The register holds what a return needs: the account an
+// exchange passes through, how many days after a sale it still takes the goods back, and the last
+// number of its own return series (POS1-R000012).
 
 // ---------------------------------------------------------------------------------------------
 // Registers
@@ -74,6 +80,13 @@ import { TAX_RATE_FORMAT } from './tax-rates.js';
 // wallet. z.enum in the input, like receipts' methods.
 export const POS_PAYMENT_METHODS = ['cash', 'card', 'bkash', 'nagad'] as const;
 export type PosPaymentMethod = (typeof POS_PAYMENT_METHODS)[number];
+
+// Step 20c: a tender is one way money changes hands at the counter: the four methods above, and
+// exchange, the money of a return used to pay for a sale made with it (pos-returns.ts). A sale's
+// payment and a return's refund each have one. Exchange is not a method of the register: nobody
+// picks it in the pay dialog, and it has no account per method but the register's exchange account.
+export const POS_TENDERS = [...POS_PAYMENT_METHODS, 'exchange'] as const;
+export type PosTender = (typeof POS_TENDERS)[number];
 
 // The thermal paper's width in millimetres: 58 mm for a small shop's printer, 80 mm for a
 // supermarket's. The receipt's layout follows it (@page size).
@@ -118,6 +131,12 @@ export function formatPosNumber(registerCode: string, sequence: number): string 
   return `${registerCode}-${String(sequence).padStart(POS_NUMBER_PADDING, '0')}`;
 }
 
+// Step 20c: how many days after a sale a counter takes its goods back. The screen counts the days
+// from the sale's date to today: 0 = the same day only. The default, 7, is the "exchanged within 7
+// days" most shops print on the receipt.
+export const POS_DEFAULT_RETURN_DAYS = 7;
+export const POS_MAX_RETURN_DAYS = 365;
+
 // The account per method. Cash is always there; null = this register does not take that method.
 export const posRegisterAccountsSchema = z.object({
   cash: z.uuid(),
@@ -155,11 +174,19 @@ export const posRegisterSchema = z.object({
   // A difference bigger than this, either way, rings a bell to the managers. Whole taka: "500".
   varianceAlert: z.string(),
   lockAfter: z.enum(POS_LOCK_AFTER),
+  // Step 20c. The account an exchange passes through, "POS exchange clearing" (a liability): the
+  // return puts the money on it, the sale made with it takes it off, so it comes back to zero.
+  // null = this counter makes no exchanges, only refunds.
+  exchangeAccountId: z.uuid().nullable(),
+  // 0 to POS_MAX_RETURN_DAYS
+  returnDays: z.number().int(),
   // The device that holds it now; null = free
   deviceId: z.uuid().nullable(),
   // The highest number the server has received from it; 0 = none yet. A device that takes the
   // register goes on from here.
   lastNumber: z.number().int().min(0),
+  // Step 20c: the same for its returns (POS1-R000012)
+  lastReturnNumber: z.number().int().min(0),
   // Step 20b: its latest shift; null = it never had one
   lastShift: posLastShiftSchema.nullable(),
   archivedAt: z.iso.datetime().nullable(),
@@ -204,6 +231,17 @@ const varianceAlertSchema = z
   .regex(/^\d{0,9}$/, errorCode('pos_variance_alert_format'))
   .transform((value) => (value === '' ? '0' : value));
 
+// A whole number of days, 0 to 365. An empty box is an error, not 0: 0 means "the same day only",
+// a rule too strict to set by leaving the box empty.
+const returnDaysSchema = z
+  .string()
+  .trim()
+  .refine(
+    (value) => /^\d{1,3}$/.test(value) && Number(value) <= POS_MAX_RETURN_DAYS,
+    errorCode('pos_return_days_format'),
+  )
+  .transform(Number);
+
 const registerFieldsSchema = z.object({
   name: z.string().trim().min(2, errorCode('pos_register_name_required')).max(60),
   // The form's empty select sends '' — "not chosen", with its own message
@@ -221,6 +259,9 @@ const registerFieldsSchema = z.object({
   overShortAccountId: z.uuid(errorCode('pos_over_short_required')),
   varianceAlert: varianceAlertSchema,
   lockAfter: z.enum(POS_LOCK_AFTER),
+  // Step 20c. The form's empty select sends '': no exchanges at this counter
+  exchangeAccountId: optionalIdSchema,
+  returnDays: returnDaysSchema,
 });
 
 export const posRegisterInputSchema = registerFieldsSchema.extend({ code: registerCodeSchema });
@@ -333,7 +374,7 @@ export function posSaleAmounts(
 }
 
 interface PaymentFields {
-  method: PosPaymentMethod;
+  method: PosTender;
   amount: string;
 }
 
@@ -402,6 +443,10 @@ export const MAX_POS_PAYMENTS = 6;
 
 const posLineInputSchema = salesLineFieldsSchema
   .extend({
+    // Step 20c: the line's id, made on the device (a UUIDv7), so a return of the sale can name the
+    // line before the sale reaches the server. null = a sale saved before 20c, still in an outbox:
+    // the server gives that line an id of its own.
+    id: z.uuid().nullable().default(null),
     // The VAT rate the device used, in percent ("15.00"): the receipt was printed with it, so the
     // server works the sale out with the same rate, also when the rate was changed meanwhile
     rate: z.string().regex(TAX_RATE_FORMAT, errorCode('tax_rate_format')),
@@ -420,10 +465,13 @@ export type PosLineInput = z.infer<typeof posLineInputSchema>;
 export type PosLineFormValues = z.input<typeof posLineInputSchema>;
 
 const posPaymentInputSchema = z.object({
-  method: z.enum(POS_PAYMENT_METHODS),
+  method: z.enum(POS_TENDERS),
   amount: positiveAmountSchema('pos_payment_amount_required'),
   // The card's last 4 digits or the approval code, the bKash or Nagad TrxID
   reference: optionalText(60),
+  // Step 20c: an exchange's return, the one saved with this sale (pos-returns.ts); null for every
+  // other tender. The default reads a sale from before 20c, still in an outbox, as one without it.
+  returnId: z.uuid().nullable().default(null),
 });
 export type PosPaymentInput = z.infer<typeof posPaymentInputSchema>;
 
@@ -474,11 +522,34 @@ function isComplete(input: PosSaleRuleInput): boolean {
   );
 }
 
+// Step 20c: an exchange payment names its return, and only an exchange does; one sale uses one
+// return. The device always makes them so: anything else is a bug, so one code for all of it.
+function exchangeRules(
+  payments: readonly { method: PosTender; returnId: string | null }[],
+  ctx: z.RefinementCtx<PosSaleRuleInput>,
+): void {
+  let exchanges = 0;
+  payments.forEach((payment, index) => {
+    const exchange = payment.method === 'exchange';
+    if (exchange) exchanges += 1;
+    if (exchange !== (payment.returnId !== null) || exchanges > 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['payments', index, 'method'],
+        message: errorCode('pos_exchange_invalid'),
+      });
+    }
+  });
+}
+
 // The rules of the whole sale: the bill's discount not more than the bill, the money paid at least
-// the total, and change only from cash (a card is charged the exact amount). They read the device's
-// own rates, so the same rules hold on the device before the sale and on the server after it.
+// the total, and change only from cash (a card is charged the exact amount, and an exchange uses
+// no more of a return's money than the sale costs: the rest is the return's refund). They read the
+// device's own rates, so the same rules hold on the device before the sale and on the server after
+// it.
 function posSaleRules(input: PosSaleRuleInput, ctx: z.RefinementCtx<PosSaleRuleInput>): void {
   documentSerialRules(input, ctx);
+  exchangeRules(input.payments, ctx);
   if (!isComplete(input)) return;
   const afters = input.lines.map((line) => {
     const gross = multiplyMoney(line.quantity, line.unitPrice);
@@ -559,15 +630,29 @@ export const posSaleLineSchema = salesLineSchema.extend({
   serialNumbers: z.array(z.string()),
   // What the warehouse did not have when it was posted, in the base unit; "0.0000" = none
   shortQuantity: z.string(),
+  // Step 20c: what posted returns brought back of it, in the line's unit; "0.0000" = nothing
+  returnedQuantity: z.string(),
 });
 export type PosSaleLine = z.infer<typeof posSaleLineSchema>;
 
+// A POS return as another document lists it: its number and its money back
+export const posReturnRefSchema = z.object({
+  id: z.uuid(),
+  number: z.string(),
+  date: z.iso.date(),
+  total: z.string(),
+});
+export type PosReturnRef = z.infer<typeof posReturnRefSchema>;
+
 export const posSalePaymentSchema = z.object({
-  method: z.enum(POS_PAYMENT_METHODS),
+  method: z.enum(POS_TENDERS),
   amount: z.string(),
   reference: z.string().nullable(),
-  // The register's account for the method when the sale was posted
+  // The register's account for the method when the sale was posted; for an exchange, its
+  // exchange account
   accountId: z.uuid(),
+  // Step 20c: an exchange's return; null for the other tenders
+  return: z.object({ id: z.uuid(), number: z.string() }).nullable(),
 });
 export type PosSalePayment = z.infer<typeof posSalePaymentSchema>;
 
@@ -583,6 +668,8 @@ export const posSaleSchema = posSaleSummarySchema.extend({
   change: z.string(),
   lines: z.array(posSaleLineSchema),
   payments: z.array(posSalePaymentSchema),
+  // Step 20c: the posted returns of it, oldest first
+  returns: z.array(posReturnRefSchema),
   // The device it was sold on (its name now)
   device: z.object({ id: z.uuid(), name: z.string() }),
   // The sale, its cost and its stock in the books; null only for a sale of ৳0 that cost nothing

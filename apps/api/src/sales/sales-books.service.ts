@@ -96,7 +96,7 @@ export class SalesBooksService {
   ): Promise<EntryRef | null> {
     if (isZeroMoney(input.total)) return null;
     const accounts = await this.accounts(tx);
-    const returns = (await this.returnsAccount(tx)) ?? accounts.sales;
+    const returns = (await salesReturnsAccount(tx)) ?? accounts.sales;
     const lines: LineInput[] = [
       debit(returns, input.branchId, null, input.net),
       debit(accounts.vatOutput, input.branchId, null, input.vat),
@@ -230,40 +230,41 @@ export class SalesBooksService {
       vatOutput: idOf('vat_output'),
     };
   }
+}
 
-  // The account chosen in Settings → Sales for sales returns (step 15d), or null when none is
-  // chosen. FOR SHARE like the others. AccountsService refuses to archive or delete the chosen
-  // account (account_used_by_sales), so an unusable one is only a safety net: the person is sent
-  // to the setting, like stock_account_missing, and nothing is posted.
-  private async returnsAccount(tx: Transaction): Promise<string | null> {
-    const tenantId = getTenantId();
-    const [settings] = await tx
-      .select({ accountId: tenantSettings.salesReturnsAccountId })
-      .from(tenantSettings)
-      .where(eq(tenantSettings.tenantId, tenantId));
-    const accountId = settings?.accountId ?? null;
-    if (accountId === null) return null;
-    const [usable] = await tx
-      .select({ id: ledgerAccounts.id })
-      .from(ledgerAccounts)
-      .where(
-        and(
-          eq(ledgerAccounts.tenantId, tenantId),
-          eq(ledgerAccounts.id, accountId),
-          eq(ledgerAccounts.isGroup, false),
-          isNull(ledgerAccounts.archivedAt),
-        ),
-      )
-      .for('share');
-    if (!usable) {
-      throw new AppError(
-        409,
-        'sales_account_invalid',
-        'The sales returns account cannot be used. Choose another one in Settings → Sales.',
-      );
-    }
-    return usable.id;
+// The account chosen in Settings → Sales for sales returns (step 15d), or null when none is
+// chosen. FOR SHARE like the others. AccountsService refuses to archive or delete the chosen
+// account (account_used_by_sales), so an unusable one is only a safety net: the person is sent
+// to the setting, like stock_account_missing, and nothing is posted. Step 20c: a function, not a
+// method, because a POS return books on it too (StockBooksService.posReturn).
+export async function salesReturnsAccount(tx: Transaction): Promise<string | null> {
+  const tenantId = getTenantId();
+  const [settings] = await tx
+    .select({ accountId: tenantSettings.salesReturnsAccountId })
+    .from(tenantSettings)
+    .where(eq(tenantSettings.tenantId, tenantId));
+  const accountId = settings?.accountId ?? null;
+  if (accountId === null) return null;
+  const [usable] = await tx
+    .select({ id: ledgerAccounts.id })
+    .from(ledgerAccounts)
+    .where(
+      and(
+        eq(ledgerAccounts.tenantId, tenantId),
+        eq(ledgerAccounts.id, accountId),
+        eq(ledgerAccounts.isGroup, false),
+        isNull(ledgerAccounts.archivedAt),
+      ),
+    )
+    .for('share');
+  if (!usable) {
+    throw new AppError(
+      409,
+      'sales_account_invalid',
+      'The sales returns account cannot be used. Choose another one in Settings → Sales.',
+    );
   }
+  return usable.id;
 }
 
 // A found entry as a reference; null if it has no number (only a draft has none)

@@ -15,7 +15,7 @@ import { AppError } from '../common/http/app-error.js';
 import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
-import { DevicesService } from './devices.service.js';
+import { type DeviceRow, DevicesService } from './devices.service.js';
 import {
   type DeltaCursor,
   decodeSyncCursor,
@@ -24,7 +24,7 @@ import {
   type SyncCursor,
 } from './sync-cursor.js';
 import { SYNC_LOG_DAYS } from './sync-log-cleanup.js';
-import { LOADERS, type SyncScope } from './sync-rows.js';
+import { LOADERS, posScopeOf, type SyncScope } from './sync-rows.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -65,7 +65,7 @@ export class SyncService {
     return this.withTenant(async (tx) => {
       const device = await this.devices.forSync(tx, query.deviceId);
       const clock = await readClock(tx);
-      const scope = await this.scopeOf(tx, device.branchId);
+      const scope = await this.scopeOf(tx, device);
 
       const page =
         cursor === undefined || this.restartsFull(cursor, device.branchId, clock.now)
@@ -114,21 +114,23 @@ export class SyncService {
 
   // The device's branch's warehouses. The active ones are what it keeps; all of them, archived
   // too, filter the stock lines of the log (18a.2's facts): a stock row that reaches zero in a
-  // warehouse archived right after must still reach the device as a delete.
+  // warehouse archived right after must still reach the device as a delete. Step 20c: and the
+  // register it holds, for its recent sales.
   private async scopeOf(
     tx: Transaction,
-    branchId: string,
+    device: DeviceRow,
   ): Promise<SyncScope & { allWarehouseIds: string[] }> {
     const tenantId = getTenantId();
     const rows = await tx
       .select({ id: warehouses.id, archivedAt: warehouses.archivedAt })
       .from(warehouses)
-      .where(and(eq(warehouses.tenantId, tenantId), eq(warehouses.branchId, branchId)));
+      .where(and(eq(warehouses.tenantId, tenantId), eq(warehouses.branchId, device.branchId)));
     return {
       tenantId,
-      branchId,
+      branchId: device.branchId,
       warehouseIds: rows.filter((row) => row.archivedAt === null).map((row) => row.id),
       allWarehouseIds: rows.map((row) => row.id),
+      ...(await posScopeOf(tx, tenantId, device.id)),
     };
   }
 }

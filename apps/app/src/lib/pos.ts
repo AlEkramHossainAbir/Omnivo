@@ -11,6 +11,7 @@ import {
   posSaleAmounts,
   type PosSaleFormValues,
   type PosSaleTotals,
+  type PosTender,
   type Product,
   type ProductVariant,
   subtractMoney,
@@ -322,7 +323,8 @@ export interface ReceiptData {
   net: string;
   vat: string;
   total: string;
-  payments: { method: PosPaymentMethod; amount: string; reference: string | null }[];
+  // Step 20c: any tender, an exchange's money too ("Exchange 850.00")
+  payments: { method: PosTender; amount: string; reference: string | null }[];
   paid: string;
   change: string;
 }

@@ -330,6 +330,13 @@ import {
   usedByPos,
 } from './pos-data';
 import {
+  findPosReturn,
+  listPosReturns,
+  registerSales,
+  returnableSale,
+  toPosReturn,
+} from './pos-return-data';
+import {
   closeWithoutCount,
   createCashReason,
   findCashReason,
@@ -5362,6 +5369,43 @@ export const handlers = [
       );
       await delay();
       return reply(routes.posShifts.closeWithoutCount, toShift(data, target));
+    }),
+  ),
+
+  // Step 20c: the returns (pos-return-data.ts; push-data.ts writes them). A register's recent
+  // sales and a sale by its receipt number are the cashier's (pos.sale.create, pos.return.create);
+  // the list and the page need no permission, like the API. The mock's owner has all of them.
+  mock(
+    routes.posReturns.registerSales,
+    guarded(async ({ request, params }) => {
+      const { id } = routes.posReturns.registerSales.params.parse(params);
+      const query = readQuery(routes.posReturns.registerSales.query, request);
+      await delay();
+      return reply(routes.posReturns.registerSales, registerSales(current(), id, query));
+    }),
+  ),
+
+  mock(
+    routes.posReturns.returnableSale,
+    guarded(async ({ params }) => {
+      const { number } = routes.posReturns.returnableSale.params.parse(params);
+      await delay();
+      return reply(routes.posReturns.returnableSale, returnableSale(current(), number));
+    }),
+  ),
+
+  mock(routes.posReturns.listReturns, async ({ request }) => {
+    const query = readQuery(routes.posReturns.listReturns.query, request);
+    await delay();
+    return reply(routes.posReturns.listReturns, listPosReturns(current(), query));
+  }),
+
+  mock(
+    routes.posReturns.getReturn,
+    guarded(({ params }) => {
+      const { id } = routes.posReturns.getReturn.params.parse(params);
+      const data = current();
+      return reply(routes.posReturns.getReturn, toPosReturn(data, findPosReturn(data, id)));
     }),
   ),
 ];

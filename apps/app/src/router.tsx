@@ -703,6 +703,25 @@ const posCashReasonsRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/pos-cash-reasons'), 'PosCashReasonsPage'),
 });
 
+// Step 20c: the returns the counters took back, and one return. A shift's page links to its own
+// returns with ?shiftId=, so the list opens filtered to it.
+const posReturnsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos/returns',
+  validateSearch: (search: Record<string, unknown>): { shiftId?: string } => ({
+    // Not a uuid (a link typed by hand): every return, not a 400 from the API
+    ...(typeof search.shiftId === 'string' &&
+      UUID.test(search.shiftId) && { shiftId: search.shiftId }),
+  }),
+  component: lazyRouteComponent(() => import('./routes/pos-returns'), 'PosReturnsPage'),
+});
+
+const posReturnRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/pos/returns/$returnId',
+  component: lazyRouteComponent(() => import('./routes/pos-return'), 'PosReturnPage'),
+});
+
 const soldShortRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/stock/sold-short',
@@ -1030,6 +1049,8 @@ const routeTree = rootRoute.addChildren([
     posSaleRoute,
     posShiftsRoute,
     posShiftRoute,
+    posReturnsRoute,
+    posReturnRoute,
     posCashReasonsRoute,
     soldShortRoute,
     myDevicesRoute,

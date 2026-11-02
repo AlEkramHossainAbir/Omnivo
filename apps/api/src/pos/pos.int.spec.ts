@@ -275,6 +275,9 @@ function registerForm(code: string, warehouse: Warehouse, extra: object = {}) {
     overShortAccountId: accountId('5350'),
     varianceAlert: '500',
     lockAfter: '5',
+    // Step 20c: no exchanges, and the form's 7 days
+    exchangeAccountId: '',
+    returnDays: '7',
     ...extra,
   };
 }
@@ -300,6 +303,8 @@ function editForm(register: PosRegister, extra: object = {}) {
     overShortAccountId: register.overShortAccountId ?? '',
     varianceAlert: register.varianceAlert,
     lockAfter: register.lockAfter,
+    exchangeAccountId: register.exchangeAccountId ?? '',
+    returnDays: String(register.returnDays),
     version: register.version,
     ...extra,
   };
@@ -1022,8 +1027,26 @@ describe('a sale pushed from the counter', () => {
       [paid('cash', '100'), paid('cash', '100')],
     );
     const [result] = await push([command]);
-    // Nothing for the device to write: sales are not on the device
-    expect(result).toEqual({ id: command.id, status: 'accepted', notices: [], changes: [] });
+    // Step 20c: the device keeps its register's recent sales, so the answer brings the new one at
+    // once, with nothing taken back yet
+    expect(result).toMatchObject({ id: command.id, status: 'accepted', notices: [] });
+    const changes = result?.status === 'accepted' ? result.changes : [];
+    expect(changes).toMatchObject([
+      {
+        op: 'upsert',
+        entity: 'pos_sale',
+        key: command.saleId,
+        data: {
+          number: numberOf(command, 'POS1'),
+          total: '115.0000',
+          lines: [{ returnedQuantity: '0.0000' }, { returnedQuantity: '0.0000' }],
+          payments: [
+            { method: 'cash', amount: '100.0000' },
+            { method: 'cash', amount: '100.0000' },
+          ],
+        },
+      },
+    ]);
     const done = await saleNow(command.saleId);
     expect(done).toMatchObject({
       number: numberOf(command, 'POS1'),
@@ -1042,9 +1065,11 @@ describe('a sale pushed from the counter', () => {
       soldShort: false,
       device: { id: counterPc.id, name: 'Front counter PC' },
     });
+    // Step 20c: `return` names the return an exchange payment used; a ৳100 note uses none
+    const hundred = { method: 'cash', amount: '100.0000', reference: null, return: null };
     expect(done.payments).toEqual([
-      { method: 'cash', amount: '100.0000', reference: null, accountId: accountId('1110') },
-      { method: 'cash', amount: '100.0000', reference: null, accountId: accountId('1110') },
+      { ...hundred, accountId: accountId('1110') },
+      { ...hundred, accountId: accountId('1110') },
     ]);
     expect(done.lines.map((item) => [item.total, item.shortQuantity, item.batches])).toEqual([
       ['57.5000', '0.0000', []],

@@ -36,6 +36,9 @@ const SCREENS = [
   () => import('../components/pos-shift'),
   () => import('../components/pos-held'),
   () => import('../components/pos-shift-menu'),
+  // Step 20c: taking goods back works offline too, from the device's own sales (its refund rows
+  // come with the payment's chunk as well)
+  () => import('../components/pos-return'),
 ];
 
 // Once, by main.tsx's enableMocking. The dev server is on this computer, so it does not fail.

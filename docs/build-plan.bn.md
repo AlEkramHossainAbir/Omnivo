@@ -369,6 +369,11 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
   register-এর over/short account-এ নিজে থেকে post, সীমার বেশি হলে managers-কে bell। কারণসহ pay in/out (Settings
   → POS cash reasons, কারণের account-এ), hold/resume বিল (F8/F9, শুধু ডিভাইসে), register-এর idle lock (PIN), sign-out
   আগে শিফট close। Sales → POS shifts (তালিকা, শিফটের পাতা, close without a count)।
+- **রিটার্ন (২০c):** রিসিট নম্বর দিয়ে ফেরত (F6), অফলাইনেও; যতটা বিক্রি হয়েছিল তার বেশি না, বিক্রির দামে (লাইনের
+  ছাড় আর VAT-এর ভাগ সহ)। নিজস্ব `pos_returns` ডকুমেন্ট (`POS1-R000012`), মাল register-এর warehouse-এ ফেরত, টাকা
+  ক্যাশে বা যেভাবে দিয়েছিল, বা এক্সচেঞ্জ (register-এর exchange account দিয়ে নতুন বিক্রির পেমেন্ট, একসাথে save)।
+  register-এর return window (ডিফল্ট ৭ দিন; স্ক্রিন থামায়, সার্ভার audit করে)। X রিপোর্ট (blind, শিফটের মাঝে) আর Z
+  রিপোর্ট (close-এর পরে) থার্মাল কাগজে। Sales → POS returns (তালিকা, রিটার্নের পাতা)।
 
 **দেখবেন:** ওয়াইফাই বন্ধ করে ট্যাবলেটে ১০টা বিক্রি করে, রিসিট প্রিন্ট করে, তারপর ওয়াইফাই চালু করলে সব সার্ভারে গিয়ে হিসাবে বসল। 🎉 **এটাই Omnivo-র সবচেয়ে বড় প্রতিযোগিতামূলক সুবিধা।**
 **শিখবেন:** offline-first আর্কিটেকচার, conflict কৌশল, service worker, idempotency, Web Crypto।
@@ -543,7 +548,7 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [x] **ধাপ ১২–১৪** — Inventory
 - [x] **ধাপ ১৫–১৭** — Sales + Purchase
 - [x] **ধাপ ১৮–১৯** — সিঙ্ক ইঞ্জিন + PWA শেল (অফলাইন, এনক্রিপশন, PIN)
-- [ ] **ধাপ ২০** — POS স্ক্রিন
+- [x] **ধাপ ২০** — POS স্ক্রিন
 - [ ] **ধাপ ২১** — Reports 🏁 MVP
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀

@@ -11,6 +11,7 @@ import { errorCode, problemSchema } from './errors.js';
 import { versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { posRegisterSchema, posSaleInputSchema } from './pos.js';
+import { posReturnableSaleSchema, posReturnInputSchema } from './pos-returns.js';
 import {
   posCashMovementInputSchema,
   posCashReasonSchema,
@@ -41,7 +42,8 @@ import { warehouseSchema } from './warehouses.js';
 // active customers with their groups, the warehouses of the device's branch and the stock in them,
 // and the part of the settings a sale needs. No customer balances and no stock values: they
 // change with every invoice and every movement, and they need their own permissions. Step 20a adds
-// the POS registers of the branch, step 20b the pay in and pay out reasons.
+// the POS registers of the branch, step 20b the pay in and pay out reasons, step 20c the recent
+// sales of the register the device holds (for returns offline).
 
 // The version of this protocol: what the entities below are and what their rows hold. A client
 // sends the version it was built with; the server answers sync_protocol_mismatch to any other,
@@ -51,7 +53,9 @@ import { warehouseSchema } from './warehouses.js';
 // 2 (step 20a): the POS registers (pos_register) and the pos_sale.create command.
 // 3 (step 20b): the pay in / pay out reasons (pos_cash_reason), a register's shift settings and
 // latest shift, a sale's shift, and the three shift commands.
-export const SYNC_PROTOCOL = 3;
+// 4 (step 20c): the register's recent sales (pos_sale), a register's return settings, the
+// exchange tender, and the pos_return.create command.
+export const SYNC_PROTOCOL = 4;
 
 // Every kind of row a device keeps. The order is the order of a full pull: the small lists that
 // the others point at come first, so a page never shows a product before its units.
@@ -69,6 +73,7 @@ export const SYNC_ENTITIES = [
   'price_list_item',
   'customer',
   'stock',
+  'pos_sale',
 ] as const;
 export type SyncEntity = (typeof SYNC_ENTITIES)[number];
 
@@ -112,7 +117,10 @@ export type SyncCustomerGroup = z.infer<typeof syncCustomerGroupSchema>;
 // numbers, the methods it takes, its discount limit and its receipt, and whether this device holds
 // it. Without lastNumber, which changes with every sale: the device that holds the register counts
 // on from the number the claim answered, and every sale would send the row again for nothing.
-export const syncPosRegisterSchema = posRegisterSchema.omit({ lastNumber: true });
+export const syncPosRegisterSchema = posRegisterSchema.omit({
+  lastNumber: true,
+  lastReturnNumber: true,
+});
 export type SyncPosRegister = z.infer<typeof syncPosRegisterSchema>;
 
 // A pay in or pay out reason (step 20b), active ones only: every device of the workspace gets all
@@ -120,6 +128,15 @@ export type SyncPosRegister = z.infer<typeof syncPosRegisterSchema>;
 // the device only shows the name.
 export const syncPosCashReasonSchema = posCashReasonSchema;
 export type SyncPosCashReason = z.infer<typeof syncPosCashReasonSchema>;
+
+// A sale of the register this device holds (step 20c), from the last POS_SALES_ON_DEVICE_DAYS
+// days, with what was returned of each line: what the return screen needs offline. The device
+// reads them once when it takes the register (routes.posReturns.registerSales: they were logged
+// before it held the register, so no pull brings them), and the pulls send a sale again when a
+// sale or a return changes it. The device drops them itself when it lets go of the register, and
+// drops the older ones, since nothing changes on the server when a sale turns 31 days old.
+export const syncPosSaleSchema = posReturnableSaleSchema;
+export type SyncPosSale = z.infer<typeof syncPosSaleSchema>;
 
 // A customer with its addresses, without the balance (decision 10: the list asks the server for
 // the balances of the rows it shows, online only)
@@ -200,6 +217,7 @@ export const syncUpsertSchema = z.discriminatedUnion('entity', [
   upsertOf('price_list_item', syncPriceListItemSchema),
   upsertOf('customer', syncCustomerSchema),
   upsertOf('stock', syncStockSchema),
+  upsertOf('pos_sale', syncPosSaleSchema),
 ]);
 export type SyncUpsert = z.infer<typeof syncUpsertSchema>;
 
@@ -349,6 +367,7 @@ export const SYNC_COMMAND_TYPES = [
   'pos_shift.open',
   'pos_cash_movement.create',
   'pos_shift.close',
+  'pos_return.create',
 ] as const;
 export type SyncCommandType = (typeof SYNC_COMMAND_TYPES)[number];
 
@@ -419,6 +438,18 @@ export const posShiftCloseCommandSchema = z.object({
   input: posShiftCloseInputSchema,
 });
 
+// Step 20c: a return at a POS counter, the money already paid back (pos-returns.ts). Posted when it
+// arrives, never refused for the window, the quantity left or permission. It waits for its shift's
+// open, and for its sale when that sale is still in the same outbox. An exchange's sale is saved
+// with it and waits for it: its payment names the return.
+export const posReturnCommandSchema = z.object({
+  id: z.uuidv7(),
+  type: z.literal('pos_return.create'),
+  // The return's id, made on the device: the exchange's sale points at it
+  returnId: z.uuidv7(),
+  input: posReturnInputSchema,
+});
+
 export const syncCommandSchema = z.discriminatedUnion('type', [
   customerCreateCommandSchema,
   customerUpdateCommandSchema,
@@ -427,6 +458,7 @@ export const syncCommandSchema = z.discriminatedUnion('type', [
   posShiftOpenCommandSchema,
   posCashMovementCommandSchema,
   posShiftCloseCommandSchema,
+  posReturnCommandSchema,
 ]);
 export type SyncCommand = z.infer<typeof syncCommandSchema>;
 export type SyncCommandInput = z.input<typeof syncCommandSchema>;
@@ -475,10 +507,12 @@ export const syncResultSchema = z.discriminatedUnion('status', [
     status: z.literal('accepted'),
     notices: z.array(syncNoticeSchema),
     // The rows the command changed, as they are now, for the device to write at once instead of
-    // waiting for its next pull: the customer for a customer command; nothing for an order, a POS
-    // sale or a shift's command (none of them is on the device as a row; the stock a sale took and
-    // the register's latest shift come with the next pull). Read when the answer is made, also for
-    // a command sent again, so an old answer never puts an older row back on the device.
+    // waiting for its next pull: the customer for a customer command; the sale (pos_sale) for a
+    // POS sale or return of the register the device holds, so the return screen knows at once what
+    // is left of it; nothing for an order or a shift's command (neither is on the device as a row;
+    // the stock and the register's latest shift come with the next pull). Read when the answer is
+    // made, also for a command sent again, so an old answer never puts an older row back on the
+    // device.
     changes: z.array(syncChangeSchema),
   }),
   z.object({

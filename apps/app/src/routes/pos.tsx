@@ -1,6 +1,7 @@
 import {
   ArrowLeft01Icon,
   ArrowLeftRightIcon,
+  ArrowTurnBackwardIcon,
   CashierIcon,
   KeyboardIcon,
   LockKeyIcon,
@@ -11,6 +12,7 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import {
   formatPosNumber,
   lockAfterMs,
+  type PosShiftReport,
   routes,
   type SyncPosRegister,
   type SyncSettings,
@@ -22,6 +24,7 @@ import {
   type DeviceShift,
   dropClaim,
   heldCount,
+  loadRegisterSales,
   type LocalCopy,
   localCashReasons,
   localRegisters,
@@ -29,6 +32,7 @@ import {
   readShift,
   type RegisterClaim,
   type ShiftCloseResult,
+  shiftReportOf,
   shiftStart,
   waitingAtCounter,
 } from '@omnivo/sync';
@@ -37,7 +41,7 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 
 import { LocalState, SyncNotice } from '../components/local-state';
-import { ShiftButton } from '../components/pos-parts';
+import { Kbd, ShiftButton, useReceiptCompany } from '../components/pos-parts';
 import { PosScreen, type ShiftRequest } from '../components/pos-screen';
 import { ApiRequestError, call } from '../lib/api';
 import {
@@ -47,6 +51,7 @@ import {
   useLocalData,
   useLocalQuery,
   useThisDeviceId,
+  withSyncLock,
 } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
 import { logout } from '../lib/session';
@@ -69,6 +74,9 @@ const RegisterChooser = lazy(async () => ({
 // Step 20b: the open card and the close's result, in the shift's chunk (pos-shift.tsx)
 const OpenShiftCard = lazy(async () => ({
   default: (await import('../components/pos-shift')).OpenShiftCard,
+}));
+const PosShiftReportSheet = lazy(async () => ({
+  default: (await import('../components/pos-receipt')).PosShiftReportSheet,
 }));
 const ShiftClosedDialog = lazy(async () => ({
   default: (await import('../components/pos-shift')).ShiftClosedDialog,
@@ -133,6 +141,65 @@ function useIdleLock(lockAfter: SyncPosRegister['lockAfter'] | null) {
   }, [lockAfter]);
 }
 
+// Step 20c (decision 45): the register's recent sales, read once after the device took it, for
+// returns without a connection. Online only; a claim that has them already (salesLoaded) reads
+// nothing. Inside the sync lock: a pull writes the same rows (withSyncLock). A failure tries again
+// the next time the screen is drawn online: nothing else brings those sales.
+function useRegisterSales(
+  copy: LocalCopy | null,
+  registerId: string | null,
+  loaded: boolean,
+): void {
+  const online = useOnline();
+  useEffect(() => {
+    if (!copy || registerId === null || loaded || !online) return;
+    void withSyncLock(async () => {
+      await loadRegisterSales(copy, registerId, (cursor) =>
+        call(routes.posReturns.registerSales, {
+          params: { id: registerId },
+          query: cursor === null ? {} : { cursor },
+        }),
+      );
+    }).catch(() => undefined);
+  }, [copy, registerId, loaded, online]);
+}
+
+// Step 20c (decision 4): the X report of the open shift (the shift menu) or the Z report of the
+// one just closed (its result dialog), from the device's own shift, so it prints offline too. Made
+// once, when asked: the sheet prints itself and leaves (onPrinted).
+function ShiftReport({
+  kind,
+  shift,
+  register,
+  settings,
+  onPrinted,
+}: {
+  kind: PosShiftReport['kind'];
+  shift: DeviceShift;
+  register: SyncPosRegister;
+  settings: SyncSettings;
+  onPrinted: () => void;
+}) {
+  const company = useReceiptCompany(settings);
+  const cashier = useSession((state) => state.me?.user.fullName) ?? '';
+  const [report] = useState<PosShiftReport>(() =>
+    shiftReportOf(shift, {
+      kind,
+      register: { code: register.code, name: register.name },
+      cashierName: cashier,
+      printedAt: new Date().toISOString(),
+    }),
+  );
+  return (
+    <PosShiftReportSheet
+      report={report}
+      paperWidth={register.paperWidth}
+      company={company}
+      onPrinted={onPrinted}
+    />
+  );
+}
+
 export function PosPage() {
   const { t } = useLocale();
   const can = useCan();
@@ -150,6 +217,13 @@ export function PosPage() {
   const [shortcuts, setShortcuts] = useState(false);
   const [request, setRequest] = useState<ShiftRequest | null>(null);
   const [closed, setClosed] = useState<ClosedShift | null>(null);
+  // Step 20c: the shift report printing: X of the open shift, Z of the one just closed
+  const [printing, setPrinting] = useState<PosShiftReport['kind'] | null>(null);
+  // The X report needs no cart, so the shift menu's request stops here (pos-screen.tsx)
+  const onRequest = useCallback((next: ShiftRequest | null) => {
+    if (next === 'x-report') setPrinting('x');
+    else setRequest(next);
+  }, []);
   const [asking, setAsking] = useState(false);
   const { waiting: unsynced } = useSyncSummary();
 
@@ -157,6 +231,11 @@ export function PosPage() {
     registers && claim !== undefined ? heldRegister(registers, claim, deviceId) : undefined;
   // The shift this screen sells on: open, and of the register the device holds
   const openShift = shift?.status === 'open' && shift.registerId === register?.id ? shift : null;
+  useRegisterSales(
+    view.kind === 'ready' ? view.copy : null,
+    register?.id ?? null,
+    claim?.salesLoaded === true,
+  );
 
   // By the id: the shift's row is a new object after every write (each sale), the same read
   const openShiftId = openShift?.id ?? null;
@@ -182,6 +261,10 @@ export function PosPage() {
       ? register.lockAfter
       : null,
   );
+
+  // The shift a report is printed of: the open one (X), the one just closed (Z)
+  const reportShift =
+    printing === 'x' ? openShift : printing === 'z' ? (closed?.shift ?? null) : null;
 
   const signOut = () => {
     setClosed(null);
@@ -231,7 +314,7 @@ export function PosPage() {
           shift={openShift}
           reasons={reasons}
           request={request}
-          onRequest={setRequest}
+          onRequest={onRequest}
           onClosed={setClosed}
           shortcuts={shortcuts}
           onShortcuts={setShortcuts}
@@ -293,7 +376,7 @@ export function PosPage() {
         shift={openShift}
         held={held}
         timeZone={settings?.timezone ?? 'Asia/Dhaka'}
-        onRequest={setRequest}
+        onRequest={onRequest}
         onShortcuts={
           openShift
             ? () => {
@@ -314,11 +397,27 @@ export function PosPage() {
           <div className="grid flex-1 place-items-center overflow-y-auto p-4">{content()}</div>
         )}
       </main>
+      {printing && reportShift && register && settings && (
+        <Suspense fallback={null}>
+          <ShiftReport
+            kind={printing}
+            shift={reportShift}
+            register={register}
+            settings={settings}
+            onPrinted={() => {
+              setPrinting(null);
+            }}
+          />
+        </Suspense>
+      )}
       {closed && (
         <Suspense fallback={null}>
           <ShiftClosedDialog
             result={closed}
             onSignOut={signOut}
+            onPrintZ={() => {
+              setPrinting('z');
+            }}
             onNext={() => {
               setClosed(null);
             }}
@@ -365,7 +464,8 @@ function PosTopBar({
   const cashier = useSession((state) => state.me?.user.fullName) ?? '';
   return (
     <header className="flex min-h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 print:hidden">
-      <Logo />
+      {/* Step 20c.7: the mark alone on a phone, so the bar with the Return button still fits 390px */}
+      <Logo markOnPhone />
       {/* Step 20b: not on a phone, where the shift's button (POS1-S0042) says it is the POS */}
       <span className={cn('inline-flex', shift && 'max-sm:hidden')}>
         <Pill tone="brand" icon={CashierIcon}>
@@ -386,6 +486,28 @@ function PosTopBar({
                 onRequest={onRequest}
               />
             </Suspense>
+          )}
+          {/* Step 20c: take goods back (F6), after the shift's button: only in a shift (the money
+              leaves its drawer). On a phone the icon alone: the bar fits 390px. */}
+          {shift && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="shrink-0 gap-1.5 max-sm:px-2"
+              aria-label={t('pos.keys.return')}
+              onClick={() => {
+                onRequest('return');
+              }}
+            >
+              <HugeiconsIcon
+                icon={ArrowTurnBackwardIcon}
+                size={17}
+                strokeWidth={1.5}
+                className="text-ink-3"
+              />
+              <span className="max-sm:hidden">{t('pos.return.open')}</span>
+              <Kbd>F6</Kbd>
+            </Button>
           )}
           <span className="text-body-sm text-ink-2 max-lg:hidden">
             {t('pos.cashier', { name: cashier })}

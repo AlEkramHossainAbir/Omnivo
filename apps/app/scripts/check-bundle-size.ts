@@ -23,8 +23,11 @@ const INITIAL_BUDGET = 225 * 1024;
 // script counts a lazy chunk together with the chunk it loads from, so the POS screen with its
 // payment dialog is one number: 112.3 KB. Step 20b: 125 KB (you chose this). The screen sells inside a
 // shift now (the shift's cash, the cart kept on the device), so /pos is 115.9 KB and its dialogs with
-// it 120–124 KB, after the shift menu moved to a chunk of its own.
-const CHUNK_BUDGET = 125 * 1024;
+// it 120–124 KB, after the shift menu moved to a chunk of its own. Step 20c: 135 KB (you chose
+// this). The screen takes goods back and pays with a return's money (/pos is 121 KB), so the return
+// dialog with it is 133 KB and the pay dialog 129.5 KB, after the refund rows moved to a file of
+// their own.
+const CHUNK_BUDGET = 135 * 1024;
 // Step 19a: everything the service worker downloads the first time, gz (the fonts do not shrink).
 // 1.3 MB at 19a. It is downloaded once per device; a new version downloads only the files that
 // changed.

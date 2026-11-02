@@ -18,6 +18,7 @@ import {
   type PosCashReason,
   type PosLastShift,
   type PosOverride,
+  POS_DEFAULT_RETURN_DAYS,
   posChangeOf,
   posOverridesOf,
   type PosRegister,
@@ -32,7 +33,9 @@ import {
   type posSaleListQuerySchema,
   type PosSalePage,
   posSaleSummarySchema,
+  type PosRefund,
   type PosShiftStatus,
+  type PosTender,
   type ShiftCash,
   shiftIsoDate,
   type SoldShortItem,
@@ -72,6 +75,8 @@ import type { WorkspaceData } from './workspace-data';
 // Step 20b: the shifts, their pay ins and outs, and the reasons, kept here beside the registers
 // and the sales, because a register's latest shift and a sale's shift are read with them. What
 // the devices and the managers do with a shift is pos-shift-data.ts.
+// Step 20c: the returns, kept here too, because a sale reads what came back of each line and a
+// shift what its returns paid back. What a return does is pos-return-data.ts.
 
 // A register without its branch: the branch is its warehouse's, worked out when it is read, so a
 // warehouse moved to another branch takes its free registers along (the API joins warehouses).
@@ -79,17 +84,64 @@ import type { WorkspaceData } from './workspace-data';
 export type MockRegister = Omit<PosRegister, 'branchId' | 'lastShift'>;
 
 // A sale's line as the mock keeps it: the contract's line, plus what the Sold short list reads
-// (the API's short_serials column, and the lot of the batch that went below zero)
-export interface MockPosLine extends PosSaleLine {
+// (the API's short_serials column, and the lot of the batch that went below zero). Step 20c:
+// without what came back of it, read from the returns when the sale is read, and with what its
+// goods cost (the API's value column): a return takes its share of that back into stock.
+export interface MockPosLine extends Omit<PosSaleLine, 'returnedQuantity'> {
   shortSerials: string[];
   shortLot: string | null;
+  value: string;
 }
 
-// The device by its id: its name is the one it has now when the sale is read
-export type MockPosSale = Omit<PosSale, 'lines' | 'device'> & {
+// The device by its id: its name is the one it has now when the sale is read. Step 20c: its
+// returns are read from data.pos.returns, like the API's join.
+export type MockPosSale = Omit<PosSale, 'lines' | 'device' | 'returns'> & {
   deviceId: string;
   lines: MockPosLine[];
 };
+
+// Step 20c: a POS return as the API's pos_returns row keeps it, with its lines (the product,
+// unit, description and price are the sale line's), the batches each went back into and its
+// refunds. Never changed once written (0056).
+export interface MockReturnLine {
+  id: string;
+  saleLineId: string;
+  // In the sale line's unit, and in the base unit
+  quantity: string;
+  baseQuantity: string;
+  net: string;
+  vat: string;
+  total: string;
+  // This return's share of what the goods cost when sold
+  value: string;
+  batches: { batchId: string; quantity: string }[];
+  serialNumbers: string[];
+}
+
+export interface MockReturn {
+  id: string;
+  registerId: string;
+  shiftId: string;
+  deviceId: string;
+  // The person who pushed it (created_by)
+  cashierId: string;
+  sequence: number;
+  number: string;
+  date: string;
+  returnedAt: string;
+  saleId: string;
+  // The register's warehouse: where the goods came back into
+  warehouseId: string;
+  net: string;
+  vat: string;
+  total: string;
+  note: string | null;
+  outsideWindow: boolean;
+  createdAt: string;
+  lines: MockReturnLine[];
+  refunds: PosRefund[];
+  entry: EntryRef | null;
+}
 
 // A shift as the API's pos_shifts row keeps it (step 20b). The cashier is the device's person
 // (created_by); the counts keep the device's notes and a 4-decimal total.
@@ -147,10 +199,12 @@ export interface MockPos {
   reasons: PosCashReason[];
   shifts: MockShift[];
   movements: MockMovement[];
+  // Step 20c: in the order they arrived; the list sorts them
+  returns: MockReturn[];
 }
 
 export function emptyPos(): MockPos {
-  return { registers: [], sales: [], reasons: [], shifts: [], movements: [] };
+  return { registers: [], sales: [], reasons: [], shifts: [], movements: [], returns: [] };
 }
 
 function now(): string {
@@ -175,17 +229,28 @@ type SeedRegister = Omit<
   | 'overShortAccountId'
   | 'varianceAlert'
   | 'lockAfter'
+  | 'exchangeAccountId'
+  | 'returnDays'
+  | 'lastReturnNumber'
 >;
 
 // Step 20b: every seeded counter has the over/short account, so a shift opens on it, a bell for a
-// difference over ৳500, and no idle lock: the device in the tests has no PIN until a test sets one
-function register(fields: SeedRegister, overShortAccountId: string | null): MockRegister {
+// difference over ৳500, and no idle lock: the device in the tests has no PIN until a test sets one.
+// Step 20c: goods come back for the default 7 days; `exchangeAccountId` null = refunds only.
+function register(
+  fields: SeedRegister,
+  overShortAccountId: string | null,
+  exchangeAccountId: string | null = null,
+): MockRegister {
   return {
     id: crypto.randomUUID(),
     ...fields,
     overShortAccountId,
     varianceAlert: '500',
     lockAfter: 'off',
+    exchangeAccountId,
+    returnDays: POS_DEFAULT_RETURN_DAYS,
+    lastReturnNumber: 0,
     archivedAt: null,
     version: 1,
     updatedAt: now(),
@@ -197,7 +262,9 @@ function register(fields: SeedRegister, overShortAccountId: string | null): Mock
 // held by the store office PC (seedDevices()), and stays in the list with that name. The
 // Chattogram depot's counter was held by the depot computer revoked 12 days ago: the revoke freed
 // it, and its numbers go on from 1,260. The pharma distributor has one counter at its depot.
-// After seedDevices(): the outlet's counter names one of its devices.
+// After seedDevices(): the outlet's counter names one of its devices. Step 20c: the head office's
+// two counters make exchanges, through 2190 POS exchange clearing; the depot's counter and the
+// pharmacy's only pay money back.
 export function seedPos(data: WorkspaceData, garments: boolean): void {
   const byCode = (code: string) => data.stock.warehouses.find((place) => place.code === code);
   const account = (code: string) => data.accounts.find((row) => row.code === code)?.id ?? null;
@@ -228,6 +295,7 @@ export function seedPos(data: WorkspaceData, garments: boolean): void {
   }
   const storePc = data.sync.devices.find((device) => device.name === 'Store office PC');
   const depot = byCode('CTG');
+  const exchange = addExchangeAccount(data);
   data.pos.registers.push(
     register(
       {
@@ -242,6 +310,7 @@ export function seedPos(data: WorkspaceData, garments: boolean): void {
         lastNumber: 0,
       },
       overShort,
+      exchange,
     ),
     register(
       {
@@ -256,6 +325,7 @@ export function seedPos(data: WorkspaceData, garments: boolean): void {
         lastNumber: 214,
       },
       overShort,
+      exchange,
     ),
   );
   if (depot) {
@@ -302,6 +372,30 @@ function addOverShortAccount(data: WorkspaceData): string | null {
   return id;
 }
 
+// Step 20c: the liability an exchange's money passes through, like the API's retail template
+// (2190). The garments chart has none, so it is added beside the over/short account, for the same
+// reason.
+function addExchangeAccount(data: WorkspaceData): string | null {
+  const parent = data.accounts.find((row) => row.code === '2100');
+  if (!parent) return null;
+  const id = crypto.randomUUID();
+  data.accounts.push({
+    id,
+    parentId: parent.id,
+    code: '2190',
+    name: 'POS exchange clearing',
+    type: parent.type,
+    isGroup: false,
+    purpose: null,
+    holdsMoney: false,
+    description: null,
+    archivedAt: null,
+    version: 1,
+    updatedAt: now(),
+  });
+  return id;
+}
+
 // --- Registers ----------------------------------------------------------------------------------
 
 function branchOfRegister(data: WorkspaceData, stored: MockRegister): string {
@@ -323,7 +417,8 @@ export function toRegister(data: WorkspaceData, stored: MockRegister): PosRegist
 
 // The API's pos_shift_cash(): the opening count, the cash the shift's sales took and the change
 // they gave, its pay ins and pay outs, read from the rows now. A sale that arrives after a close
-// without a count is counted too (decision 63).
+// without a count is counted too (decision 63). Step 20c: less the cash its returns paid back,
+// whatever shift sold the goods; an exchange's money never left the drawer.
 export function shiftCash(data: WorkspaceData, shift: MockShift): ShiftCash & { expected: string } {
   const sales = data.pos.sales.filter((sale) => sale.shift?.id === shift.id);
   const moved = (direction: PosCashDirection) =>
@@ -344,6 +439,13 @@ export function shiftCash(data: WorkspaceData, shift: MockShift): ShiftCash & { 
     changeGiven: sumMoney(sales.map((sale) => sale.change)),
     paidIn: moved('in'),
     paidOut: moved('out'),
+    cashRefunded: sumMoney(
+      data.pos.returns
+        .filter((item) => item.shiftId === shift.id)
+        .flatMap((item) =>
+          item.refunds.filter((refund) => refund.method === 'cash').map((refund) => refund.amount),
+        ),
+    ),
   };
   return { ...cash, expected: expectedCashOf(cash) };
 }
@@ -416,14 +518,23 @@ export function registerSnapshot(
     overShortAccount: codeOf(data.accounts, stored.overShortAccountId),
     varianceAlert: stored.varianceAlert,
     lockAfter: stored.lockAfter,
+    exchangeAccount: codeOf(data.accounts, stored.exchangeAccountId),
+    returnDays: String(stored.returnDays),
   };
+}
+
+// Step 20c: the register's account for a tender, the API's accountOf(): an exchange goes through
+// its exchange account; null = it does not take that method, or makes no exchanges
+export function accountOf(stored: MockRegister, tender: PosTender): string | null {
+  return tender === 'exchange' ? stored.exchangeAccountId : stored.accounts[tender];
 }
 
 type RegisterFields = Omit<PosRegisterInput, 'code'>;
 
 // The API's create() and update() checks, all but the code: an active warehouse when it is new or
-// changed, a held register kept in its device's branch, every account a money account, and (step
-// 20b) an over/short account that is an active income or expense account, not a group
+// changed, a held register kept in its device's branch, every account a money account, (step 20b)
+// an over/short account that is an active income or expense account, not a group, and (step 20c)
+// an exchange account, when one is picked, that is an active liability, not a group
 function checkFields(data: WorkspaceData, fields: RegisterFields, before?: MockRegister): void {
   if (before?.warehouseId !== fields.warehouseId) {
     const place = data.stock.warehouses.find(
@@ -457,6 +568,17 @@ function checkFields(data: WorkspaceData, fields: RegisterFields, before?: MockR
   ) {
     throw fieldProblem('pos_over_short_invalid', 'overShortAccountId');
   }
+  if (fields.exchangeAccountId !== null) {
+    const exchange = data.accounts.find((account) => account.id === fields.exchangeAccountId);
+    if (
+      !exchange ||
+      exchange.isGroup ||
+      exchange.archivedAt !== null ||
+      exchange.type !== 'liability'
+    ) {
+      throw fieldProblem('pos_exchange_account_invalid', 'exchangeAccountId');
+    }
+  }
 }
 
 function formOf(fields: RegisterFields) {
@@ -470,6 +592,8 @@ function formOf(fields: RegisterFields) {
     overShortAccountId: fields.overShortAccountId,
     varianceAlert: fields.varianceAlert,
     lockAfter: fields.lockAfter,
+    exchangeAccountId: fields.exchangeAccountId,
+    returnDays: fields.returnDays,
   };
 }
 
@@ -484,6 +608,7 @@ export function createRegister(data: WorkspaceData, input: PosRegisterInput): Mo
     ...formOf(input),
     deviceId: null,
     lastNumber: 0,
+    lastReturnNumber: 0,
     archivedAt: null,
     version: 1,
     updatedAt: now(),
@@ -579,19 +704,22 @@ export function assertNoHeldRegister(data: WorkspaceData, warehouseId: string): 
 }
 
 // An account a register or a POS payment names stays (the API's foreign keys, account_in_use).
-// Step 20b: also a register's over/short account, a reason's, and a pay in or out's.
+// Step 20b: also a register's over/short account, a reason's, and a pay in or out's. Step 20c: a
+// register's exchange account and a return's refund.
 export function usedByPos(data: WorkspaceData, accountId: string): boolean {
   return (
     data.pos.registers.some(
       (item) =>
         item.overShortAccountId === accountId ||
+        item.exchangeAccountId === accountId ||
         POS_PAYMENT_METHODS.some((method) => item.accounts[method] === accountId),
     ) ||
     data.pos.sales.some((sale) =>
       sale.payments.some((payment) => payment.accountId === accountId),
     ) ||
     data.pos.reasons.some((reason) => reason.accountId === accountId) ||
-    data.pos.movements.some((movement) => movement.accountId === accountId)
+    data.pos.movements.some((movement) => movement.accountId === accountId) ||
+    data.pos.returns.some((item) => item.refunds.some((refund) => refund.accountId === accountId))
   );
 }
 
@@ -740,9 +868,16 @@ export function createSale(
   const shift =
     input.shiftId === null ? null : deviceShift(data, input.shiftId, deviceId, register.id);
 
-  // Decision 34: the register's account for each method now
-  const missing = input.payments.flatMap((payment, index) =>
-    register.accounts[payment.method] === null ? [`payments.${String(index)}.method`] : [],
+  // Decision 34: the register's account for each method now. Step 20c: an exchange's money goes
+  // through the account its return put it on (the API's checkExchange()).
+  const exchanges = exchangeAccounts(data, input, register.id);
+  const accountIds = input.payments.map((payment, index) =>
+    payment.method === 'exchange'
+      ? (exchanges.get(index) ?? null)
+      : accountOf(target, payment.method),
+  );
+  const missing = accountIds.flatMap((accountId, index) =>
+    accountId === null ? [`payments.${String(index)}.method`] : [],
   );
   if (missing.length > 0) {
     throw new MockProblem(
@@ -793,6 +928,12 @@ export function createSale(
   // Decision 34: impossible while one device holds the register, so a bug
   if (data.pos.sales.some((sale) => sale.number === number)) {
     throw fieldProblem('pos_number_taken', 'sequence');
+  }
+  // Step 20c: the line ids the device made, which a return made offline may already point at.
+  // One already used is the API's pos_sale_lines_pkey (sync_id_taken, no field).
+  const usedLineIds = new Set(data.pos.sales.flatMap((sale) => sale.lines.map((line) => line.id)));
+  if (input.lines.some((line) => line.id !== null && usedLineIds.has(line.id))) {
+    throw new MockProblem(409, 'sync_id_taken');
   }
 
   const amounts = posSaleAmounts(
@@ -853,8 +994,8 @@ export function createSale(
     document: { id: saleId, number },
     narration: `POS sale ${number}`,
     amounts: [
-      ...input.payments.map((payment) => ({
-        accountId: register.accounts[payment.method] ?? cashAccount,
+      ...input.payments.map((payment, index) => ({
+        accountId: accountIds[index] ?? cashAccount,
         branchId,
         amount: payment.amount,
       })),
@@ -881,6 +1022,8 @@ export function createSale(
       data.stock.batches.find((batch) => batch.id === batchId);
     return {
       ...line,
+      // Step 20c: the device's own id
+      id: sent.id ?? line.id,
       // The device's rate and the amounts worked out with it (decision 22)
       taxRate: { ...line.taxRate, rate: sent.rate },
       net: lineAmounts.net,
@@ -901,6 +1044,7 @@ export function createSale(
         line.tracking === 'batch' && compareQuantity(plan.shortQuantity, '0') > 0
           ? (batchOf(sent.batchId)?.lotNumber ?? null)
           : null,
+      value: addMoney(costs[index] ?? '0', '0'),
     };
   });
 
@@ -929,12 +1073,17 @@ export function createSale(
     paid,
     change,
     lines: saleLines,
-    payments: input.payments.map((payment) => ({
-      method: payment.method,
-      amount: addMoney(payment.amount, '0'),
-      reference: payment.reference,
-      accountId: register.accounts[payment.method] ?? cashAccount,
-    })),
+    payments: input.payments.map((payment, index) => {
+      // The return's number never changes, so it is kept with the payment
+      const used = data.pos.returns.find((item) => item.id === payment.returnId);
+      return {
+        method: payment.method,
+        amount: addMoney(payment.amount, '0'),
+        reference: payment.reference,
+        accountId: accountIds[index] ?? cashAccount,
+        return: used ? { id: used.id, number: used.number } : null,
+      };
+    }),
     deviceId,
     entry,
   };
@@ -965,6 +1114,52 @@ export function createSale(
     overrides: posOverridesOf(input, register.maxDiscountPercent),
     shortLines: short.length,
   };
+}
+
+// Step 20c (decision 38), the API's checkExchange(): an exchange payment uses a return saved with
+// this sale (the push ran it first), at the same register and in the same shift, for exactly the
+// return's exchange refund, and no other sale used it. The device makes both, so each is a bug.
+// Answers each exchange payment's account: the one its return's refund went to.
+function exchangeAccounts(
+  data: WorkspaceData,
+  input: PosSaleInput,
+  registerId: string,
+): Map<number, string> {
+  const accounts = new Map<number, string>();
+  const issues: { path: string; code: ErrorCode }[] = [];
+  input.payments.forEach((payment, index) => {
+    if (payment.method !== 'exchange' || payment.returnId === null) return;
+    const path = `payments.${String(index)}.method`;
+    const used = data.pos.returns.find((item) => item.id === payment.returnId);
+    if (!used) {
+      issues.push({ path, code: 'pos_return_unknown' });
+      return;
+    }
+    const refund = used.refunds.find((item) => item.method === 'exchange');
+    const taken = data.pos.sales.some((sale) =>
+      sale.payments.some((other) => other.return?.id === used.id),
+    );
+    if (
+      used.registerId !== registerId ||
+      used.shiftId !== input.shiftId ||
+      refund === undefined ||
+      compareMoney(refund.amount, payment.amount) !== 0 ||
+      taken
+    ) {
+      issues.push({ path, code: 'pos_exchange_invalid' });
+      return;
+    }
+    accounts.set(index, refund.accountId);
+  });
+  const [first] = issues;
+  if (first !== undefined) {
+    throw new MockProblem(
+      409,
+      first.code,
+      Object.fromEntries(issues.map((issue) => [issue.path, [issue.code]])),
+    );
+  }
+  return accounts;
 }
 
 // Decision 26, for every POS command (step 20b: a shift's open, pay ins and outs, close too): the
@@ -1020,13 +1215,38 @@ export function findSale(data: WorkspaceData, id: string): MockPosSale {
   return found;
 }
 
-// The schemas' parse leaves out what only the mock keeps (shortSerials, shortLot)
+// Step 20c: what the returns brought back of a sale line so far, in its unit, and the serial
+// numbers in the order they came back (the API's returnedOf())
+export function returnedOf(
+  data: WorkspaceData,
+  saleLineId: string,
+): { quantity: string; serialNumbers: string[] } {
+  const lines = data.pos.returns.flatMap((item) =>
+    item.lines.filter((line) => line.saleLineId === saleLineId),
+  );
+  return {
+    quantity: addQuantity(
+      lines.reduce((sum, line) => addQuantity(sum, line.quantity), '0'),
+      '0',
+    ),
+    serialNumbers: lines.flatMap((line) => line.serialNumbers),
+  };
+}
+
+// The schemas' parse leaves out what only the mock keeps (shortSerials, shortLot, value). Step
+// 20c: with what came back of each line, and the returns of it, oldest first.
 export function toPosSale(data: WorkspaceData, stored: MockPosSale): PosSale {
   const { deviceId, lines, ...rest } = stored;
   const device = data.sync.devices.find((candidate) => candidate.id === deviceId);
   return {
     ...rest,
-    lines: lines.map((line) => posSaleLineSchema.parse(line)),
+    lines: lines.map((line) =>
+      posSaleLineSchema.parse({ ...line, returnedQuantity: returnedOf(data, line.id).quantity }),
+    ),
+    returns: data.pos.returns
+      .filter((item) => item.saleId === stored.id)
+      .toSorted((a, b) => a.returnedAt.localeCompare(b.returnedAt) || a.id.localeCompare(b.id))
+      .map((item) => ({ id: item.id, number: item.number, date: item.date, total: item.total })),
     device: { id: deviceId, name: device?.name ?? '' },
   };
 }

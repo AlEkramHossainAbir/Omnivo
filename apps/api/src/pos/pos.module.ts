@@ -5,6 +5,8 @@ import { JournalModule } from '../journal/journal.module.js';
 import { PosController } from './pos.controller.js';
 import { PosCashReasonsService } from './pos-cash-reasons.service.js';
 import { PosRegistersService } from './pos-registers.service.js';
+import { PosReturnsController } from './pos-returns.controller.js';
+import { PosReturnsService } from './pos-returns.service.js';
 import { PosSalesService } from './pos-sales.service.js';
 import { PosShiftsController } from './pos-shifts.controller.js';
 import { PosShiftsService } from './pos-shifts.service.js';
@@ -18,10 +20,18 @@ import { PosShiftsService } from './pos-shifts.service.js';
 // PosShiftsService posts them with the journal's PostingService (JournalModule). It is exported
 // for the push too, which writes a shift's three commands; the variance bell's handler is wired
 // in the worker like the sold-short one.
+// Step 20c: the returns. A return moves stock and books like a sale (InventoryModule), and is
+// written only by the push, so PosReturnsService is exported for it too.
 @Module({
   imports: [InventoryModule, JournalModule],
-  controllers: [PosController, PosShiftsController],
-  providers: [PosRegistersService, PosSalesService, PosCashReasonsService, PosShiftsService],
-  exports: [PosSalesService, PosShiftsService],
+  controllers: [PosController, PosShiftsController, PosReturnsController],
+  providers: [
+    PosRegistersService,
+    PosSalesService,
+    PosCashReasonsService,
+    PosShiftsService,
+    PosReturnsService,
+  ],
+  exports: [PosSalesService, PosShiftsService, PosReturnsService],
 })
 export class PosModule {}

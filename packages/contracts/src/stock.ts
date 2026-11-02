@@ -15,6 +15,7 @@ import { levelSchema, quantitySchema } from './quantities.js';
 // purchase_receipt (step 17b): goods a supplier delivered against a purchase order.
 // purchase_return (step 17d): goods sent back to a supplier.
 // pos_sale (step 20a): goods sold at a POS counter.
+// pos_return (step 20c): goods a customer brought back to a POS counter.
 export const MOVEMENT_KINDS = [
   'adjustment',
   'transfer_out',
@@ -25,6 +26,7 @@ export const MOVEMENT_KINDS = [
   'purchase_receipt',
   'purchase_return',
   'pos_sale',
+  'pos_return',
 ] as const;
 export type MovementKind = (typeof MOVEMENT_KINDS)[number];
 

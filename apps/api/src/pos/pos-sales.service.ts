@@ -22,6 +22,8 @@ import {
   batches,
   devices,
   posRegisters,
+  posReturnRefunds,
+  posReturns,
   posSaleLineBatches,
   posSaleLines,
   posSalePayments,
@@ -60,6 +62,7 @@ import {
 } from '../sales/sales-lines.js';
 import { bookingDay } from './booking-day.js';
 import { accountOf } from './pos-registers.service.js';
+import { returnedFor, returnedOf } from './pos-returnable.js';
 import { deviceShift } from './pos-shifts.service.js';
 
 type SaleRow = typeof posSales.$inferSelect;
@@ -83,6 +86,22 @@ function numberTaken(number: string): AppError {
   return new AppError(409, 'pos_number_taken', `Another sale already has number ${number}.`, {
     fieldErrors: { sequence: ['pos_number_taken'] },
   });
+}
+
+// Step 20c: an exchange payment that does not match its return. A bug, like a number taken.
+function exchangeInvalid(issues: readonly LineIssue[]): AppError {
+  const [first] = issues;
+  return new AppError(
+    409,
+    first?.code ?? 'pos_exchange_invalid',
+    "This sale's exchange does not match the return it uses.",
+    {
+      fieldErrors:
+        issues.length === 0
+          ? { payments: ['pos_exchange_invalid'] }
+          : Object.fromEntries(issues.map((issue) => [issue.path, [issue.code]])),
+    },
+  );
 }
 
 // "price on line 2, discount on line 3, bill discount": what the audit log shows of the
@@ -154,10 +173,16 @@ export class PosSalesService {
       await deviceShift(tx, input.shiftId, deviceId, register.id);
     }
 
-    // The register's account for each method now: the money goes where the register says today
+    // The register's account for each method now: the money goes where the register says today.
+    // Step 20c: an exchange's money goes through the account its return put it on, so the two
+    // always meet on one account and it comes back to zero, even after a change of the register.
+    const exchanges = await this.checkExchange(tx, input, register.id);
     const issues: LineIssue[] = [];
     const payments = input.payments.map((payment, index) => {
-      const accountId = accountOf(register, payment.method);
+      const accountId =
+        payment.method === 'exchange'
+          ? (exchanges.get(index) ?? null)
+          : accountOf(register, payment.method);
       if (accountId === null) {
         issues.push({ path: `payments.${String(index)}.method`, code: 'pos_method_not_set' });
       }
@@ -285,6 +310,8 @@ export class PosSalesService {
           }
           return {
             ...salesLineValues(line, index),
+            // Step 20c: the device's own id, which a return made offline may already point at
+            ...(sent.id !== null && { id: sent.id }),
             // The device's rate and the amounts worked out with it (decision 22)
             taxRate: sent.rate,
             net: lineAmounts.net,
@@ -316,17 +343,25 @@ export class PosSalesService {
       }));
     });
     if (batchRows.length > 0) await tx.insert(posSaleLineBatches).values(batchRows);
-    await tx.insert(posSalePayments).values(
-      payments.map((payment, index) => ({
-        tenantId,
-        saleId,
-        lineNo: index + 1,
-        method: payment.method,
-        amount: payment.amount,
-        reference: payment.reference,
-        accountId: payment.accountId,
-      })),
-    );
+    try {
+      await tx.insert(posSalePayments).values(
+        payments.map((payment, index) => ({
+          tenantId,
+          saleId,
+          lineNo: index + 1,
+          method: payment.method,
+          amount: payment.amount,
+          reference: payment.reference,
+          accountId: payment.accountId,
+          returnId: payment.returnId,
+        })),
+      );
+    } catch (error) {
+      // Step 20c: another sale used the return at the same moment. checkExchange() looked first;
+      // this is the race it cannot see, and a bug either way (one device makes both).
+      if (isUniqueViolation(error, 'pos_sale_payments_return_idx')) throw exchangeInvalid([]);
+      throw error;
+    }
 
     // The books: the change came out of the cash, so it is a minus on the cash account
     const cost = sumMoney(lineValues);
@@ -484,10 +519,32 @@ export class PosSalesService {
               )
               .orderBy(sql`${batches.expiresOn} ASC NULLS LAST`, asc(batches.id));
       const paymentRows = await tx
-        .select()
+        .select({ payment: posSalePayments, returnNumber: posReturns.number })
         .from(posSalePayments)
+        .leftJoin(
+          posReturns,
+          and(
+            eq(posReturns.tenantId, posSalePayments.tenantId),
+            eq(posReturns.id, posSalePayments.returnId),
+          ),
+        )
         .where(and(eq(posSalePayments.tenantId, getTenantId()), eq(posSalePayments.saleId, id)))
         .orderBy(asc(posSalePayments.lineNo));
+      // Step 20c (decision 31): what came back of each line, and the returns, oldest first
+      const returned = await returnedOf(
+        tx,
+        lineRows.map((row) => row.id),
+      );
+      const returns = await tx
+        .select({
+          id: posReturns.id,
+          number: posReturns.number,
+          date: posReturns.date,
+          total: posReturns.total,
+        })
+        .from(posReturns)
+        .where(and(eq(posReturns.tenantId, getTenantId()), eq(posReturns.saleId, id)))
+        .orderBy(asc(posReturns.returnedAt), asc(posReturns.id));
       const [entry] = await this.books.entriesOf(tx, id);
       return {
         ...summary,
@@ -497,7 +554,10 @@ export class PosSalesService {
         billDiscount: sale.billDiscount,
         billDiscountAmount: sale.billDiscountAmount,
         paid: sale.paid,
-        change: posChangeOf(paymentRows, sale.total),
+        change: posChangeOf(
+          paymentRows.map((row) => row.payment),
+          sale.total,
+        ),
         lines: (await withVariants(tx, lineRows)).map(({ row, variant }) => ({
           ...toSalesLine(row, variant),
           billDiscount: row.billDiscount,
@@ -514,13 +574,19 @@ export class PosSalesService {
             })),
           serialNumbers: row.serialNumbers,
           shortQuantity: row.shortQuantity,
+          returnedQuantity: returnedFor(returned, row.id).quantity,
         })),
-        payments: paymentRows.map((payment) => ({
+        payments: paymentRows.map(({ payment, returnNumber }) => ({
           method: payment.method,
           amount: payment.amount,
           reference: payment.reference,
           accountId: payment.accountId,
+          return:
+            payment.returnId === null || returnNumber === null
+              ? null
+              : { id: payment.returnId, number: returnNumber },
         })),
+        returns,
         device: { id: sale.deviceId, name: header.deviceName },
         entry: entry ?? null,
       };
@@ -613,6 +679,75 @@ export class PosSalesService {
         nextCursor: page.nextCursor,
       };
     });
+  }
+
+  // Step 20c (decision 38): an exchange payment uses a return saved with this sale, at the same
+  // register and in the same shift, for exactly the return's exchange refund, and no other sale
+  // used it. The device makes both, so any of these is a bug, and one code says it (the database
+  // checks the same at commit: pos_sale_payments_exchange_match). Answers each exchange payment's
+  // account: the one its return's refund went to.
+  private async checkExchange(
+    tx: Transaction,
+    input: PosSaleInput,
+    registerId: string,
+  ): Promise<Map<number, string>> {
+    const wanted = input.payments.flatMap((payment, index) =>
+      payment.method === 'exchange' && payment.returnId !== null
+        ? [{ index, returnId: payment.returnId, amount: payment.amount }]
+        : [],
+    );
+    if (wanted.length === 0) return new Map();
+    const tenantId = getTenantId();
+    const returnIds = wanted.map((payment) => payment.returnId);
+    const found = await tx
+      .select({
+        id: posReturns.id,
+        registerId: posReturns.registerId,
+        shiftId: posReturns.shiftId,
+        amount: posReturnRefunds.amount,
+        accountId: posReturnRefunds.accountId,
+      })
+      .from(posReturns)
+      .leftJoin(
+        posReturnRefunds,
+        and(
+          eq(posReturnRefunds.tenantId, posReturns.tenantId),
+          eq(posReturnRefunds.returnId, posReturns.id),
+          eq(posReturnRefunds.method, 'exchange'),
+        ),
+      )
+      .where(and(eq(posReturns.tenantId, tenantId), inArray(posReturns.id, returnIds)));
+    const used = await tx
+      .select({ returnId: posSalePayments.returnId })
+      .from(posSalePayments)
+      .where(
+        and(eq(posSalePayments.tenantId, tenantId), inArray(posSalePayments.returnId, returnIds)),
+      );
+    const usedIds = new Set(used.map((row) => row.returnId));
+    const accounts = new Map<number, string>();
+    const issues: LineIssue[] = [];
+    for (const payment of wanted) {
+      const path = `payments.${String(payment.index)}.method`;
+      const ret = found.find((row) => row.id === payment.returnId);
+      if (ret === undefined) {
+        issues.push({ path, code: 'pos_return_unknown' });
+        continue;
+      }
+      if (
+        ret.registerId !== registerId ||
+        ret.shiftId !== input.shiftId ||
+        ret.amount === null ||
+        ret.accountId === null ||
+        compareMoney(ret.amount, payment.amount) !== 0 ||
+        usedIds.has(payment.returnId)
+      ) {
+        issues.push({ path, code: 'pos_exchange_invalid' });
+        continue;
+      }
+      accounts.set(payment.index, ret.accountId);
+    }
+    if (issues.length > 0) throw exchangeInvalid(issues);
+    return accounts;
   }
 
   // Every rule of a goods line that resolveSalesLines() leaves to the stock documents: a batch

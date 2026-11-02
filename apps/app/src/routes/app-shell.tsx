@@ -42,6 +42,7 @@ import {
   Payment02Icon,
   PieChartIcon,
   ReceiptDollarIcon,
+  ReturnRequestIcon,
   RulerIcon,
   SecurityCheckIcon,
   Settings02Icon,
@@ -452,6 +453,10 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
             {/* Everyone reads the posted sales, like every sales document */}
             <NavLink to="/pos/sales" icon={ReceiptDollarIcon}>
               {t('nav.posSales')}
+            </NavLink>
+            {/* Step 20c: what the counters took back, read by everyone like the sales */}
+            <NavLink to="/pos/returns" icon={ReturnRequestIcon}>
+              {t('nav.posReturns')}
             </NavLink>
             {/* Step 20b (decision 26): the shifts show how short a drawer was, so only for the
                 people who look after the counters */}

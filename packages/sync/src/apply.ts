@@ -5,6 +5,7 @@ import type {
   SyncCustomerGroup,
   SyncPosCashReason,
   SyncPosRegister,
+  SyncPosSale,
   SyncPriceList,
   SyncPull,
   SyncSettings,
@@ -15,6 +16,7 @@ import type {
 
 import type { LocalCopy } from './copy.js';
 import type {
+  PosSaleRow,
   PriceListItemRow,
   ProductRow,
   PullState,
@@ -25,6 +27,7 @@ import type {
 } from './database.js';
 import { TABLE_OF } from './database.js';
 import { productIndex } from './records.js';
+import { dropOldSales } from './returns.js';
 import { readPullState } from './state.js';
 
 // A row before the transaction gives it its generation (step 19b): it is sealed first, and the
@@ -48,6 +51,7 @@ export interface SealedChanges {
     priceListItems: Unstamped<PriceListItemRow>[];
     customers: Unstamped<SealedRow<SyncCustomer>>[];
     stock: Unstamped<StockRow>[];
+    posSales: Unstamped<PosSaleRow>[];
   };
   deletes: Map<SyncTableName, string[]>;
 }
@@ -83,6 +87,7 @@ export async function sealChanges(
       priceListItems: [],
       customers: [],
       stock: [],
+      posSales: [],
     },
     deletes: new Map(),
   };
@@ -147,6 +152,14 @@ export async function sealChanges(
             variantId: change.data.variantId,
           });
           break;
+        // Step 20c: the receipt number and the day stay clear, for the return screen and the drop
+        case 'pos_sale':
+          puts.posSales.push({
+            ...(await boxed<SyncPosSale>(copy, 'posSales', key, change.data)),
+            number: change.data.number,
+            date: change.data.date,
+          });
+          break;
       }
     }),
   );
@@ -207,6 +220,7 @@ export async function writeSealed(
   await db.priceListItems.bulkPut(stamp(puts.priceListItems, gen));
   await db.customers.bulkPut(stamp(puts.customers, gen));
   await db.stock.bulkPut(stamp(puts.stock, gen));
+  await db.posSales.bulkPut(stamp(puts.posSales, gen));
   // Step 19b: only a write that touched them, so a page of stock alone leaves the in-memory
   // copies as they are
   if (puts.products.length > 0 || deletes.has('products')) await db.markWritten('products');
@@ -239,6 +253,8 @@ export async function applyPage(
         }
       }
     }
+    // Step 20c: the end of a pull, full or not: the sales older than the device keeps go
+    if (!page.hasMore) await dropOldSales(db, page.serverTime);
     await db.meta.put(state);
     return state;
   });

@@ -187,7 +187,7 @@ export function orderDraft(customerId: string, variantId: string): SalesOrderDra
 }
 
 // Step 20a: a register of the branch, as the pull sends it. Step 20b: with its shift settings, an
-// over/short account and no shift yet.
+// over/short account and no shift yet. Step 20c: no exchanges, returns for 7 days.
 export function posRegister(
   fields: Partial<SyncPosRegister> & Pick<SyncPosRegister, 'code'>,
 ): SyncPosRegister {
@@ -203,6 +203,8 @@ export function posRegister(
     overShortAccountId: uuidv7(),
     varianceAlert: '500',
     lockAfter: '5',
+    exchangeAccountId: null,
+    returnDays: 7,
     deviceId: null,
     lastShift: null,
     archivedAt: null,

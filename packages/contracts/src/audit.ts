@@ -236,6 +236,16 @@ export const AUDIT_ACTIONS = [
   'pos_shift.closed_without_count',
   'pos_shift.expected_differs',
   'pos_shift.without_permission',
+  // step 20c. A return's rows name its device like a sale's. The server takes every return, and
+  // writes what it would have refused: outside_window (after the register's window),
+  // over_returned (more of a line than was left: another counter took some back first),
+  // amounts_differ (the device's money back was not the server's arithmetic, for the same reason),
+  // without_permission (the cashier no longer had pos.return.create).
+  'pos_return.created',
+  'pos_return.outside_window',
+  'pos_return.over_returned',
+  'pos_return.amounts_differ',
+  'pos_return.without_permission',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -292,6 +302,7 @@ export const AUDIT_ENTITY_TYPES = [
   'pos_sale',
   'pos_cash_reason',
   'pos_shift',
+  'pos_return',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

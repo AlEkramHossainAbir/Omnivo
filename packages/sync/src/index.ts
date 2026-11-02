@@ -1,7 +1,8 @@
 // Two kinds of module. The pages of the app import the reads (queries, records, state, problems),
 // the outbox's saves (outbox, overlay, prices; step 18b), the key's code (crypto, keys; step 19b),
-// the POS's register and sale (pos; step 20a), its shift and carts (shift, carts; step 20b) and the
-// types: none of them loads Dexie at run time, so a page that searches customers or a
+// the POS's register and sale (pos; step 20a), its shift and carts (shift, carts; step 20b), its
+// returns (returns; step 20c) and the types: none of them loads Dexie at run time, so a page that
+// searches customers or a
 // form that saves offline stays small. The code that opens the database and syncs (database,
 // copy, apply, push, engine, live, device) brings Dexie, and the app loads it once, lazily, after
 // sign-in. `sideEffects: false` in package.json lets the bundler leave out the modules a chunk
@@ -15,6 +16,7 @@ export {
   holdCart,
   type PosCart,
   type PosCartCustomer,
+  type PosCartExchange,
   type PosCartLine,
   resumeCart,
   saveScreenCart,
@@ -35,13 +37,16 @@ export {
   type OutboxEntry,
   type OutboxRow,
   type OutboxStatus,
+  type PosSaleRow,
   type PriceListItemRow,
   type ProductRow,
   type PullState,
   type RegisterClaim,
   type SealedRow,
   type ShiftRow,
+  type ShiftTally,
   type StockRow,
+  type StoredShift,
   SyncDatabase,
   type SyncNoticeRecord,
   type SyncTableName,
@@ -104,6 +109,21 @@ export {
   waitingAtCounter,
 } from './pos.js';
 export { lookUpPrices, productsOfVariants } from './prices.js';
+export {
+  dropOldSales,
+  keptSalesFrom,
+  loadRegisterSales,
+  localSale,
+  localSaleOf,
+  newReturnId,
+  type PosReturnResult,
+  type PosReturnSave,
+  type RegisterSalesPage,
+  returnEffectOf,
+  savePosReturn,
+  withReturns,
+  withWaitingReturns,
+} from './returns.js';
 export { STORAGE_FAILED } from './problems.js';
 export {
   applyAnswers,
@@ -145,18 +165,24 @@ export {
   searchText,
 } from './records.js';
 export {
-  cashAfterSale,
   type CashMoveResult,
   type CashMoveSave,
   closeShift,
+  EMPTY_TALLY,
   localCashReasons,
   moveCash,
   openShift,
   readShift,
+  type ReturnEffect,
+  type SaleEffect,
   type ShiftCloseResult,
   type ShiftCloseSave,
   type ShiftOpenResult,
   type ShiftOpenSave,
+  shiftAfterReturn,
+  shiftAfterSale,
+  shiftReportOf,
+  type ShiftReportFields,
   type ShiftStart,
   shiftStart,
   type ShiftState,

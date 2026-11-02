@@ -12,6 +12,7 @@ import {
   parties,
   posCashReasons,
   posRegisters,
+  posSales,
   priceLists,
   productCategories,
   products,
@@ -21,7 +22,7 @@ import {
   units,
   warehouses,
 } from '@omnivo/db';
-import { and, asc, eq, gt, inArray, isNull, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNull, type SQL, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
@@ -29,6 +30,7 @@ import type { Transaction } from '../common/tenant/with-tenant.js';
 import { toWarehouse } from '../inventory/warehouses.service.js';
 import { toPosCashReason } from '../pos/pos-cash-reasons.service.js';
 import { lastShiftsOf, toSyncPosRegister } from '../pos/pos-registers.service.js';
+import { posSalesFrom, returnableSalesOf } from '../pos/pos-returnable.js';
 import { productsOf } from '../products/product-read.js';
 import { toUnit } from '../products/units.service.js';
 import { customersOf } from '../sales/customer-read.js';
@@ -41,6 +43,24 @@ export interface SyncScope {
   branchId: string;
   // Its active warehouses: the ones the device keeps, with their stock
   warehouseIds: string[];
+  // Step 20c: the POS register it holds (null = none), whose recent sales it keeps, and the first
+  // day of those (posSalesFrom())
+  registerId: string | null;
+  posSalesFrom: string;
+}
+
+// Step 20c: the POS part of a device's scope. A device holds one register at most
+// (pos_registers_device_idx).
+export async function posScopeOf(
+  tx: Transaction,
+  tenantId: string,
+  deviceId: string,
+): Promise<Pick<SyncScope, 'registerId' | 'posSalesFrom'>> {
+  const [held] = await tx
+    .select({ id: posRegisters.id })
+    .from(posRegisters)
+    .where(and(eq(posRegisters.tenantId, tenantId), eq(posRegisters.deviceId, deviceId)));
+  return { registerId: held?.id ?? null, posSalesFrom: await posSalesFrom(tx) };
 }
 
 // Which rows a loader reads:
@@ -118,6 +138,7 @@ const stockRowSchema = z.object({
 //   pos_register        active, its warehouse in the device's branch (step 20a), with its latest
 //                       shift (step 20b)
 //   pos_cash_reason     active, all of them (step 20b): a reason belongs to no branch
+//   pos_sale            of the register the device holds, from the last 30 days (step 20c)
 export const LOADERS: Record<SyncEntity, Loader> = {
   // One row, keyed by the workspace's id (the contract's settings key)
   settings: async (tx, scope, pick) => {
@@ -427,6 +448,33 @@ export const LOADERS: Record<SyncEntity, Loader> = {
     return whole.map((data) => ({
       sort: [data.id],
       change: { op: 'upsert', entity: 'customer', key: data.id, data },
+    }));
+  },
+
+  // Step 20c (decision 21): the sales of the register this device holds, of the last
+  // POS_SALES_ON_DEVICE_DAYS days, with what came back of each line. 0056 logs a sale with its
+  // warehouse when it is written and again when a return of it is; another device of the branch
+  // finds no row of that key here, and the pull sends it a delete of a row it never had.
+  pos_sale: async (tx, scope, pick) => {
+    if (scope.registerId === null) return [];
+    const { where, limit } = byId(posSales.id, pick);
+    const rows = await tx
+      .select()
+      .from(posSales)
+      .where(
+        and(
+          eq(posSales.tenantId, scope.tenantId),
+          eq(posSales.registerId, scope.registerId),
+          gte(posSales.date, scope.posSalesFrom),
+          where,
+        ),
+      )
+      .orderBy(asc(posSales.id))
+      .limit(limit);
+    const sales = await returnableSalesOf(tx, rows);
+    return sales.map((sale) => ({
+      sort: [sale.id],
+      change: { op: 'upsert', entity: 'pos_sale', key: sale.id, data: sale },
     }));
   },
 

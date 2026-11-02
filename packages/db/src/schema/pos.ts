@@ -4,8 +4,8 @@ import {
   POS_CASH_DIRECTIONS,
   POS_LOCK_AFTER,
   POS_PAPER_WIDTHS,
-  POS_PAYMENT_METHODS,
   POS_SHIFT_STATUSES,
+  POS_TENDERS,
 } from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
 import {
@@ -48,6 +48,12 @@ import { warehouses } from './warehouses.js';
 // the drawer at the start to the count at the end, with money put in or taken out for a reason in
 // between. The shift's tables sit between the registers and the sales, because a sale points at
 // its shift. The rules live in migration 0054.
+//
+// Step 20c: returns. A customer brings goods back to a counter with the receipt; the return is a
+// document of its own (POS1-R000012), made on the device and posted when it arrives
+// (pos_return.create), like a sale. It points at the sale and at the shift of the register that
+// took the goods back. Its money goes back by refunds, or as an exchange: a refund of the tender
+// 'exchange' that a sale saved with it uses as a payment. The rules live in migration 0056.
 
 // ---------------------------------------------------------------------------------------------
 // Registers
@@ -86,6 +92,12 @@ export const posRegisters = pgTable(
     varianceAlert: numeric('variance_alert', { precision: 12, scale: 0 }).notNull().default('500'),
     // Minutes of no key, click or touch before /pos locks the screen; 'off' = never
     lockAfter: text('lock_after', { enum: POS_LOCK_AFTER }).notNull().default('5'),
+    // Step 20c. The account an exchange passes through ("POS exchange clearing", a liability): a
+    // return puts the money on it, the sale made with it takes it off. NULL = this counter makes
+    // no exchanges, only refunds.
+    exchangeAccountId: uuid('exchange_account_id'),
+    // How many days after a sale's date the counter takes its goods back; 0 = the same day only
+    returnDays: smallint('return_days').notNull().default(7),
     // The device that holds it (decision 14); NULL = free. Set by a claim, cleared by a release,
     // and by the database itself when that device is revoked or moved to another branch (0052).
     deviceId: uuid('device_id'),
@@ -94,6 +106,8 @@ export const posRegisters = pgTable(
     // grows (0052). Written without touching version: a sale must not make a manager's edit of
     // the register fail on its version.
     lastNumber: integer('last_number').notNull().default(0),
+    // Step 20c: the same for its own series of returns (POS1-R000012), with the same rules
+    lastReturnNumber: integer('last_return_number').notNull().default(0),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
   },
   (table) => [
@@ -145,11 +159,20 @@ export const posRegisters = pgTable(
       columns: [table.tenantId, table.overShortAccountId],
       foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
     }),
+    foreignKey({
+      name: 'pos_registers_exchange_account_fk',
+      columns: [table.tenantId, table.exchangeAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
     // The contract's format: the code is split from the number at the hyphen
     check('pos_registers_code_check', sql`${table.code} ~ '^[A-Z][A-Z0-9]{1,7}$'`),
     check('pos_registers_discount_check', sql`${table.maxDiscountPercent} BETWEEN 0 AND 100`),
     check('pos_registers_paper_check', sql`${table.paperWidth} IN ('58', '80')`),
-    check('pos_registers_last_number_check', sql`${table.lastNumber} >= 0`),
+    check(
+      'pos_registers_last_number_check',
+      sql`${table.lastNumber} >= 0 AND ${table.lastReturnNumber} >= 0`,
+    ),
+    check('pos_registers_return_days_check', sql`${table.returnDays} BETWEEN 0 AND 365`),
     check('pos_registers_variance_alert_check', sql`${table.varianceAlert} >= 0`),
     check(
       'pos_registers_lock_after_check',
@@ -634,7 +657,8 @@ export const posSaleLineBatches = pgTable(
   ],
 );
 
-// How the customer paid: cash and a card, or bKash with the rest in cash
+// How the customer paid: cash and a card, or bKash with the rest in cash. Step 20c: or with the
+// money of a return saved with the sale (the tender 'exchange'), the rest by any method.
 export const posSalePayments = pgTable(
   'pos_sale_payments',
   {
@@ -644,13 +668,15 @@ export const posSalePayments = pgTable(
     saleId: uuid('sale_id').notNull(),
     // The order the cashier took them in
     lineNo: smallint('line_no').notNull(),
-    method: text('method', { enum: POS_PAYMENT_METHODS }).notNull(),
+    method: text('method', { enum: POS_TENDERS }).notNull(),
     amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
     // The card's last 4 digits or approval code, the bKash or Nagad TrxID
     reference: text('reference'),
     // The register's account for the method when the sale was posted: a later change of the
-    // register does not move old money
+    // register does not move old money. An exchange's is the register's exchange account.
     accountId: uuid('account_id').notNull(),
+    // Step 20c: an exchange's return; NULL for the other tenders
+    returnId: uuid('return_id'),
   },
   (table) => [
     primaryKey({
@@ -659,6 +685,11 @@ export const posSalePayments = pgTable(
     }),
     // The account FK's check when an account is deleted: a busy counter has thousands of rows
     index('pos_sale_payments_account_idx').on(table.tenantId, table.accountId),
+    // A return's money pays for one sale: the last word on pos_exchange_invalid when two sales
+    // name the same return. Also the return FK's own index.
+    uniqueIndex('pos_sale_payments_return_idx')
+      .on(table.tenantId, table.returnId)
+      .where(sql`${table.returnId} IS NOT NULL`),
     foreignKey({
       name: 'pos_sale_payments_sale_fk',
       columns: [table.tenantId, table.saleId],
@@ -669,10 +700,257 @@ export const posSalePayments = pgTable(
       columns: [table.tenantId, table.accountId],
       foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
     }),
+    // The return is never deleted (0056), so no ON DELETE
+    foreignKey({
+      name: 'pos_sale_payments_return_fk',
+      columns: [table.tenantId, table.returnId],
+      foreignColumns: [posReturns.tenantId, posReturns.id],
+    }),
+    // Exchange, and only exchange, names a return
     check(
       'pos_sale_payments_method_check',
-      sql`${table.method} IN ('cash', 'card', 'bkash', 'nagad')`,
+      sql`${table.method} IN ('cash', 'card', 'bkash', 'nagad', 'exchange') AND (${table.method} = 'exchange') = (${table.returnId} IS NOT NULL)`,
     ),
     check('pos_sale_payments_amount_check', sql`${table.amount} > 0`),
+  ],
+);
+
+// ---------------------------------------------------------------------------------------------
+// Returns (step 20c)
+
+// Goods a customer brought back with the receipt of a POS sale. Posted when it arrives, like a
+// sale: no draft, no status, never changed and never deleted (0056). The id is made by the device
+// (the command's returnId), so an exchange sale saved with it can point at it before the server
+// has seen either. created_by is the cashier; created_at is when the server received it.
+// The customer and "prices include VAT" are the sale's, read through sale_id: a return has no
+// customer of its own.
+export const posReturns = pgTable(
+  'pos_returns',
+  {
+    ...baseColumns(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    // The register that took the goods back, and its shift: the money left that drawer, whatever
+    // register and shift the sale was in
+    registerId: uuid('register_id').notNull(),
+    shiftId: uuid('shift_id').notNull(),
+    deviceId: uuid('device_id').notNull(),
+    // Its place in the register's series of returns, and the number it makes (formatReturnNumber)
+    sequence: integer('sequence').notNull(),
+    number: text('number').notNull(),
+    // The day it is in the books (the device's day, or the first open day after it), and when it
+    // happened by the device's clock
+    date: date('date', { mode: 'string' }).notNull(),
+    returnedAt: timestamp('returned_at', { withTimezone: true }).notNull(),
+    saleId: uuid('sale_id').notNull(),
+    // Where the goods came back into: the register's warehouse when it was posted (decision 3)
+    warehouseId: uuid('warehouse_id').notNull(),
+    // The sums of its lines: what it paid back, with and without VAT
+    net: numeric('net', { precision: 19, scale: 4 }).notNull(),
+    vat: numeric('vat', { precision: 19, scale: 4 }).notNull(),
+    total: numeric('total', { precision: 19, scale: 4 }).notNull(),
+    note: text('note'),
+    // It came after the register's window: posted anyway, with an audit row (decision 20)
+    outsideWindow: boolean('outside_window').notNull().default(false),
+  },
+  (table) => [
+    // The target of the composite FKs from the lines, the refunds and the exchange payments
+    uniqueIndex('pos_returns_tenant_id_idx').on(table.tenantId, table.id),
+    // A number is never given twice (POS1-R000012): the last word on pos_return_number_taken
+    uniqueIndex('pos_returns_tenant_number_idx').on(table.tenantId, table.number),
+    uniqueIndex('pos_returns_register_sequence_idx').on(
+      table.tenantId,
+      table.registerId,
+      table.sequence,
+    ),
+    // The list: newest date first, keyset on (date, id); and the same for one register
+    index('pos_returns_tenant_date_idx').on(table.tenantId, table.date, table.id),
+    index('pos_returns_register_idx').on(table.tenantId, table.registerId, table.date, table.id),
+    // A sale's returns (its page, what is left to return) and a shift's (its page, its cash)
+    index('pos_returns_sale_idx').on(table.tenantId, table.saleId),
+    index('pos_returns_shift_idx').on(table.tenantId, table.shiftId),
+    foreignKey({
+      name: 'pos_returns_register_fk',
+      columns: [table.tenantId, table.registerId],
+      foreignColumns: [posRegisters.tenantId, posRegisters.id],
+    }),
+    // The shift is of this return's register and device, like a sale's
+    foreignKey({
+      name: 'pos_returns_shift_fk',
+      columns: [table.tenantId, table.shiftId, table.registerId, table.deviceId],
+      foreignColumns: [posShifts.tenantId, posShifts.id, posShifts.registerId, posShifts.deviceId],
+    }),
+    foreignKey({
+      name: 'pos_returns_sale_fk',
+      columns: [table.tenantId, table.saleId],
+      foreignColumns: [posSales.tenantId, posSales.id],
+    }),
+    // Warehouses and devices are never deleted: no index for these two
+    foreignKey({
+      name: 'pos_returns_warehouse_fk',
+      columns: [table.tenantId, table.warehouseId],
+      foreignColumns: [warehouses.tenantId, warehouses.id],
+    }),
+    foreignKey({
+      name: 'pos_returns_device_fk',
+      columns: [table.tenantId, table.deviceId],
+      foreignColumns: [devices.tenantId, devices.id],
+    }),
+    check('pos_returns_sequence_check', sql`${table.sequence} >= 1`),
+    check(
+      'pos_returns_totals_check',
+      sql`${table.net} >= 0 AND ${table.vat} >= 0 AND ${table.total} = ${table.net} + ${table.vat}`,
+    ),
+  ],
+);
+
+// One line of the sale coming back, in the sale line's unit (decision 17). The product, the unit,
+// the description, the price and the VAT rate are the sale line's, read through sale_line_id.
+export const posReturnLines = pgTable(
+  'pos_return_lines',
+  {
+    id: baseColumns().id,
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    returnId: uuid('return_id').notNull(),
+    lineNo: smallint('line_no').notNull(),
+    saleLineId: uuid('sale_line_id').notNull(),
+    // The sale line's variant: in the key of the sale line's FK, and what the stock moves
+    variantId: uuid('variant_id').notNull(),
+    // In the sale line's unit, and in the base unit
+    quantity: numeric('quantity', { precision: 19, scale: 4 }).notNull(),
+    baseQuantity: numeric('base_quantity', { precision: 19, scale: 4 }).notNull(),
+    // The device's share of the sale line's money (posReturnAmounts); the books take these
+    net: numeric('net', { precision: 19, scale: 4 }).notNull(),
+    vat: numeric('vat', { precision: 19, scale: 4 }).notNull(),
+    total: numeric('total', { precision: 19, scale: 4 }).notNull(),
+    // What the goods cost when they were sold: the sale line's value, pro rata (a positive number)
+    value: numeric('value', { precision: 19, scale: 4 }).notNull(),
+    // A serial product: the serial numbers that came back, out of the sale line's
+    serialNumbers: text('serial_numbers')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+  },
+  (table) => [
+    uniqueIndex('pos_return_lines_line_idx').on(table.tenantId, table.returnId, table.lineNo),
+    // A sale line once per return: the last word on pos_return_line_twice. Also the target of
+    // the line batches' FK, which carries the sale line.
+    uniqueIndex('pos_return_lines_sale_line_idx').on(
+      table.tenantId,
+      table.returnId,
+      table.saleLineId,
+    ),
+    uniqueIndex('pos_return_lines_batch_key_idx').on(table.tenantId, table.id, table.saleLineId),
+    // What came back of a sale line so far: a return, the sale's page, the device's row
+    index('pos_return_lines_returned_idx').on(table.tenantId, table.saleLineId),
+    foreignKey({
+      name: 'pos_return_lines_return_fk',
+      columns: [table.tenantId, table.returnId],
+      foreignColumns: [posReturns.tenantId, posReturns.id],
+    }),
+    // variant_id is in the key: the line moves the sale line's own variant
+    foreignKey({
+      name: 'pos_return_lines_sale_line_fk',
+      columns: [table.tenantId, table.variantId, table.saleLineId],
+      foreignColumns: [posSaleLines.tenantId, posSaleLines.variantId, posSaleLines.id],
+    }),
+    check(
+      'pos_return_lines_quantity_check',
+      sql`${table.quantity} > 0 AND ${table.baseQuantity} > 0`,
+    ),
+    check(
+      'pos_return_lines_amounts_check',
+      sql`${table.net} >= 0 AND ${table.vat} >= 0 AND ${table.total} = ${table.net} + ${table.vat} AND ${table.value} >= 0`,
+    ),
+  ],
+);
+
+// The batches a batch product's line went back into, in the base unit: always batches the sale
+// line left from (the FK on sale_line_id, batch_id). The rows add up to the line's base quantity
+// (0056).
+export const posReturnLineBatches = pgTable(
+  'pos_return_line_batches',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    lineId: uuid('line_id').notNull(),
+    // The return line's sale line, so the batch below is checked against that line's batches
+    saleLineId: uuid('sale_line_id').notNull(),
+    batchId: uuid('batch_id').notNull(),
+    quantity: numeric('quantity', { precision: 19, scale: 4 }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'pos_return_line_batches_pkey',
+      columns: [table.tenantId, table.lineId, table.batchId],
+    }),
+    foreignKey({
+      name: 'pos_return_line_batches_line_fk',
+      columns: [table.tenantId, table.lineId, table.saleLineId],
+      foreignColumns: [posReturnLines.tenantId, posReturnLines.id, posReturnLines.saleLineId],
+    }),
+    // A batch the sale line left from. Sale line batches are never deleted, so no index here.
+    foreignKey({
+      name: 'pos_return_line_batches_sale_batch_fk',
+      columns: [table.tenantId, table.saleLineId, table.batchId],
+      foreignColumns: [
+        posSaleLineBatches.tenantId,
+        posSaleLineBatches.lineId,
+        posSaleLineBatches.batchId,
+      ],
+    }),
+    check('pos_return_line_batches_quantity_check', sql`${table.quantity} > 0`),
+  ],
+);
+
+// How the money went back: cash, the card or bKash it came by, or an exchange. They add up to the
+// return's total (0056); a return of ৳0 has none.
+export const posReturnRefunds = pgTable(
+  'pos_return_refunds',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    returnId: uuid('return_id').notNull(),
+    // The order the cashier gave them in
+    lineNo: smallint('line_no').notNull(),
+    method: text('method', { enum: POS_TENDERS }).notNull(),
+    amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
+    // The card's approval code, the TrxID of the bKash money sent back
+    reference: text('reference'),
+    // The register's account for the method when the return was posted (its exchange account
+    // for an exchange): a later change of the register does not move old money
+    accountId: uuid('account_id').notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: 'pos_return_refunds_pkey',
+      columns: [table.tenantId, table.returnId, table.lineNo],
+    }),
+    // One exchange per return: the last word on the input's rule
+    uniqueIndex('pos_return_refunds_exchange_idx')
+      .on(table.tenantId, table.returnId)
+      .where(sql`${table.method} = 'exchange'`),
+    // The account FK's check when an account is deleted, like the sale payments'
+    index('pos_return_refunds_account_idx').on(table.tenantId, table.accountId),
+    foreignKey({
+      name: 'pos_return_refunds_return_fk',
+      columns: [table.tenantId, table.returnId],
+      foreignColumns: [posReturns.tenantId, posReturns.id],
+    }),
+    foreignKey({
+      name: 'pos_return_refunds_account_fk',
+      columns: [table.tenantId, table.accountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    check(
+      'pos_return_refunds_method_check',
+      sql`${table.method} IN ('cash', 'card', 'bkash', 'nagad', 'exchange')`,
+    ),
+    check('pos_return_refunds_amount_check', sql`${table.amount} > 0`),
   ],
 );

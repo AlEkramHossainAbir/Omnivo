@@ -1,6 +1,7 @@
 import { Search01Icon } from '@hugeicons/core-free-icons';
 import {
   compareQuantity,
+  formatReturnNumber,
   MAX_HELD_CARTS,
   type Product,
   type ProductVariant,
@@ -20,8 +21,10 @@ import {
   holdCart,
   type LocalCopy,
   lookUpPrices,
+  type PosCartExchange,
   productByBarcode,
   productPage,
+  readClaim,
   saveScreenCart,
   screenCart,
   type ShiftCloseResult,
@@ -59,6 +62,7 @@ import {
   removeLine,
   shortLines,
 } from '../lib/pos';
+import type { UnitOf } from '../lib/pos-returns';
 import { leftOpen } from '../lib/pos-shift';
 import { useSession } from '../lib/session-store';
 import { useSyncAge } from '../lib/sync-summary';
@@ -67,6 +71,7 @@ import { DocumentNotice } from './document-notice';
 import { PosCart } from './pos-cart';
 import { hasPaisa, Kbd, useReceiptCompany } from './pos-parts';
 import type { DoneSale } from './pos-pay';
+import type { DoneReturn } from './pos-return';
 
 // The payment, the done dialog, the shortcuts and the receipt: a chunk of their own, loaded the
 // first time one opens (the screen's chunk stays in its budget). Offline too: the service worker
@@ -86,10 +91,23 @@ const CloseShiftDialog = lazy(async () => ({
 }));
 const HoldDialog = lazy(async () => ({ default: (await import('./pos-held')).HoldDialog }));
 const HeldDialog = lazy(async () => ({ default: (await import('./pos-held')).HeldDialog }));
+// Step 20c: taking goods back, and its slip; the X report's sheet
+const ReturnDialog = lazy(async () => ({ default: (await import('./pos-return')).ReturnDialog }));
+const ReturnDoneDialog = lazy(async () => ({
+  default: (await import('./pos-return')).ReturnDoneDialog,
+}));
+const DropExchangeDialog = lazy(async () => ({
+  default: (await import('./pos-return')).DropExchangeDialog,
+}));
+const PosReturnSlip = lazy(async () => ({
+  default: (await import('./pos-receipt')).PosReturnSlip,
+}));
 
 // Step 20b: what the top bar's shift menu asks the screen for. The screen opens the dialogs, because
-// they need its cart: Hold takes it, Resume replaces it, Close holds it first.
-export type ShiftRequest = 'pay-in' | 'pay-out' | 'held' | 'close';
+// they need its cart: Hold takes it, Resume replaces it, Close holds it first. Step 20c: Return
+// (the top bar's button, F6) puts an exchange into it. The X report needs no cart: the page prints
+// it (routes/pos.tsx), and it never comes here.
+export type ShiftRequest = 'pay-in' | 'pay-out' | 'held' | 'close' | 'return' | 'x-report';
 
 // Step 20a (decision 12): the products on the left, the cart on the right; on a phone the products
 // alone, with the cart as a bar at the bottom that opens over them. A whole sale works from the
@@ -175,6 +193,11 @@ export function PosScreen({
   // until then nothing is saved over it.
   const [holding, setHolding] = useState(false);
   const [restored, setRestored] = useState(false);
+  // Step 20c: the return just saved (its done dialog and slip); "Drop the exchange?" asking; the
+  // exchange dropped, whose return starts again at paying the money back
+  const [doneReturn, setDoneReturn] = useState<DoneReturn | null>(null);
+  const [dropping, setDropping] = useState(false);
+  const [dropped, setDropped] = useState<PosCartExchange | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const customerRef = useRef<HTMLButtonElement>(null);
   const billDiscountRef = useRef<HTMLInputElement>(null);
@@ -189,6 +212,15 @@ export function PosScreen({
   const blocked = !online && age?.age === 'blocked';
   // Decision 6: a shift left open on an earlier day sells nothing more; the menu's Close is the way
   const stale = leftOpen(shift.openingDate, today);
+  // Step 20c: and takes nothing back; the return dialog says why, like the screen does
+  const stopped = blocked
+    ? t('sync.blockedFormNotice', { days: format.number(SYNC_BLOCK_AFTER_DAYS) })
+    : stale
+      ? t('pos.shift.leftOpen', {
+          number: shift.number,
+          time: format.dateTime(new Date(shift.openedAt), settings.timezone),
+        })
+      : null;
 
   const findTiles = useCallback(
     async (open: LocalCopy) =>
@@ -207,6 +239,17 @@ export function PosScreen({
   const tiles = useLocalQuery(findTiles);
   const rates = useLocalQuery(readRates);
   const units = useLocalQuery(readUnits);
+  const claim = useLocalQuery(readClaim);
+  // Step 20c: the number the next return will most likely get, for the exchange's banner and pay
+  // row. The save gives the real one (another tab may take this one first).
+  const returnNumber = formatReturnNumber(register.code, (claim?.lastReturn ?? 0) + 1);
+  const unitOf = useCallback<UnitOf>(
+    (unitId) => {
+      const unit = units?.find((one) => one.id === unitId);
+      return unit && { code: unit.code, decimals: unit.decimals };
+    },
+    [units],
+  );
 
   // The stock of what is on the screen: the tiles and the cart. One read, again when either
   // changes or a pull writes stock. The ids as one sorted string, so the same set is the same read.
@@ -270,7 +313,8 @@ export function PosScreen({
   const total = amounts.totals.total;
   useEffect(() => {
     if (!restored) return;
-    const saved = cart.lines.length === 0 ? null : heldCartOf(cart, total, null);
+    // Step 20c: an exchange with no lines yet is kept too (the goods came back already)
+    const saved = cart.lines.length === 0 && !cart.exchange ? null : heldCartOf(cart, total, null);
     writes.current = writes.current
       .then(() => saveScreenCart(copy, shift.id, saved))
       .catch(() => undefined);
@@ -290,6 +334,13 @@ export function PosScreen({
   useEffect(() => {
     if (request !== 'close') return;
     const now = latest.current;
+    // Step 20c: an exchange is never held (the close drops held carts, and its goods came back):
+    // it is completed or dropped first
+    if (now.cart.exchange) {
+      toast(t('pos.exchange.closeFirst'));
+      onRequest(null);
+      return;
+    }
     if (now.cart.lines.length === 0) return;
     void holdCart(copy, shift.id, heldCartOf(now.cart, now.total, null)).then(
       (answer) => {
@@ -404,7 +455,14 @@ export function PosScreen({
   // the sale, or starts the next one). F12 opens the browser's tools in some browsers; the page
   // asks first, and Chrome lets it. Step 20b: F8 holds the cart, F9 lists the held bills
   // (decision 68).
-  const dialogOpen = paying || done !== null || shortcuts || holding || request !== null;
+  const dialogOpen =
+    paying ||
+    done !== null ||
+    shortcuts ||
+    holding ||
+    request !== null ||
+    doneReturn !== null ||
+    dropping;
   useEffect(() => {
     if (dialogOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -417,6 +475,11 @@ export function PosScreen({
           event.preventDefault();
           customerRef.current?.click();
           break;
+        // Step 20c: take goods back (the top bar's Return)
+        case 'F6':
+          event.preventDefault();
+          onRequest('return');
+          break;
         case 'F7':
           event.preventDefault();
           billDiscountRef.current?.focus();
@@ -427,11 +490,11 @@ export function PosScreen({
           break;
         case 'F8':
           event.preventDefault();
-          if (cart.lines.length > 0) setHolding(true);
+          if (cart.lines.length > 0 && !cart.exchange) setHolding(true);
           break;
         case 'F9':
           event.preventDefault();
-          onRequest('held');
+          if (!cart.exchange) onRequest('held');
           break;
         case '?':
           if (isTyping(event.target)) return;
@@ -444,10 +507,11 @@ export function PosScreen({
     return () => {
       window.removeEventListener('keydown', onKey);
     };
-  }, [dialogOpen, payable, onShortcuts, cart.lines.length, onRequest]);
+  }, [dialogOpen, payable, onShortcuts, cart.lines.length, cart.exchange, onRequest]);
 
   const newSale = () => {
     setDone(null);
+    setDoneReturn(null);
     setCartOpen(false);
     searchRef.current?.focus();
   };
@@ -576,6 +640,10 @@ export function PosScreen({
         onHeld={() => {
           onRequest('held');
         }}
+        returnNumber={returnNumber}
+        onDropExchange={() => {
+          setDropping(true);
+        }}
       />
       <Suspense fallback={null}>
         {paying && (
@@ -588,6 +656,8 @@ export function PosScreen({
             date={today}
             pricesIncludeVat={pricesIncludeVat}
             cashier={cashier}
+            returnNumber={returnNumber}
+            unitOf={unitOf}
             onClose={() => {
               setPaying(false);
             }}
@@ -609,9 +679,74 @@ export function PosScreen({
               }}
               onNew={newSale}
             />
-            <PosReceipt receipt={done.receipt} company={company} printOnMount />
+            <PosReceipt
+              receipt={done.receipt}
+              company={company}
+              printOnMount
+              returnSlip={done.returnSlip}
+            />
           </>
         )}
+        {request === 'return' && (
+          <ReturnDialog
+            copy={copy}
+            register={register}
+            shift={shift}
+            today={today}
+            cashier={cashier}
+            timeZone={settings.timezone}
+            canReturn={can('pos.return.create')}
+            stopped={stopped}
+            unitOf={unitOf}
+            dropped={dropped}
+            onClose={() => {
+              setDropped(null);
+              onRequest(null);
+            }}
+            onDone={(saved) => {
+              setDropped(null);
+              onRequest(null);
+              setDoneReturn(saved);
+            }}
+            onExchange={(exchange) => {
+              // The cart is the new sale now: what is on it stays, and the return's money pays
+              // for it at "Complete sale"
+              setDropped(null);
+              onRequest(null);
+              setCart((current) => ({ ...current, exchange }));
+              searchRef.current?.focus();
+            }}
+          />
+        )}
+        {doneReturn && (
+          <>
+            <ReturnDoneDialog
+              done={doneReturn}
+              offline={!online}
+              onPrint={() => {
+                window.print();
+              }}
+              onNew={newSale}
+            />
+            <PosReturnSlip slip={doneReturn.slip} company={company} printOnMount />
+          </>
+        )}
+        {dropping && cart.exchange && (
+          <DropExchangeDialog
+            onClose={() => {
+              setDropping(false);
+            }}
+            onDrop={() => {
+              // The new cart goes, and the return goes back to paying the money back
+              setDropping(false);
+              setDropped(cart.exchange ?? null);
+              setCart(EMPTY_CART);
+              setSelected(null);
+              onRequest('return');
+            }}
+          />
+        )}
+
         {shortcuts && (
           <ShortcutsDialog
             onClose={() => {

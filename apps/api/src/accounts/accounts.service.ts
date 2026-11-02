@@ -366,7 +366,7 @@ export class AccountsService {
       // Money receipts and refunds name it too (steps 15c, 15d), though each one's entry already does,
       // and so do a bill's lines and expenses and a supplier payment (step 17c), even as a draft,
       // and a supplier refund (step 17d), and a POS register's method and a POS sale's payment
-      // (step 20a)
+      // (step 20a), and a register's exchange account and a POS return's refund (step 20c)
       if (
         isForeignKeyViolation(error, 'journal_lines_account_fk') ||
         isForeignKeyViolation(error, 'receipts_account_fk') ||
@@ -382,7 +382,9 @@ export class AccountsService {
         isForeignKeyViolation(error, 'pos_sale_payments_account_fk') ||
         isForeignKeyViolation(error, 'pos_registers_over_short_account_fk') ||
         isForeignKeyViolation(error, 'pos_cash_reasons_account_fk') ||
-        isForeignKeyViolation(error, 'pos_cash_movements_account_fk')
+        isForeignKeyViolation(error, 'pos_cash_movements_account_fk') ||
+        isForeignKeyViolation(error, 'pos_registers_exchange_account_fk') ||
+        isForeignKeyViolation(error, 'pos_return_refunds_account_fk')
       ) {
         throw new AppError(409, 'account_in_use', 'Archive this account instead: entries use it.');
       }

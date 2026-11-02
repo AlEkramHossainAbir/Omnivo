@@ -58,8 +58,9 @@ export const syncChanges = pgTable(
     // The contract's key: the row's id, priceListItemKey() or stockKey(); the settings' key is the
     // tenant id. The triggers build exactly those strings.
     entityKey: text('entity_key').notNull(),
-    // A stock row's warehouse, NULL for every other entity. A device keeps the stock of its
-    // branch only, so its pull skips the other branches' stock here, without reading the rows.
+    // A stock row's warehouse, and a POS sale's (step 20c); NULL for every other entity. A device
+    // keeps the stock and the POS sales of its branch only, so its pull skips the other branches'
+    // here, without reading the rows.
     warehouseId: uuid('warehouse_id'),
     // The transaction that wrote the change. The pull's cursor is a watermark on it (decision 25):
     // it reads only the transactions that finished before the oldest one still running.

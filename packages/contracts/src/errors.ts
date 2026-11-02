@@ -547,6 +547,33 @@ export const ERROR_CODES = [
   // last one open, and a sale, movement or close for a shift the server does not know
   'pos_shift_already_open',
   'pos_shift_unknown',
+  // Step 20c: returns. A register's return window is not a whole number of days up to 365; its
+  // exchange account is not an active liability account that is not a group
+  'pos_return_days_format',
+  'pos_exchange_account_invalid',
+  // The cashier's return screen: no receipt with this number (offline: not on this device), a sale
+  // older than the register's window, a sale with nothing left to return, more of a line than is
+  // left, nothing ticked, a refund box left empty, refunds that do not add up to the return's total
+  'pos_return_sale_not_found',
+  'pos_return_too_old',
+  'pos_return_nothing_left',
+  'pos_return_quantity_too_large',
+  'pos_return_lines_required',
+  'pos_refund_amount_required',
+  'pos_refund_mismatch',
+  // The register has no exchange account (any more): someone with pos.register.manage sets one,
+  // then the cashier sends the return again from the Sync page, like pos_method_not_set
+  'pos_exchange_not_set',
+  // Bugs, never a cashier's mistake: an exchange that does not match its return (another amount, a
+  // return used twice, another register's), a sale's exchange for a return the server does not
+  // have, a return number already taken, a sale line twice, a line or a serial number that is not
+  // the sale's
+  'pos_exchange_invalid',
+  'pos_return_unknown',
+  'pos_return_number_taken',
+  'pos_return_line_twice',
+  'pos_return_line_unknown',
+  'pos_return_serial_invalid',
   // HTTP ও সার্ভার
   'invalid_cursor',
   'version_conflict',

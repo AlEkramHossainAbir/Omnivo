@@ -48,6 +48,7 @@ export const PERMISSION_KEYS = [
   'pos.price.override',
   'pos.register.manage',
   'pos.shift.manage',
+  'pos.return.create',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -118,4 +119,5 @@ export const PERMISSION_GROUP_OF = {
   'pos.price.override': 'pos',
   'pos.register.manage': 'pos',
   'pos.shift.manage': 'pos',
+  'pos.return.create': 'pos',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

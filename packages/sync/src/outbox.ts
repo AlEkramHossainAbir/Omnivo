@@ -307,12 +307,14 @@ function later<E extends Pick<OutboxEntry, 'seq' | 'customerId'>>(
 // register never prints it again. A sale never sent has a number the server does not know yet, and
 // a paper receipt already has it.
 // Step 20b: so does a shift's command. The drawer was counted, the money moved: the books must get
-// it, and only a refusal (a bug, decision 25) lets the person throw it away.
+// it, and only a refusal (a bug, decision 25) lets the person throw it away. Step 20c: and a return,
+// whose money was paid back and whose slip was printed.
 const DONE_AT_THE_COUNTER: ReadonlySet<OutboxRow['type']> = new Set([
   'pos_sale.create',
   'pos_shift.open',
   'pos_cash_movement.create',
   'pos_shift.close',
+  'pos_return.create',
 ]);
 
 export function isCounterCommand(type: OutboxRow['type']): boolean {

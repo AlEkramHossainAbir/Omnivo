@@ -25,6 +25,7 @@ import { keepClaim, savePosSale } from './pos.js';
 import { outboxEntries } from './queries.js';
 import {
   closeShift,
+  EMPTY_TALLY,
   localCashReasons,
   moveCash,
   openShift,
@@ -43,7 +44,7 @@ const BASE_UNIT = '01928c4e-0000-7000-8000-000000000001';
 async function counter(fields: Partial<SyncPosRegister> = {}) {
   const copy = await newCopy();
   const register = posRegister({ code: 'POS1', ...fields });
-  await keepClaim(copy, { id: register.id, lastNumber: 0 });
+  await keepClaim(copy, { id: register.id, lastNumber: 0, lastReturnNumber: 0 });
   return { copy, register };
 }
 
@@ -89,11 +90,12 @@ function sale(registerId: string, shiftId: string): Omit<PosSaleInput, 'sequence
         startingPrice: '420.0000',
         batchId: null,
         serialNumbers: [],
+        id: null,
       },
     ],
     billDiscountType: 'amount',
     billDiscount: '0',
-    payments: [{ method: 'cash', amount: '1000', reference: null }],
+    payments: [{ method: 'cash', amount: '1000', reference: null, returnId: null }],
   };
 }
 
@@ -189,7 +191,15 @@ describe('shiftStart', () => {
       openedAt: OPENED,
       openingDate: DAY,
       opening: count('5000.00'),
-      cash: { opening: '5000', cashTaken: '0', changeGiven: '0', paidIn: '0', paidOut: '0' },
+      cash: {
+        opening: '5000',
+        cashTaken: '0',
+        changeGiven: '0',
+        paidIn: '0',
+        paidOut: '0',
+        cashRefunded: '0',
+      },
+      tally: EMPTY_TALLY,
       closedAt: OPENED,
       counted: '7640.00',
       expected: '8160.0000',
@@ -276,6 +286,16 @@ describe('a shift on the device', () => {
       changeGiven: '320.0000',
       paidIn: '2000.0000',
       paidOut: '1000.0000',
+      cashRefunded: '0',
+    });
+    // Step 20c: and the X report's sums of the two sales
+    expect((await readShift(copy))?.tally).toMatchObject({
+      saleCount: 2,
+      salesTotal: '1680.0000',
+      salesDiscount: '0.0000',
+      taken: [{ method: 'cash', amount: '2000.0000' }],
+      returnCount: 0,
+      refunded: [],
     });
 
     await holdCart(copy, shift.id, held('Customer in the blue shirt'));

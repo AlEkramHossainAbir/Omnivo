@@ -17,7 +17,7 @@ import {
   type SyncResult,
   syncCommandSchema,
 } from '@omnivo/contracts';
-import { syncCommands } from '@omnivo/db';
+import { posReturns, syncCommands } from '@omnivo/db';
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -26,13 +26,14 @@ import { AppError } from '../common/http/app-error.js';
 import { getTenantId, runFromDevice } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
+import { PosReturnsService } from '../pos/pos-returns.service.js';
 import { PosSalesService } from '../pos/pos-sales.service.js';
 import { PosShiftsService } from '../pos/pos-shifts.service.js';
 import { type Access, PermissionService } from '../rbac/permission.service.js';
 import { CustomersService } from '../sales/customers.service.js';
 import { SalesOrdersService } from '../sales/sales-orders.service.js';
 import { type DeviceRow, DevicesService } from './devices.service.js';
-import { LOADERS } from './sync-rows.js';
+import { LOADERS, posScopeOf } from './sync-rows.js';
 
 type PushedCommand = z.output<typeof syncPushInputSchema>['commands'][number];
 type StoredAnswer = typeof syncCommands.$inferSelect;
@@ -50,16 +51,19 @@ const PERMISSION_OF = {
   'pos_shift.open': routes.pos.claimRegister.permission,
   'pos_cash_movement.create': routes.pos.claimRegister.permission,
   'pos_shift.close': routes.pos.claimRegister.permission,
+  // Step 20c: the permission that finds a sale to take back (decision 30)
+  'pos_return.create': routes.posReturns.returnableSale.permission,
 } satisfies Record<SyncCommandType, PermissionKey>;
 
 // Step 20a (decision 28), step 20b (decision 25): never refused for the permission. The money is
 // in the drawer (and the goods have left), so a refusal would only leave it out of the books; each
-// writes its own audit row instead.
+// writes its own audit row instead. Step 20c (decision 20): a return too, whose money was paid back.
 const DONE_AT_THE_COUNTER: ReadonlySet<SyncCommandType> = new Set([
   'pos_sale.create',
   'pos_shift.open',
   'pos_cash_movement.create',
   'pos_shift.close',
+  'pos_return.create',
 ]);
 
 // The ids a device makes (decision 12). One already used — in this workspace or another, the
@@ -69,16 +73,18 @@ const DEVICE_ID_KEYS = [
   'party_addresses_pkey',
   'sales_orders_pkey',
   'pos_sales_pkey',
+  'pos_sale_lines_pkey',
   'pos_shifts_pkey',
   'pos_cash_movements_pkey',
+  'pos_returns_pkey',
 ] as const;
 
 function isSyncCommandType(type: string): type is SyncCommandType {
   return SYNC_COMMAND_TYPES.some((known) => known === type);
 }
 
-// The customer, the order, the POS sale, the shift or the pay in / pay out a command is about:
-// the answer's entity_id
+// The customer, the order, the POS sale, the shift, the pay in / pay out or the POS return a
+// command is about: the answer's entity_id
 function entityOf(command: SyncCommand): string {
   switch (command.type) {
     case 'sales_order.create_draft':
@@ -90,6 +96,8 @@ function entityOf(command: SyncCommand): string {
       return command.shiftId;
     case 'pos_cash_movement.create':
       return command.movementId;
+    case 'pos_return.create':
+      return command.returnId;
     case 'customer.create':
     case 'customer.update':
       return command.customerId;
@@ -114,6 +122,7 @@ export class SyncPushService {
     private readonly orders: SalesOrdersService,
     private readonly posSales: PosSalesService,
     private readonly posShifts: PosShiftsService,
+    private readonly posReturns: PosReturnsService,
   ) {}
 
   async push(input: z.output<typeof syncPushInputSchema>): Promise<SyncPush> {
@@ -170,8 +179,12 @@ export class SyncPushService {
       } catch (error) {
         const refusal = refusalOf(error);
         if (refusal === null) throw error;
-        // Step 20a (decision 37): the refused sale's receipt was printed, so its number stays used
+        // Step 20a (decision 37): the refused sale's receipt was printed, so its number stays used.
+        // Step 20c (decision 43): a refused return's slip too.
         if (command.type === 'pos_sale.create') await this.posSales.keepNumber(tx, command.input);
+        if (command.type === 'pos_return.create') {
+          await this.posReturns.keepNumber(tx, command.input);
+        }
         await tx.insert(syncCommands).values({
           ...this.answerKey(device, command),
           status: 'rejected',
@@ -226,6 +239,9 @@ export class SyncPushService {
       case 'pos_shift.close':
         await this.posShifts.closeFromDevice(tx, access, command.shiftId, command.input);
         return [];
+      case 'pos_return.create':
+        await this.posReturns.createFromDevice(tx, access, command.returnId, command.input);
+        return [];
     }
   }
 
@@ -260,20 +276,46 @@ export class SyncPushService {
 
   // The customer a command made or changed, in the pull's shape: the device writes it at once. A
   // customer the device may not keep (archived since) goes as a delete, like in a delta pull. An
-  // order, a POS sale and a shift's commands send nothing: none is on the device as a row
-  // (decision 35; step 20b, decision 30: the register's new lastShift comes with the next pull).
+  // order and a shift's commands send nothing: neither is on the device as a row (decision 35;
+  // step 20b, decision 30: the register's new lastShift comes with the next pull). Step 20c
+  // (decision 23): a POS sale or return sends the sale's pos_sale row, so the return screen knows
+  // at once what is left of it; a sale the device does not keep (another register's, or older than
+  // its days) goes as a delete, which it ignores.
   private async changesOf(
     tx: Transaction,
     device: DeviceRow,
     type: SyncCommandType,
     entityId: string,
   ): Promise<SyncChange[]> {
+    const tenantId = getTenantId();
+    // The customer loader reads only the tenant, the sale loader the register the device holds:
+    // the branch's warehouses matter to neither
+    const scope = {
+      tenantId,
+      branchId: device.branchId,
+      warehouseIds: [],
+      ...(await posScopeOf(tx, tenantId, device.id)),
+    };
+    if (type === 'pos_sale.create' || type === 'pos_return.create') {
+      const saleId = type === 'pos_sale.create' ? entityId : await this.saleOfReturn(tx, entityId);
+      if (saleId === null) return [];
+      const rows = await LOADERS.pos_sale(tx, scope, { by: 'keys', keys: [saleId] });
+      if (rows.length === 0) return [{ op: 'delete', entity: 'pos_sale', key: saleId }];
+      return rows.map((row) => row.change);
+    }
     if (type !== 'customer.create' && type !== 'customer.update') return [];
-    // The customer loader reads only the tenant; the branch's warehouses do not matter to it
-    const scope = { tenantId: getTenantId(), branchId: device.branchId, warehouseIds: [] };
     const rows = await LOADERS.customer(tx, scope, { by: 'keys', keys: [entityId] });
     if (rows.length === 0) return [{ op: 'delete', entity: 'customer', key: entityId }];
     return rows.map((row) => row.change);
+  }
+
+  // An accepted return is there for good (0056 keeps it): null only for a bug
+  private async saleOfReturn(tx: Transaction, returnId: string): Promise<string | null> {
+    const [row] = await tx
+      .select({ saleId: posReturns.saleId })
+      .from(posReturns)
+      .where(and(eq(posReturns.tenantId, getTenantId()), eq(posReturns.id, returnId)));
+    return row?.saleId ?? null;
   }
 }
 

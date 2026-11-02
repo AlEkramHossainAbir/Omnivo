@@ -108,6 +108,8 @@ export function documentRoute(
   | '/sales-returns/$returnId'
   | '/goods-receipts/$receiptId'
   | '/purchase-returns/$returnId'
+  | '/pos/sales/$saleId'
+  | '/pos/returns/$returnId'
   | null {
   if (kind === 'adjustment') return '/stock/adjustments/$adjustmentId';
   if (kind === 'transfer_out' || kind === 'transfer_in') return '/stock/transfers/$transferId';
@@ -121,6 +123,9 @@ export function documentRoute(
   if (kind === 'purchase_receipt') return '/goods-receipts/$receiptId';
   // Step 17d: goods sent back to a supplier, on a purchase return
   if (kind === 'purchase_return') return '/purchase-returns/$returnId';
+  // Step 20c: goods sold at a counter (20a had no link for them), and goods it took back
+  if (kind === 'pos_sale') return '/pos/sales/$saleId';
+  if (kind === 'pos_return') return '/pos/returns/$returnId';
   return null;
 }
 

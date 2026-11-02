@@ -425,6 +425,10 @@ export function StockCardPage() {
                 void navigate({ to: route, params: { receiptId: movement.documentId } });
               } else if (route === '/purchase-returns/$returnId') {
                 void navigate({ to: route, params: { returnId: movement.documentId } });
+              } else if (route === '/pos/sales/$saleId') {
+                void navigate({ to: route, params: { saleId: movement.documentId } });
+              } else if (route === '/pos/returns/$returnId') {
+                void navigate({ to: route, params: { returnId: movement.documentId } });
               }
             }}
             onEndReached={loadMore}

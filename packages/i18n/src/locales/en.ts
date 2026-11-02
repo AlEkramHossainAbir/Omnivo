@@ -135,6 +135,8 @@ export const en = {
     // setting, next to POS registers)
     posShifts: 'POS shifts',
     cashReasons: 'POS cash reasons',
+    // Step 20c: what the counters took back (under Sales, next to POS sales)
+    posReturns: 'POS returns',
   },
   auth: {
     workspace: 'Workspace',
@@ -543,12 +545,17 @@ export const en = {
       // pos.cash.done ("৳10,000 paid out for Bank deposit")
       pos_shift: { open: 'Shift {{name}} opened', close: 'Shift {{name}} closed' },
       pos_cash_movement: { create: 'Drawer: {{name}}' },
+      // Step 20c: {{name}} is the return's number (POS1-R000012)
+      pos_return: { create: 'Return {{name}}' },
     },
     savedAt: 'Saved {{time}}',
     // fields = the form's own labels, joined in the page's language ("Phone and Credit limit")
     changedFields: 'Changed: {{fields}}',
     orderLines_one: '{{formatted}} line · {{total}}',
     orderLines_other: '{{formatted}} lines · {{total}}',
+    // Step 20c: a POS return's line on the Sync page counts its lines, and shows no money
+    returnLines_one: '{{formatted}} line',
+    returnLines_other: '{{formatted}} lines',
     statuses: {
       waiting: 'Waiting',
       sending: 'Sending',
@@ -884,6 +891,7 @@ export const en = {
       purchase_refund: 'Supplier refund',
       pos_sale: 'POS sale',
       pos_shift: 'POS shift',
+      pos_return: 'POS return',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
@@ -906,6 +914,9 @@ export const en = {
     // Step 20b (decision 28): the journal's Reverse refuses a shift's entries
     posShiftEntryHint:
       'A POS shift made this entry. It is not reversed: a wrong count is put right by the next shift’s opening count, and a wrong pay in or pay out by one the other way.',
+    // Step 20c (decision 25): a return is final, like a sale
+    posReturnEntryHint:
+      'A POS return made this entry. A return is final, so the entry is not reversed: goods taken back by mistake are sold again.',
     draftSaved: 'Draft saved',
     posted: '{{number}} posted',
     deleted: 'Draft deleted',
@@ -1520,6 +1531,7 @@ export const en = {
       purchase_receipt: 'Goods receipt',
       purchase_return: 'Sent back',
       pos_sale: 'Sold at a counter',
+      pos_return: 'Came back to a counter',
     },
     historyEmpty: 'No movement in these dates.',
   },
@@ -4003,6 +4015,16 @@ export const en = {
       '10': '10 minutes',
       '15': '15 minutes',
     },
+    // Step 20c: returns and exchanges (decisions 2, 6, 8)
+    returnsTitle: 'Returns',
+    returnsHint: 'A cashier with pos.return.create takes goods back by the receipt number.',
+    returnDays: 'Returns allowed for (days)',
+    returnDaysHint:
+      'Days after the sale, up to 365. 0 means the same day only. The POS refuses an older receipt.',
+    exchangeAccount: 'Exchange account',
+    exchangeHint:
+      'A return’s money that pays for a new sale passes through it and comes back to zero. A liability account, like 2190 POS exchange clearing.',
+    noExchange: 'No exchanges: refunds only',
     show: 'Show',
     statuses: { active: 'Active', archived: 'Archived' },
     columns: {
@@ -4097,7 +4119,8 @@ export const en = {
     // Taking the money (decision 5)
     payTitle: 'Take payment',
     payDescription: 'Total {{total}}. Split it over several methods if the customer asks.',
-    methods: { cash: 'Cash', card: 'Card', bkash: 'bKash', nagad: 'Nagad' },
+    // Step 20c (decision 10): exchange is a tender, never a button of the pay dialog
+    methods: { cash: 'Cash', card: 'Card', bkash: 'bKash', nagad: 'Nagad', exchange: 'Exchange' },
     method: 'Paid by',
     amount: 'Amount',
     reference: 'Reference',
@@ -4164,6 +4187,8 @@ export const en = {
       payOut: 'Pay out',
       close: 'Close shift',
       changeRegisterOpen: 'Shift {{number}} is open. Close it, then change the register.',
+      // Step 20c (decision 4): the X report, from the shift menu, offline too
+      xReport: 'Print X report',
     },
     // Pay in and pay out (decision 4), keyed by the reason's direction. The cashier never sees
     // what the drawer holds: that would end the blind count
@@ -4230,6 +4255,113 @@ export const en = {
       signOutBody:
         'Shift {{number}} is open on this device. Count the drawer and close the shift, then sign out.',
       signOutClose: 'Close shift',
+      // Step 20c (decision 4): the Z report, from the result
+      printZ: 'Print Z report',
+    },
+    // Step 20c: taking goods back (F6; decisions 7, 8, 13–19). By the receipt number: online any
+    // register's sale, offline this register's recent sales on the device
+    return: {
+      open: 'Return',
+      title: 'Take goods back',
+      description: 'Type the number on the customer’s receipt.',
+      number: 'Receipt number',
+      numberPlaceholder: 'POS1-000164',
+      find: 'Find the sale',
+      finding: 'Finding the sale…',
+      offlineHint:
+        'Offline, this device finds only the sales of {{code}} from the last {{days}} days.',
+      needsShift: 'Open a shift before you take goods back: the money leaves this drawer.',
+      cantReturn:
+        'Taking goods back needs the pos.return.create permission. Ask a workspace owner for it.',
+      // The sale and what is left of each line, in the sale line's unit (decision 17)
+      saleTitle: 'Return from {{number}}',
+      soldAt: 'Sold {{time}}',
+      lastDay: 'Goods can come back until {{date}}.',
+      take: 'Take back {{name}}',
+      left: '{{left}} of {{sold}} left to return',
+      allBack: 'All of it came back',
+      quantity: 'Coming back',
+      serials: 'Serial numbers that came back',
+      serialsHint: 'Tick one for each item that came back.',
+      lineBack: 'Back {{amount}}',
+      note: 'Why it came back',
+      notePlaceholder: 'Wrong size',
+      total: 'Money back',
+      next: 'Pay back {{amount}}',
+      // Paying the money back (decision 18): cash, or the ways the sale was paid
+      refundTitle: 'Pay the money back',
+      refundDescription: '{{total}} goes back. Give it in cash, or the way the customer paid.',
+      method: 'Paid back by',
+      addRefund: 'Add another method',
+      removeRefund: 'Remove refund {{number}}',
+      due: 'Still to give back',
+      given: 'Given back',
+      // Decision 1: the money pays for a new sale, so it never leaves the drawer
+      exchange: 'Exchange: use on a new sale',
+      exchangeHint: 'The money pays for the next sale, so the cash stays in the drawer.',
+      noExchange:
+        '{{code}} makes no exchanges. Someone with pos.register.manage picks an exchange account in Settings → POS registers.',
+      complete: 'Complete return',
+      completing: 'Saving the return…',
+      // Step 20c.6a: from the money back to what came back
+      back: 'Back',
+      // After the return. The slip prints at once; the return goes through the outbox
+      doneTitle: '{{number}} is done',
+      giveCash: 'Give back {{amount}} in cash',
+      giveOther: 'Send {{amount}} back by {{method}}',
+      noCash: 'No cash to give back',
+      // The thermal slip, like the receipt (the company lines reuse print.*)
+      receipt: {
+        title: 'Return',
+        ofSale: 'Return of {{number}}',
+        soldOn: 'Sold on {{date}}',
+        given: 'Given back',
+        usedOn: 'Used on sale {{number}}',
+      },
+    },
+    // Decision 7: the return's money on the next sale, saved with it at "Complete sale"
+    exchange: {
+      title: 'Exchange from {{number}}',
+      credit: '{{amount}} to spend on this sale',
+      payment: 'From return {{number}}',
+      rest: '{{amount}} of the return is left over. Give it back in cash, or the way the customer paid.',
+      drop: 'Drop the exchange',
+      dropHint: 'The cart is cleared, and the return goes back to paying the money back.',
+      // Step 20c.6a: Drop asks first (the mockup's open point 3)
+      dropTitle: 'Drop the exchange?',
+      keep: 'Keep the exchange',
+      // The close holds the cart; a cart with an exchange is not held (the goods came back)
+      closeFirst: 'Complete the exchange or drop it before you close the shift.',
+    },
+    // Decision 4: the X and Z reports on the receipt printer. The X report is blind (decision 9);
+    // the drawer's lines reuse posShifts.cash
+    report: {
+      titles: { x: 'X report', z: 'Z report' },
+      states: { x: 'Shift still open', z: 'Shift closed' },
+      shift: 'Shift {{number}}',
+      opened: 'Opened {{time}}',
+      closed: 'Closed {{time}}',
+      printed: 'Printed {{time}}',
+      sales_one: '{{formatted}} sale',
+      sales_other: '{{formatted}} sales',
+      returns_one: '{{formatted}} return',
+      returns_other: '{{formatted}} returns',
+      sold: 'Sold',
+      givenBack: 'Given back',
+      net: 'Taken in the end',
+      discount: 'Discounts given',
+      salesVat: 'VAT on sales',
+      returnsVat: 'VAT on returns',
+      taken: 'Taken',
+      refunded: 'Paid back',
+      nothing: 'Nothing',
+      paidIn: 'Paid in',
+      paidOut: 'Paid out',
+      drawer: 'Cash in the drawer',
+      counted: 'Counted',
+      difference: 'Difference',
+      blind: 'An X report has no drawer total: the count at the close shows it.',
+      noCount: 'Closed without a count, so there is no count to set against the expected cash.',
     },
     // Keyboard shortcuts (decision 12)
     shortcuts: 'Keyboard shortcuts',
@@ -4243,6 +4375,7 @@ export const en = {
       help: 'Show these shortcuts',
       hold: 'Hold the bill',
       held: 'Held bills',
+      return: 'Take goods back',
     },
     // The thermal receipt (decision 6), 58 or 80 mm. The company lines reuse print.*
     receipt: {
@@ -4297,6 +4430,12 @@ export const en = {
     payments: 'Payments',
     paid: 'Paid',
     change: 'Change',
+    // Step 20c (decision 31): what came back of a line, an exchange payment's return, the returns
+    lineReturned: '{{quantity}} came back',
+    fromReturn: 'From return {{number}}',
+    returnsTitle: 'Returns',
+    returnsSubtitle: 'The POS returns that took goods of this sale back, oldest first',
+    noReturns: 'Nothing came back.',
     entry: 'Journal entry',
     print: 'Print receipt',
     // Decision 26: the day it was sold was closed, so the books hold it on the first open day
@@ -4382,11 +4521,22 @@ export const en = {
       changeGiven: 'Change given',
       paidIn: 'Paid in',
       paidOut: 'Paid out',
+      // Step 20c (decision 26)
+      cashRefunded: 'Cash paid back',
       expected: 'Expected',
     },
     payments: 'Taken by method',
     sales_one: '{{formatted}} sale · {{total}}',
     sales_other: '{{formatted}} sales · {{total}}',
+    // Step 20c (decision 27): what the returns paid back, and the Z report's sums
+    refunds: 'Paid back by method',
+    returns_one: '{{formatted}} return · {{total}}',
+    returns_other: '{{formatted}} returns · {{total}}',
+    seeReturns: 'See the returns',
+    salesDiscount: 'Discounts on sales',
+    salesVat: 'VAT on sales',
+    returnsVat: 'VAT on returns',
+    printZ: 'Print Z report',
     movements: 'Pay ins and pay outs',
     movementColumns: {
       time: 'Time',
@@ -4464,6 +4614,59 @@ export const en = {
     emptyArchivedBody:
       'A reason you no longer use can be archived. The money it moved stays in the books.',
     loadFailed: "Couldn't load the reasons. Refresh the page to try again.",
+  },
+  // Step 20c: the managers' list of POS returns and a return's page (decisions 30–32)
+  posReturns: {
+    title: 'POS returns',
+    description: 'What the counters took back, and how the money went back',
+    back: 'POS returns',
+    register: 'Register',
+    allRegisters: 'All registers',
+    // Step 20c (20c.6b): the list opened from a shift's page ("See the returns") names its shift
+    ofShift: 'The returns of shift {{number}}',
+    showAll: 'Show every return',
+    columns: {
+      number: 'Number',
+      date: 'Date',
+      sale: 'Sale',
+      register: 'Register',
+      customer: 'Customer',
+      cashier: 'Cashier',
+      total: 'Given back',
+      status: 'Status',
+    },
+    posted: 'Posted',
+    // Decision 32: it came after the register's window; the server took it all the same
+    outsideWindow: 'After the window',
+    // Decision 1: its money paid for a new sale
+    exchangeFor: 'Exchanged for {{number}}',
+    walkIn: 'Walk-in',
+    sale: 'Sale',
+    soldOn: 'Sold on',
+    shift: 'Shift',
+    returnedAt: 'Taken back at',
+    device: 'Device',
+    cashier: 'Cashier',
+    customer: 'Customer',
+    note: 'Why it came back',
+    lines: 'Items',
+    batches: 'Back into batch {{lot}} · {{quantity}}',
+    serials: 'Serial numbers: {{serials}}',
+    refunds: 'Paid back',
+    usedOn: 'Used on {{number}}',
+    entry: 'Journal entry',
+    print: 'Print return slip',
+    // Like a sale (20a decision 26): the day it came back was closed in the books
+    bookedLater:
+      'Taken back on {{returned}}. That day was closed in the books, so the return is on {{date}}.',
+    outsideWindowNotice:
+      '{{number}} was older than {{register}} takes goods back for. The books took the return all the same, and the audit log has it.',
+    notFound: "This POS return doesn't exist.",
+    needsConnection: 'POS returns are read from the server. Connect to the internet to see them.',
+    emptyTitle: 'No POS returns yet',
+    emptyBody:
+      'Goods a counter takes back show here once its device syncs: a shirt in the wrong size, a phone case that does not fit.',
+    loadFailed: "Couldn't load the POS returns. Refresh the page to try again.",
   },
   approvals: {
     title: 'Approvals',
@@ -5009,6 +5212,10 @@ export const en = {
       shift: {
         manage: 'See every register’s shifts and counts, and close a stuck shift without a count',
       },
+      // Step 20c (decision 30)
+      return: {
+        create: 'Take goods back at a POS counter, and pay the money back or use it on a new sale',
+      },
     },
   },
   invite: {
@@ -5083,6 +5290,7 @@ export const en = {
       pos_sale: 'POS sales',
       pos_cash_reason: 'POS cash reasons',
       pos_shift: 'POS shifts',
+      pos_return: 'POS returns',
     },
     columns: {
       when: 'When',
@@ -5390,6 +5598,15 @@ export const en = {
         expected_differs: 'The device and the server expected different cash at a close',
         without_permission: 'Worked a POS shift after losing the permission',
       },
+      // Step 20c (decision 20): the server takes every return, and writes what it would have
+      // refused
+      pos_return: {
+        created: 'Took goods back at a POS counter',
+        outside_window: 'Took goods back after the register’s days for returns',
+        over_returned: 'Took back more of a sale line than was left',
+        amounts_differ: 'The device and the server worked out different money back',
+        without_permission: 'Took goods back at a POS counter after losing the permission',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -5557,6 +5774,12 @@ export const en = {
       heldDropped: 'Held bills dropped',
       kept: 'Saved on the shift',
       by: 'Closed by',
+      // Step 20c: a register's return settings, and a return's rows
+      exchangeAccount: 'Exchange account',
+      returnDays: 'Returns allowed for (days)',
+      returnedOn: 'Date on the device',
+      sale: 'Sale',
+      refunds: 'Paid back',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -6307,6 +6530,38 @@ export const en = {
       'The server still has the last shift of this register open. This should not happen: keep the drawer as it is and tell your Omnivo administrator.',
     pos_shift_unknown:
       'The server doesn’t know this shift. This should not happen: keep the paper receipts and tell your Omnivo administrator.',
+    // Step 20c: returns
+    pos_return_days_format: 'Type whole days from 0 to 365, like 7. 0 means the same day only.',
+    pos_exchange_account_invalid:
+      'Pick an active liability account that is not a group, like 2190 POS exchange clearing.',
+    // The cashier's return screen (decision 33)
+    pos_return_sale_not_found:
+      'No sale has this receipt number. Check the number on the paper. Offline, this device finds only its own register’s recent sales: connect to find another counter’s.',
+    pos_return_too_old:
+      'This sale is older than this register takes goods back for. Someone with pos.register.manage can allow more days in Settings → POS registers.',
+    pos_return_nothing_left:
+      'Everything on this receipt came back already. The sale’s page lists its returns.',
+    pos_return_quantity_too_large:
+      'That is more than is left to return. Type no more than the line shows.',
+    pos_return_lines_required: 'Tick at least one item that came back.',
+    pos_refund_amount_required: 'Type an amount above zero, or remove this row.',
+    pos_refund_mismatch:
+      'The money back must add up to the return’s total. Change an amount until nothing is left to give back.',
+    pos_exchange_not_set:
+      'This register has no exchange account now. Someone with pos.register.manage picks one in Settings → POS registers; then send the return again from the Sync page.',
+    // Bugs: never a cashier's mistake
+    pos_exchange_invalid:
+      'This exchange does not match its return. This should not happen: keep the paper receipts and tell your Omnivo administrator.',
+    pos_return_unknown:
+      'The server doesn’t know the return this sale pays with. This should not happen: keep the paper receipts and tell your Omnivo administrator.',
+    pos_return_number_taken:
+      'Another return of this register has this number. This should not happen: keep the paper slip and tell your Omnivo administrator.',
+    pos_return_line_twice:
+      'A line of the sale is on this return twice. This should not happen: keep the paper slip and tell your Omnivo administrator.',
+    pos_return_line_unknown:
+      'A line of this return is not on its sale. This should not happen: keep the paper slip and tell your Omnivo administrator.',
+    pos_return_serial_invalid:
+      'A serial number on this return is not one the sale sold. This should not happen: keep the paper slip and tell your Omnivo administrator.',
     invalid_cursor: 'This list has changed. Reload the page and try again.',
     version_conflict:
       'Someone else saved changes while you were editing. Reload to see them, then make your change again.',

@@ -28,6 +28,7 @@ import type { z } from 'zod';
 
 import { MockProblem } from './mock';
 import { createSale, keepNumber, overrideText } from './pos-data';
+import { createPosReturn, keepReturnNumber, keptSalesOf, toReturnable } from './pos-return-data';
 import { closeShift, moveCash, openShift } from './pos-shift-data';
 import { type MockCustomer, refreshPartyRefs, saveCustomer } from './sales-data';
 import { createOrder } from './sales-document-data';
@@ -41,7 +42,8 @@ import { diff, record, transaction, type WorkspaceData } from './workspace-data'
 // a batch sent again after a lost answer changes nothing twice. The mock's person is the owner,
 // who has every permission, so the per-command permission check (decision 17) is left out.
 // Step 20a: a POS sale (pos-data.ts's createSale) is posted when it arrives. Step 20b: so are a
-// shift's open, its pay ins and outs, and its close (pos-shift-data.ts).
+// shift's open, its pay ins and outs, and its close (pos-shift-data.ts). Step 20c: and a return
+// (pos-return-data.ts).
 
 type PushInput = z.output<typeof syncPushInputSchema>;
 type PushedCommand = PushInput['commands'][number];
@@ -82,7 +84,7 @@ function run(data: WorkspaceData, device: From, pushed: PushedCommand): SyncResu
 
   // Sent before: answered from what was kept, accepted or refused
   const stored = data.sync.answers.get(command.id);
-  if (stored) return answerOf(data, command.id, stored);
+  if (stored) return answerOf(data, device.id, command.id, stored);
 
   const key = { type: command.type, entityId: entityOf(command) };
   try {
@@ -91,13 +93,15 @@ function run(data: WorkspaceData, device: From, pushed: PushedCommand): SyncResu
     const notices = transaction(data, () => apply(data, device, command));
     const answer: MockAnswer = { ...key, status: 'accepted', notices };
     data.sync.answers.set(command.id, answer);
-    return answerOf(data, command.id, answer);
+    return answerOf(data, device.id, command.id, answer);
   } catch (error) {
     // A rule of the mock refused it: kept as refused. Anything else is a bug in the mock.
     if (!(error instanceof MockProblem)) throw error;
     // Step 20a (decision 37): the refused sale's receipt was printed, so its number stays used.
     // After transaction() put everything back, like the API's keepNumber() after the savepoint.
     if (command.type === 'pos_sale.create') keepNumber(data, command.input);
+    // Step 20c (decision 43): a refused return's slip too
+    if (command.type === 'pos_return.create') keepReturnNumber(data, command.input);
     const refusal: SyncCommandError = {
       code: error.code,
       ...(error.fieldErrors && { fieldErrors: error.fieldErrors }),
@@ -122,6 +126,8 @@ function entityOf(command: SyncCommand): string {
       return command.shiftId;
     case 'pos_cash_movement.create':
       return command.movementId;
+    case 'pos_return.create':
+      return command.returnId;
   }
 }
 
@@ -131,14 +137,37 @@ function refused(id: string, error: SyncCommandError): SyncResult {
 
 // An accepted answer brings the customer as it is now, also when it is sent again (decision 18):
 // an old answer never puts an older row back on the device. Archived since: a delete, like in a
-// delta pull. An order, a POS sale and a shift's command bring nothing: they are not on the device
-// as rows (the register's latest shift comes with the next pull).
-function answerOf(data: WorkspaceData, id: string, answer: MockAnswer): SyncResult {
+// delta pull. An order and a shift's command bring nothing: they are not on the device as rows
+// (the register's latest shift comes with the next pull). Step 20c (decision 23): a POS sale or
+// return brings the sale's pos_sale row, so the return screen knows at once what is left of it; a
+// sale the device does not keep (another register's, or older than its days) is a delete, which
+// it ignores.
+function answerOf(
+  data: WorkspaceData,
+  deviceId: string,
+  id: string,
+  answer: MockAnswer,
+): SyncResult {
   if (answer.status === 'rejected') return refused(id, answer.error);
-  return { id, status: 'accepted', notices: answer.notices, changes: changesOf(data, answer) };
+  return {
+    id,
+    status: 'accepted',
+    notices: answer.notices,
+    changes: changesOf(data, deviceId, answer),
+  };
 }
 
-function changesOf(data: WorkspaceData, answer: MockAnswer): SyncChange[] {
+function changesOf(data: WorkspaceData, deviceId: string, answer: MockAnswer): SyncChange[] {
+  if (answer.type === 'pos_sale.create' || answer.type === 'pos_return.create') {
+    const saleId =
+      answer.type === 'pos_sale.create'
+        ? answer.entityId
+        : data.pos.returns.find((item) => item.id === answer.entityId)?.saleId;
+    if (saleId === undefined) return [];
+    const kept = keptSalesOf(data, deviceId).find((sale) => sale.id === saleId);
+    if (!kept) return [{ op: 'delete', entity: 'pos_sale', key: saleId }];
+    return [{ op: 'upsert', entity: 'pos_sale', key: kept.id, data: toReturnable(data, kept) }];
+  }
   if (answer.type !== 'customer.create' && answer.type !== 'customer.update') return [];
   const found = data.sales.customers.find((item) => item.id === answer.entityId);
   // Not found (undefined), or archived
@@ -361,6 +390,75 @@ function apply(data: WorkspaceData, from: From, command: SyncCommand): SyncNotic
           'pos_shift',
           shift.id,
           diff({}, { device: input.deviceExpected, server: closed.expected }),
+          device,
+        );
+      }
+      return [];
+    }
+    // Step 20c: the API's audit rows (decision 20). The mock's person is the owner, who has
+    // pos.return.create, so pos_return.without_permission is never written.
+    case 'pos_return.create': {
+      if (data.pos.returns.some((item) => item.id === command.returnId)) {
+        throw new MockProblem(409, 'sync_id_taken');
+      }
+      const { input } = command;
+      const done = createPosReturn(data, from, command.returnId, input);
+      const { stored } = done;
+      record(
+        data,
+        'pos_return.created',
+        'pos_return',
+        stored.id,
+        diff(
+          {},
+          {
+            number: stored.number,
+            date: stored.date,
+            returnedOn: input.date,
+            register: done.registerCode,
+            sale: done.sale.number,
+            total: stored.total,
+            refunds: input.refunds.map((refund) => `${refund.method} ${refund.amount}`).join(', '),
+            entry: stored.entry?.number ?? null,
+          },
+        ),
+        device,
+      );
+      if (stored.outsideWindow) {
+        record(
+          data,
+          'pos_return.outside_window',
+          'pos_return',
+          stored.id,
+          diff(
+            {},
+            {
+              sale: done.sale.number,
+              soldOn: done.sale.date,
+              returnedOn: input.date,
+              returnDays: String(done.returnDays),
+            },
+          ),
+          device,
+        );
+      }
+      if (done.over.length > 0) {
+        record(
+          data,
+          'pos_return.over_returned',
+          'pos_return',
+          stored.id,
+          diff({}, { lines: done.over.join('; ') }),
+          device,
+        );
+      }
+      if (done.differ.length > 0) {
+        record(
+          data,
+          'pos_return.amounts_differ',
+          'pos_return',
+          stored.id,
+          diff({}, { lines: done.differ.join('; ') }),
           device,
         );
       }

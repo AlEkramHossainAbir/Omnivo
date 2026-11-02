@@ -9,7 +9,7 @@ import {
   isOverVarianceAlert,
   isPartyAccountPurpose,
   isZeroMoney,
-  POS_PAYMENT_METHODS,
+  POS_TENDERS,
   type PosCashMovementInput,
   type PosCashReason,
   type PosCashReasonInput,
@@ -20,6 +20,7 @@ import {
   type PosShiftOpenInput,
   type PosShiftPage,
   type PosShiftSummary,
+  type PosTender,
   subtractMoney,
   sumMoney,
   todayIn,
@@ -32,6 +33,7 @@ import { OWNER } from './fixtures';
 import { postNew, stockAccountIds } from './journal-data';
 import { MockProblem } from './mock';
 import {
+  accountOf,
   bookingDay,
   deviceShift,
   type MockMovement,
@@ -60,7 +62,7 @@ function storedCount(count: CashCount): CashCount {
   return { notes: count.notes, total: addMoney(count.total, '0').replace(/(\.\d{2})00$/, '$1') };
 }
 
-function personName(data: WorkspaceData, userId: string): string {
+export function personName(data: WorkspaceData, userId: string): string {
   if (userId === OWNER.id) return OWNER.fullName;
   return data.people.members.find((member) => member.userId === userId)?.fullName ?? '';
 }
@@ -519,10 +521,12 @@ export function findShift(data: WorkspaceData, id: string): MockShift {
 }
 
 // A list row. A counted shift shows what the drawer should have held at its close; an open one,
-// and one closed without a count, what it should hold now (late sales count, decision 63).
+// and one closed without a count, what it should hold now (late sales count, decision 63). Step
+// 20c: with the returns its drawer paid back, whatever shift sold the goods.
 function toSummary(data: WorkspaceData, shift: MockShift): PosShiftSummary {
   const register = toRegister(data, registerOf(data, shift));
   const sales = data.pos.sales.filter((sale) => sale.shift?.id === shift.id);
+  const returns = data.pos.returns.filter((item) => item.shiftId === shift.id);
   const counted = shift.closing === null ? null : addMoney(shift.closing.count.total, '0');
   return {
     id: shift.id,
@@ -550,6 +554,8 @@ function toSummary(data: WorkspaceData, shift: MockShift): PosShiftSummary {
         : cashDifferenceOf(counted, shift.expectedCash),
     saleCount: sales.length,
     salesTotal: sumMoney(sales.map((sale) => sale.total)),
+    returnCount: returns.length,
+    returnsTotal: sumMoney(returns.map((item) => item.total)),
   };
 }
 
@@ -574,15 +580,18 @@ export function toShift(data: WorkspaceData, shift: MockShift): PosShift {
   const register = registerOf(data, shift);
   const cash = shiftCash(data, shift);
   const sales = data.pos.sales.filter((sale) => sale.shift?.id === shift.id);
-  // What the sales took by each method: every method the register takes now, and any other one
-  // a sale of the shift was paid with, cash first
-  const payments = POS_PAYMENT_METHODS.flatMap((method) => {
-    const amounts = sales.flatMap((sale) =>
-      sale.payments.filter((payment) => payment.method === method).map((payment) => payment.amount),
-    );
-    if (amounts.length === 0 && register.accounts[method] === null) return [];
-    return [{ method, amount: sumMoney(amounts) }];
-  });
+  const returns = data.pos.returns.filter((item) => item.shiftId === shift.id);
+  // What the sales took by each tender: every method the register takes now, and any other one a
+  // sale of the shift was paid with, cash first. Step 20c: and what its returns paid back, the
+  // same way. Exchange is never "taken" by a register: shown only when a sale or a return used it.
+  const perTender = (paid: readonly { method: PosTender; amount: string }[]) =>
+    POS_TENDERS.flatMap((method) => {
+      const amounts = paid.filter((item) => item.method === method).map((item) => item.amount);
+      if (amounts.length === 0 && (method === 'exchange' || accountOf(register, method) === null)) {
+        return [];
+      }
+      return [{ method, amount: sumMoney(amounts) }];
+    });
   const floatReason = data.pos.reasons.find((item) => item.id === shift.opening.floatReasonId);
   const { opening } = shift;
   return {
@@ -609,8 +618,14 @@ export function toShift(data: WorkspaceData, shift: MockShift): PosShift {
       changeGiven: cash.changeGiven,
       paidIn: cash.paidIn,
       paidOut: cash.paidOut,
+      cashRefunded: cash.cashRefunded,
     },
-    payments,
+    payments: perTender(sales.flatMap((sale) => sale.payments)),
+    refunds: perTender(returns.flatMap((item) => item.refunds)),
+    // For the Z report: the sales' discounts (each line's and the bill's) and VAT, the returns' VAT
+    salesDiscount: sumMoney(sales.map((sale) => addMoney(sale.discount, sale.billDiscountAmount))),
+    salesVat: sumMoney(sales.map((sale) => sale.vat)),
+    returnsVat: sumMoney(returns.map((item) => item.vat)),
     movements: data.pos.movements
       .filter((movement) => movement.shiftId === shift.id)
       .toSorted((a, b) => a.movedAt.localeCompare(b.movedAt) || a.id.localeCompare(b.id))

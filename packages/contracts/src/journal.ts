@@ -42,6 +42,10 @@ export type JournalStatus = (typeof JOURNAL_STATUSES)[number];
 // pos_shift (step 20b): the cash of a shift. Its opening difference (or a first shift's float),
 // each pay in and pay out, and its closing difference, each an entry of its own, all pointing at
 // the shift.
+// pos_return (step 20c): a POS return, in one entry like a sale: Dr Sales returns (or Sales) and
+// VAT payable, Cr each refund's account (an exchange's: the register's exchange account), and Dr
+// Inventory / Cr Cost of goods sold for the goods at what they cost when sold. A stock document's
+// entry, and never undone: a mistake is a new sale.
 export const JOURNAL_SOURCES = [
   'manual',
   'opening_balance',
@@ -64,6 +68,7 @@ export const JOURNAL_SOURCES = [
   'purchase_refund',
   'pos_sale',
   'pos_shift',
+  'pos_return',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -81,6 +86,7 @@ export const STOCK_JOURNAL_SOURCES = [
   'purchase_receipt',
   'purchase_return',
   'pos_sale',
+  'pos_return',
 ] as const satisfies readonly JournalSource[];
 export type StockJournalSource = (typeof STOCK_JOURNAL_SOURCES)[number];
 

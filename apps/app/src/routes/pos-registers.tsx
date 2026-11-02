@@ -10,6 +10,7 @@ import {
   contractErrorMap,
   formatPosNumber,
   moneyAccountIds,
+  POS_DEFAULT_RETURN_DAYS,
   POS_LOCK_AFTER,
   POS_PAPER_WIDTHS,
   POS_PAYMENT_METHODS,
@@ -83,6 +84,8 @@ const FIELD_NAMES = [
   'overShortAccountId',
   'varianceAlert',
   'lockAfter',
+  'returnDays',
+  'exchangeAccountId',
 ] as const satisfies readonly Path<FormValues>[];
 
 function RegisterForm({
@@ -121,6 +124,18 @@ function RegisterForm({
         .toSorted((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })),
     [accounts],
   );
+  // Step 20c: where an exchange's money passes through. The API takes an active liability account
+  // that is not a group (pos_exchange_account_invalid), like the over/short select above.
+  const exchangeAccounts = useMemo(
+    () =>
+      (accounts ?? [])
+        .filter(
+          (account) =>
+            !account.isGroup && account.archivedAt === null && account.type === 'liability',
+        )
+        .toSorted((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true })),
+    [accounts],
+  );
   const {
     register,
     handleSubmit,
@@ -147,6 +162,10 @@ function RegisterForm({
       overShortAccountId: current?.overShortAccountId ?? '',
       varianceAlert: current?.varianceAlert ?? '500',
       lockAfter: current?.lockAfter ?? '5',
+      // Step 20c: every register has its days (7 on the old ones, 0056); an empty account means
+      // no exchanges at this counter, which is where every old register starts (decision 44)
+      returnDays: String(current?.returnDays ?? POS_DEFAULT_RETURN_DAYS),
+      exchangeAccountId: current?.exchangeAccountId ?? '',
       version: current?.version ?? 1,
     } satisfies FormValues,
   });
@@ -171,14 +190,16 @@ function RegisterForm({
     },
   });
 
-  const onSubmit = handleSubmit(async ({ code, version, ...fields }) => {
+  const onSubmit = handleSubmit(async ({ code, version, returnDays, ...fields }) => {
+    // The routes read the form's text, as the box has it; the schema made the days a number
+    const body = { ...fields, returnDays: String(returnDays) };
     try {
       const saved = current
         ? await call(routes.pos.updateRegister, {
             params: { id: current.id },
-            body: { ...fields, version },
+            body: { ...body, version },
           })
-        : await call(routes.pos.createRegister, { body: { ...fields, code } });
+        : await call(routes.pos.createRegister, { body: { ...body, code } });
       await refresh();
       toast(t(current ? 'registers.updated' : 'registers.created', { name: saved.name }));
       onDone();
@@ -359,6 +380,36 @@ function RegisterForm({
             />
           </div>
         </fieldset>
+        {/* Step 20c: what the counter takes back, and whether its money can pay for a new sale
+            (decisions 2 and 6) */}
+        <fieldset className="grid gap-4">
+          <legend className="text-label font-medium">{t('registers.returnsTitle')}</legend>
+          <p className="-mt-2 text-label text-ink-3">{t('registers.returnsHint')}</p>
+          <div className="grid gap-5 sm:grid-cols-2 sm:gap-x-4">
+            <TextField
+              label={t('registers.returnDays')}
+              hint={t('registers.returnDaysHint')}
+              inputMode="numeric"
+              align="end"
+              placeholder="7"
+              {...register('returnDays')}
+              error={errors.returnDays?.message}
+            />
+            <SelectField
+              label={t('registers.exchangeAccount')}
+              hint={t('registers.exchangeHint')}
+              options={[
+                { value: '', label: t('registers.noExchange') },
+                ...exchangeAccounts.map((account) => ({
+                  value: account.id,
+                  label: `${account.code} · ${account.name}`,
+                })),
+              ]}
+              {...register('exchangeAccountId')}
+              error={errors.exchangeAccountId?.message}
+            />
+          </div>
+        </fieldset>
         <TextAreaField
           label={t('registers.receiptFooter')}
           optional
@@ -386,6 +437,8 @@ export function PosRegistersPage() {
   });
   const warehouses = useQuery(warehousesQuery(tenantId, 'active')).data;
   const archivedWarehouses = useQuery(warehousesQuery(tenantId, 'archived')).data;
+  // Step 20c.7: the form's account selects read the same query (from the cache)
+  const accounts = useQuery(accountsQuery(tenantId)).data;
   const warehouseName = useMemo(
     () =>
       new Map(
@@ -524,8 +577,10 @@ export function PosRegistersPage() {
           if (!open) setEditing(null);
         }}
       >
-        {/* The form opens with the warehouses loaded: its select lists them */}
-        {editing !== null && warehouses && (
+        {/* The form opens with the warehouses and the accounts loaded: its selects list them.
+            A select that gets its value before its option is there shows the empty one, and a
+            save would then clear a saved account (step 20c.7 found it: the exchange account) */}
+        {editing !== null && warehouses && accounts && (
           <RegisterForm
             key={editing === 'new' ? 'new' : editing.id}
             register={editing === 'new' ? null : editing}

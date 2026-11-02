@@ -97,6 +97,14 @@ export class SyncEngine {
 
   getStatus = (): SyncStatus => this.status;
 
+  // Step 20c: fn while no sync of this database runs, in any tab of the browser. The register's
+  // recent sales come from the claim (returns.ts → loadRegisterSales) and from the pulls: one
+  // after the other, never at once, so an older answer never overwrites a newer row.
+  async exclusive(fn: () => Promise<void>): Promise<void> {
+    const lock = this.options.lock ?? webLock;
+    await lock(`omnivo-sync:${this.options.copy.db.name}`, fn);
+  }
+
   // A sync now, and on every wake-up: the connection coming back, the window getting the focus
   // again, a tab coming back to the front, and every minute while online and in front
   start(): void {

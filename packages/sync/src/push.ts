@@ -39,8 +39,13 @@ export const NO_PUSH: PushOutcome = { accepted: 0, rejected: 0, kept: 0 };
 // no shift while the register's last one is open. "Still on the device" counts the batch being
 // made too, as for a customer: the answer comes first. A walk-in sale holds back no other sale, so
 // a shift's hundred sales still go fifty at a time.
+//
+// Step 20c: a row with `after` waits while the entry it names is still on the device before it: a
+// return for its sale sold offline, an exchange's sale for its return. Gone from the outbox =
+// accepted, so the server has it.
 export function pickBatch(rows: readonly OutboxRow[]): OutboxRow[] {
   const held = new Set<string>();
+  const keys = new Set<string>();
   // The shifts with a command on the device before this row, and those of them whose open is
   const shifts = new Set<string>();
   const opening = new Set<string>();
@@ -51,8 +56,10 @@ export function pickBatch(rows: readonly OutboxRow[]): OutboxRow[] {
     const free =
       row.status === 'waiting' &&
       !held.has(row.customerId) &&
+      (row.after === undefined || !keys.has(row.after)) &&
       (row.shiftId === undefined || shiftMayGo(row, row.shiftId, shifts, opening));
     held.add(row.customerId);
+    keys.add(row.key);
     if (row.shiftId !== undefined) {
       shifts.add(row.shiftId);
       if (row.type === 'pos_shift.open') opening.add(row.shiftId);

@@ -21,7 +21,7 @@ import { Fact } from '../components/adjustment-view';
 import { DocumentNotice } from '../components/document-notice';
 import { EntryLinks } from '../components/entry-links';
 import { useReceiptCompany } from '../components/pos-parts';
-import { PosSalePills } from '../components/pos-sale-parts';
+import { PosSalePills, ShiftFact } from '../components/pos-sale-parts';
 import { SalesBackLink } from '../components/sales-parts';
 import { SalesLinesTable } from '../components/sales-lines-table';
 import {
@@ -33,14 +33,14 @@ import {
   warehouseLabel,
 } from '../components/stock-parts';
 import type { ReceiptData } from '../lib/pos';
-import { useCan } from '../lib/permissions';
 import { posRegisterQuery, posSaleQuery } from '../lib/pos-queries';
 import { settingsQuery, unitsQuery } from '../lib/queries';
 import { useOnline } from '../lib/use-online';
 
 // Step 20a: one POS sale, as the server posted it: its lines with the batches and serial numbers
 // they left with, what went below zero, the payments, and its journal entry. "Print receipt" prints
-// the same thermal receipt the counter printed (a customer who lost it).
+// the same thermal receipt the counter printed (a customer who lost it). Step 20c (decision 31):
+// what came back of each line, the return an exchange payment came from, and the sale's returns.
 
 const PosReceipt = lazy(async () => ({
   default: (await import('../components/pos-receipt')).PosReceipt,
@@ -175,7 +175,7 @@ function PosSaleView({ sale }: { sale: PosSale }) {
         />
         <Fact label={t('posSales.cashier')} value={sale.cashier.fullName} />
         <Fact label={t('posSales.device')} value={sale.device.name} />
-        <ShiftFact shift={sale.shift} />
+        <ShiftFact label={t('posSales.shift')} shift={sale.shift} />
         <EntryLinks label={t('posSales.entry')} entries={sale.entry ? [sale.entry] : []} none="—" />
       </Card>
       <SalesLinesTable
@@ -205,6 +205,14 @@ function PosSaleView({ sale }: { sale: PosSale }) {
                 })}
               </span>
             )}
+            {/* Step 20c: in the line's own unit, like the quantity it was sold in */}
+            {compareQuantity(line.returnedQuantity, '0') > 0 && (
+              <span className="text-caption text-ink-2 tabular-nums">
+                {t('posSales.lineReturned', {
+                  quantity: quantity(line.returnedQuantity, line.unitId),
+                })}
+              </span>
+            )}
           </>
         )}
       />
@@ -217,6 +225,18 @@ function PosSaleView({ sale }: { sale: PosSale }) {
                 {t(`pos.methods.${payment.method}`)}
                 {payment.reference !== null && (
                   <span className="text-ink-3"> · {payment.reference}</span>
+                )}
+                {/* Step 20c: an exchange names the return its money came from */}
+                {payment.return && (
+                  <span className="block text-caption">
+                    <Link
+                      to="/pos/returns/$returnId"
+                      params={{ returnId: payment.return.id }}
+                      className="font-medium text-brand underline-offset-3 hover:underline"
+                    >
+                      {t('posSales.fromReturn', { number: payment.return.number })}
+                    </Link>
+                  </span>
                 )}
               </dt>
               <dd className="tabular-nums">{money(payment.amount)}</dd>
@@ -238,6 +258,7 @@ function PosSaleView({ sale }: { sale: PosSale }) {
           </div>
         </dl>
       </Card>
+      <ReturnsCard returns={sale.returns} money={money} isoDate={isoDate} />
       {register && units && settings && (
         <Suspense fallback={null}>
           <ReprintSheet sale={sale} register={register} units={units} settings={settings} />
@@ -247,28 +268,46 @@ function PosSaleView({ sale }: { sale: PosSale }) {
   );
 }
 
-// Step 20b: the shift the sale was made in, a link for the people who read the shifts
-// (pos.shift.manage, decision 26). A sale made before step 20b has none.
-function ShiftFact({ shift }: { shift: PosSale['shift'] }) {
+// Step 20c: the sale's returns, oldest first, each a link to its page. Nothing came back is a
+// line of its own, so a manager who looks for a return sees there is none.
+function ReturnsCard({
+  returns,
+  money,
+  isoDate,
+}: {
+  returns: PosSale['returns'];
+  money: (value: string) => string;
+  isoDate: (iso: string) => string;
+}) {
   const { t } = useLocale();
-  const canRead = useCan()('pos.shift.manage');
   return (
-    <div className="grid min-w-0 gap-0.5">
-      <span className="text-caption font-medium text-ink-3">{t('posSales.shift')}</span>
-      {shift === null ? (
-        <span className="text-body-sm text-ink-3">—</span>
-      ) : canRead ? (
-        <Link
-          to="/pos/shifts/$shiftId"
-          params={{ shiftId: shift.id }}
-          className="w-fit font-mono text-body-sm font-medium text-brand tabular-nums underline-offset-3 hover:underline"
-        >
-          {shift.number}
-        </Link>
+    <Card>
+      <CardHeader title={t('posSales.returnsTitle')} subtitle={t('posSales.returnsSubtitle')} />
+      {returns.length === 0 ? (
+        <p className="px-5 pt-3 pb-5 text-body-sm text-ink-3">{t('posSales.noReturns')}</p>
       ) : (
-        <span className="font-mono text-body-sm tabular-nums">{shift.number}</span>
+        <ul className="mt-3 grid">
+          {returns.map((item) => (
+            <li
+              key={item.id}
+              className="flex items-center justify-between gap-3 border-t border-line px-5 py-3 text-body-sm"
+            >
+              <span className="grid">
+                <Link
+                  to="/pos/returns/$returnId"
+                  params={{ returnId: item.id }}
+                  className="w-fit font-mono font-medium text-brand tabular-nums underline-offset-3 hover:underline"
+                >
+                  {item.number}
+                </Link>
+                <span className="text-caption text-ink-3 tabular-nums">{isoDate(item.date)}</span>
+              </span>
+              <span className="font-medium tabular-nums">{money(item.total)}</span>
+            </li>
+          ))}
+        </ul>
       )}
-    </div>
+    </Card>
   );
 }
 

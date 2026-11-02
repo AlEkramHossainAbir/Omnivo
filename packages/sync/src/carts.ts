@@ -1,4 +1,9 @@
-import { type DiscountType, MAX_HELD_CARTS } from '@omnivo/contracts';
+import {
+  type DiscountType,
+  MAX_HELD_CARTS,
+  type PosReturnableSale,
+  type PosReturnLineInput,
+} from '@omnivo/contracts';
 import { uuidv7 } from 'uuidv7';
 
 import type { LocalCopy } from './copy.js';
@@ -52,12 +57,29 @@ export interface PosCartCustomer {
   priceListId: string | null;
 }
 
+// Step 20c: a return whose money pays for the cart (an exchange, decision 1). Nothing is saved yet:
+// the return is saved with the sale, before it, at "Complete sale" (pos.ts), so dropping the cart
+// drops the return too and no money moved. Kept in the cart, so a reload does not lose it.
+export interface PosCartExchange {
+  // Made when the exchange starts: the sale's exchange payment names it
+  returnId: string;
+  // The sale the goods came from, as the return screen read it (the slip and the refund's methods)
+  sale: PosReturnableSale;
+  // What came back, as posReturnInputSchema reads it
+  lines: PosReturnLineInput[];
+  note: string | null;
+  // The return's money: what the lines pay back, with VAT
+  total: string;
+}
+
 export interface PosCart {
   // null = walk-in
   customer: PosCartCustomer | null;
   lines: PosCartLine[];
   billDiscountType: DiscountType;
   billDiscount: string;
+  // Step 20c: missing on a cart saved before 20c, and on one without an exchange
+  exchange?: PosCartExchange;
 }
 
 // The key of the cart on the screen. Held carts have a UUIDv7 each. A sale deletes it in its own
@@ -151,14 +173,16 @@ export async function dropCart(copy: LocalCopy, id: string): Promise<void> {
   await copy.db.posCarts.delete(id);
 }
 
-// The cart on the screen, saved as it changes; null or no lines = nothing to keep. Last write wins:
-// only the screen writes it, and a second tab on /pos shows the same shift's cart from its reload.
+// The cart on the screen, saved as it changes; null or no lines = nothing to keep, unless an
+// exchange waits for its lines (step 20c: the goods came back, and the customer is still choosing).
+// Last write wins: only the screen writes it, and a second tab on /pos shows the same shift's cart
+// from its reload.
 export async function saveScreenCart(
   copy: LocalCopy,
   shiftId: string,
   cart: HeldCart | null,
 ): Promise<void> {
-  if (!cart || cart.cart.lines.length === 0) {
+  if (!cart || (cart.cart.lines.length === 0 && !cart.cart.exchange)) {
     await copy.db.posCarts.delete(SCREEN_CART);
     return;
   }

@@ -11,6 +11,8 @@ import {
   posCashMovementInputSchema,
   posCashReasonInputSchema,
   posShiftCloseInputSchema,
+  shiftNetOf,
+  tenderAmountsOf,
   updatePosCashReasonInputSchema,
 } from './pos-shifts.js';
 
@@ -83,10 +85,15 @@ describe('the cash of a shift', () => {
     changeGiven: '1320',
     paidIn: '2000',
     paidOut: '10000',
+    cashRefunded: '0',
   };
 
   it('expects the opening, plus what came in, less what went out', () => {
     expect(expectedCashOf(cash)).toBe('8160.0000');
+  });
+
+  it('takes the cash the returns paid back off too', () => {
+    expect(expectedCashOf({ ...cash, cashRefunded: '736.50' })).toBe('7423.5000');
   });
 
   it('is short when less was counted, and rings the bell only above the limit', () => {
@@ -96,6 +103,27 @@ describe('the cash of a shift', () => {
     expect(isOverVarianceAlert('-500.0000', '500')).toBe(false);
     expect(isOverVarianceAlert('0.5000', '0')).toBe(true);
     expect(isOverVarianceAlert('0.0000', '0')).toBe(false);
+  });
+});
+
+describe('the X and Z reports', () => {
+  it("lists each tender's amount once, in the tenders' order, and leaves out nothing taken", () => {
+    const taken = tenderAmountsOf([
+      { method: 'bkash', amount: '2300' },
+      { method: 'cash', amount: '12480' },
+      { method: 'exchange', amount: '1200' },
+      { method: 'bkash', amount: '450.50' },
+      { method: 'card', amount: '0.0000' },
+    ]);
+    expect(taken).toEqual([
+      { method: 'cash', amount: '12480.0000' },
+      { method: 'bkash', amount: '2750.5000' },
+      { method: 'exchange', amount: '1200.0000' },
+    ]);
+  });
+
+  it('nets the returns off the sales', () => {
+    expect(shiftNetOf({ salesTotal: '58420.50', returnsTotal: '1936.50' })).toBe('56484.0000');
   });
 });
 

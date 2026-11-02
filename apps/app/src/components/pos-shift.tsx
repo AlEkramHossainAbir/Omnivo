@@ -1,4 +1,4 @@
-import { CheckmarkCircle02Icon, Coins01Icon } from '@hugeicons/core-free-icons';
+import { CheckmarkCircle02Icon, Coins01Icon, PrinterIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   CASH_DENOMINATIONS,
@@ -569,10 +569,13 @@ export function CloseShiftDialog({
 export function ShiftClosedDialog({
   result,
   onSignOut,
+  onPrintZ,
   onNext,
 }: {
   result: Extract<ShiftCloseResult, { kind: 'closed' }>;
   onSignOut: () => void;
+  // Step 20c: the Z report on the receipt printer (decision 4), from the device's own shift
+  onPrintZ: () => void;
   onNext: () => void;
 }) {
   const { t, format } = useLocale();
@@ -592,6 +595,10 @@ export function ShiftClosedDialog({
           <>
             <Button variant="secondary" className="mr-auto" onClick={onSignOut}>
               {t('common.signOut')}
+            </Button>
+            <Button variant="secondary" className="gap-1.5" onClick={onPrintZ}>
+              <HugeiconsIcon icon={PrinterIcon} size={17} strokeWidth={1.5} />
+              {t('pos.close.printZ')}
             </Button>
             <Button autoFocus onClick={onNext}>
               {t('pos.close.next')}

@@ -34,6 +34,8 @@ export async function sealEntry(copy: LocalCopy, entry: OutboxEntry): Promise<Ou
     ...(seq !== undefined && { seq }),
     // Step 20b: clear, like the customer's id: the push orders a shift's commands by it
     ...(entry.shiftId !== undefined && { shiftId: entry.shiftId }),
+    // Step 20c: clear too, for the same reason; and the return screen finds a sale's returns by it
+    ...(entry.after !== undefined && { after: entry.after }),
     commandId: command.id,
     type: command.type,
     status,
@@ -58,6 +60,7 @@ export async function openEntry(copy: LocalCopy, row: OutboxRow): Promise<Outbox
   return {
     ...(row.seq !== undefined && { seq: row.seq }),
     ...(row.shiftId !== undefined && { shiftId: row.shiftId }),
+    ...(row.after !== undefined && { after: row.after }),
     status: row.status,
     sent: row.sent,
     customerId: row.customerId,

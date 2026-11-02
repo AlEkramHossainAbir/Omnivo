@@ -6,6 +6,9 @@ import {
   compareMoney,
   MAX_NOTES,
   multiplyMoney,
+  type PosShift,
+  type PosShiftReport,
+  tenderAmountsOf,
 } from '@omnivo/contracts';
 
 // Step 20b: the count of the drawer and the shift's result, worked out without React, so the
@@ -98,4 +101,41 @@ export function differenceKind(difference: string): DifferenceKind {
 // sale. ISO dates compare as text.
 export function leftOpen(openingDate: string, today: string): boolean {
   return openingDate < today;
+}
+
+// Step 20c (decision 4): the Z report of a closed shift, from its page (the server's sums, so a
+// manager prints it again on any computer of the workspace). The drawer is there only when the
+// shift was counted; a shift closed without a count has nothing to set the expected cash against.
+export function zReportOf(shift: PosShift, printedAt: string): PosShiftReport {
+  const { cash } = shift;
+  return {
+    kind: 'z',
+    register: { code: shift.register.code, name: shift.register.name },
+    shiftNumber: shift.number,
+    cashierName: shift.cashier.fullName,
+    openedAt: shift.openedAt,
+    closedAt: shift.closedAt,
+    printedAt,
+    saleCount: shift.saleCount,
+    salesTotal: shift.salesTotal,
+    salesDiscount: shift.salesDiscount,
+    salesVat: shift.salesVat,
+    returnCount: shift.returnCount,
+    returnsTotal: shift.returnsTotal,
+    returnsVat: shift.returnsVat,
+    // The page lists every method of the register with its 0; the paper only the ones used
+    taken: tenderAmountsOf(shift.payments),
+    refunded: tenderAmountsOf(shift.refunds),
+    paidIn: cash.paidIn,
+    paidOut: cash.paidOut,
+    drawer:
+      shift.countedCash === null || shift.difference === null
+        ? null
+        : {
+            ...cash,
+            expected: shift.expectedCash,
+            counted: shift.countedCash,
+            difference: shift.difference,
+          },
+  };
 }

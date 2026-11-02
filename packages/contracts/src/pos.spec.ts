@@ -22,6 +22,8 @@ const VARIANT = '0192f1d0-0000-7000-8000-000000000005';
 const UNIT = '0192f1d0-0000-7000-8000-000000000006';
 const RATE = '0192f1d0-0000-7000-8000-000000000007';
 const OVER_SHORT = '0192f1d0-0000-7000-8000-000000000008';
+const EXCHANGE = '0192f1d0-0000-7000-8000-000000000009';
+const RETURN = '0192f1d0-0000-7000-8000-00000000000a';
 
 // The error codes where the form will show them: field path → code
 function errorsOf(result: { error?: { issues: { path: PropertyKey[]; message: string }[] } }) {
@@ -50,6 +52,8 @@ describe('register input', () => {
     overShortAccountId: OVER_SHORT,
     varianceAlert: '',
     lockAfter: '5',
+    exchangeAccountId: '',
+    returnDays: '7',
   };
 
   it('upper-cases the code, and reads the empty boxes as nothing', () => {
@@ -59,6 +63,8 @@ describe('register input', () => {
     expect(input.maxDiscountPercent).toBe('0');
     expect(input.receiptFooter).toBeNull();
     expect(input.varianceAlert).toBe('0');
+    expect(input.exchangeAccountId).toBeNull();
+    expect(input.returnDays).toBe(7);
     expect(registerMethods({ ...input.accounts, cash: CASH })).toEqual(['cash', 'bkash']);
   });
 
@@ -71,6 +77,7 @@ describe('register input', () => {
         maxDiscountPercent: '100.5',
         overShortAccountId: '',
         varianceAlert: '500.50',
+        returnDays: '400',
       },
       { error: contractErrorMap },
     );
@@ -80,7 +87,21 @@ describe('register input', () => {
       maxDiscountPercent: 'pos_discount_limit_format',
       overShortAccountId: 'pos_over_short_required',
       varianceAlert: 'pos_variance_alert_format',
+      returnDays: 'pos_return_days_format',
     });
+  });
+
+  it('takes returns from the same day only to a year, and an exchange account', () => {
+    const same = posRegisterInputSchema.parse({ ...counter, returnDays: '0' });
+    expect(same.returnDays).toBe(0);
+    expect(posRegisterInputSchema.parse({ ...counter, returnDays: '365' }).returnDays).toBe(365);
+    const input = posRegisterInputSchema.parse({ ...counter, exchangeAccountId: EXCHANGE });
+    expect(input.exchangeAccountId).toBe(EXCHANGE);
+    // An empty box is not "the same day": the rule is too strict to set by leaving it empty
+    for (const returnDays of ['', '7.5', '-1']) {
+      const result = posRegisterInputSchema.safeParse({ ...counter, returnDays });
+      expect(errorsOf(result)).toEqual({ returnDays: 'pos_return_days_format' });
+    }
   });
 
   it('locks the screen after the minutes chosen, or never', () => {
@@ -267,6 +288,46 @@ describe('sale input', () => {
       error: contractErrorMap,
     });
     expect(errorsOf(none)).toEqual({ payments: 'pos_payments_required' });
+  });
+
+  it("keeps the line's id the device made, and reads a line from before 20c without one", () => {
+    const [first] = sale().lines;
+    const line = '0193f0a8-7b2c-7c41-9d3e-5a6b7c8d9e0f';
+    const payments = [{ method: 'cash', amount: '3400', reference: '' }];
+    const lines = [{ ...first, id: line }, first];
+    const input = posSaleInputSchema.parse(sale({ lines, payments }));
+    expect(input.lines.map((one) => one.id)).toEqual([line, null]);
+  });
+
+  it("pays with a return's money, and the rest in cash with the change", () => {
+    const payments = [
+      { method: 'exchange', amount: '1200', reference: '', returnId: RETURN },
+      { method: 'cash', amount: '1000', reference: '' },
+    ];
+    const input = posSaleInputSchema.parse(sale({ payments }));
+    expect(input.payments.map((payment) => payment.returnId)).toEqual([RETURN, null]);
+    expect(posChangeOf(input.payments, '1700.0000')).toBe('500.0000');
+  });
+
+  it("never uses more of a return's money than the sale costs", () => {
+    const result = posSaleInputSchema.safeParse(
+      sale({ payments: [{ method: 'exchange', amount: '2000', reference: '', returnId: RETURN }] }),
+    );
+    expect(errorsOf(result)).toEqual({ payments: 'pos_change_not_cash' });
+  });
+
+  it('needs the return on an exchange, and only there, once', () => {
+    const none = posSaleInputSchema.safeParse(
+      sale({ payments: [{ method: 'exchange', amount: '1700', reference: '' }] }),
+    );
+    expect(errorsOf(none)).toEqual({ 'payments.0.method': 'pos_exchange_invalid' });
+    const cash = posSaleInputSchema.safeParse(
+      sale({ payments: [{ method: 'cash', amount: '1700', reference: '', returnId: RETURN }] }),
+    );
+    expect(errorsOf(cash)).toEqual({ 'payments.0.method': 'pos_exchange_invalid' });
+    const exchange = { method: 'exchange', amount: '850', reference: '', returnId: RETURN };
+    const twice = posSaleInputSchema.safeParse(sale({ payments: [exchange, exchange] }));
+    expect(errorsOf(twice)).toEqual({ 'payments.1.method': 'pos_exchange_invalid' });
   });
 
   it('never takes more off the bill than the bill', () => {

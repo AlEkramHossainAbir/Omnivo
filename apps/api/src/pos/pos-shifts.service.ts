@@ -7,7 +7,7 @@ import {
   formatShiftNumber,
   isOverVarianceAlert,
   isZeroMoney,
-  POS_PAYMENT_METHODS,
+  POS_TENDERS,
   type PosCashMovementInput,
   type PosShift,
   type PosShiftCloseInput,
@@ -23,6 +23,8 @@ import {
   posCashMovements,
   posCashReasons,
   posRegisters,
+  posReturnRefunds,
+  posReturns,
   posSalePayments,
   posSales,
   posShifts,
@@ -59,6 +61,7 @@ const cashRowSchema = z.object({
   change_given: z.string(),
   paid_in: z.string(),
   paid_out: z.string(),
+  cash_refunded: z.string(),
   expected: z.string(),
 });
 type ShiftCashRow = z.infer<typeof cashRowSchema>;
@@ -577,6 +580,7 @@ export class PosShiftsService {
                change_given::numeric(19, 4)::text AS change_given,
                paid_in::numeric(19, 4)::text AS paid_in,
                paid_out::numeric(19, 4)::text AS paid_out,
+               cash_refunded::numeric(19, 4)::text AS cash_refunded,
                expected::numeric(19, 4)::text AS expected
           FROM pos_shift_cash(${getTenantId()}::uuid, ${shiftId}::uuid)`),
     );
@@ -678,6 +682,12 @@ export class PosShiftsService {
           WHERE x.tenant_id = ${posShifts.tenantId} AND x.shift_id = ${posShifts.id})`,
         salesTotal: sql<string>`(SELECT coalesce(sum(x.total), 0)::numeric(19, 4)::text FROM pos_sales x
           WHERE x.tenant_id = ${posShifts.tenantId} AND x.shift_id = ${posShifts.id})`,
+        // Step 20c: the returns this shift's drawer paid back, whatever shift sold the goods
+        returnCount: sql<number>`(SELECT count(*)::int FROM pos_returns r
+          WHERE r.tenant_id = ${posShifts.tenantId} AND r.shift_id = ${posShifts.id})`,
+        returnsTotal: sql<string>`(SELECT coalesce(sum(r.total), 0)::numeric(19, 4)::text
+          FROM pos_returns r
+          WHERE r.tenant_id = ${posShifts.tenantId} AND r.shift_id = ${posShifts.id})`,
       })
       .from(posShifts)
       .innerJoin(
@@ -726,6 +736,8 @@ export class PosShiftsService {
             : cashDifferenceOf(shift.countedCash, shift.expectedCash),
         saleCount: row.saleCount,
         salesTotal: row.salesTotal,
+        returnCount: row.returnCount,
+        returnsTotal: row.returnsTotal,
       };
     });
   }
@@ -769,8 +781,8 @@ export class PosShiftsService {
       .where(and(eq(posCashMovements.tenantId, tenantId), eq(posCashMovements.shiftId, id)))
       .orderBy(asc(posCashMovements.movedAt), asc(posCashMovements.id));
 
-    // What the sales took by each method: every method the register takes now, and any other one
-    // a sale of the shift was paid with, in the contract's order (cash first)
+    // What the sales took by each tender: every method the register takes now, and any other
+    // tender a sale of the shift was paid with (an exchange), in the contract's order (cash first)
     const paid = await tx
       .select({
         method: posSalePayments.method,
@@ -787,11 +799,50 @@ export class PosShiftsService {
       .where(and(eq(posSalePayments.tenantId, tenantId), eq(posSales.shiftId, id)))
       .groupBy(posSalePayments.method);
     const paidBy = new Map(paid.map((row) => [row.method, row.amount]));
-    const payments = POS_PAYMENT_METHODS.flatMap((method) => {
-      const amount = paidBy.get(method);
-      if (amount === undefined && accountOf(register, method) === null) return [];
-      return [{ method, amount: amount ?? '0.0000' }];
-    });
+    // Step 20c: and what the returns paid back by each tender, the same way
+    const refunded = await tx
+      .select({
+        method: posReturnRefunds.method,
+        amount: sql<string>`sum(${posReturnRefunds.amount})::text`,
+      })
+      .from(posReturnRefunds)
+      .innerJoin(
+        posReturns,
+        and(
+          eq(posReturns.tenantId, posReturnRefunds.tenantId),
+          eq(posReturns.id, posReturnRefunds.returnId),
+        ),
+      )
+      .where(and(eq(posReturnRefunds.tenantId, tenantId), eq(posReturns.shiftId, id)))
+      .groupBy(posReturnRefunds.method);
+    const refundedBy = new Map(refunded.map((row) => [row.method, row.amount]));
+    // Exchange is never "taken" by a register: shown only when a sale or a return used it
+    const perTender = (amounts: Map<string, string>) =>
+      POS_TENDERS.flatMap((method) => {
+        const amount = amounts.get(method);
+        if (amount === undefined && accountOf(register, method) === null) return [];
+        if (amount === undefined && method === 'exchange') return [];
+        return [{ method, amount: amount ?? '0.0000' }];
+      });
+    // Step 20c, for the Z report: the sales' discounts (each line's and the bill's) and VAT, and
+    // the returns' VAT
+    const [totals] = z
+      .array(
+        z.object({ sales_discount: z.string(), sales_vat: z.string(), returns_vat: z.string() }),
+      )
+      .parse(
+        await tx.execute(sql`
+          SELECT (SELECT coalesce(sum(x.discount + x.bill_discount_amount), 0) FROM pos_sales x
+                   WHERE x.tenant_id = ${tenantId}::uuid AND x.shift_id = ${id}::uuid
+                 )::numeric(19, 4)::text AS sales_discount,
+                 (SELECT coalesce(sum(x.vat), 0) FROM pos_sales x
+                   WHERE x.tenant_id = ${tenantId}::uuid AND x.shift_id = ${id}::uuid
+                 )::numeric(19, 4)::text AS sales_vat,
+                 (SELECT coalesce(sum(r.vat), 0) FROM pos_returns r
+                   WHERE r.tenant_id = ${tenantId}::uuid AND r.shift_id = ${id}::uuid
+                 )::numeric(19, 4)::text AS returns_vat`),
+      );
+    if (!totals) throw new Error(`POS shift ${id} has no totals`);
 
     const reasonIds = shift.floatReasonId === null ? [] : [shift.floatReasonId];
     const [floatReason] =
@@ -847,8 +898,13 @@ export class PosShiftsService {
         changeGiven: cash.change_given,
         paidIn: cash.paid_in,
         paidOut: cash.paid_out,
+        cashRefunded: cash.cash_refunded,
       },
-      payments,
+      payments: perTender(paidBy),
+      refunds: perTender(refundedBy),
+      salesDiscount: totals.sales_discount,
+      salesVat: totals.sales_vat,
+      returnsVat: totals.returns_vat,
       movements: movementRows.map(({ movement, reasonName, entryNumber }) => {
         // A movement's entry is posted the moment it is written (openFromDevice): it has a number
         if (entryNumber === null) throw new Error(`Entry of movement ${movement.id} is a draft`);

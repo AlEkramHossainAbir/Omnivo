@@ -151,6 +151,14 @@ export function requestSync(): void {
   if (device.kind === 'ready') device.engine.request();
 }
 
+// Step 20c: fn while no sync of the device's copy runs, in any tab (engine.ts → exclusive). The
+// register's recent sales are written by the POS screen and by the pulls: one after the other.
+export async function withSyncLock(fn: () => Promise<void>): Promise<void> {
+  const { device } = localDataStore.getState();
+  if (device.kind !== 'ready') return;
+  await device.engine.exclusive(fn);
+}
+
 // The device's copy, when it has one open: the outbox is in it
 export function useLocalCopy(): LocalCopy | null {
   const device = useDeviceState();

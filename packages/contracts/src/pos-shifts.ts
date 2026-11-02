@@ -13,7 +13,7 @@ import {
   sumMoney,
 } from './money.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
-import { POS_PAYMENT_METHODS, POS_SHIFT_STATUSES } from './pos.js';
+import { POS_SHIFT_STATUSES, POS_TENDERS, type PosTender } from './pos.js';
 import { positiveAmountSchema } from './receipts.js';
 import { optionalIdSchema } from './stock.js';
 
@@ -41,6 +41,12 @@ import { optionalIdSchema } from './stock.js';
 // when it arrives and never refuses one for money or for permission: the money was counted or
 // moved already. A shift that nobody can close (a lost device, a cashier gone home) is closed
 // without a count: by a revoke of its device, or online by someone with pos.shift.manage.
+//
+// Step 20c: a return in the shift pays money back (pos-returns.ts), so the drawer should hold less
+// by its cash refunds. And a shift prints two reports on the receipt printer (you chose this): the
+// X report at any time while it is open, from the device's own data, offline too; the Z report
+// after the close, from the close's result and from the shift's page. The X report is blind like
+// the count: it says what was sold and paid back, never what the drawer should hold.
 
 // POS1-S0042: the register's code, an S and the shift's number in that register, 4 digits (a
 // receipt has 6 and no S, so the two never look alike). Like a receipt number (formatPosNumber),
@@ -197,6 +203,8 @@ export interface ShiftCash {
   // Pay ins and pay outs
   paidIn: string;
   paidOut: string;
+  // Step 20c: cash the returns paid back (an exchange's money never leaves the drawer)
+  cashRefunded: string;
 }
 
 // What the drawer should hold. The float of a register's first shift is its opening count, not a
@@ -204,7 +212,7 @@ export interface ShiftCash {
 export function expectedCashOf(cash: ShiftCash): string {
   return subtractMoney(
     addMoney(addMoney(cash.opening, cash.cashTaken), cash.paidIn),
-    addMoney(cash.changeGiven, cash.paidOut),
+    sumMoney([cash.changeGiven, cash.paidOut, cash.cashRefunded]),
   );
 }
 
@@ -300,6 +308,9 @@ export const posShiftSummarySchema = z.object({
   // The sales the server has received in it
   saleCount: z.number().int(),
   salesTotal: z.string(),
+  // Step 20c: and the returns, whatever shift their sales were in
+  returnCount: z.number().int(),
+  returnsTotal: z.string(),
 });
 export type PosShiftSummary = z.infer<typeof posShiftSummarySchema>;
 
@@ -317,6 +328,8 @@ export const posCashMovementSchema = z.object({
   entry: entryRefSchema,
 });
 export type PosCashMovement = z.infer<typeof posCashMovementSchema>;
+
+const tenderAmountSchema = z.object({ method: z.enum(POS_TENDERS), amount: z.string() });
 
 export const posShiftSchema = posShiftSummarySchema.extend({
   opening: z.object({
@@ -351,9 +364,17 @@ export const posShiftSchema = posShiftSummarySchema.extend({
     changeGiven: z.string(),
     paidIn: z.string(),
     paidOut: z.string(),
-  }),
-  // What the sales took by each method, every method of the register, cash before the change
-  payments: z.array(z.object({ method: z.enum(POS_PAYMENT_METHODS), amount: z.string() })),
+    cashRefunded: z.string(),
+  } satisfies Record<keyof ShiftCash, z.ZodType>),
+  // What the sales took by each tender, every method of the register (cash before the change),
+  // and exchange when a sale used one. Step 20c: what the returns paid back, the same way.
+  payments: z.array(tenderAmountSchema),
+  refunds: z.array(tenderAmountSchema),
+  // Step 20c, for the Z report: the sales' discounts (the lines' and the bills') and VAT, and the
+  // returns' VAT
+  salesDiscount: z.string(),
+  salesVat: z.string(),
+  returnsVat: z.string(),
   movements: z.array(posCashMovementSchema),
 });
 export type PosShift = z.infer<typeof posShiftSchema>;
@@ -371,6 +392,64 @@ export type PosShiftPage = z.infer<typeof posShiftPageSchema>;
 // safe". For the audit log.
 export const posShiftCloseWithoutCountInputSchema = z.object({ note: optionalText(200) });
 export type PosShiftCloseWithoutCountInput = z.infer<typeof posShiftCloseWithoutCountInputSchema>;
+
+// ---------------------------------------------------------------------------------------------
+// Step 20c: the X and Z reports, on the receipt printer. Not sent by the API: the device makes one
+// from its own sales, returns and movements (packages/sync), and a shift's page from posShiftSchema,
+// and both print the same sheet.
+
+// x = while the shift is open, z = after its close
+export const POS_SHIFT_REPORT_KINDS = ['x', 'z'] as const;
+export type PosShiftReportKind = (typeof POS_SHIFT_REPORT_KINDS)[number];
+
+export interface TenderAmount {
+  method: PosTender;
+  amount: string;
+}
+
+export interface PosShiftReport {
+  kind: PosShiftReportKind;
+  register: { code: string; name: string };
+  shiftNumber: string;
+  cashierName: string;
+  openedAt: string;
+  // null on an X report
+  closedAt: string | null;
+  // By the clock of the device that prints it
+  printedAt: string;
+  saleCount: number;
+  // With VAT, after every discount
+  salesTotal: string;
+  salesDiscount: string;
+  salesVat: string;
+  returnCount: number;
+  returnsTotal: string;
+  returnsVat: string;
+  // Only the tenders with an amount, in POS_TENDERS order
+  taken: TenderAmount[];
+  refunded: TenderAmount[];
+  paidIn: string;
+  paidOut: string;
+  // The Z report's cash: the parts, what the drawer should have held, the count and the
+  // difference. null on an X report (blind), and on the Z of a shift closed without a count,
+  // which has no count to set against it.
+  drawer: (ShiftCash & { expected: string; counted: string; difference: string }) | null;
+}
+
+// Sold less given back: what the shift took in the end
+export function shiftNetOf(report: Pick<PosShiftReport, 'salesTotal' | 'returnsTotal'>): string {
+  return subtractMoney(report.salesTotal, report.returnsTotal);
+}
+
+// The amounts per tender a report prints: the ones above zero, in the tenders' order
+export function tenderAmountsOf(amounts: readonly TenderAmount[]): TenderAmount[] {
+  return POS_TENDERS.flatMap((method) => {
+    const amount = sumMoney(
+      amounts.filter((item) => item.method === method).map((item) => item.amount),
+    );
+    return compareMoney(amount, '0') > 0 ? [{ method, amount }] : [];
+  });
+}
 
 const idParamsSchema = z.object({ id: z.uuid() });
 

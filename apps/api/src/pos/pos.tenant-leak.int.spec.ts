@@ -13,7 +13,10 @@ import {
   posCashReasonSchema,
   type PosRegister,
   posRegisterListSchema,
+  posRegisterSalesPageSchema,
   posRegisterSchema,
+  posReturnAmounts,
+  posReturnPageSchema,
   type PosSale,
   posSalePageSchema,
   posSaleSchema,
@@ -86,6 +89,9 @@ let saleOfB: PosSale;
 // B's float reason, and the shift B's counter has open
 let reasonOfB: PosCashReason;
 let shiftOfB: string;
+// Step 20c: A's open shift (from "are not used by A's counter"), and B's return of its sale
+let shiftOfA: string;
+let returnOfB: string;
 
 type SaleCommand = Extract<SyncCommandInput, { type: 'pos_sale.create' }>;
 type SaleLine = SaleCommand['input']['lines'][number];
@@ -176,6 +182,9 @@ function registerForm(code: string, warehouseId: string, cash: string, overShort
     overShortAccountId: overShort,
     varianceAlert: '500',
     lockAfter: '5',
+    // Step 20c: no exchanges, and the form's 7 days
+    exchangeAccountId: '',
+    returnDays: '7',
   };
 }
 
@@ -618,6 +627,7 @@ describe("another workspace's reasons and shifts", () => {
     const opening = shiftOpen(a, 1, '0');
     const [opened] = await pushed(a, [opening]);
     expect(opened?.status, JSON.stringify(opened)).toBe('accepted');
+    shiftOfA = opening.shiftId;
     const [ownReason] = posCashReasonListSchema.parse(
       (await as(a.who, 'GET', '/pos/cash-reasons')).json(),
     ).items;
@@ -656,5 +666,141 @@ describe("another workspace's reasons and shifts", () => {
       movements: [],
       expectedCash: '2000.0000',
     });
+  });
+});
+
+describe("another workspace's returns", () => {
+  it("are not read, listed or found by A, nor is B's receipt", async () => {
+    // B takes back one strip of its sale, in cash, in its open shift
+    const [sold] = saleOfB.lines;
+    if (!sold) throw new Error('B sold no line');
+    const amounts = posReturnAmounts(sold, '1');
+    returnOfB = v7();
+    const [taken] = await pushed(b, [
+      {
+        id: v7(),
+        type: 'pos_return.create',
+        returnId: returnOfB,
+        input: {
+          registerId: b.register.id,
+          sequence: 1,
+          shiftId: shiftOfB,
+          date: '2026-10-27',
+          returnedAt: '2026-10-27T09:00:00.000Z',
+          saleId: saleOfB.id,
+          lines: [
+            {
+              saleLineId: sold.id,
+              quantity: '1',
+              net: amounts.net,
+              vat: amounts.vat,
+              serialNumbers: [],
+            },
+          ],
+          refunds: [{ method: 'cash', amount: amounts.total, reference: '' }],
+          note: '',
+        },
+      },
+    ]);
+    expect(taken?.status, JSON.stringify(taken)).toBe('accepted');
+
+    const answers = await Promise.all([
+      as(a.who, 'GET', `/pos/returns/${returnOfB}`),
+      as(a.who, 'GET', `/pos/sales/by-number/${saleOfB.number}`),
+      as(a.who, 'GET', `/pos/registers/${b.register.id}/sales`),
+    ]);
+    expect(answers.map((res) => res.statusCode)).toEqual([404, 404, 404]);
+    for (const query of [
+      '',
+      `?registerId=${b.register.id}`,
+      `?saleId=${saleOfB.id}`,
+      `?shiftId=${shiftOfB}`,
+    ]) {
+      const page = posReturnPageSchema.parse(
+        (await as(a.who, 'GET', `/pos/returns${query}`)).json(),
+      );
+      expect(page.items).toEqual([]);
+    }
+    // A's own register lists A's sales only
+    const own = posRegisterSalesPageSchema.parse(
+      (await as(a.who, 'GET', `/pos/registers/${a.register.id}/sales`)).json(),
+    );
+    expect(own.items.map((item) => item.id)).not.toContain(saleOfB.id);
+  });
+
+  it("are not made of B's sale by A's counter, nor spent on A's sale", async () => {
+    const [sold] = saleOfB.lines;
+    if (!sold) throw new Error('B sold no line');
+    const amounts = posReturnAmounts(sold, '1');
+    const onB = sale(a, 7, [line(a)]);
+    const results = await pushed(a, [
+      // A's counter takes back a strip of B's receipt
+      {
+        id: v7(),
+        type: 'pos_return.create',
+        returnId: v7(),
+        input: {
+          registerId: a.register.id,
+          sequence: 1,
+          shiftId: shiftOfA,
+          date: '2026-10-27',
+          returnedAt: '2026-10-27T10:00:00.000Z',
+          saleId: saleOfB.id,
+          lines: [
+            {
+              saleLineId: sold.id,
+              quantity: '1',
+              net: amounts.net,
+              vat: amounts.vat,
+              serialNumbers: [],
+            },
+          ],
+          refunds: [{ method: 'cash', amount: amounts.total, reference: '' }],
+          note: '',
+        },
+      },
+      // A's sale paid with B's return as an exchange
+      {
+        ...onB,
+        input: {
+          ...onB.input,
+          shiftId: shiftOfA,
+          payments: [
+            // The ৳150 of five strips (prices with VAT), all of it
+            { method: 'exchange', amount: '150', reference: '', returnId: returnOfB },
+          ],
+        },
+      },
+    ]);
+    expect(results.map((result) => (result.status === 'rejected' ? result.error : null))).toEqual([
+      {
+        code: 'pos_return_sale_not_found',
+        fieldErrors: { saleId: ['pos_return_sale_not_found'] },
+      },
+      {
+        code: 'pos_return_unknown',
+        fieldErrors: { 'payments.0.method': ['pos_return_unknown'] },
+      },
+    ]);
+    // B's sale and B's return are as they were
+    const saleNow = posSaleSchema.parse(
+      (await as(b.who, 'GET', `/pos/sales/${saleOfB.id}`)).json(),
+    );
+    expect(saleNow.returns.map((item) => item.id)).toEqual([returnOfB]);
+    expect(saleNow.lines[0]?.returnedQuantity).toBe('1.0000');
+  });
+
+  it("are not in A's pull", async () => {
+    const query = new URLSearchParams({
+      deviceId: a.device.id,
+      protocol: String(SYNC_PROTOCOL),
+      limit: '1000',
+    });
+    const res = await as(a.who, 'GET', `/sync/pull?${query.toString()}`);
+    expect(res.statusCode, res.body).toBe(200);
+    const changes = syncPullSchema.parse(res.json()).changes;
+    const sales = changes.filter((change) => change.entity === 'pos_sale');
+    expect(sales.map((change) => change.key)).not.toContain(saleOfB.id);
+    expect(JSON.stringify(changes)).not.toContain(returnOfB);
   });
 });

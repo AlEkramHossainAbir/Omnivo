@@ -172,6 +172,13 @@ function documentLinkOf(entry: JournalEntry) {
   if (entry.source === 'pos_shift') {
     return { to: '/pos/shifts/$shiftId', params: { shiftId: id } } as const;
   }
+  // Step 20c: a POS sale's entry (20a had no link for it) and a return's
+  if (entry.source === 'pos_sale') {
+    return { to: '/pos/sales/$saleId', params: { saleId: id } } as const;
+  }
+  if (entry.source === 'pos_return') {
+    return { to: '/pos/returns/$returnId', params: { returnId: id } } as const;
+  }
   return null;
 }
 
@@ -301,7 +308,14 @@ export function EntryView({
           )
         )}
       </div>
-      {fromStock && <p className="text-label text-ink-3">{t('journal.stockEntryHint')}</p>}
+      {/* Step 20c: a POS return is a stock source too, but another stock document does not put it
+          right: goods taken back by mistake are sold again (decision 25) */}
+      {fromStock && entry.source !== 'pos_return' && (
+        <p className="text-label text-ink-3">{t('journal.stockEntryHint')}</p>
+      )}
+      {entry.source === 'pos_return' && (
+        <p className="text-label text-ink-3">{t('journal.posReturnEntryHint')}</p>
+      )}
       {entry.source === 'sales_invoice' && (
         <p className="text-label text-ink-3">{t('journal.invoiceEntryHint')}</p>
       )}

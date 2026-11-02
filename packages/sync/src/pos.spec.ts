@@ -77,11 +77,12 @@ function sale(
         startingPrice: '420.0000',
         batchId: null,
         serialNumbers: [],
+        id: null,
       },
     ],
     billDiscountType: 'amount',
     billDiscount: '0',
-    payments: [{ method: 'cash', amount: '1000', reference: null }],
+    payments: [{ method: 'cash', amount: '1000', reference: null, returnId: null }],
   };
 }
 
@@ -122,21 +123,27 @@ describe('keepClaim', () => {
   it('starts from the server’s last number, and keeps the device’s own when it is ahead', async () => {
     const copy = await newCopy();
     const pos1 = register({ code: 'POS1' });
-    expect(await keepClaim(copy, { id: pos1.id, lastNumber: 123 })).toMatchObject({ last: 123 });
+    expect(
+      await keepClaim(copy, { id: pos1.id, lastNumber: 123, lastReturnNumber: 0 }),
+    ).toMatchObject({ last: 123 });
     await save(copy, pos1.id);
     await save(copy, pos1.id);
     // A claim again of the register it holds: the server has not received 124 and 125 yet
-    expect(await keepClaim(copy, { id: pos1.id, lastNumber: 123 })).toMatchObject({ last: 125 });
+    expect(
+      await keepClaim(copy, { id: pos1.id, lastNumber: 123, lastReturnNumber: 0 }),
+    ).toMatchObject({ last: 125 });
   });
 
   it('starts another register from the server’s number alone', async () => {
     const copy = await newCopy();
-    await keepClaim(copy, { id: uuidv7(), lastNumber: 900 });
+    await keepClaim(copy, { id: uuidv7(), lastNumber: 900, lastReturnNumber: 0 });
     const pos2 = uuidv7();
-    expect(await keepClaim(copy, { id: pos2, lastNumber: 7 })).toEqual({
+    expect(await keepClaim(copy, { id: pos2, lastNumber: 7, lastReturnNumber: 0 })).toEqual({
       key: 'claim',
       registerId: pos2,
       last: 7,
+      lastReturn: 0,
+      salesLoaded: false,
     });
     await dropClaim(copy);
     expect(await readClaim(copy)).toBeNull();
@@ -147,7 +154,7 @@ describe('savePosSale', () => {
   it('gives the next number and puts a command in the outbox that the server reads as it is', async () => {
     const copy = await newCopy();
     const registerId = uuidv7();
-    await keepClaim(copy, { id: registerId, lastNumber: 123 });
+    await keepClaim(copy, { id: registerId, lastNumber: 123, lastReturnNumber: 0 });
     const result = await save(copy, registerId);
     expect(result).toMatchObject({ kind: 'saved', sequence: 124, number: 'POS1-000124' });
     const [entry] = await outboxEntries(copy);
@@ -166,7 +173,7 @@ describe('savePosSale', () => {
     const copy = await newCopy();
     const registerId = uuidv7();
     const customerId = uuidv7();
-    await keepClaim(copy, { id: registerId, lastNumber: 0 });
+    await keepClaim(copy, { id: registerId, lastNumber: 0, lastReturnNumber: 0 });
     await save(copy, registerId, customerId);
     const [entry] = await outboxEntries(copy);
     expect(entry?.customerId).toBe(customerId);
@@ -175,7 +182,7 @@ describe('savePosSale', () => {
   it('gives two sales saved at the same moment two numbers', async () => {
     const copy = await newCopy();
     const registerId = uuidv7();
-    await keepClaim(copy, { id: registerId, lastNumber: 41 });
+    await keepClaim(copy, { id: registerId, lastNumber: 41, lastReturnNumber: 0 });
     const results = await Promise.all([save(copy, registerId), save(copy, registerId)]);
     expect(results.map((result) => result.kind === 'saved' && result.sequence).sort()).toEqual([
       42, 43,
@@ -186,7 +193,7 @@ describe('savePosSale', () => {
   it('saves nothing without the claim of that register', async () => {
     const copy = await newCopy();
     expect(await save(copy, uuidv7())).toEqual({ kind: 'not-held' });
-    await keepClaim(copy, { id: uuidv7(), lastNumber: 3 });
+    await keepClaim(copy, { id: uuidv7(), lastNumber: 3, lastReturnNumber: 0 });
     expect(await save(copy, uuidv7())).toEqual({ kind: 'not-held' });
     expect(await waitingAtCounter(copy)).toBe(0);
   });
@@ -196,7 +203,7 @@ describe('discarding a POS sale', () => {
   it('keeps a sale the server has not refused, and lets a refused one go', async () => {
     const copy = await newCopy();
     const registerId = uuidv7();
-    await keepClaim(copy, { id: registerId, lastNumber: 0 });
+    await keepClaim(copy, { id: registerId, lastNumber: 0, lastReturnNumber: 0 });
     await save(copy, registerId);
     const [entry] = await outboxEntries(copy);
     if (entry?.seq === undefined) throw new Error('no entry');
@@ -276,7 +283,7 @@ describe('the stock and the scanner', () => {
       }),
       null,
     );
-    await keepClaim(copy, { id: pos1.id, lastNumber: 0 });
+    await keepClaim(copy, { id: pos1.id, lastNumber: 0, lastReturnNumber: 0 });
     // 2 bags, then a pack of 5: 7 of the 38 left the counter
     await save(copy, pos1.id);
     const pack = sale(pos1.id);
@@ -293,7 +300,7 @@ describe('the stock and the scanner', () => {
       '31.0000',
     ]);
     // A sale of a register on another warehouse takes nothing from this one
-    await keepClaim(copy, { id: pos2.id, lastNumber: 0 });
+    await keepClaim(copy, { id: pos2.id, lastNumber: 0, lastReturnNumber: 0 });
     await save(copy, pos2.id);
     expect((await stockOf(copy, WAREHOUSE, [VARIANT])).map((one) => one.quantity)).toEqual([
       '31.0000',

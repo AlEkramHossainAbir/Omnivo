@@ -365,6 +365,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   it go with it. With nothing waiting: the empty state with `CloudSavingDone01`, "Everything is synced".
   A POS sale ("Sale POS1-000124", "3 lines · ৳2,300") has no Edit, and Discard only once the server refused it.
   A shift's open and close are named by the shift's number, a pay in or out by its sentence; none shows an amount.
+  A return is "Return POS1-R000012" with its line count under it ("2 lines"), and no amount.
 - **Orders on the device:** above the sales orders list, a section header "On this device · not synced" and its
   own table (cards on a phone) of the drafts in the outbox, each with "No number yet" and its pill. Offline, the
   server's list below is the empty state "Needs a connection".
@@ -417,12 +418,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   as the screen narrows), the sync line, Change register (`ArrowLeftRight`) and a shortcuts icon button
   (`Keyboard`). With a shift open, the bar also has the shift's button ("Shift POS1-S0042" and an `ArrowDown01` icon,
   the input's look at 36px; on a phone the number alone, and the `brand` register pill hides so the bar fits 390px).
+  Then "Return" (secondary `sm`, `ArrowTurnBackward`, with its `F6` key; on a phone the icon alone).
   Below it, from 860px, the products on the left and a 400px cart on the right, each scrolling inside
   itself (`h-dvh`; the page never scrolls). The search box ("Scan or search") has the focus; a scanner types the
   barcode and Enter. Tiles: radius 10px, 1px `line`, the name (13.5px/500, two lines), the SKU in `Geist Mono` `ink-3`,
   the price (600) and the stock (`ink-2`, or "Out of stock" on a disabled `subtle` tile when the workspace does not
-  sell below zero), two columns on a phone. Keys: F2 search, F4 customer, F7 bill discount, F8 hold, F9 held bills,
-  F12 pay, Enter complete and new sale, `?` the shortcuts dialog.
+  sell below zero), two columns on a phone. Keys: F2 search, F4 customer, F6 return, F7 bill discount, F8 hold, F9
+  held bills, F12 pay, Enter complete and new sale, `?` the shortcuts dialog.
 - **POS cart:** the customer box (walk-in by default), then one row per line that opens on a click
   (`aria-expanded`): a quantity stepper that never goes below 1, "× ৳420 · bag", a `brand` "5% off" pill, the batch;
   open, the quantity, price, discount, batch and serial boxes. A price the cashier may not change is read-only with
@@ -444,7 +446,10 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `@page { size: auto; margin: 0 }`, 72mm wide on 80mm paper and 48mm on 58mm, black on white, no fills and no
   logo. The company (legal name, address, BIN, phone), the number, counter, cashier, date and customer, the lines,
   the totals, the payments and change, the register's footer, then "Thank you. Please come again." Amounts always
-  with 2 decimals. It prints by itself after a sale, once; a sale's page prints it again from a button.
+  with 2 decimals. It prints by itself after a sale, once; a sale's page prints it again from a button. The return
+  slip ("Return of POS1-000164", what came back, "Given back", and "Used on sale POS1-000188" for an exchange) and the
+  X and Z reports use the same sheet. An exchange prints its slip and the new sale's receipt in one print, the slip
+  first.
 - **POS sale statuses:** Posted (`good`, `CheckmarkCircle02`), plus a second `warn` "Sold short" pill (`Alert02`)
   when a line went below zero. A sold-short line: Below zero (`warn`, `TimeQuarterPass`) until the stock there is
   back at zero or above, then Put right (`good`, `CheckmarkCircle02`).
@@ -452,8 +457,10 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   "Free", last number, status) and a dialog form: code (shown, not a box, once saved), name, warehouse (starts
   empty), an account per method (cash required, the others "Not taken here"), the most a cashier may take off (%),
   paper width (58 / 80 mm), the receipt's footer, and a "Shifts" group: the cash over and short account (an income
-  or expense account, required), the bell for a difference over (whole taka) and "Lock the POS after". A held
-  register cannot be archived. Read-only without `pos.register.manage`.
+  or expense account, required), the bell for a difference over (whole taka) and "Lock the POS after". Then a
+  "Returns" group: "Returns allowed for (days)" (whole days 0–365, 7 by default, 0 = the same day only) and the
+  exchange account (an active liability, not a group; empty = "No exchanges: refunds only"). A held register cannot
+  be archived. Read-only without `pos.register.manage`.
 - **POS shift (`/pos`):** a register sells only inside a shift. Without one, the screen's place is the "Open a shift"
   card (max 560px, the wizard panel's padding): a "By notes" / "As a total" segmented control, ten note boxes in two
   columns (`৳1,000` … `৳1`, each "= ৳3,000" in `ink-3` `tabular-nums`) with the total on `subtle`, or one money input;
@@ -495,6 +502,42 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   icons, account by code, status), an Active / Archived segmented control, and a dialog form: name, kind (a select
   when new, shown but not offered once saved), account (active, not a group, not receivable, payable or stock).
   Read-only without `pos.register.manage`.
+- **POS return (`/pos`, F6):** a dialog in three steps, inside a shift only. "Take goods back": the receipt number
+  (any case, a scanner's too) and "Find the sale"; offline a neutral document notice (`WifiDisconnected02`) says the
+  device finds only this register's sales of the last 30 days. "Return from POS1-000164": "Goods can come back until
+  30 Sep 2026.", the lines in a 1px `line` box, each a checkbox ("Take back …"), "2 of 3 pcs left to return" in 12px
+  `ink-3`, the amount on the right, and once ticked a quantity stepper (in the sale line's unit) or serial ticks; a
+  line that all came back is a `subtle` row, "All of it came back". "Why it came back (optional)", the money back on
+  `subtle` at the KPI size, "Pay back ৳368" (primary). "Pay the money back": refund rows like the pay dialog's (cash
+  first, then the ways the sale was paid that the register takes), Still to give back / Given back on `subtle`, then
+  the exchange as a button row (`brand-soft` `ArrowLeftRight` tile, "Exchange: use on a new sale", its hint, an
+  `ArrowRight01`), Back (secondary, pushed left) and "Complete return" (primary). Then "POS1-R000012 is done": the
+  40px `good-bg` tile, "Give back ৳368 in cash" at the KPI size (or "No cash to give back"), "Saved on this device…"
+  offline, "Print again" and "New sale" (primary, with the focus). The slip prints by itself.
+- **Exchange in the cart:** a `brand-soft` box with a 1px `brand-line` border at the top of the cart
+  (`ArrowLeftRight`, "Exchange from POS1-R000012", "৳368 to spend on this sale" in 13px `ink-2`, a "Drop the exchange"
+  text link that asks first: "Keep the exchange" / "Drop the exchange"). In the pay dialog, a fixed first row (the
+  method's name and the amount read-only on `subtle`, "From return POS1-R000012"); a sale smaller than the return has a
+  neutral document notice ("৳120 of the return is left over…") and "Paid back by" rows for the rest. The return and
+  the sale are saved together at "Complete sale"; the close waits until the exchange is completed or dropped.
+- **X and Z reports:** "Print X report" (`Printer`) in the shift menu before Close shift, offline too, and "Print Z
+  report" (secondary, `Printer`) on the close's result and a closed shift's page. The thermal sheet: register, shift,
+  cashier, opened (and closed), sales and returns with their counts, sold, given back, taken in the end, discounts,
+  VAT on sales and on returns, what each method took and paid back, paid in and out. The X report is blind: no drawer
+  total, and a line that says the count at the close shows it. The Z report adds the drawer (expected, counted,
+  difference), or "Closed without a count…".
+- **POS return statuses:** Posted (`good`, `CheckmarkCircle02`), plus After the window (`warn`, `Hourglass`) when it
+  came after the register's days (the books took it, the audit log has it) and "Exchanged for POS1-000188" (neutral,
+  `ArrowLeftRight`).
+- **POS returns (Sales, after POS sales, everyone):** a data table like POS sales (number in `Geist Mono`, date, sale,
+  register, customer, cashier, given back, status) with the register select; from a shift's page "See the returns"
+  opens it filtered, "The returns of shift POS1-S0042" with a "Show every return" text link. A return's page: the
+  page header with "Print return slip" (secondary, `Printer`), its facts (sale, sold on, shift, taken back at,
+  device, cashier, customer, why), the lines (the batch it went back into, its serial numbers), what was paid back
+  (an exchange says "Used on POS1-000188" as a link) and its journal entry. A neutral document notice when it came
+  after the window or its day was closed in the books. A sale's page says per line "1 pcs came back", lists its
+  returns, and its exchange payment links "From return POS1-R000012". A shift's page has "Cash paid back" in the
+  drawer's sum, the sales' discounts and VAT, and a refunds card (count, VAT on returns, per method).
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside

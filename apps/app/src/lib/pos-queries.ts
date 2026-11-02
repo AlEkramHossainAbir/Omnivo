@@ -115,3 +115,30 @@ export function posShiftQuery(tenantId: string, shiftId: string) {
     queryFn: () => call(routes.posShifts.getShift, { params: { id: shiftId } }),
   });
 }
+
+// Step 20c: the returns, newest first. '' = every register; a shift's page links to its own
+// returns ('' = every shift).
+export function posReturnsQuery(tenantId: string, registerId: string, shiftId: string) {
+  return infiniteQueryOptions({
+    queryKey: ['pos', tenantId, 'returns', registerId, shiftId],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.posReturns.listReturns, {
+        query: {
+          limit: 50,
+          ...(registerId !== '' && { registerId }),
+          ...(shiftId !== '' && { shiftId }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function posReturnQuery(tenantId: string, returnId: string) {
+  return queryOptions({
+    queryKey: ['pos', tenantId, 'return', returnId],
+    queryFn: () => call(routes.posReturns.getReturn, { params: { id: returnId } }),
+  });
+}

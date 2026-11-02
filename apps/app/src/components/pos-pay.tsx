@@ -5,11 +5,14 @@ import {
   PrinterIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
+import { ArrowLeftRightIcon, InformationCircleIcon } from '@hugeicons/core-free-icons';
 import {
   compareMoney,
   isMoneyAmount,
+  isZeroMoney,
   MAX_POS_PAYMENTS,
   posChangeOf,
+  posReturnInputSchema,
   posSaleInputSchema,
   registerMethods,
   subtractMoney,
@@ -17,7 +20,7 @@ import {
   type SyncPosRegister,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
-import { type LocalCopy, savePosSale } from '@omnivo/sync';
+import { type LocalCopy, type PosReturnSave, savePosSale } from '@omnivo/sync';
 import {
   Button,
   Dialog,
@@ -42,7 +45,10 @@ import {
   receiptOfCart,
   saleValues,
 } from '../lib/pos';
+import { exchangeSplit, type ReturnSlipData, returnSlipOf, type UnitOf } from '../lib/pos-returns';
+import { DocumentNotice } from './document-notice';
 import { hasPaisa, Kbd } from './pos-parts';
+import { refundMethodsAt, RefundRows, refundRow, refundValues } from './pos-refund-rows';
 
 // Step 20a: taking the money (decision 5), the sale saved on the device, and what follows.
 
@@ -52,6 +58,9 @@ export interface DoneSale {
   // In cash, for the done dialog's "Give back ৳200"
   change: string;
   receipt: ReceiptData;
+  // Step 20c: an exchange's return, saved with the sale: its slip prints before the receipt, and
+  // the done dialog says what of its money goes back
+  returnSlip?: ReturnSlipData;
 }
 
 function money(format: ReturnType<typeof useLocale>['format'], value: string): string {
@@ -72,6 +81,8 @@ export function PayDialog({
   date,
   pricesIncludeVat,
   cashier,
+  returnNumber,
+  unitOf,
   onClose,
   onDone,
 }: {
@@ -84,21 +95,38 @@ export function PayDialog({
   date: string;
   pricesIncludeVat: boolean;
   cashier: string;
+  // Step 20c: the number an exchange's return will most likely get ("From return POS1-R000012");
+  // the save gives the real one
+  returnNumber: string;
+  unitOf: UnitOf;
   onClose: () => void;
   onDone: (sale: DoneSale) => void;
 }) {
   const { t, format } = useLocale();
   const methods = registerMethods(register.accounts);
-  const [rows, setRows] = useState<PaymentRow[]>(() => [firstRow()]);
+  // Step 20c: an exchange's money pays first, up to the total (decision 7). What is left of it goes
+  // back now ("Paid back by"); what it does not cover the other rows pay.
+  const exchange = cart.exchange ?? null;
+  const split = exchange && exchangeSplit(exchange.total, total);
+  const credit = split?.used ?? '0';
+  const owed = subtractMoney(total, credit);
+  const leftOver = split !== null && !isZeroMoney(split.rest);
+  const [rows, setRows] = useState<PaymentRow[]>(() =>
+    compareMoney(owed, '0') > 0 ? [firstRow()] : [],
+  );
+  const [restRows, setRestRows] = useState<PaymentRow[]>(() =>
+    split && leftOver ? [refundRow('cash', split.rest)] : [],
+  );
   // An error code (the schema's, the save's) or a sentence: FormAlert says either
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // A box still being typed counts as 0, like the cart's totals
   const amountOf = (value: string) => (isMoneyAmount(value) ? value : '0');
-  const paid = sumMoney(rows.map((row) => amountOf(row.amount)));
-  const due = dueOf(rows, total);
+  const paid = sumMoney([credit, ...rows.map((row) => amountOf(row.amount))]);
+  const due = dueOf(rows, owed);
   const change = compareMoney(paid, total) > 0 ? subtractMoney(paid, total) : '0';
+  const givenBack = sumMoney(restRows.map((row) => amountOf(row.amount)));
 
   const changeRow = (key: string, change: Partial<PaymentRow>) => {
     setRows((current) => current.map((row) => (row.key === key ? { ...row, ...change } : row)));
@@ -113,27 +141,65 @@ export function PayDialog({
   const othersPaid = sumMoney(
     rows.filter((row) => row !== cashRow).map((row) => amountOf(row.amount)),
   );
-  const exact = compareMoney(total, othersPaid) > 0 ? subtractMoney(total, othersPaid) : '0';
+  const exact = compareMoney(owed, othersPaid) > 0 ? subtractMoney(owed, othersPaid) : '0';
+
+  // Step 20c: the exchange's return as posReturnInputSchema reads it, its money split between the
+  // sale and the rows that pay back what is left. null = no exchange; an error code = not right.
+  const returnOf = (soldAt: string): PosReturnSave | string | null => {
+    if (!exchange) return null;
+    const parsed = posReturnInputSchema.safeParse({
+      registerId: register.id,
+      sequence: 1,
+      shiftId,
+      date,
+      returnedAt: soldAt,
+      saleId: exchange.sale.id,
+      lines: exchange.lines,
+      refunds: [{ method: 'exchange', amount: credit, reference: '' }, ...refundValues(restRows)],
+      note: exchange.note ?? '',
+    });
+    if (!parsed.success) return parsed.error.issues[0]?.message ?? 'unknown_error';
+    // The sequence was only for the check: the save gives the return its number
+    return {
+      returnId: exchange.returnId,
+      input: parsed.data,
+      registerCode: register.code,
+      savedAt: soldAt,
+    };
+  };
 
   const complete = async () => {
     setError(null);
     const soldAt = new Date().toISOString();
     // The same schema the server reads, so a sale the device saves is one the server accepts. The
     // sequence is only for the check: the save gives the sale its number (savePosSale).
+    const values = saleValues({
+      cart,
+      registerId: register.id,
+      shiftId,
+      date,
+      soldAt,
+      pricesIncludeVat,
+      payments: rows,
+    });
     const parsed = posSaleInputSchema.safeParse({
-      ...saleValues({
-        cart,
-        registerId: register.id,
-        shiftId,
-        date,
-        soldAt,
-        pricesIncludeVat,
-        payments: rows,
-      }),
+      ...values,
+      // Step 20c: the exchange's money first, naming its return
+      payments: [
+        ...(exchange
+          ? [{ method: 'exchange', amount: credit, reference: '', returnId: exchange.returnId }]
+          : []),
+        ...values.payments,
+      ],
       sequence: 1,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'unknown_error');
+      return;
+    }
+    const given = returnOf(soldAt);
+    if (typeof given === 'string') {
+      setError(given);
       return;
     }
     setSaving(true);
@@ -143,6 +209,7 @@ export function PayDialog({
         registerCode: register.code,
         total,
         savedAt: soldAt,
+        ...(given && { exchange: given }),
       });
       if (result.kind === 'not-held') {
         setError('pos_register_not_held');
@@ -156,9 +223,25 @@ export function PayDialog({
       // Online it goes at once; offline it waits in the outbox (the done dialog says so)
       requestSync();
       const change = posChangeOf(parsed.data.payments, total);
+      const returnSlip =
+        exchange && given && result.returnNumber !== null
+          ? returnSlipOf({
+              number: result.returnNumber,
+              returnedAt: soldAt,
+              register,
+              cashier,
+              sale: exchange.sale,
+              lines: given.input.lines,
+              refunds: given.input.refunds,
+              usedOn: result.number,
+              note: given.input.note,
+              unitOf,
+            })
+          : null;
       onDone({
         number: result.number,
         change,
+        ...(returnSlip && { returnSlip }),
         receipt: receiptOfCart({
           number: result.number,
           soldAt,
@@ -212,6 +295,27 @@ export function PayDialog({
           }}
         >
           {error && <FormAlert message={error} />}
+          {/* Step 20c: the return's money, the first payment, fixed: an exchange is never a
+              choice in the select (decision 10) */}
+          {exchange && (
+            <div className="grid grid-cols-[8rem_minmax(0,1fr)] items-center gap-2 sm:grid-cols-[8rem_9rem_minmax(0,1fr)_auto]">
+              <span className="flex h-[42px] items-center gap-2 rounded-control border border-line bg-subtle px-3 text-body-sm text-ink-2">
+                <HugeiconsIcon
+                  icon={ArrowLeftRightIcon}
+                  size={17}
+                  strokeWidth={1.5}
+                  className="text-ink-3"
+                />
+                {t('pos.methods.exchange')}
+              </span>
+              <span className="flex h-[42px] items-center justify-end rounded-control border border-line bg-subtle px-3 text-body-sm tabular-nums">
+                {money(format, credit)}
+              </span>
+              <span className="text-label text-ink-2 max-sm:col-span-2">
+                {t('pos.exchange.payment', { number: returnNumber })}
+              </span>
+            </div>
+          )}
           <ul className="grid gap-3">
             {rows.map((row, index) => {
               const id = `pos-pay-${row.key}`;
@@ -265,30 +369,33 @@ export function PayDialog({
               );
             })}
           </ul>
-          {/* The notes the customer handed over: one tap, and the change shows */}
-          <fieldset className="grid gap-2">
-            <legend className="mb-2 text-label font-medium">{t('pos.quickCash')}</legend>
-            <div className="flex flex-wrap gap-2">
-              <Chip
-                onClick={() => {
-                  setCash(exact);
-                }}
-              >
-                {t('pos.exact')}
-              </Chip>
-              {quickCash(total).map((amount) => (
+          {/* The notes the customer handed over: one tap, and the change shows. Not when an
+              exchange's money pays it all */}
+          {compareMoney(owed, '0') > 0 && (
+            <fieldset className="grid gap-2">
+              <legend className="mb-2 text-label font-medium">{t('pos.quickCash')}</legend>
+              <div className="flex flex-wrap gap-2">
                 <Chip
-                  key={amount}
                   onClick={() => {
-                    setCash(amount);
+                    setCash(exact);
                   }}
                 >
-                  {format.money(amount)}
+                  {t('pos.exact')}
                 </Chip>
-              ))}
-            </div>
-          </fieldset>
-          {rows.length < MAX_POS_PAYMENTS && methods.length > 1 && (
+                {quickCash(owed).map((amount) => (
+                  <Chip
+                    key={amount}
+                    onClick={() => {
+                      setCash(amount);
+                    }}
+                  >
+                    {format.money(amount)}
+                  </Chip>
+                ))}
+              </div>
+            </fieldset>
+          )}
+          {rows.length > 0 && rows.length < MAX_POS_PAYMENTS && methods.length > 1 && (
             <Button
               variant="secondary"
               size="sm"
@@ -308,11 +415,28 @@ export function PayDialog({
               {t('pos.addPayment')}
             </Button>
           )}
+          {/* Step 20c: a sale smaller than the return: what is left of its money goes back now,
+              in this dialog (decision 7) */}
+          {exchange && split && leftOver && (
+            <div className="grid gap-3">
+              <DocumentNotice tone="neutral" icon={InformationCircleIcon}>
+                {t('pos.exchange.rest', { amount: money(format, split.rest) })}
+              </DocumentNotice>
+              <RefundRows
+                rows={restRows}
+                onRows={setRestRows}
+                methods={refundMethodsAt(register, exchange.sale)}
+                total={split.rest}
+              />
+            </div>
+          )}
           <dl className="grid gap-1.5 rounded-control bg-subtle px-4 py-3 text-body-sm">
             <SummaryRow label={t('pos.receipt.total')} value={money(format, total)} />
             <SummaryRow label={t('pos.paid')} value={money(format, paid)} />
             {compareMoney(due, '0') > 0 ? (
               <SummaryRow label={t('pos.due')} value={money(format, due)} strong />
+            ) : leftOver ? (
+              <SummaryRow label={t('pos.return.given')} value={money(format, givenBack)} strong />
             ) : (
               <SummaryRow label={t('pos.change')} value={money(format, change)} strong />
             )}
@@ -369,6 +493,17 @@ export function DoneDialog({
 }) {
   const { t, format } = useLocale();
   const changeDue = compareMoney(sale.change, '0') > 0;
+  // Step 20c: an exchange's money left over goes back too: in cash with the change, or another way
+  const refunds = sale.returnSlip?.refunds ?? [];
+  const cashBack = sumMoney(
+    refunds.filter((refund) => refund.method === 'cash').map((refund) => refund.amount),
+  );
+  const others = refunds.filter((refund) => refund.method !== 'cash');
+  const big = changeDue
+    ? t('pos.giveChange', { amount: money(format, sale.change) })
+    : !isZeroMoney(cashBack)
+      ? t('pos.return.giveCash', { amount: money(format, cashBack) })
+      : null;
   return (
     <Dialog
       open
@@ -397,12 +532,23 @@ export function DoneDialog({
           </span>
           <p
             role="status"
-            className={changeDue ? 'text-kpi font-semibold tabular-nums' : 'text-body text-ink-2'}
+            className={big ? 'text-kpi font-semibold tabular-nums' : 'text-body text-ink-2'}
           >
-            {changeDue
-              ? t('pos.giveChange', { amount: money(format, sale.change) })
-              : t('pos.noChange')}
+            {big ?? t('pos.noChange')}
           </p>
+          {changeDue && !isZeroMoney(cashBack) && (
+            <p className="text-body-sm text-ink-2">
+              {t('pos.return.giveCash', { amount: money(format, cashBack) })}
+            </p>
+          )}
+          {others.map((refund, index) => (
+            <p key={`${String(index)}-${refund.method}`} className="text-body-sm text-ink-2">
+              {t('pos.return.giveOther', {
+                amount: money(format, refund.amount),
+                method: t(`pos.methods.${refund.method}`),
+              })}
+            </p>
+          ))}
           {offline && <p className="text-label text-ink-3">{t('pos.savedOnDevice')}</p>}
         </div>
       </DialogContent>
@@ -416,6 +562,7 @@ export function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const keys = [
     ['F2', t('pos.keys.search')],
     ['F4', t('pos.keys.customer')],
+    ['F6', t('pos.keys.return')],
     ['F7', t('pos.keys.billDiscount')],
     ['F8', t('pos.keys.hold')],
     ['F9', t('pos.keys.held')],

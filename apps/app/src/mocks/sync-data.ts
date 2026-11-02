@@ -24,6 +24,7 @@ import {
 import { OWNER } from './fixtures';
 import { MockProblem } from './mock';
 import { lastShiftOf } from './pos-data';
+import { keptSalesOf, toReturnable } from './pos-return-data';
 // Type-only: workspace-data.ts imports this file for emptySync(), and a type import is erased
 // when the code is built, so it makes no circle
 import type { WorkspaceData } from './workspace-data';
@@ -254,8 +255,9 @@ function stockRows(
 }
 
 // Every row the device of this branch keeps, in the order of SYNC_ENTITIES: what a list points at
-// comes before the list
-function rowsOf(data: WorkspaceData, tenantId: string, branchId: string): SyncUpsert[] {
+// comes before the list. Step 20c: and the recent sales of the register the device holds.
+function rowsOf(data: WorkspaceData, tenantId: string, device: Device): SyncUpsert[] {
+  const { branchId } = device;
   const { catalog, sales, stock } = data;
   const products = catalog.products.filter((product) => product.archivedAt === null);
   const activeProducts = new Set(products.map((product) => product.id));
@@ -374,6 +376,15 @@ function rowsOf(data: WorkspaceData, tenantId: string, branchId: string): SyncUp
       key: stockKey(row),
       data: row,
     })),
+    // Step 20c (decision 21): the sales of the register this device holds, of the last 30 days,
+    // with what came back of each line. A return changes its sale's row, so the next pull sends
+    // it again; a device that lets go of the register gets deletes (it clears them itself first).
+    ...keptSalesOf(data, device.id).map((sale) => ({
+      op: 'upsert' as const,
+      entity: 'pos_sale' as const,
+      key: sale.id,
+      data: toReturnable(data, sale),
+    })),
   ];
 }
 
@@ -408,7 +419,7 @@ export function pull(
   let paging = query.cursor === undefined ? undefined : sync.paging.get(query.cursor);
   if (query.cursor !== undefined) sync.paging.delete(query.cursor);
   if (!paging) {
-    const upserts = rowsOf(data, tenantId, device.branchId);
+    const upserts = rowsOf(data, tenantId, device);
     const rows: Rows = new Map(
       upserts.map((change) => [
         rowKey(change),

@@ -1,4 +1,4 @@
-import { AlertCircleIcon, MinusSignCircleIcon } from '@hugeicons/core-free-icons';
+import { AlertCircleIcon, MinusSignCircleIcon, PrinterIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -8,7 +8,9 @@ import {
   contractErrorMap,
   type EntryRef,
   multiplyMoney,
+  type PosRegister,
   type PosShift,
+  type PosShiftReport,
   posShiftCloseWithoutCountInputSchema,
   routes,
 } from '@omnivo/contracts';
@@ -29,20 +31,23 @@ import {
 } from '@omnivo/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from '@tanstack/react-router';
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
 import { Fact } from '../components/adjustment-view';
 import { DocumentNotice } from '../components/document-notice';
 import { EntryLinks } from '../components/entry-links';
 import { failureOf } from '../components/journal-parts';
+import { useReceiptCompany } from '../components/pos-parts';
 import { counterMoney, differenceWords, PosShiftPill } from '../components/pos-shift-parts';
 import { SalesBackLink } from '../components/sales-parts';
 import { useIsoDate, useTenantId, useTimeZone } from '../components/stock-parts';
 import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { useCan } from '../lib/permissions';
-import { posShiftQuery } from '../lib/pos-queries';
+import { posRegisterQuery, posShiftQuery } from '../lib/pos-queries';
+import { zReportOf } from '../lib/pos-shift';
+import { settingsQuery } from '../lib/queries';
 import { useOnline } from '../lib/use-online';
 
 // Step 20b: one shift, as the server has it (pos.shift.manage): the two counts, what the drawer
@@ -50,6 +55,12 @@ import { useOnline } from '../lib/use-online';
 // entries. An open shift that nobody can close is closed here without a count (decisions 11, 27).
 // Every amount has its paisa, like a document; the three numbers at the top read like the
 // counter's result (whole taka unless there is paisa), so a manager compares them at a glance.
+// Step 20c: what the returns paid back, the Z report's sums, a link to the shift's returns, and
+// "Print Z report" for a closed shift (decision 4), on the register's receipt printer.
+
+const PosShiftReportSheet = lazy(async () => ({
+  default: (await import('../components/pos-receipt')).PosShiftReportSheet,
+}));
 
 function CantFind({ message }: { message: string }) {
   const { t } = useLocale();
@@ -77,9 +88,14 @@ export function PosShiftPage() {
 
 function PosShiftView({ shift }: { shift: PosShift }) {
   const { t, format } = useLocale();
+  const tenantId = useTenantId();
   const timeZone = useTimeZone();
   const isoDate = useIsoDate();
   const [closing, setClosing] = useState(false);
+  const [printing, setPrinting] = useState(false);
+  // The Z report prints on the register's paper, with the company's header
+  const register = useQuery(posRegisterQuery(tenantId, shift.register.id)).data;
+  const settings = useQuery(settingsQuery(tenantId)).data;
   const money = (value: string) => format.money(value, { decimals: 2 });
   const time = (iso: string) => format.dateTime(new Date(iso), timeZone);
   // Decision 22: the books use the server's number; the page says when the device's differed
@@ -100,6 +116,21 @@ function PosShiftView({ shift }: { shift: PosShift }) {
         actions={
           <>
             <PosShiftPill status={shift.status} />
+            {/* Only after the close: an open shift's sums still change (its X report is the
+                counter's, from the device) */}
+            {shift.status !== 'open' && register && settings && (
+              <Button
+                variant="secondary"
+                className="gap-1.5"
+                disabled={printing}
+                onClick={() => {
+                  setPrinting(true);
+                }}
+              >
+                <HugeiconsIcon icon={PrinterIcon} size={17} strokeWidth={1.5} />
+                {t('posShifts.printZ')}
+              </Button>
+            )}
             {shift.status === 'open' && (
               <Button
                 variant="secondary"
@@ -169,7 +200,7 @@ function PosShiftView({ shift }: { shift: PosShift }) {
           value={shift.closedAt === null ? '—' : time(shift.closedAt)}
         />
       </Card>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2 xl:grid-cols-3">
         <CashCard shift={shift} money={money} />
         <Card>
           {/* The sales the server has received in the shift, and what they took by method */}
@@ -183,13 +214,21 @@ function PosShiftView({ shift }: { shift: PosShift }) {
           />
           <dl className="grid gap-2 px-5 pt-3 pb-5 text-body-sm">
             {shift.payments.map((payment) => (
-              <div key={payment.method} className="flex justify-between gap-3">
-                <dt className="text-ink-2">{t(`pos.methods.${payment.method}`)}</dt>
-                <dd className="tabular-nums">{money(payment.amount)}</dd>
-              </div>
+              <Row
+                key={payment.method}
+                label={t(`pos.methods.${payment.method}`)}
+                value={money(payment.amount)}
+              />
             ))}
+            {/* Step 20c: the Z report's two sums of the sales, under a rule: they are not money
+                taken, they are inside the total above */}
+            <div className="grid gap-2 border-t border-line pt-2">
+              <Row label={t('posShifts.salesDiscount')} value={money(shift.salesDiscount)} />
+              <Row label={t('posShifts.salesVat')} value={money(shift.salesVat)} />
+            </div>
           </dl>
         </Card>
+        <RefundsCard shift={shift} money={money} />
       </div>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card>
@@ -251,6 +290,18 @@ function PosShiftView({ shift }: { shift: PosShift }) {
           none="—"
         />
       </Card>
+      {printing && register && settings && (
+        <Suspense fallback={null}>
+          <ZReport
+            shift={shift}
+            register={register}
+            settings={settings}
+            onPrinted={() => {
+              setPrinting(false);
+            }}
+          />
+        </Suspense>
+      )}
       {closing && (
         <CloseWithoutCountDialog
           shift={shift}
@@ -272,8 +323,8 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Why the drawer should hold what it does: expectedCashOf()'s five parts, then the sum. Change and
-// pay outs take money away, so they have a minus.
+// Why the drawer should hold what it does: expectedCashOf()'s parts, then the sum. Change, pay outs
+// and (step 20c) the cash paid back take money away, so they have a minus.
 function CashCard({ shift, money }: { shift: PosShift; money: (value: string) => string }) {
   const { t } = useLocale();
   const { cash } = shift;
@@ -286,12 +337,78 @@ function CashCard({ shift, money }: { shift: PosShift; money: (value: string) =>
         <Row label={t('posShifts.cash.changeGiven')} value={`−${money(cash.changeGiven)}`} />
         <Row label={t('posShifts.cash.paidIn')} value={money(cash.paidIn)} />
         <Row label={t('posShifts.cash.paidOut')} value={`−${money(cash.paidOut)}`} />
+        <Row label={t('posShifts.cash.cashRefunded')} value={`−${money(cash.cashRefunded)}`} />
         <div className="flex justify-between gap-3 border-t border-line pt-2 font-medium">
           <dt>{t('posShifts.cash.expected')}</dt>
           <dd className="tabular-nums">{money(shift.expectedCash)}</dd>
         </div>
       </dl>
     </Card>
+  );
+}
+
+// Step 20c (decision 27): what the returns taken back in the shift paid back, by tender: cash (in
+// the drawer's sum above), the register's other methods, and an exchange when one was used. The
+// returns' VAT for the Z report, and a link to the returns themselves when there are any.
+function RefundsCard({ shift, money }: { shift: PosShift; money: (value: string) => string }) {
+  const { t, format } = useLocale();
+  return (
+    <Card>
+      <CardHeader
+        title={t('posShifts.refunds')}
+        subtitle={t('posShifts.returns', {
+          count: shift.returnCount,
+          formatted: format.number(shift.returnCount),
+          total: money(shift.returnsTotal),
+        })}
+      />
+      <dl className="grid gap-2 px-5 pt-3 pb-5 text-body-sm">
+        {shift.refunds.map((refund) => (
+          <Row
+            key={refund.method}
+            label={t(`pos.methods.${refund.method}`)}
+            value={money(refund.amount)}
+          />
+        ))}
+        <div className="grid gap-2 border-t border-line pt-2">
+          <Row label={t('posShifts.returnsVat')} value={money(shift.returnsVat)} />
+        </div>
+        {shift.returnCount > 0 && (
+          <Link
+            to="/pos/returns"
+            search={{ shiftId: shift.id }}
+            className="w-fit font-medium text-brand underline-offset-3 hover:underline"
+          >
+            {t('posShifts.seeReturns')}
+          </Link>
+        )}
+      </dl>
+    </Card>
+  );
+}
+
+// The Z report, made once when asked (useState's first value), so the paper does not change while
+// the print dialog is open; it leaves the page once printed (onPrinted), like the counter's.
+function ZReport({
+  shift,
+  register,
+  settings,
+  onPrinted,
+}: {
+  shift: PosShift;
+  register: PosRegister;
+  settings: Parameters<typeof useReceiptCompany>[0];
+  onPrinted: () => void;
+}) {
+  const company = useReceiptCompany(settings);
+  const [report] = useState<PosShiftReport>(() => zReportOf(shift, new Date().toISOString()));
+  return (
+    <PosShiftReportSheet
+      report={report}
+      paperWidth={register.paperWidth}
+      company={company}
+      onPrinted={onPrinted}
+    />
   );
 }
 

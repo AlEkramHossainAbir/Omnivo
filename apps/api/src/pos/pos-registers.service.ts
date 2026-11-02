@@ -9,6 +9,7 @@ import {
   type PosRegisterInput,
   type PosRegisterListItem,
   type PosRegisterStatus,
+  type PosTender,
   type SyncPosRegister,
   type UpdatePosRegisterInput,
 } from '@omnivo/contracts';
@@ -33,9 +34,10 @@ const ACCOUNT_COLUMN = {
   nagad: 'nagadAccountId',
 } as const satisfies Record<PosPaymentMethod, keyof PosRegisterRow>;
 
-// The register's account for a method; null = it does not take that method (cash always has one)
-export function accountOf(row: PosRegisterRow, method: PosPaymentMethod): string | null {
-  return row[ACCOUNT_COLUMN[method]];
+// The register's account for a tender; null = it does not take that method (cash always has one).
+// Step 20c: an exchange goes through the register's exchange account; null = no exchanges here.
+export function accountOf(row: PosRegisterRow, tender: PosTender): string | null {
+  return tender === 'exchange' ? row.exchangeAccountId : row[ACCOUNT_COLUMN[tender]];
 }
 
 // A register as the devices keep it (decision 20): without the last number, which changes with
@@ -64,6 +66,8 @@ export function toSyncPosRegister(
     overShortAccountId: row.overShortAccountId,
     varianceAlert: row.varianceAlert,
     lockAfter: row.lockAfter,
+    exchangeAccountId: row.exchangeAccountId,
+    returnDays: row.returnDays,
     deviceId: row.deviceId,
     lastShift,
     archivedAt: row.archivedAt?.toISOString() ?? null,
@@ -77,7 +81,11 @@ export function toPosRegister(
   branchId: string,
   lastShift: PosLastShift | null,
 ): PosRegister {
-  return { ...toSyncPosRegister(row, branchId, lastShift), lastNumber: row.lastNumber };
+  return {
+    ...toSyncPosRegister(row, branchId, lastShift),
+    lastNumber: row.lastNumber,
+    lastReturnNumber: row.lastReturnNumber,
+  };
 }
 
 // Step 20b (decision 36): each register's latest shift, by the highest sequence, read and not
@@ -243,6 +251,7 @@ export class PosRegistersService {
         const warehouse = await this.activeWarehouse(tx, input.warehouseId);
         await this.checkAccounts(tx, input.accounts);
         await this.checkOverShort(tx, input.overShortAccountId);
+        await this.checkExchange(tx, input.exchangeAccountId);
         const [row] = await tx
           .insert(posRegisters)
           .values({
@@ -294,6 +303,7 @@ export class PosRegistersService {
         }
         await this.checkAccounts(tx, input.accounts);
         await this.checkOverShort(tx, input.overShortAccountId);
+        await this.checkExchange(tx, input.exchangeAccountId);
         const [after] = await tx
           .update(posRegisters)
           .set({
@@ -608,11 +618,43 @@ export class PosRegistersService {
     }
   }
 
+  // Step 20c: an exchange passes through a liability account, like any money a shop holds for a
+  // customer for a moment: the return puts it there and the sale made with it takes it off, so it
+  // comes back to zero. An active one that is not a group; FOR SHARE like the others. null = this
+  // counter makes no exchanges.
+  private async checkExchange(tx: Transaction, id: string | null): Promise<void> {
+    if (id === null) return;
+    const [account] = await tx
+      .select({
+        type: ledgerAccounts.type,
+        isGroup: ledgerAccounts.isGroup,
+        archivedAt: ledgerAccounts.archivedAt,
+      })
+      .from(ledgerAccounts)
+      .where(and(eq(ledgerAccounts.tenantId, getTenantId()), eq(ledgerAccounts.id, id)))
+      .for('share');
+    if (
+      !account ||
+      account.isGroup ||
+      account.archivedAt !== null ||
+      account.type !== 'liability'
+    ) {
+      throw fieldError(
+        'pos_exchange_account_invalid',
+        'exchangeAccountId',
+        'Pick an active liability account, such as "POS exchange clearing".',
+      );
+    }
+  }
+
   private shiftColumns(input: PosRegisterInput | UpdatePosRegisterInput) {
     return {
       overShortAccountId: input.overShortAccountId,
       varianceAlert: input.varianceAlert,
       lockAfter: input.lockAfter,
+      // Step 20c: the return settings live in the same part of the form
+      exchangeAccountId: input.exchangeAccountId,
+      returnDays: input.returnDays,
     };
   }
 
@@ -632,6 +674,7 @@ export class PosRegistersService {
         return id === null ? [] : [id];
       }),
       ...(row.overShortAccountId === null ? [] : [row.overShortAccountId]),
+      ...(row.exchangeAccountId === null ? [] : [row.exchangeAccountId]),
     ];
     const codes = new Map(
       (
@@ -663,6 +706,9 @@ export class PosRegistersService {
         row.overShortAccountId === null ? null : (codes.get(row.overShortAccountId) ?? null),
       varianceAlert: row.varianceAlert,
       lockAfter: row.lockAfter,
+      exchangeAccount:
+        row.exchangeAccountId === null ? null : (codes.get(row.exchangeAccountId) ?? null),
+      returnDays: String(row.returnDays),
     };
   }
 }

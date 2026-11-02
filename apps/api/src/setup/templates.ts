@@ -170,6 +170,10 @@ const TAKING_REFUNDS = ['purchase.refund.manage'] as const;
 const SELLING_AT_COUNTER = ['pos.sale.create'] as const;
 // Step 20b: they also read every counter's shifts and close one nobody can close
 const RUNNING_COUNTERS = ['pos.register.manage', 'pos.price.override', 'pos.shift.manage'] as const;
+// Step 20c: the cashier who sold takes goods back at the counter and pays the money back from the
+// drawer, like a sale the other way round. A shop that wants only its manager to take goods back
+// takes it off the Cashier role in Settings → Roles.
+const TAKING_BACK_AT_COUNTER = ['pos.return.create'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -720,17 +724,21 @@ export const INDUSTRY_TEMPLATES = {
           ...TAKING_REFUNDS,
           ...SELLING_AT_COUNTER,
           ...RUNNING_COUNTERS,
+          ...TAKING_BACK_AT_COUNTER,
         ],
       },
       {
         name: 'Cashier',
         description: 'Sells at the counter',
-        permissions: [...COLLECTING, ...SELLING_AT_COUNTER],
+        permissions: [...COLLECTING, ...SELLING_AT_COUNTER, ...TAKING_BACK_AT_COUNTER],
       },
     ],
     chart: standardChart({
       stock: TRADER_STOCK,
       currentAssets: [account('1180', 'Card and wallet settlements receivable')],
+      // Step 20c: what a POS return's exchange passes through on its way to the new sale (a
+      // register's exchange account, Settings → POS). Always back at zero once both are posted.
+      currentLiabilities: [account('2190', 'POS exchange clearing')],
       revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Sales returns')],
       costOfSales: [COGS],
       selling: [
