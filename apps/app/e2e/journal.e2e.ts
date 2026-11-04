@@ -1,9 +1,13 @@
 import type { Page } from '@playwright/test';
 
-import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, waitForCopy } from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
+  // Step 19b: the PIN dialog opens when the first pull ends, which on a slow CI runner is in the
+  // middle of a test, and a click there is lost. After the copy, the fixture answers it before
+  // the first click.
+  await waitForCopy(page);
 });
 
 const line = (page: Page, number: number) =>
