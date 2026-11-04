@@ -137,9 +137,15 @@ function session(accessToken: string) {
   return { accessToken, accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString() };
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   server.listen({ onUnhandledRequest: 'error' });
-});
+  // The first import of the app's modules transforms them all: about 2.5 s on a laptop and 6–8 s
+  // on a CI runner, more than a test's 5 s. Paid once here, so reload() in a test only runs them
+  // again. The browser is stubbed for it, as a test would have it.
+  stubBrowser();
+  await reload();
+  vi.unstubAllGlobals();
+}, 30_000);
 beforeEach(() => {
   stubBrowser();
   deleteLocalData.mockClear();

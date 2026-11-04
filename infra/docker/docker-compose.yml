@@ -37,7 +37,8 @@ services:
       - '8025:8025'
 
   storage:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    # MinIO no longer publishes public images; pgsty/minio is a maintained fork with the same CLI
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: omnivo

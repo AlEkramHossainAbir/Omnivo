@@ -77,9 +77,10 @@ export interface TestStorage {
 }
 
 // docker-compose-এর storage সার্ভিসের একই image আর চাবি। bucket বানায় API নিজেই
-// (StorageService.onApplicationBootstrap), ঠিক `pnpm dev`-এর মতো
+// (StorageService.onApplicationBootstrap), ঠিক `pnpm dev`-এর মতো। MinIO নিজের image
+// (quay.io, Docker Hub) আর public রাখে না, তাই Pigsty-র রক্ষণাবেক্ষণ করা fork
 export async function startStorage(): Promise<TestStorage> {
-  const container = await new GenericContainer('quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z')
+  const container = await new GenericContainer('pgsty/minio:RELEASE.2026-08-04T00-00-00Z')
     .withCommand(['server', '/data'])
     .withEnvironment({ MINIO_ROOT_USER: 'omnivo', MINIO_ROOT_PASSWORD: 'omnivo-dev-secret' })
     .withExposedPorts(9000)
