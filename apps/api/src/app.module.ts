@@ -14,6 +14,7 @@ import { AuthMiddleware } from './auth/auth.middleware.js';
 import { AuthModule } from './auth/auth.module.js';
 import { BranchesModule } from './branches/branches.module.js';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module.js';
+import { DashboardModule } from './dashboard/dashboard.module.js';
 import { DocumentsModule } from './documents/documents.module.js';
 import { ContractInterceptor } from './common/http/contract.interceptor.js';
 import { ProblemFilter } from './common/http/problem.filter.js';
@@ -64,6 +65,7 @@ export class AppModule implements NestModule {
         AccountsModule,
         JournalModule,
         ReportsModule,
+        DashboardModule,
         CustomFieldsModule,
         ProductsModule,
         InventoryModule,

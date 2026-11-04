@@ -12,6 +12,7 @@ import {
   negateMoney,
   priceInUnit,
   percentOfMoney,
+  percentOfWhole,
   prorateMoney,
   splitMoney,
   subtractMoney,
@@ -118,5 +119,23 @@ describe('money', () => {
     // A yard is 0.9144 m: ৳100 a metre is ৳91.44 a yard
     expect(priceInUnit('100', '1', '0.914400')).toBe('91.4400');
     expect(() => priceInUnit('100', '0', '1')).toThrow();
+  });
+
+  it('works out a percent of a whole to one decimal', () => {
+    // A margin: ৳1,150 of ৳4,600
+    expect(percentOfWhole('1150', '4600')).toBe('25.0');
+    // 1 of 3 = 33.33…, 2 of 3 = 66.66…: rounded to the tenth
+    expect(percentOfWhole('1', '3')).toBe('33.3');
+    expect(percentOfWhole('2', '3')).toBe('66.7');
+    // A change line: ৳18,000 today against ৳20,000 yesterday
+    expect(percentOfWhole('-2000', '20000')).toBe('-10.0');
+    // −0.05% rounds away from zero, like a negative paisa
+    expect(percentOfWhole('-1', '2000')).toBe('-0.1');
+    // Less than half a tenth is zero, without a minus
+    expect(percentOfWhole('-1', '30000')).toBe('0.0');
+    // The whole counts by its size: −৳200 to −৳300 is −50%
+    expect(percentOfWhole('-100', '-200')).toBe('-50.0');
+    expect(percentOfWhole('500', '100')).toBe('500.0');
+    expect(() => percentOfWhole('1', '0.0000')).toThrow();
   });
 });

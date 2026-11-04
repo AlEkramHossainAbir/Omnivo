@@ -114,6 +114,15 @@ export function formatDate(date: Date, language: Language): string {
   return `${part('day')} ${part('month')} ${part('year')}`;
 }
 
+// Step 21a: the day without its year, "29 Oct" / "২৯ অক্টো", for a chart's axis, where the year
+// is in the chart's name. The same parts as formatDate.
+export function formatDayMonth(date: Date, language: Language): string {
+  const parts = (language === 'bn' ? BN_DATE : EN_DATE).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('day')} ${part('month')}`;
+}
+
 // পিরিয়ড (মাস): "September 2026" / "সেপ্টেম্বর ২০২৬"
 const MONTH = {
   en: new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric' }),
@@ -154,6 +163,15 @@ export function formatDateTime(date: Date, language: Language, timeZone: string)
   const day =
     language === 'bn' ? `${part('day')} ${part('month')},` : `${part('day')} ${part('month')}`;
   return `${day} ${part('year')}, ${part('hour')}:${part('minute')}`;
+}
+
+// Step 21a: the time alone, "10:42" / "১০:৪২", in the workspace's time zone like formatDateTime.
+// The Overview's "As of 10:42" for numbers made today.
+export function formatTime(date: Date, language: Language, timeZone: string): string {
+  const parts = dateTimeFormat(language, timeZone).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes): string =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('hour')}:${part('minute')}`;
 }
 
 const MONTH_NAME = {

@@ -5,10 +5,12 @@ import {
   formatBytes,
   formatDate,
   formatDateTime,
+  formatDayMonth,
   formatMoney,
   formatMonth,
   formatMonthName,
   formatNumber,
+  formatTime,
   type MoneyFormatOptions,
 } from './format.js';
 import { isLanguage, type Language } from './i18n.js';
@@ -36,8 +38,10 @@ export function useLocale() {
       number: (value: number | string, decimals?: number) =>
         formatNumber(value, language, decimals),
       date: (date: Date) => formatDate(date, language),
+      dayMonth: (date: Date) => formatDayMonth(date, language),
       month: (date: Date) => formatMonth(date, language),
       dateTime: (date: Date, timeZone: string) => formatDateTime(date, language, timeZone),
+      time: (date: Date, timeZone: string) => formatTime(date, language, timeZone),
       monthName: (month: number) => formatMonthName(month, language),
       bytes: (bytes: number) => formatBytes(bytes, language),
     }),

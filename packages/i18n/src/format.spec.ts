@@ -4,10 +4,12 @@ import {
   formatBytes,
   formatDate,
   formatDateTime,
+  formatDayMonth,
   formatMoney,
   formatMonth,
   formatMonthName,
   formatNumber,
+  formatTime,
 } from './format.js';
 
 describe('formatMoney', () => {
@@ -66,6 +68,23 @@ describe('formatDateTime', () => {
     expect(formatDateTime(moment, 'en', 'Asia/Dhaka')).toBe('23 Sep 2026, 16:05');
     expect(formatDateTime(moment, 'en', 'UTC')).toBe('23 Sep 2026, 10:05');
     expect(formatDateTime(moment, 'bn', 'Asia/Dhaka')).toBe('২৩ সেপ, ২০২৬, ১৬:০৫');
+  });
+});
+
+describe('formatDayMonth', () => {
+  it('leaves the year out, in both languages', () => {
+    expect(formatDayMonth(new Date(2026, 9, 29), 'en')).toBe('29 Oct');
+    expect(formatDayMonth(new Date(2026, 9, 29), 'bn')).toBe('২৯ অক্টো');
+  });
+});
+
+describe('formatTime', () => {
+  it("shows only the hour and minute, in the workspace's time zone", () => {
+    const moment = new Date('2026-09-23T04:42:00Z');
+    expect(formatTime(moment, 'en', 'Asia/Dhaka')).toBe('10:42');
+    expect(formatTime(moment, 'bn', 'Asia/Dhaka')).toBe('১০:৪২');
+    // h23: midnight is 00, not 24
+    expect(formatTime(new Date('2026-09-23T18:00:00Z'), 'en', 'Asia/Dhaka')).toBe('00:00');
   });
 });
 

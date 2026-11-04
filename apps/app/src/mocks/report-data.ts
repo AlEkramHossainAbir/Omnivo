@@ -60,8 +60,9 @@ function postedLines(data: WorkspaceData): PostedLine[] {
     );
 }
 
-// A closing entry, or the reversal that reopened its year: not income or expense of any period
-function isClosing(data: WorkspaceData, entry: JournalEntry): boolean {
+// A closing entry, or the reversal that reopened its year: not income or expense of any period.
+// Step 21a: the dashboard's sales leave them out too (dashboard-data.ts).
+export function isClosing(data: WorkspaceData, entry: JournalEntry): boolean {
   if (entry.source === 'year_close') return true;
   const original = entry.reversalOf;
   return (

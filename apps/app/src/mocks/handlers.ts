@@ -5,6 +5,7 @@ import {
   APPROVAL_DOCUMENTS,
   type AuthSession,
   compareQuantity,
+  dashboardCardsFor,
   type ErrorCode,
   type Preferences,
   type ProductCategory,
@@ -15,6 +16,7 @@ import {
 import { delay, http, HttpResponse, type HttpResponseResolver } from 'msw';
 
 import { API_URL } from '../lib/api';
+import { dashboardOf } from './dashboard-data';
 import { meIn, OWNER, WORKSPACES, type Workspace } from './fixtures';
 import {
   allocateReceipt,
@@ -1474,6 +1476,19 @@ export const handlers = [
     reply(
       routes.reports.balanceSheet,
       balanceSheetOf(current(), readQuery(routes.reports.balanceSheet.query, request)),
+    ),
+  ),
+
+  // Step 21a: the cards of the person signed in (me(): the owner, or the role a test left), the
+  // others null, like the API's DashboardService
+  mock(routes.dashboard.get, ({ request }) =>
+    reply(
+      routes.dashboard.get,
+      dashboardOf(
+        current(),
+        dashboardCardsFor(me().permissions),
+        readQuery(routes.dashboard.get.query, request),
+      ),
     ),
   ),
 

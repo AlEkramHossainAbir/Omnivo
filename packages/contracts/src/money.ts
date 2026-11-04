@@ -199,3 +199,19 @@ export function priceInUnit(price: string, fromFactor: string, toFactor: string)
     divideRounded(toUnits(price) * factorMicros(toFactor), factorMicros(fromFactor)),
   );
 }
+
+// ---------------------------------------------------------------------------------------------
+// The dashboard (step 21a): a margin and a change line as a percent
+
+// part ÷ whole as a percent with 1 decimal, rounded half away from zero: ৳1,150 of ৳4,600 is
+// "25.0". A decimal string like every amount, so the screen formats it and never sees a float. The
+// whole counts by its size: a fall from −৳200 to −৳300 is a change of −৳100 on ৳200, "-50.0". It
+// must not be zero; the caller has nothing to compare with then and shows no percent.
+export function percentOfWhole(part: string, whole: string): string {
+  const wholeUnits = toUnits(whole);
+  if (wholeUnits === 0n) throw new Error('Cannot take a percent of zero');
+  // part (10^-4) × 1000 ÷ whole (10^-4) = tenths of a percent
+  const tenths = divideRounded(toUnits(part) * 1000n, wholeUnits < 0n ? -wholeUnits : wholeUnits);
+  const size = tenths < 0n ? -tenths : tenths;
+  return `${tenths < 0n ? '-' : ''}${String(size / 10n)}.${String(size % 10n)}`;
+}

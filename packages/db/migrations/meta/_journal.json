@@ -400,6 +400,20 @@
       "when": 1793505769725,
       "tag": "0056_pos-returns-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1793617940583,
+      "tag": "0057_account-day-totals",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1793617945078,
+      "tag": "0058_account-day-totals-rules",
+      "breakpoints": true
     }
   ]
 }

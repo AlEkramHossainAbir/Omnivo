@@ -268,9 +268,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `ink-3`, e.g. Suspended).
 - **Card:** `surface`, 1px `line`, radius 14px, `shadow-sm`. The header is a 15px/600
   title plus a 13px `ink-3` subtitle, padded 18px 20px 0.
-- **KPI strip:** one card split into equal cells by 1px `line` dividers (not separate
-  cards). Each cell has a caption label, a 26px/600 value and a 12.5px change line
-  (`good`/`crit` with an arrow icon).
+- **KPI strip:** `KpiStrip` from `@omnivo/ui`, one card split into one to four equal cells by 1px `line` rules (the
+  card's `line` background showing through a 1px gap); four cells are two by two on a phone. Each cell has a
+  caption label, a 26px/600 value, an optional 12px `ink-3` line under it, and an optional 12px/500 change line:
+  `good` with an arrow up, `crit` with an arrow down, or `ink-3` with no arrow when it only compares. The words say
+  more or less too, so the color is never the only sign.
 - **Statement table (trial balance, profit and loss, balance sheet):** a real `<table>` in a card (`surface`,
   1px `line`, radius 14px, `shadow-sm`), not the DataTable: section headings as `ink-3` caption rows, accounts
   indented 16px per level (code in `Geist Mono` `ink-3`), groups and totals at weight 500, total rows on
@@ -303,11 +305,22 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (`pointer-fine:`), always on touch screens.
 - **Page header:** the 26px `h1` page title, a 13px `ink-3` description below it, and
   the view's actions on the right (they wrap below the title on phones).
+- **Overview (`/`):** the page header ("Overview", the branch select on the right: `Building03`, "All branches"
+  first, only with a card it changes and more than one active branch), then the KPI strip (Sales today, Sales this
+  month, Gross margin this month, Cash and bank), "Sales, last 30 days" (the line chart, two thirds) beside "Top
+  products" (one third), then the cash accounts, the dues ("Customers owe" above "Owed to suppliers" in one card,
+  the overdue part in `crit` with `Alert02`, or "Nothing overdue") and "Low stock" (a `warn` count pill,
+  `PackageOutOfStock`, "40 of 200 strips", the emptiest first). Each card shows by its own permission, and a card
+  alone takes the whole row. A role with no card gets the empty state "No numbers for your role". The branch
+  changes the sales, the margin and the top products only. Amounts are whole taka. The page asks again every
+  minute. Offline it shows the answer the device kept (sealed), "As of 10:42" in the header's line, a neutral
+  document notice, and the branch select disabled; with nothing kept, "Needs a connection".
 - **Section header:** a 15px/600 title plus a 13px `ink-3` subtitle with no card and no
   padding, used above content that is already a card (such as a data table).
 - **Empty state:** centered, a 40px `brand-soft`/`brand` icon tile (radius 8px), a
   15px/600 title, a 13.5px `ink-2` description that says what to do to fill the view,
-  and an optional action button.
+  and an optional action button. When something failed to load, the tile is `crit-bg`/`crit` (`tone="crit"`), with
+  Retry as the action.
 - **Device copy states:** `LocalState` (`apps/app/src/components/local-state.tsx`), what a list read from the
   device shows in its place while the copy is not ready, as an empty state: not set up (`ComputerPhoneSync`, a
   "Choose the branch" button), copying (`CloudDownload`, a 12px `ink-3` `tabular-nums` `role="status"` count, "1,250
@@ -710,11 +723,13 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `SelectableCardGroup`: real radio inputs, one choice.
 - **Toast:** `ink` background with `bg` text, radius 10px, `shadow-lg`, bottom-center,
   about 3s. The copy names what happened ("Workspace created").
-- **Charts:** a single series uses a 2px `brand` line, a `brand` area fill fading from
-  14% to 0, dashed `line` gridlines, 11px `ink-3` axis labels and an emphasized end
-  point. Every chart gets a hover crosshair and tooltip (`surface`, `line` border,
-  `shadow`). Magnitude bars use `brand`, with `brand-line` for de-emphasized bars.
-  Never use dual axes.
+- **Charts:** `LineChart` from `@omnivo/ui`, our own SVG (no chart library), in the page's lazy chunk. A single
+  series uses a 2px `brand` line, a `brand` area fill fading from 14% to 0 down to the zero line, dashed `line`
+  gridlines at round steps (below zero too, for a day with more returns than sales), 11px `ink-3` axis labels and
+  an emphasized end point. It is drawn at its box's pixel width, so the labels stay 11px on a phone. Every chart
+  gets a hover crosshair and tooltip (`surface`, `line` border, `shadow`), and takes the focus: the arrow keys,
+  Home and End walk the days, and a live region says each one. Magnitude bars use `brand`, with `brand-line` for
+  de-emphasized bars. Never use dual axes.
 - **Logo:** two offset rounded squares, a filled `brand` square and an outlined
   `brand` square (debit/credit columns), next to "Omnivo" in 17px/600.
 - **Print layout:** `PrintSheet` and `PrintBlock` from `@omnivo/ui`. A document page renders its sheet into

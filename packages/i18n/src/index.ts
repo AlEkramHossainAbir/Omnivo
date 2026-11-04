@@ -5,10 +5,12 @@ export {
   formatBytes,
   formatDate,
   formatDateTime,
+  formatDayMonth,
   formatMoney,
   formatMonth,
   formatMonthName,
   formatNumber,
+  formatTime,
   isDecimalString,
   type MoneyFormatOptions,
 } from './format.js';

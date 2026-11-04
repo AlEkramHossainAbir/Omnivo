@@ -175,6 +175,15 @@ const RUNNING_COUNTERS = ['pos.register.manage', 'pos.price.override', 'pos.shif
 // takes it off the Cashier role in Settings → Roles.
 const TAKING_BACK_AT_COUNTER = ['pos.return.create'] as const;
 
+// Step 21a. A module's reports go to the people who answer for it: the accountant reads them all (the
+// VAT report too, under accounting.report.read), and so does a manager who runs everything. The
+// people who keep the stock read the stock reports and the low stock; the people who buy read the
+// purchase reports (21b). Nobody who only sells gets the sales report: it is the whole company's
+// sales, not their own (no document has a salesperson yet), and a cashier sees no totals at all.
+const SALES_REPORTS = ['sales.report.read'] as const;
+const PURCHASE_REPORTS = ['purchase.report.read'] as const;
+const STOCK_REPORTS = ['inventory.report.read'] as const;
+
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
 const ACCOUNTANT: RoleTemplate = {
@@ -208,6 +217,10 @@ const ACCOUNTANT: RoleTemplate = {
     // Step 17d: debit notes and the money suppliers pay back
     ...DEBITING,
     ...TAKING_REFUNDS,
+    // Step 21a: every module's reports
+    ...SALES_REPORTS,
+    ...PURCHASE_REPORTS,
+    ...STOCK_REPORTS,
   ],
 };
 
@@ -225,6 +238,7 @@ const STORE_KEEPER: RoleTemplate = {
     ...REQUESTING,
     ...RECEIVING,
     ...SENDING_BACK,
+    ...STOCK_REPORTS,
   ],
 };
 
@@ -454,6 +468,7 @@ export const INDUSTRY_TEMPLATES = {
           ...ORDERING,
           ...REQUESTING,
           ...BUYING,
+          ...PURCHASE_REPORTS,
         ],
       },
       STORE_KEEPER,
@@ -522,6 +537,7 @@ export const INDUSTRY_TEMPLATES = {
           ...REQUESTING,
           ...RECEIVING,
           ...SENDING_BACK,
+          ...STOCK_REPORTS,
         ],
       },
       {
@@ -598,6 +614,7 @@ export const INDUSTRY_TEMPLATES = {
           ...REQUESTING,
           ...RECEIVING,
           ...SENDING_BACK,
+          ...STOCK_REPORTS,
         ],
       },
       {
@@ -652,6 +669,8 @@ export const INDUSTRY_TEMPLATES = {
           ...STOCK_WORK,
           ...REQUESTING,
           ...BUYING,
+          ...PURCHASE_REPORTS,
+          ...STOCK_REPORTS,
         ],
       },
       STORE_KEEPER,
@@ -725,6 +744,9 @@ export const INDUSTRY_TEMPLATES = {
           ...SELLING_AT_COUNTER,
           ...RUNNING_COUNTERS,
           ...TAKING_BACK_AT_COUNTER,
+          ...SALES_REPORTS,
+          ...PURCHASE_REPORTS,
+          ...STOCK_REPORTS,
         ],
       },
       {
@@ -799,6 +821,9 @@ export const INDUSTRY_TEMPLATES = {
           ...PAYING,
           ...DEBITING,
           ...TAKING_REFUNDS,
+          ...SALES_REPORTS,
+          ...PURCHASE_REPORTS,
+          ...STOCK_REPORTS,
         ],
       },
     ],

@@ -46,7 +46,8 @@ export {
 } from './components/field.js';
 export { FormAlert } from './components/form-alert.js';
 export { FormField, type FormFieldControlProps } from './components/form-field.js';
-export { KpiStrip } from './components/kpi-strip.js';
+export { type KpiCell, type KpiChange, KpiStrip } from './components/kpi-strip.js';
+export { LineChart, type LineChartPoint } from './components/line-chart.js';
 export { Logo } from './components/logo.js';
 export { MoneyInput } from './components/money-input.js';
 export { PageHeader, SectionHeader } from './components/page-header.js';

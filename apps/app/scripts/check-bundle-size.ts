@@ -13,7 +13,9 @@ import { z } from 'zod';
 // the very first visit downloads them. Step 20a: 220 KB (you chose this). 20a's words (the
 // registers, the POS screen, its sales and the sold-short list) took it to 217.9 KB. Step 20b: 225 KB
 // (you chose this). 20b's words (the shift, the count, held bills, the shifts pages) took it to 222.0 KB.
-const INITIAL_BUDGET = 225 * 1024;
+// Step 21a: 230 KB (you chose this). The Overview's words and its contract took it to 225.7 KB; the
+// chart and the page are in the Overview's own lazy chunk.
+const INITIAL_BUDGET = 230 * 1024;
 // Step 17d: a lazy chunk is 105 KB for now. Almost every page loads the contracts' whole route
 // table (about 28 KB gz) to call the API, and 17d's three documents grew it enough to push pages
 // that 17d never touched (team, units) over 100 KB. Loading each module's routes with its own

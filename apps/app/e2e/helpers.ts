@@ -2,7 +2,13 @@ import { syncPullSchema } from '@omnivo/contracts';
 import { newDeviceId, saveDevice } from '@omnivo/sync';
 import { test as base, expect, type Locator, type Page, type Response } from '@playwright/test';
 
-import { HEAD_OFFICES, OWNER, WORKSPACES } from '../src/mocks/fixtures.js';
+import {
+  HEAD_OFFICES,
+  MOCK_ROLE_KEY,
+  type MockRole,
+  OWNER,
+  WORKSPACES,
+} from '../src/mocks/fixtures.js';
 
 export { expect };
 
@@ -139,4 +145,15 @@ export async function toastShown(
   await expect(page.getByText(text)).toBeVisible(timeout === undefined ? {} : { timeout });
   await page.mouse.move(0, 0);
   await expect(page.getByText(text)).toBeHidden();
+}
+
+// Step 21a: the person signs in with this role, not as the owner (fixtures.ts → MOCK_ROLE_KEY).
+// Before the app starts, so the first /me already answers with it; call it before page.goto.
+export async function actAs(page: Page, role: MockRole): Promise<void> {
+  await page.addInitScript(
+    ([key, value]) => {
+      localStorage.setItem(key, value);
+    },
+    [MOCK_ROLE_KEY, JSON.stringify(role)] as const,
+  );
 }

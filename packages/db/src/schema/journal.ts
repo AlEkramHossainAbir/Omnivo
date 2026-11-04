@@ -1,6 +1,7 @@
 import { JOURNAL_SOURCES, JOURNAL_STATUSES } from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   check,
   date,
   foreignKey,
@@ -10,6 +11,7 @@ import {
   smallint,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
@@ -157,6 +159,53 @@ export const journalLines = pgTable(
       'journal_lines_one_side',
       sql`${table.debit} >= 0 AND ${table.credit} >= 0 AND (${table.debit} = 0) <> (${table.credit} = 0)`,
     ),
+  ],
+);
+
+// Step 21a: the journal added up per day, account and branch, so the dashboard (and the reports
+// after it) sum a few hundred rows instead of every line. Kept by the database itself (migration
+// 0058's trigger adds each entry when it is posted, at COMMIT); code only reads it. Posted entries
+// only: a draft's lines can still change. Not a materialized view: those have no row-level
+// security, and a refresh rebuilds every workspace and is old until the next one.
+export const accountDayTotals = pgTable(
+  'account_day_totals',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    // The entry's date (its business day), not the day it was posted
+    day: date('day', { mode: 'string' }).notNull(),
+    accountId: uuid('account_id').notNull(),
+    // NULL: the lines had no branch
+    branchId: uuid('branch_id'),
+    // A year-end closing entry or its reversal (step 11). Kept apart so the sales and the profit
+    // and loss can leave them out, and the trial balance can still add them in.
+    closing: boolean('closing').notNull(),
+    debit: numeric('debit', { precision: 19, scale: 4 }).notNull().default('0'),
+    credit: numeric('credit', { precision: 19, scale: 4 }).notNull().default('0'),
+  },
+  (table) => [
+    // One row per account, day, branch and kind; the trigger's ON CONFLICT target. Account first:
+    // every question asks about a few accounts (the sales accounts, the cash accounts) over days.
+    // NULLS NOT DISTINCT: without it, two rows with branch_id NULL would not collide.
+    unique('account_day_totals_key')
+      .on(table.tenantId, table.accountId, table.day, table.branchId, table.closing)
+      .nullsNotDistinct(),
+    // An account with entries cannot be deleted anyway (journal_lines_account_fk); this one says
+    // the same, and keeps another workspace's account out
+    foreignKey({
+      name: 'account_day_totals_account_fk',
+      columns: [table.tenantId, table.accountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    // NULL branch_id skips the check (MATCH SIMPLE)
+    foreignKey({
+      name: 'account_day_totals_branch_fk',
+      columns: [table.tenantId, table.branchId],
+      foreignColumns: [branches.tenantId, branches.id],
+    }),
+    // Sums of lines that are never negative
+    check('account_day_totals_not_negative', sql`${table.debit} >= 0 AND ${table.credit} >= 0`),
   ],
 );
 

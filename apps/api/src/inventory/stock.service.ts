@@ -42,7 +42,7 @@ import { WITH_TENANT } from '../infra/tokens.js';
 import { ValueAccess } from './value-access.js';
 
 // Postgres's NUMERIC as the API sends every quantity: 4 decimals, "0.0000" for nothing
-function quantityText(value: SQL): SQL<string> {
+export function quantityText(value: SQL): SQL<string> {
   return sql<string>`round(coalesce(${value}, 0), 4)::text`;
 }
 
@@ -888,8 +888,9 @@ export class StockService {
 // (p is its product) to a warehouse (or to any, for null), in the base unit. Each line counts
 // what is left of it, never below zero: a line that came over the order owes nothing, and it does
 // not cancel another line still waiting. l.product_id lets purchase_order_lines_variant_idx find
-// the lines; the order's status and warehouse are purchase_orders_open_idx's.
-function incomingTo(warehouse: SQL | null): SQL<string> {
+// the lines; the order's status and warehouse are purchase_orders_open_idx's. Step 21a: the
+// dashboard's low stock reads it too.
+export function incomingTo(warehouse: SQL | null): SQL<string> {
   return quantityText(sql`(SELECT sum(greatest(l.base_quantity - l.received_quantity, 0))
     FROM purchase_order_lines l
     JOIN purchase_orders o ON o.tenant_id = l.tenant_id AND o.id = l.order_id

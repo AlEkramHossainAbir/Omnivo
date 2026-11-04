@@ -39,6 +39,8 @@ const SCREENS = [
   // Step 20c: taking goods back works offline too, from the device's own sales (its refund rows
   // come with the payment's chunk as well)
   () => import('../components/pos-return'),
+  // Step 21a: the Overview shows the answer the device kept (decision 7), with its chart
+  () => import('../routes/dashboard'),
 ];
 
 // Once, by main.tsx's enableMocking. The dev server is on this computer, so it does not fail.

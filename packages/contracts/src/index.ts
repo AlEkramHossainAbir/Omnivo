@@ -9,6 +9,7 @@ export * from './branches.js';
 export * from './credit-notes.js';
 export * from './custom-fields.js';
 export * from './customers.js';
+export * from './dashboard.js';
 export * from './debit-notes.js';
 export * from './deliveries.js';
 export * from './devices.js';

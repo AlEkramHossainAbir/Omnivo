@@ -30,6 +30,7 @@ const DESCRIPTIONS = {
   'inventory.stock.transfer': 'Send stock to another warehouse and receive it there',
   'inventory.stock.value': 'See what stock costs and what it is worth',
   'inventory.stock.revalue': 'Revalue stock: give items a new average cost',
+  'inventory.report.read': 'See the stock reports, and the low stock on the dashboard',
   'sales.customer.manage': 'Add, edit, archive and delete customers and customer groups',
   'sales.customer.balance': 'See what customers owe, and their statements',
   'sales.price_list.manage': 'Add, edit and archive price lists, and set their prices',
@@ -42,6 +43,8 @@ const DESCRIPTIONS = {
   'sales.return.manage': 'Write and post sales returns, which bring stock back in',
   'sales.credit_note.manage': 'Write and post credit notes, and apply their money to invoices',
   'sales.refund.manage': 'Pay money back to customers and void refunds',
+  'sales.report.read':
+    'See the sales reports, and the sales and the best-selling products on the dashboard',
   'purchase.supplier.manage': 'Add, edit, archive and delete suppliers and supplier groups',
   'purchase.supplier.balance': 'See what the company owes suppliers, and their statements',
   'purchase.requisition.manage':
@@ -53,6 +56,7 @@ const DESCRIPTIONS = {
   'purchase.return.manage': 'Write and post purchase returns, which send stock back to suppliers',
   'purchase.debit_note.manage': 'Write and post debit notes, and apply their money to bills',
   'purchase.refund.manage': 'Record money suppliers paid back, and void supplier refunds',
+  'purchase.report.read': 'See the purchase reports',
   'pos.sale.create':
     'Sell at a POS register, take a free register for this device, and run its shifts',
   'pos.price.override':

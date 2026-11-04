@@ -9,6 +9,7 @@ import {
   type DebitNoteStatus,
   type CustomerSort,
   type CustomerStatus,
+  type DashboardQuery,
   type DeliveryInvoiceFilter,
   type DeviceSort,
   type DeviceStatus,
@@ -284,6 +285,18 @@ export function profitAndLossQuery(tenantId: string, query: ProfitAndLossQuery) 
   return queryOptions({
     queryKey: ['journal', tenantId, 'profit-and-loss', query],
     queryFn: () => call(routes.reports.profitAndLoss, { query }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+// Step 21a: the Overview. Under ['journal', tenant] like the reports: posting an invoice, a bill or
+// a payment invalidates the books, and the Overview's numbers come from them, so they are fetched
+// again at once instead of at the next minute. keepPreviousData: a new branch shows the last
+// numbers until its own arrive, not an empty page.
+export function dashboardQuery(tenantId: string, query: DashboardQuery) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'dashboard', query],
+    queryFn: () => call(routes.dashboard.get, { query }),
     placeholderData: keepPreviousData,
   });
 }

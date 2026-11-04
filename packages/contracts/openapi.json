@@ -69,6 +69,9 @@
       "name": "reportExports"
     },
     {
+      "name": "dashboard"
+    },
+    {
       "name": "units"
     },
     {
@@ -2183,7 +2186,7 @@
                           "maximum": 9007199254740991
                         },
                         "permissions": {
-                          "maxItems": 47,
+                          "maxItems": 50,
                           "type": "array",
                           "items": {
                             "type": "string",
@@ -2208,6 +2211,7 @@
                               "inventory.stock.transfer",
                               "inventory.stock.value",
                               "inventory.stock.revalue",
+                              "inventory.report.read",
                               "sales.customer.manage",
                               "sales.customer.balance",
                               "sales.price_list.manage",
@@ -2220,6 +2224,7 @@
                               "sales.return.manage",
                               "sales.credit_note.manage",
                               "sales.refund.manage",
+                              "sales.report.read",
                               "purchase.supplier.manage",
                               "purchase.supplier.balance",
                               "purchase.requisition.manage",
@@ -2230,6 +2235,7 @@
                               "purchase.return.manage",
                               "purchase.debit_note.manage",
                               "purchase.refund.manage",
+                              "purchase.report.read",
                               "pos.sale.create",
                               "pos.price.override",
                               "pos.register.manage",
@@ -9985,6 +9991,490 @@
                   "required": [
                     "url",
                     "expiresAt"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/dashboard": {
+      "get": {
+        "operationId": "dashboard.get",
+        "tags": [
+          "dashboard"
+        ],
+        "summary": "The home page's numbers: sales, margin, cash, dues and low stock, as allowed",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "branchId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "today": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "generatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "branchId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sales": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "today": {
+                              "type": "string"
+                            },
+                            "yesterday": {
+                              "type": "string"
+                            },
+                            "monthToDate": {
+                              "type": "string"
+                            },
+                            "lastMonthToDate": {
+                              "type": "string"
+                            },
+                            "days": {
+                              "minItems": 30,
+                              "maxItems": 30,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "date": {
+                                    "type": "string",
+                                    "format": "date",
+                                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                                  },
+                                  "amount": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "date",
+                                  "amount"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "today",
+                            "yesterday",
+                            "monthToDate",
+                            "lastMonthToDate",
+                            "days"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "margin": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "monthToDate": {
+                              "type": "object",
+                              "properties": {
+                                "sales": {
+                                  "type": "string"
+                                },
+                                "cost": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "sales",
+                                "cost"
+                              ]
+                            },
+                            "lastMonthToDate": {
+                              "type": "object",
+                              "properties": {
+                                "sales": {
+                                  "type": "string"
+                                },
+                                "cost": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "sales",
+                                "cost"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "monthToDate",
+                            "lastMonthToDate"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "cash": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "accounts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "accountId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "balance": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "accountId",
+                                  "code",
+                                  "name",
+                                  "balance"
+                                ]
+                              }
+                            },
+                            "total": {
+                              "type": "string"
+                            },
+                            "yesterday": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "accounts",
+                            "total",
+                            "yesterday"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "topProducts": {
+                      "anyOf": [
+                        {
+                          "maxItems": 5,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "variantId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "productId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "productCode": {
+                                "type": "string"
+                              },
+                              "productName": {
+                                "type": "string"
+                              },
+                              "optionValues": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "sku": {
+                                "type": "string"
+                              },
+                              "baseUnitId": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "quantity": {
+                                "type": "string"
+                              },
+                              "baseUnit": {
+                                "type": "object",
+                                "properties": {
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "decimals": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "code",
+                                  "decimals"
+                                ]
+                              },
+                              "amount": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "variantId",
+                              "productId",
+                              "productCode",
+                              "productName",
+                              "optionValues",
+                              "sku",
+                              "baseUnitId",
+                              "quantity",
+                              "baseUnit",
+                              "amount"
+                            ]
+                          }
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "receivables": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "total": {
+                              "type": "string"
+                            },
+                            "overdue": {
+                              "type": "string"
+                            },
+                            "overdueCount": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "overdue",
+                            "overdueCount"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "payables": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "total": {
+                              "type": "string"
+                            },
+                            "overdue": {
+                              "type": "string"
+                            },
+                            "overdueCount": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "overdue",
+                            "overdueCount"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "lowStock": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "count": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            },
+                            "items": {
+                              "maxItems": 5,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "variantId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "productId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "productCode": {
+                                    "type": "string"
+                                  },
+                                  "productName": {
+                                    "type": "string"
+                                  },
+                                  "optionValues": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "sku": {
+                                    "type": "string"
+                                  },
+                                  "baseUnitId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "warehouseId": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "onHand": {
+                                    "type": "string"
+                                  },
+                                  "inTransit": {
+                                    "type": "string"
+                                  },
+                                  "incoming": {
+                                    "type": "string"
+                                  },
+                                  "minQuantity": {
+                                    "type": "string"
+                                  },
+                                  "reorderQuantity": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "warehouseName": {
+                                    "type": "string"
+                                  },
+                                  "baseUnit": {
+                                    "type": "object",
+                                    "properties": {
+                                      "code": {
+                                        "type": "string"
+                                      },
+                                      "decimals": {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      }
+                                    },
+                                    "required": [
+                                      "code",
+                                      "decimals"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "variantId",
+                                  "productId",
+                                  "productCode",
+                                  "productName",
+                                  "optionValues",
+                                  "sku",
+                                  "baseUnitId",
+                                  "warehouseId",
+                                  "onHand",
+                                  "inTransit",
+                                  "incoming",
+                                  "minQuantity",
+                                  "reorderQuantity",
+                                  "warehouseName",
+                                  "baseUnit"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "count",
+                            "items"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "today",
+                    "generatedAt",
+                    "branchId",
+                    "sales",
+                    "margin",
+                    "cash",
+                    "topProducts",
+                    "receivables",
+                    "payables",
+                    "lowStock"
                   ]
                 }
               }

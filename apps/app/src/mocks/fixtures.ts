@@ -4,6 +4,7 @@ import {
   type Preferences,
   type SetupStatus,
 } from '@omnivo/contracts';
+import { z } from 'zod';
 
 // আসল ইন্ডাস্ট্রির উদাহরণ (CLAUDE.md → Content): এক গার্মেন্টস আর এক ফার্মা, একই মালিক দুটোতে.
 // Step 18a: fixed ids, the same after every reload. The device's copy is kept per workspace and
@@ -37,17 +38,44 @@ export const OWNER = owner;
 // Owner = catalog-এর সব permission (আসল API-র মতো, কোড থেকে)
 export const OWNER_PERMISSIONS = [...PERMISSION_KEYS].sort();
 
+// Step 21a: the owner sees every card of the Overview, so a test of what a store keeper sees needs
+// someone else. A test leaves a role and its permissions in localStorage under this key before the
+// app starts (e2e/helpers.ts → actAs), and the mock's /me answers with them; the same person
+// signs in, only their role changes. The handlers run in the page, so they read the page's
+// storage. Mock mode only: nothing in the app reads this key.
+export const MOCK_ROLE_KEY = 'omnivo.mock.role';
+
+export const mockRoleSchema = z.object({
+  name: z.string(),
+  permissions: z.array(z.enum(PERMISSION_KEYS)),
+});
+export type MockRole = z.infer<typeof mockRoleSchema>;
+
+// The role a test left, or null for the owner. A key that does not parse is the owner too: a mock
+// must not break `pnpm dev:mock` over a stale key.
+export function mockRole(): MockRole | null {
+  try {
+    const saved = localStorage.getItem(MOCK_ROLE_KEY);
+    if (saved === null) return null;
+    const parsed = mockRoleSchema.safeParse(JSON.parse(saved));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 export function meIn(
   workspace: Workspace,
   companyName: string,
   preferences: Preferences,
   setupStatus: SetupStatus,
 ): MeResponse {
+  const role = mockRole();
   return {
     user: owner,
     tenant: { id: workspace.tenantId, name: companyName, slug: workspace.slug, setupStatus },
-    roles: ['Owner'],
-    permissions: OWNER_PERMISSIONS,
+    roles: [role?.name ?? 'Owner'],
+    permissions: role ? [...role.permissions].sort() : OWNER_PERMISSIONS,
     memberships: [...WORKSPACES],
     preferences,
   };

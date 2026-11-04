@@ -1,5 +1,6 @@
 import type {
   CashCount,
+  Dashboard,
   Product,
   ShiftCash,
   SyncCategory,
@@ -274,6 +275,19 @@ export interface CartRow {
   box: Box<HeldCart>;
 }
 
+// Step 21a: the Overview's last answer (dashboard.ts), one row under the key 'dashboard'. Nothing
+// but the key is clear.
+export interface KeptDashboard {
+  dashboard: Dashboard;
+  // The branch the answer is for, as the page's select named it; null = every branch
+  branchName: string | null;
+}
+
+export interface DashboardRow {
+  key: 'dashboard';
+  box: Box<KeptDashboard>;
+}
+
 // The tables, by entity. The names are the ones the app reads (db.products, db.customers).
 export const TABLE_OF = {
   settings: 'settings',
@@ -355,6 +369,8 @@ export class SyncDatabase extends Dexie {
   posCarts!: Table<CartRow, string>;
   // Step 20c: the register's recent sales (PosSaleRow)
   posSales!: Table<PosSaleRow, string>;
+  // Step 21a: the Overview's last answer (DashboardRow)
+  dashboard!: Table<DashboardRow, string>;
 
   constructor(name: string) {
     super(name);
@@ -441,6 +457,11 @@ export class SyncDatabase extends Dexie {
     // a full one. `number` finds a receipt, `date` the rows to drop.
     this.version(6).stores({
       posSales: 'key, gen, number, date',
+    });
+    // Step 21a: the Overview's last answer. No upgrade and no new SYNC_PROTOCOL: it is not a synced
+    // table (the pull never writes or sweeps it), and the page fills it the next time it is online.
+    this.version(7).stores({
+      dashboard: 'key',
     });
   }
 

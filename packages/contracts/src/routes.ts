@@ -19,6 +19,7 @@ import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js
 import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
+import { dashboardRoutes } from './dashboard.js';
 import { debitNoteRoutes } from './debit-notes.js';
 import { deliveryRoutes } from './deliveries.js';
 import { deviceRoutes } from './devices.js';
@@ -94,6 +95,7 @@ export const routes = {
   reports: reportRoutes,
   fiscalYears: fiscalYearRoutes,
   reportExports: reportExportRoutes,
+  dashboard: dashboardRoutes,
   units: unitRoutes,
   productCategories: productCategoryRoutes,
   customFields: customFieldRoutes,

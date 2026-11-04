@@ -197,10 +197,108 @@ export const en = {
   },
   dashboard: {
     title: 'Overview',
-    readyTitle: 'Your workspace is ready',
-    readyBody:
-      'Next, set up your chart of accounts and invite your accountant. Buyer POs, LCs and stock will show up here once you start recording them.',
-    invite: 'Invite your team',
+    // Step 21a. Each card shows by its own permission (DASHBOARD_CARD_PERMISSIONS); amounts are
+    // whole taka (CLAUDE.md → Money: dashboards stay without decimals).
+    branch: 'Branch',
+    allBranches: 'All branches',
+    branchHint:
+      'A branch changes the sales, the margin and the top products. Cash, dues and stock are the whole workspace’s.',
+    branchOffline: 'Connect to the internet to see another branch.',
+    // When the answer was made: time = "10:42" today, "1 Nov 2026, 10:42" before today
+    asOf: 'As of {{time}}',
+    // Offline (decision 7): the last answer the device kept
+    offlineNotice:
+      'You are offline, so these numbers are not live. They are the ones this device kept the last time it was online.',
+    noCopyBody:
+      'This device has not kept the numbers yet. Connect to the internet once, and they stay here for the times you are offline.',
+    // An empty state's title and body; the button is common.retry
+    loadFailedTitle: "Couldn't load the numbers",
+    loadFailed: 'Omnivo tries again every minute, or you can try now.',
+    // A person whose role gives no card (decision 14)
+    noCardsTitle: 'No numbers for your role',
+    noCardsBody:
+      'The Overview shows what your permissions allow, and your role has none of it. Ask the workspace owner for a report permission in Settings → Roles.',
+    // percent = the change without its sign, one decimal, in the page's language (12.5 / ১২.৫);
+    // range = the same days of last month ("1 – 2 Oct 2026", or one day on the 1st)
+    sales: {
+      today: 'Sales today',
+      month: 'Sales this month',
+      hint: 'From the books: net of returns, before VAT',
+      moreThanYesterday: '{{percent}}% more than yesterday',
+      lessThanYesterday: '{{percent}}% less than yesterday',
+      sameAsYesterday: 'The same as yesterday',
+      noYesterday: 'No sales yesterday',
+      moreThanLastMonth: '{{percent}}% more than {{range}}',
+      lessThanLastMonth: '{{percent}}% less than {{range}}',
+      sameAsLastMonth: 'The same as {{range}}',
+      noLastMonth: 'No sales on {{range}}',
+    },
+    // Here percent keeps its sign: a margin can be below zero
+    margin: {
+      title: 'Gross margin this month',
+      // profit and sales in whole taka: "৳1,89,000 on ৳8,40,000 of sales"
+      ofSales: '{{profit}} on {{sales}} of sales',
+      noSales: 'No sales yet this month',
+      lastMonth: '{{percent}}% on {{range}}',
+    },
+    cash: {
+      title: 'Cash and bank',
+      subtitle: 'Every account that holds money, now',
+      // Against the total at the end of yesterday (decision 21)
+      upToday: 'Up {{amount}} today',
+      downToday: 'Down {{amount}} today',
+      sameToday: 'No change today',
+      emptyTitle: 'No account holds money',
+      emptyBody:
+        'Tick “Holds money” on your cash, bank and bKash accounts in the chart of accounts, and their balances show here.',
+    },
+    trend: {
+      title: 'Sales, last 30 days',
+      subtitle: 'One point a day, net of returns, before VAT',
+      // The chart's name for screen readers; from and to are dates
+      label: 'Sales of each day from {{from}} to {{to}}',
+      empty: 'Nothing sold in the last 30 days',
+    },
+    topProducts: {
+      title: 'Top products',
+      subtitle: 'The last 30 days, by sales before VAT',
+      // quantity with its unit: "72 pcs"
+      sold: '{{quantity}} sold',
+      emptyTitle: 'Nothing sold in the last 30 days',
+      emptyBody:
+        'Post an invoice or make a POS sale, and the products that sell the most show here.',
+    },
+    // count picks the plural; formatted = the number in the page's language (12 / ১২)
+    receivables: {
+      title: 'Customers owe',
+      subtitle: 'Less what they paid in advance',
+      // The total below zero: the advances are larger than what is owed
+      advance: '{{amount}} in advance',
+      overdue_one: '{{amount}} overdue on {{formatted}} invoice',
+      overdue_other: '{{amount}} overdue on {{formatted}} invoices',
+      nothingOverdue: 'Nothing overdue',
+      link: 'See the customers',
+    },
+    payables: {
+      title: 'Owed to suppliers',
+      subtitle: 'Less what was paid to them in advance',
+      advance: '{{amount}} paid in advance',
+      overdue_one: '{{amount}} overdue on {{formatted}} bill',
+      overdue_other: '{{amount}} overdue on {{formatted}} bills',
+      nothingOverdue: 'Nothing overdue',
+      link: 'See the suppliers',
+    },
+    lowStock: {
+      title: 'Low stock',
+      subtitle: 'At or below the reorder level',
+      count_one: '{{formatted}} item',
+      count_other: '{{formatted}} items',
+      // onHand is the number alone, level has its unit: "40 of 200 strips"
+      onHandOf: '{{onHand}} of {{level}}',
+      link: 'See the reorder list',
+      emptyTitle: 'Nothing is low',
+      emptyBody: 'Every item with a reorder level has more than it in stock.',
+    },
   },
   settings: {
     title: 'Settings',
@@ -5159,6 +5257,8 @@ export const en = {
         value: 'See what stock costs and what it is worth',
         revalue: 'Revalue stock: give items a new average cost',
       },
+      // Step 21a (decision 3)
+      report: { read: 'See the stock reports, and the low stock on the Overview' },
     },
     sales: {
       customer: {
@@ -5175,6 +5275,7 @@ export const en = {
       return: { manage: 'Write and post sales returns: goods come back into a warehouse' },
       credit_note: { manage: 'Write and post credit notes, and apply them to invoices' },
       refund: { manage: 'Pay money back to customers, and void refunds' },
+      report: { read: 'See the sales reports, and the sales and the top products on the Overview' },
     },
     purchase: {
       supplier: {
@@ -5200,6 +5301,7 @@ export const en = {
       return: { manage: 'Write and post purchase returns: goods go back to a supplier' },
       debit_note: { manage: 'Write and post debit notes, and apply them to bills' },
       refund: { manage: 'Record money suppliers pay back, and void supplier refunds' },
+      report: { read: 'See the purchase reports' },
     },
     // Step 20a (decisions 11, 31)
     pos: {
