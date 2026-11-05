@@ -1,0 +1,52 @@
+{
+  "name": "@omnivo/app",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:mock": "vite --mode mock",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts && tsc --noEmit -p e2e && tsc --noEmit -p sw",
+    "test": "vitest run --passWithNoTests",
+    "test:bundle-size": "node scripts/check-bundle-size.ts",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "test:e2e:pwa": "playwright test --config e2e/playwright.pwa.config.ts"
+  },
+  "devDependencies": {
+    "@omnivo/config": "workspace:*",
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "fake-indexeddb": "^6.2.6",
+    "msw": "^2.15.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.0",
+    "vite-plugin-pwa": "^2.0.0",
+    "vitest": "^5.0.1"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.9.1",
+    "@hugeicons/core-free-icons": "^4.3.5",
+    "@hugeicons/react": "^1.1.10",
+    "@omnivo/contracts": "workspace:*",
+    "@omnivo/i18n": "workspace:*",
+    "@omnivo/sync": "workspace:*",
+    "@omnivo/ui": "workspace:*",
+    "@tanstack/react-query": "^5.104.0",
+    "@tanstack/react-router": "^1.170.39",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-hook-form": "^7.89.0",
+    "workbox-core": "^7.4.1",
+    "workbox-precaching": "^7.4.1",
+    "workbox-routing": "^7.4.1",
+    "zod": "^4.6.5",
+    "zustand": "^5.0.15"
+  }
+}

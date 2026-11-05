@@ -1,0 +1,311 @@
+import {
+  ArrowTurnBackwardIcon,
+  CancelCircleIcon,
+  CheckmarkCircle02Icon,
+  Clock01Icon,
+  Coins01Icon,
+  DeliveryTruck01Icon,
+  FileEditIcon,
+  Invoice01Icon,
+  Invoice02Icon,
+  Invoice03Icon,
+  Invoice04Icon,
+  MinusSignCircleIcon,
+  PackageReceiveIcon,
+  PackageRemoveIcon,
+  ShoppingCart01Icon,
+  ShoppingCartCheck01Icon,
+  StopCircleIcon,
+  Time04Icon,
+  TruckReturnIcon,
+  Undo02Icon,
+} from '@hugeicons/core-free-icons';
+import type { IconSvgElement } from '@hugeicons/react';
+import {
+  type ApprovalRoundStatus,
+  billPaymentStatusOf,
+  type BillStatus,
+  debitStateOf,
+  type GrnBillState,
+  type GrnReturnState,
+  isBillOverdue,
+  type PurchaseOrderStatus,
+  type RequisitionOrderState,
+  type RequisitionStatus,
+  type StockDocumentStatus,
+  type SupplierPaymentStatus,
+} from '@omnivo/contracts';
+import { useLocale } from '@omnivo/i18n';
+import { Pill, type PillTone } from '@omnivo/ui';
+
+import { isOrderLate, type StepState } from '../lib/purchase';
+
+// The status pills of the purchase documents (step 17a), a file of their own like sales-pills.tsx:
+// a list page needs these, not the approval card. Never colour alone: each pill has its icon and
+// its words. Waiting is work in progress, so brand, not warn (CLAUDE.md → Sales document statuses).
+
+const REQUISITION_PILLS = {
+  draft: { tone: 'neutral', icon: FileEditIcon },
+  pending: { tone: 'brand', icon: Clock01Icon },
+  approved: { tone: 'good', icon: CheckmarkCircle02Icon },
+  // Step 17b: the rest will not be ordered (a sales order's Closed)
+  closed: { tone: 'neutral', icon: StopCircleIcon },
+  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
+} as const satisfies Record<RequisitionStatus, { tone: PillTone; icon: IconSvgElement }>;
+
+export function RequisitionStatusPill({ status }: { status: RequisitionStatus }) {
+  const { t } = useLocale();
+  const { tone, icon } = REQUISITION_PILLS[status];
+  return (
+    <Pill tone={tone} icon={icon}>
+      {t(`requisitions.statuses.${status}`)}
+    </Pill>
+  );
+}
+
+// Step 17b: how much of an approved requisition purchase orders cover, a second pill beside its
+// status. Partly ordered is work in progress (brand); nothing ordered shows no pill, like a challan
+// nothing came back from.
+const ORDER_STATE_PILLS = {
+  partly_ordered: { tone: 'brand', icon: ShoppingCart01Icon },
+  ordered: { tone: 'good', icon: ShoppingCartCheck01Icon },
+} as const satisfies Record<
+  Exclude<RequisitionOrderState, 'not_ordered'>,
+  { tone: PillTone; icon: IconSvgElement }
+>;
+
+export function RequisitionOrderPill({ state }: { state: RequisitionOrderState }) {
+  const { t } = useLocale();
+  if (state === 'not_ordered') return null;
+  const { tone, icon } = ORDER_STATE_PILLS[state];
+  return (
+    <Pill tone={tone} icon={icon}>
+      {t(`requisitions.orderStates.${state}`)}
+    </Pill>
+  );
+}
+
+// A purchase order (step 17b). Approved is good, like an approved requisition: the approval is
+// done. Partly received takes its place once goods came (brand: the rest is still coming), like a
+// sales order's Partly delivered.
+const ORDER_PILLS = {
+  draft: { tone: 'neutral', icon: FileEditIcon },
+  pending: { tone: 'brand', icon: Clock01Icon },
+  approved: { tone: 'good', icon: CheckmarkCircle02Icon },
+  received: { tone: 'good', icon: PackageReceiveIcon },
+  closed: { tone: 'neutral', icon: StopCircleIcon },
+  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
+} as const satisfies Record<PurchaseOrderStatus, { tone: PillTone; icon: IconSvgElement }>;
+
+// Its status, and a second warn pill when it is late: the buyer should call the supplier
+export function PurchaseOrderStatusPills({
+  order,
+  today,
+}: {
+  order: { status: PurchaseOrderStatus; partlyReceived: boolean; expectedDate: string | null };
+  today: string;
+}) {
+  const { t } = useLocale();
+  const pill = ORDER_PILLS[order.status];
+  return (
+    <span className="inline-flex flex-wrap gap-1.5">
+      {order.partlyReceived ? (
+        <Pill tone="brand" icon={DeliveryTruck01Icon}>
+          {t('purchaseOrders.partlyReceived')}
+        </Pill>
+      ) : (
+        <Pill tone={pill.tone} icon={pill.icon}>
+          {t(`purchaseOrders.statuses.${order.status}`)}
+        </Pill>
+      )}
+      {isOrderLate(order, today) && (
+        <Pill tone="warn" icon={Time04Icon}>
+          {t('purchaseOrders.late')}
+        </Pill>
+      )}
+    </span>
+  );
+}
+
+// A goods receipt: a draft, or posted (a delivery's pills)
+export function GoodsReceiptStatusPill({ status }: { status: StockDocumentStatus }) {
+  const { t } = useLocale();
+  return status === 'draft' ? (
+    <Pill tone="neutral" icon={FileEditIcon}>
+      {t('goodsReceipts.statuses.draft')}
+    </Pill>
+  ) : (
+    <Pill tone="good" icon={CheckmarkCircle02Icon}>
+      {t('goodsReceipts.statuses.posted')}
+    </Pill>
+  );
+}
+
+// Step 17c: how much of a posted goods receipt is billed, beside its status, like a challan's
+// invoice state (15c). Not billed is neutral: goods wait for the supplier's bill, nothing is wrong.
+const BILL_STATE_PILLS = {
+  not_billed: { tone: 'neutral', icon: Invoice01Icon },
+  partly_billed: { tone: 'brand', icon: Invoice03Icon },
+  billed: { tone: 'good', icon: Invoice02Icon },
+} as const satisfies Record<GrnBillState, { tone: PillTone; icon: IconSvgElement }>;
+
+export function GoodsReceiptBillPill({ state }: { state: GrnBillState }) {
+  const { t } = useLocale();
+  const { tone, icon } = BILL_STATE_PILLS[state];
+  return (
+    <Pill tone={tone} icon={icon}>
+      {t(`goodsReceipts.billStates.${state}`)}
+    </Pill>
+  );
+}
+
+// Step 17d: how much of a posted goods receipt went back on purchase returns, like a challan's
+// return pill (15d). Nothing went back shows no pill: the normal case. Neutral: a return is neither
+// a success nor a problem. The icons point out, the challan's point in: the goods leave here.
+const GRN_RETURN_PILLS = {
+  partly_returned: { icon: TruckReturnIcon },
+  returned: { icon: PackageRemoveIcon },
+} as const satisfies Record<Exclude<GrnReturnState, 'none'>, { icon: IconSvgElement }>;
+
+export function GoodsReceiptReturnPill({ state }: { state: GrnReturnState }) {
+  const { t } = useLocale();
+  if (state === 'none') return null;
+  return (
+    <Pill tone="neutral" icon={GRN_RETURN_PILLS[state].icon}>
+      {t(`goodsReceipts.returnStates.${state}`)}
+    </Pill>
+  );
+}
+
+// A supplier bill (step 17c). Before it is posted, its approval status, like an order's; once
+// posted, what was paid, like an invoice's (unpaid and partly paid are brand: money on its way), and
+// beside it Overdue (crit) once its due date has passed, worked out here from the totals and today.
+// Step 17d: a bill debit notes took off in full says Debited (neutral, the invoice's Credited)
+// instead of what was paid; one taken off in part says so beside it. What debit notes applied
+// counts as settled (billPaymentStatusOf, isBillOverdue).
+const BILL_PILLS = {
+  draft: { tone: 'neutral', icon: FileEditIcon },
+  pending: { tone: 'brand', icon: Clock01Icon },
+  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
+} as const satisfies Record<
+  Exclude<BillStatus, 'posted'>,
+  { tone: PillTone; icon: IconSvgElement }
+>;
+
+const BILL_PAYMENT_PILLS = {
+  unpaid: { tone: 'brand', icon: Clock01Icon },
+  partly_paid: { tone: 'brand', icon: Coins01Icon },
+  paid: { tone: 'good', icon: CheckmarkCircle02Icon },
+} as const;
+
+export function BillPills({
+  bill,
+  today,
+}: {
+  bill: {
+    status: BillStatus;
+    dueDate: string;
+    total: string;
+    amountPaid: string;
+    amountDebited: string;
+    debitNoteTotal: string;
+  };
+  today: string;
+}) {
+  const { t } = useLocale();
+  if (bill.status !== 'posted') {
+    const { tone, icon } = BILL_PILLS[bill.status];
+    return (
+      <Pill tone={tone} icon={icon}>
+        {t(`bills.statuses.${bill.status}`)}
+      </Pill>
+    );
+  }
+  const debit = debitStateOf(bill);
+  if (debit === 'debited') {
+    return (
+      <Pill tone="neutral" icon={Invoice04Icon}>
+        {t('bills.debitStates.debited')}
+      </Pill>
+    );
+  }
+  const payment = billPaymentStatusOf(bill);
+  const { tone, icon } = BILL_PAYMENT_PILLS[payment];
+  return (
+    <span className="inline-flex flex-wrap gap-1.5">
+      <Pill tone={tone} icon={icon}>
+        {t(`bills.payment.${payment}`)}
+      </Pill>
+      {debit === 'partly_debited' && (
+        <Pill tone="neutral" icon={Invoice04Icon}>
+          {t('bills.debitStates.partly_debited')}
+        </Pill>
+      )}
+      {isBillOverdue(bill, today) && (
+        <Pill tone="crit" icon={Time04Icon}>
+          {t('bills.overdue')}
+        </Pill>
+      )}
+    </span>
+  );
+}
+
+// A supplier payment (step 17c): its approval status, then posted, like a money receipt. Voided
+// (the money came back, a stopped cheque) and cancelled (no money left) are both neutral: the
+// words say which.
+const SUPPLIER_PAYMENT_PILLS = {
+  draft: { tone: 'neutral', icon: FileEditIcon },
+  pending: { tone: 'brand', icon: Clock01Icon },
+  posted: { tone: 'good', icon: CheckmarkCircle02Icon },
+  voided: { tone: 'neutral', icon: CancelCircleIcon },
+  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
+} as const satisfies Record<SupplierPaymentStatus, { tone: PillTone; icon: IconSvgElement }>;
+
+export function SupplierPaymentStatusPill({ status }: { status: SupplierPaymentStatus }) {
+  const { t } = useLocale();
+  const { tone, icon } = SUPPLIER_PAYMENT_PILLS[status];
+  return (
+    <Pill tone={tone} icon={icon}>
+      {t(`supplierPayments.statuses.${status}`)}
+    </Pill>
+  );
+}
+
+// A round of an approval. Rejected is warn: the person who wrote the document must change it and
+// submit it again. Reopened is neutral: its writer took it back on purpose.
+const ROUND_PILLS = {
+  pending: { tone: 'brand', icon: Clock01Icon },
+  approved: { tone: 'good', icon: CheckmarkCircle02Icon },
+  rejected: { tone: 'warn', icon: ArrowTurnBackwardIcon },
+  reopened: { tone: 'neutral', icon: Undo02Icon },
+} as const satisfies Record<ApprovalRoundStatus, { tone: PillTone; icon: IconSvgElement }>;
+
+export function RoundStatusPill({ status }: { status: ApprovalRoundStatus }) {
+  const { t } = useLocale();
+  const { tone, icon } = ROUND_PILLS[status];
+  return (
+    <Pill tone={tone} icon={icon}>
+      {t(`approvals.rounds.${status}`)}
+    </Pill>
+  );
+}
+
+// A step of a round: approved, sent back, waiting now, or not reached (neutral, with a minus: no
+// decision was made)
+const STEP_PILLS = {
+  approved: { tone: 'good', icon: CheckmarkCircle02Icon },
+  rejected: { tone: 'warn', icon: ArrowTurnBackwardIcon },
+  waiting: { tone: 'brand', icon: Clock01Icon },
+  notYet: { tone: 'neutral', icon: MinusSignCircleIcon },
+  notDecided: { tone: 'neutral', icon: MinusSignCircleIcon },
+} as const satisfies Record<StepState, { tone: PillTone; icon: IconSvgElement }>;
+
+export function StepStatePill({ state }: { state: StepState }) {
+  const { t } = useLocale();
+  const { tone, icon } = STEP_PILLS[state];
+  return (
+    <Pill tone={tone} icon={icon}>
+      {t(`approvals.steps.${state}`)}
+    </Pill>
+  );
+}

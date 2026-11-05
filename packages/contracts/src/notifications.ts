@@ -1,0 +1,107 @@
+import { z } from 'zod';
+
+import { defineRoute } from './http.js';
+import { pageOf, pageQuerySchema } from './pagination.js';
+
+// Every kind of in-app notification. The server stores the type and a few values (params), never a
+// sentence: the app turns them into text in the reader's language (notifications.types.* in en.ts).
+// report.ready / report.failed: params { report, format } — the export the person asked for
+// import.done: params { file, count } — count = products made; import.failed: { file, count } —
+// count = problems found
+// stock.low: params { warehouse, count } — count = variants that fell to their reorder level
+// document.email_failed: params { document, id, number } — document = an OutputDocument kind, id =
+// the document's id (the bell opens its page)
+// approval.requested: params { document, id, number } — sent to everyone who may approve the step
+// that is now waiting (document = an ApprovalDocument kind)
+// approval.approved / approval.rejected: params { document, id, number } — sent to the person who
+// submitted the document, when the last step approves it or any step rejects it
+// pos.sold_short: params { id, number, warehouse, count } — a POS sale (step 20a) took count
+// variants below zero in that warehouse; sent to the people who adjust stock, and the bell opens
+// the sale
+// pos.shift_variance: params { id, number, register, difference } — a shift's closing count was
+// more than its register's limit over or short (difference: counted less expected, signed); sent
+// to the owners and the people with pos.shift.manage, and the bell opens the shift
+export const NOTIFICATION_TYPES = [
+  'workspace.ready',
+  'member.joined',
+  'invitation.failed',
+  'report.ready',
+  'report.failed',
+  'import.done',
+  'import.failed',
+  'stock.low',
+  'document.email_failed',
+  'approval.requested',
+  'approval.approved',
+  'approval.rejected',
+  'pos.sold_short',
+  'pos.shift_variance',
+] as const;
+export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
+
+export function isNotificationType(value: string): value is NotificationType {
+  return NOTIFICATION_TYPES.some((type) => type === value);
+}
+
+// Values placed into the text, like {{name}}. Plain values only, the same rule as audit changes.
+export const notificationParamsSchema = z.record(z.string(), z.union([z.string(), z.number()]));
+export type NotificationParams = z.infer<typeof notificationParamsSchema>;
+
+export const notificationSchema = z.object({
+  id: z.uuid(),
+  // z.string(), not an enum: a new type from a newer server must not break the parse in an older
+  // offline client (the same rule as error codes and audit actions). The app narrows it with
+  // isNotificationType() and skips types it does not know.
+  type: z.string(),
+  params: notificationParamsSchema,
+  readAt: z.iso.datetime().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type Notification = z.infer<typeof notificationSchema>;
+
+export const notificationPageSchema = pageOf(notificationSchema);
+export type NotificationPage = z.infer<typeof notificationPageSchema>;
+
+export const unreadCountSchema = z.object({ count: z.number().int().min(0) });
+
+const notificationParamsPathSchema = z.object({ id: z.uuid() });
+
+// No permission on any of these: everyone may read and clear their own notifications, and the
+// server only ever touches rows of the signed-in user.
+export const notificationRoutes = {
+  list: defineRoute({
+    method: 'GET',
+    path: '/notifications',
+    summary: "The signed-in user's notifications in this workspace, newest first",
+    auth: 'bearer',
+    status: 200,
+    query: pageQuerySchema,
+    response: notificationPageSchema,
+  }),
+  // The bell polls this every 30 seconds, so it is a tiny, separate call
+  unreadCount: defineRoute({
+    method: 'GET',
+    path: '/notifications/unread-count',
+    summary: 'How many notifications are unread',
+    auth: 'bearer',
+    status: 200,
+    response: unreadCountSchema,
+  }),
+  markRead: defineRoute({
+    method: 'POST',
+    path: '/notifications/:id/read',
+    summary: 'Mark one notification as read',
+    auth: 'bearer',
+    status: 204,
+    params: notificationParamsPathSchema,
+    response: z.void(),
+  }),
+  markAllRead: defineRoute({
+    method: 'POST',
+    path: '/notifications/read-all',
+    summary: 'Mark every notification as read',
+    auth: 'bearer',
+    status: 204,
+    response: z.void(),
+  }),
+};

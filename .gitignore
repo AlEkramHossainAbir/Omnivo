@@ -1,0 +1,16 @@
+node_modules/
+dist/
+dist-worker/
+build/
+coverage/
+.turbo/
+.vite/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+# Playwright-এর fail-এর রেকর্ড (trace, screenshot) — প্রতিটা রানে নতুন
+test-results/
+playwright-report/
+*.log

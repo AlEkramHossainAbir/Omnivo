@@ -1,0 +1,478 @@
+import type {
+  CashCount,
+  Dashboard,
+  Product,
+  ShiftCash,
+  SyncCategory,
+  SyncCommand,
+  SyncCommandError,
+  SyncCustomer,
+  SyncCustomerGroup,
+  SyncEntity,
+  SyncPosCashReason,
+  SyncPosRegister,
+  SyncPosSale,
+  SyncPriceList,
+  SyncPriceListItem,
+  SyncSettings,
+  SyncStock,
+  TaxRate,
+  TenderAmount,
+  Unit,
+  Warehouse,
+} from '@omnivo/contracts';
+import { Dexie, type Table } from 'dexie';
+
+import type { PosCart } from './carts.js';
+import type { Box } from './crypto.js';
+import type { KeyRecord } from './keys.js';
+
+// One row on the device (step 19b): the row the server sent, sealed (`box`), under the key of its
+// change, and the generation of the pull that wrote it. The generation is how a full pull finds the
+// rows it did not send (apply.ts). What is in the box is never changed on the device: it is the
+// server's row as it came. Only the key, the generation and a few ids an index needs stay clear.
+export interface SealedRow<T> {
+  // The row's id, or priceListItemKey() / stockKey(); the settings' key is the workspace's id
+  key: string;
+  gen: number;
+  box: Box<T>;
+}
+
+// The barcodes are clear for a scanner (step 20), and the variant ids for a sale line (18b), which
+// finds its product by one of them. Names, codes and prices are only in the box: a list sorts and
+// searches them in memory (copy.ts).
+export interface ProductRow extends SealedRow<Product> {
+  barcodes: string[];
+  variantIds: string[];
+}
+
+// A sale line looks up its price and its stock by these ids (step 18b). They were key paths into
+// the server's row before step 19b (`data.priceListId`); the row is sealed now, so they are copied
+// out of it.
+export interface PriceListItemRow extends SealedRow<SyncPriceListItem> {
+  priceListId: string;
+  variantId: string;
+}
+
+export interface StockRow extends SealedRow<SyncStock> {
+  warehouseId: string;
+  variantId: string;
+}
+
+// Step 20c: a sale of the register this device holds, for returns without a connection. The receipt
+// number is clear, for the return screen's exact search (like a barcode), and the day, for dropping
+// the rows older than POS_SALES_ON_DEVICE_DAYS. What was sold, to whom and for how much is in the
+// box.
+export interface PosSaleRow extends SealedRow<SyncPosSale> {
+  number: string;
+  date: string;
+}
+
+// Step 19b: the two tables the app keeps opened in memory (copy.ts), and how many times each was
+// written. A write to one counts up its mark in the same transaction; a list waits until the
+// in-memory copy has caught up with the mark it reads, so it never shows a half-done write.
+export type MirroredTable = 'products' | 'customers';
+
+export interface TableMark {
+  table: MirroredTable;
+  version: number;
+}
+
+// Where a pull is: one row in `meta`, under the key 'pull'
+export interface PullState {
+  key: 'pull';
+  // The cursor to send next: the last page's. null = nothing pulled yet, so a full pull.
+  cursor: string | null;
+  // The generation every row is written with now. A full pull starts a new one.
+  generation: number;
+  // A full pull is under way: its last page has not come yet
+  full: boolean;
+  // The server's clock at the end of the last pull that finished. null = no pull has finished,
+  // so the device has no complete copy yet.
+  lastSyncAt: string | null;
+  // Step 18c: this device's own clock at that moment (ms since 1970), for the time limits. A copy
+  // made before step 18c has no value here until its next pull ends (readPullState gives null).
+  syncedAt: number | null;
+  // The rows the running (or the last) full pull wrote, for "1,250 items copied so far"
+  copied: number;
+}
+
+// Step 18b: one thing the person did on this device, waiting to reach the server. The outbox is in
+// the same database as the copy, so signing out deletes both (the app asks first).
+export type OutboxStatus = 'waiting' | 'sending' | 'failed';
+
+// An outbox entry as the code works with it: the row opened (sealed.ts). The rows themselves are
+// OutboxRow, below.
+export interface OutboxEntry {
+  // The order the person did things in: the push sends the outbox by seq, oldest first.
+  // Auto-increment, so it is missing until Dexie adds the row.
+  seq?: number;
+  // What the server gets, as the schema reads it (its output). Its own id is the command's id.
+  command: SyncCommand;
+  // waiting: not sent, or sent with no answer yet. sending: in the push that runs now.
+  // failed: the server refused it (error), so it never ran.
+  status: OutboxStatus;
+  // Sent at least once. A sent command with no answer may have run on the server (the answer was
+  // lost), so it is sent again as it is, and never rewritten (decision 33).
+  sent: boolean;
+  error: SyncCommandError | null;
+  // The customer the command is about: its own, or the order's. Two commands on one customer
+  // reach the server in the order they were made (decision 13).
+  customerId: string;
+  // The thing the command makes or changes: the customer, or the order. A form opens its
+  // waiting command by it.
+  key: string;
+  // A change to a customer: the customer as the person saw it when they started, so a second edit
+  // keeps the first `from` values. null for the other commands.
+  base: SyncCustomer | null;
+  // What the Sync page calls it: the customer's name
+  name: string;
+  // An order: its lines and total, for the Sync page and the unsynced orders. null otherwise.
+  lines: number | null;
+  total: string | null;
+  // When it was saved, by this device's clock: shown, never sent (decision 6)
+  savedAt: string;
+  // Step 20b: the shift a POS command belongs to (its open, its sales, its movements, its close),
+  // for the order the push sends them in (push.ts). Missing on every other command, and on a sale
+  // saved before 20b.
+  shiftId?: string;
+  // Step 20c: the key of another entry this one waits for while it is on the device: a return waits
+  // for its sale (sold offline, still in the outbox), and an exchange's sale for its return. Missing
+  // on every other command.
+  after?: string;
+}
+
+// The part of an entry that is sealed: everything a person typed or read
+export type OutboxBody = Pick<
+  OutboxEntry,
+  'command' | 'error' | 'base' | 'name' | 'lines' | 'total' | 'savedAt'
+>;
+
+// Step 19b: an outbox row. What the push and the sidebar need without the key stays clear: ids,
+// the command's type, its state and its size. The push picks a batch, marks it and counts the
+// outbox from these alone, inside one transaction (a transaction cannot wait for Web Crypto).
+export interface OutboxRow extends Pick<
+  OutboxEntry,
+  'seq' | 'status' | 'sent' | 'customerId' | 'key' | 'shiftId' | 'after'
+> {
+  // The command's id: the box is sealed under it, and an answer finds its row by it
+  commandId: string;
+  type: SyncCommand['type'];
+  // The command's size as JSON, for the 512 KB limit of a push (push.ts)
+  bytes: number;
+  box: Box<OutboxBody>;
+}
+
+// A head-office field the server kept (a kept_server_value notice), shown on the Sync page until
+// the person dismisses it. The command itself is gone: it was accepted.
+export interface SyncNoticeRecord {
+  commandId: string;
+  customerId: string;
+  name: string;
+  fields: string[];
+  // The server's time of the push that brought it
+  at: string;
+}
+
+// Step 19b: a notice is sealed whole; its command's id is the row's key
+export interface NoticeRow {
+  commandId: string;
+  box: Box<SyncNoticeRecord>;
+}
+
+// Step 20a: the register this device holds, and the last number it gave a sale of it. One row,
+// under the key 'claim'. The claim's answer starts it (the server's last number), and every sale
+// counts it up in the same transaction that puts the sale in the outbox, so two sales never get one
+// number, also from two tabs. Clear, not sealed: an id and a count, nothing a person typed.
+export interface RegisterClaim {
+  key: 'claim';
+  registerId: string;
+  last: number;
+  // Step 20c: the last number it gave a return (POS1-R000012), counted up the same way. Missing on a
+  // claim made before 20c: no return was made then, so it counts from 0.
+  lastReturn?: number;
+  // Step 20c: the register's recent sales are on the device (returns.ts → loadRegisterSales). A new
+  // claim starts without them; the POS screen reads them as soon as it is online. Missing = no.
+  salesLoaded?: boolean;
+}
+
+// Step 20b: this device's latest shift, opened: the open one it sells on, or the last one it closed
+// (the next open numbers on from it and compares with what it counted). Its cash is added up here
+// as the sales and the movements are saved, so the close's result needs no sale the outbox has
+// sent already.
+// Step 20c: what the shift's X report adds up (shift.ts → shiftReportOf), counted as the sales and
+// the returns are saved, like the cash. Per tender, only the tenders with an amount
+// (tenderAmountsOf).
+export interface ShiftTally {
+  saleCount: number;
+  salesTotal: string;
+  salesDiscount: string;
+  salesVat: string;
+  returnCount: number;
+  returnsTotal: string;
+  returnsVat: string;
+  taken: TenderAmount[];
+  refunded: TenderAmount[];
+}
+
+export interface DeviceShift {
+  id: string;
+  registerId: string;
+  sequence: number;
+  // POS1-S0042 (formatShiftNumber)
+  number: string;
+  status: 'open' | 'closed';
+  // The device's clock, and the day it opened on (a shift still open on a later day was left open)
+  openedAt: string;
+  openingDate: string;
+  opening: CashCount;
+  cash: ShiftCash;
+  tally: ShiftTally;
+  // Set by the close: the count and what the device expected
+  closedAt: string | null;
+  counted: string | null;
+  expected: string | null;
+}
+
+// Step 20c: a shift as its box may hold it. A shift opened before the update has no cash refunded
+// and no tally yet; shift.ts reads every box through deviceShiftOf(), which fills them in.
+export type StoredShift = Omit<DeviceShift, 'cash' | 'tally'> & {
+  cash: Omit<ShiftCash, 'cashRefunded'> & Partial<Pick<ShiftCash, 'cashRefunded'>>;
+  tally?: ShiftTally;
+};
+
+// One row, under the key 'shift'. The shift's ids, its number and whether it is open stay clear:
+// the lock screen's Sign out and the sidebar's sign-out ask about an open shift without the key,
+// and a number like POS1-S0042 says nothing about the money. `rev` counts every write: a save
+// that read the shift writes only if nobody wrote it since (another tab sold meanwhile).
+export interface ShiftRow {
+  key: 'shift';
+  shiftId: string;
+  registerId: string;
+  number: string;
+  status: DeviceShift['status'];
+  rev: number;
+  box: Box<StoredShift>;
+}
+
+// Step 20b: a held cart (decision 10), or the cart on the screen (key 'current'), so a reload or
+// the idle lock does not lose it. Never sent. The shift's id and the time are clear, for the
+// close's count and the list's order.
+export interface HeldCart {
+  // What the cashier typed ("Customer in the blue shirt"); null = none
+  name: string | null;
+  heldAt: string;
+  // For the list's row: "4 items · ৳1,501"
+  items: number;
+  total: string;
+  cart: PosCart;
+}
+
+export interface CartRow {
+  key: string;
+  shiftId: string;
+  heldAt: string;
+  box: Box<HeldCart>;
+}
+
+// Step 21a: the Overview's last answer (dashboard.ts), one row under the key 'dashboard'. Nothing
+// but the key is clear.
+export interface KeptDashboard {
+  dashboard: Dashboard;
+  // The branch the answer is for, as the page's select named it; null = every branch
+  branchName: string | null;
+}
+
+export interface DashboardRow {
+  key: 'dashboard';
+  box: Box<KeptDashboard>;
+}
+
+// The tables, by entity. The names are the ones the app reads (db.products, db.customers).
+export const TABLE_OF = {
+  settings: 'settings',
+  unit: 'units',
+  product_category: 'productCategories',
+  tax_rate: 'taxRates',
+  warehouse: 'warehouses',
+  pos_register: 'posRegisters',
+  pos_cash_reason: 'posCashReasons',
+  price_list: 'priceLists',
+  customer_group: 'customerGroups',
+  product: 'products',
+  price_list_item: 'priceListItems',
+  customer: 'customers',
+  stock: 'stock',
+  pos_sale: 'posSales',
+} as const satisfies Record<SyncEntity, string>;
+export type SyncTableName = (typeof TABLE_OF)[SyncEntity];
+
+// The synced tables as they were in version 3, for its upgrade. Not TABLE_OF: a device that skips
+// versions (2 → 4) runs version 3's upgrade before version 4 makes posRegisters, and clearing a
+// table that does not exist yet fails the whole upgrade, so the copy would never open.
+const VERSION_3_TABLES = [
+  'settings',
+  'units',
+  'productCategories',
+  'taxRates',
+  'warehouses',
+  'priceLists',
+  'customerGroups',
+  'products',
+  'priceListItems',
+  'customers',
+  'stock',
+] as const satisfies readonly SyncTableName[];
+
+// One local database per person and workspace: two people on one shop computer never read each
+// other's copy, and a person in two workspaces keeps both.
+export function databaseName(tenantId: string, userId: string): string {
+  return `omnivo-${tenantId}-${userId}`;
+}
+
+// Signing out deletes the copy (decision 41): the next person at a shop computer cannot read it
+// in the browser's tools. A tab still holding it open closes it by itself: Dexie closes a
+// database when another connection asks to delete it.
+export async function deleteLocalDatabase(tenantId: string, userId: string): Promise<void> {
+  await Dexie.delete(databaseName(tenantId, userId));
+}
+
+export class SyncDatabase extends Dexie {
+  // `!`: Dexie makes these properties itself, from the stores() below
+  settings!: Table<SealedRow<SyncSettings>, string>;
+  units!: Table<SealedRow<Unit>, string>;
+  productCategories!: Table<SealedRow<SyncCategory>, string>;
+  taxRates!: Table<SealedRow<TaxRate>, string>;
+  warehouses!: Table<SealedRow<Warehouse>, string>;
+  posRegisters!: Table<SealedRow<SyncPosRegister>, string>;
+  posCashReasons!: Table<SealedRow<SyncPosCashReason>, string>;
+  priceLists!: Table<SealedRow<SyncPriceList>, string>;
+  customerGroups!: Table<SealedRow<SyncCustomerGroup>, string>;
+  products!: Table<ProductRow, string>;
+  priceListItems!: Table<PriceListItemRow, string>;
+  customers!: Table<SealedRow<SyncCustomer>, string>;
+  stock!: Table<StockRow, string>;
+  meta!: Table<PullState, string>;
+  outbox!: Table<OutboxRow, number>;
+  notices!: Table<NoticeRow, string>;
+  // Step 19b: the data key, wrapped (keys.ts). One row.
+  keys!: Table<KeyRecord, string>;
+  marks!: Table<TableMark, string>;
+  // Step 19b: the outbox and the notices of version 2, still clear, until the key opens and
+  // copy.ts seals them (an upgrade cannot wait for Web Crypto). Empty after that.
+  legacyOutbox!: Table<OutboxEntry, number>;
+  legacyNotices!: Table<SyncNoticeRecord, string>;
+  // Step 20a: one row (RegisterClaim)
+  registerClaim!: Table<RegisterClaim, string>;
+  // Step 20b: one row (ShiftRow), and the carts
+  posShift!: Table<ShiftRow, string>;
+  posCarts!: Table<CartRow, string>;
+  // Step 20c: the register's recent sales (PosSaleRow)
+  posSales!: Table<PosSaleRow, string>;
+  // Step 21a: the Overview's last answer (DashboardRow)
+  dashboard!: Table<DashboardRow, string>;
+
+  constructor(name: string) {
+    super(name);
+    // The first word is the primary key; the others are indexes. `gen` on every synced table:
+    // the end of a full pull deletes the rows of older generations with one range each.
+    // `*barcodes` is a multi-entry index (one entry per barcode), for a scanner (step 20).
+    // `data.priceListId`, `data.warehouseId` and the others are key paths into the server's row:
+    // a sale line (18b) looks up its price and its stock by them.
+    this.version(1).stores({
+      settings: 'key, gen',
+      units: 'key, gen',
+      productCategories: 'key, gen',
+      taxRates: 'key, gen',
+      warehouses: 'key, gen',
+      priceLists: 'key, gen',
+      customerGroups: 'key, gen',
+      products: 'key, gen, sortName, sortCode, *barcodes',
+      priceListItems: 'key, gen, data.priceListId, data.variantId',
+      customers: 'key, gen, sortName',
+      stock: 'key, gen, data.warehouseId, data.variantId',
+      meta: 'key',
+    });
+    // Step 18b: the outbox and its notices, and the products by variant. The copy stays: Dexie
+    // keeps the tables of version 1, adds the new ones, and the upgrade fills the new field of the
+    // products it already has. `++seq` counts up by itself. `key` and `customerId` find a form's
+    // waiting command and the commands of one customer.
+    this.version(2)
+      .stores({
+        products: 'key, gen, sortName, sortCode, *barcodes, *variantIds',
+        outbox: '++seq, key, customerId',
+        notices: 'commandId',
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table<{ data: Product; variantIds: string[] }, string>('products')
+          .toCollection()
+          .modify((record) => {
+            record.variantIds = record.data.variants.map((variant) => variant.id);
+          });
+      });
+    // Step 19b: sealed rows. The synced tables are emptied and the pull starts again from nothing:
+    // a full pull writes them back sealed, so no clear copy stays on the disk. The outbox and its
+    // notices are the person's own work and must not be lost: they move to the legacy tables as
+    // they are, and copy.ts seals them back into the outbox once the key opens (an upgrade runs in
+    // one transaction, which cannot wait for Web Crypto). The ids an index needs are now copied
+    // out of the row (priceListId, warehouseId, variantId); the name and code indexes go, because
+    // a name in an index would be clear on the disk.
+    this.version(3)
+      .stores({
+        products: 'key, gen, *barcodes, *variantIds',
+        priceListItems: 'key, gen, priceListId, variantId',
+        customers: 'key, gen',
+        stock: 'key, gen, warehouseId, variantId',
+        keys: 'key',
+        marks: 'table',
+        legacyOutbox: 'seq',
+        legacyNotices: 'commandId',
+      })
+      .upgrade(async (tx) => {
+        for (const name of VERSION_3_TABLES) await tx.table(name).clear();
+        await tx.table('meta').delete('pull');
+        const outbox = tx.table<OutboxEntry, number>('outbox');
+        await tx.table<OutboxEntry, number>('legacyOutbox').bulkAdd(await outbox.toArray());
+        await outbox.clear();
+        const notices = tx.table<SyncNoticeRecord, string>('notices');
+        await tx.table<SyncNoticeRecord, string>('legacyNotices').bulkAdd(await notices.toArray());
+        await notices.clear();
+      });
+    // Step 20a: the registers of the branch, and the claim. No upgrade: the copy stays, and the
+    // registers come with the next pull. SYNC_PROTOCOL is 2 now, and the server answers a cursor of
+    // protocol 1 with a full pull, which brings every register (and sweeps nothing it should keep).
+    this.version(4).stores({
+      posRegisters: 'key, gen',
+      registerClaim: 'key',
+    });
+    // Step 20b: the reasons, the shift and the carts. No upgrade, like version 4: SYNC_PROTOCOL is 3
+    // now, so the next pull is a full one and brings every reason. `shiftId` finds a shift's carts.
+    this.version(5).stores({
+      posCashReasons: 'key, gen',
+      posShift: 'key',
+      posCarts: 'key, shiftId',
+    });
+    // Step 20c: the register's recent sales. No upgrade: SYNC_PROTOCOL is 4 now, so the next pull is
+    // a full one. `number` finds a receipt, `date` the rows to drop.
+    this.version(6).stores({
+      posSales: 'key, gen, number, date',
+    });
+    // Step 21a: the Overview's last answer. No upgrade and no new SYNC_PROTOCOL: it is not a synced
+    // table (the pull never writes or sweeps it), and the page fills it the next time it is online.
+    this.version(7).stores({
+      dashboard: 'key',
+    });
+  }
+
+  // Every synced table, to sweep or clear them all. Not `this.tables`, which has `meta` too.
+  syncTables() {
+    return Object.values(TABLE_OF).map((name) => this[name]);
+  }
+
+  // Step 19b: one write more to a mirrored table. Called inside the transaction that wrote it.
+  async markWritten(table: MirroredTable): Promise<void> {
+    const mark = await this.marks.get(table);
+    await this.marks.put({ table, version: (mark?.version ?? 0) + 1 });
+  }
+}

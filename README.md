@@ -144,21 +144,38 @@ The table above is only a starting point. Plans, prices and what the website sho
 
 ## Getting started
 
-> The codebase is not scaffolded yet. The intended local workflow is:
-
 ```bash
 pnpm install
-docker compose -f infra/docker/docker-compose.yml up -d   # postgres, redis, meilisearch
+pnpm db:up        # Postgres, Valkey, Mailpit, MinIO in Docker (Docker Desktop must be running)
 pnpm db:migrate
-pnpm dev                                                  # runs all apps via turbo
+pnpm dev          # API + app + package watchers via turbo
 ```
+
+`.env` needs the `S3_*` lines from `.env.example` (step 6) and the `SMTP_URL` line (step 7).
+It also needs the `WORKER_DATABASE_URL` line from `.env.example`, and an existing dev database needs the
+`omnivo_worker` role once (step 8 → 8.16).
+
+Once `pnpm dev` is running:
+
+| What | URL | Notes |
+|---|---|---|
+| App | http://localhost:5173 | Sign up to create a workspace |
+| API | http://localhost:3000 | NestJS on Fastify |
+| API docs | http://localhost:3000/docs | Scalar UI, generated from the `@omnivo/contracts` route registry. Dev and test only, never served in production |
+| OpenAPI spec | http://localhost:3000/openapi.json | The same spec is committed at `packages/contracts/openapi.json` (`pnpm gen:openapi` rewrites it) |
+| Kitchen sink | http://localhost:5173/kitchen-sink | Every shared UI component. Dev only, needs a signed-in user |
+| MinIO console | http://localhost:9001 | `omnivo` / `omnivo-dev-secret`. Uploaded files are under the `omnivo` bucket, `tenants/<tenant-id>/…` |
+| Mailpit | http://localhost:8025 | Every email the API sends (such as invitations) lands here |
+
+To work on the UI without the API, Postgres or Docker, run `pnpm dev:mock` (the app on MSW
+mocks). [COMMANDS.md](COMMANDS.md) lists every command.
 
 ## Roadmap
 
 | Steps | What | Milestone |
 |---|---|---|
 | 0–3 | Monorepo scaffold, CI, local Docker environment, database foundation with row-level security, auth and RBAC | Signup → login → tenant dashboard |
-| 4–5 | Shared design system, contract and typed-client codegen pipeline | Every new endpoint reaches the UI type-safe |
+| 4–5 | Shared design system; API contracts: Zod route registry, error codes, keyset pagination, OpenAPI | Every new endpoint reaches the UI type-safe |
 | 6–8 | Core platform: settings, branches, numbering, audit log, users and roles, queue and worker, transactional outbox | First async job running |
 | 9–11 | Accounting: chart of accounts, double-entry journal, financial statements | A trial balance that balances |
 | 12–14 | Inventory: products with batch/serial tracking, append-only stock ledger, valuation posting to the ledger | Stock receipt moves the balance sheet |

@@ -1,0 +1,643 @@
+import { z } from 'zod';
+
+// API যত রকম error পাঠায় (আর ক্লায়েন্ট নিজে যত বানায়) তার পুরো তালিকা। UI-র লেখা থাকে
+// i18n-এর errors.*-এ — এখানে নতুন code যোগ করে en.ts-এ অনুবাদ না লিখলে typecheck fail করে
+export const ERROR_CODES = [
+  // সাধারণ যাচাই: schema নিজে code না দিলে Zod-এর issue থেকে আসে (contractErrorMap)
+  'invalid_input',
+  'required',
+  'too_short',
+  'too_long',
+  'too_small',
+  'too_large',
+  'invalid_format',
+  'invalid_value',
+  // নির্দিষ্ট ফিল্ডের যাচাই
+  'company_name_required',
+  'full_name_required',
+  'email_invalid',
+  'email_taken',
+  'password_required',
+  'password_too_short',
+  'password_too_long',
+  'slug_too_short',
+  'slug_too_long',
+  'slug_format',
+  'slug_reserved',
+  'slug_taken',
+  'bin_format',
+  'timezone_invalid',
+  'branch_code_format',
+  'branch_code_taken',
+  'branch_name_required',
+  'branch_last_active',
+  'prefix_format',
+  'file_type_not_allowed',
+  'file_too_large',
+  'role_name_required',
+  'role_name_taken',
+  'role_required',
+  'already_member',
+  'already_invited',
+  // auth ও অনুমতি
+  'workspace_not_found',
+  'invalid_credentials',
+  'not_a_member',
+  'sign_in_required',
+  'session_ended',
+  'access_revoked',
+  'switch_denied',
+  'permission_missing',
+  'invitation_invalid',
+  'cannot_grant',
+  'owner_role_locked',
+  'last_owner',
+  'own_membership',
+  'role_in_use',
+  // workspace setup (onboarding)
+  'setup_started',
+  'setup_not_failed',
+  // chart of accounts
+  'account_code_format',
+  'account_code_taken',
+  'account_name_required',
+  'account_parent_required',
+  'account_parent_invalid',
+  'account_parent_loop',
+  'account_parent_archived',
+  'account_locked',
+  'account_has_children',
+  'account_has_active_children',
+  'account_in_use',
+  // journal
+  'money_format',
+  'journal_date_required',
+  'journal_account_required',
+  'journal_line_amount',
+  'journal_lines_too_few',
+  'journal_unbalanced',
+  'journal_account_invalid',
+  'journal_branch_invalid',
+  'journal_period_locked',
+  'journal_not_draft',
+  'journal_not_posted',
+  'journal_is_reversal',
+  'journal_already_reversed',
+  'journal_reversal_date',
+  'opening_date_required',
+  'opening_account_invalid',
+  'opening_account_twice',
+  'period_lock_future',
+  'base_currency_locked',
+  'journal_is_year_close',
+  // reports and year-end close
+  'report_range_invalid',
+  'report_compare_incomplete',
+  'year_end_invalid',
+  'year_not_ended',
+  'year_already_closed',
+  'year_not_closed',
+  'year_has_drafts',
+  'year_nothing_to_close',
+  'year_earlier_open',
+  'year_later_closed',
+  'export_not_ready',
+  // units, categories and custom fields (step 12)
+  'factor_format',
+  'unit_code_format',
+  'unit_code_taken',
+  'unit_name_required',
+  'unit_in_use',
+  'category_name_required',
+  'category_name_taken',
+  'category_parent_invalid',
+  'category_parent_loop',
+  'category_has_children',
+  'category_in_use',
+  'custom_field_key_format',
+  'custom_field_key_taken',
+  'custom_field_label_required',
+  'custom_field_option_twice',
+  'custom_field_options_required',
+  'custom_field_unknown',
+  'number_format',
+  // products
+  'product_code_format',
+  'product_code_taken',
+  'product_sku_format',
+  'product_sku_taken',
+  'product_sku_twice',
+  'product_name_required',
+  'product_unit_required',
+  'product_unit_invalid',
+  'product_unit_is_base',
+  'product_unit_twice',
+  'product_default_unit_invalid',
+  'product_factor_standard',
+  'product_option_name_required',
+  'product_option_values_required',
+  'product_option_twice',
+  'product_option_value_twice',
+  'product_variants_simple',
+  'product_variant_values',
+  'product_variant_twice',
+  'product_variant_last_active',
+  'product_variant_unknown',
+  'product_variant_in_use',
+  'product_pack_barcode_variants',
+  'product_tracking_service',
+  'product_expiry_needs_batch',
+  'product_category_invalid',
+  'product_in_use',
+  'barcode_format',
+  'barcode_check_digit',
+  'barcode_taken',
+  'barcode_twice',
+  // product imports
+  'import_file_type',
+  'import_not_uploaded',
+  'import_not_pending',
+  'import_encoding',
+  'import_csv_malformed',
+  'import_empty',
+  'import_too_many_rows',
+  'import_column_missing',
+  'import_column_unknown',
+  'import_row_conflict',
+  'import_unit_unknown',
+  'import_category_invalid',
+  'import_value_invalid',
+  'import_options_without_code',
+  // warehouses and stock (step 13)
+  'warehouse_code_format',
+  'warehouse_code_taken',
+  'warehouse_name_required',
+  'warehouse_branch_invalid',
+  'warehouse_branch_locked',
+  'warehouse_has_stock',
+  'warehouse_has_transfers',
+  'branch_has_warehouses',
+  'quantity_format',
+  'serial_number_format',
+  'stock_date_required',
+  'stock_date_future',
+  'stock_warehouse_invalid',
+  'stock_lines_required',
+  'stock_variant_required',
+  'stock_variant_invalid',
+  'stock_unit_invalid',
+  'stock_quantity_decimals',
+  'stock_lot_required',
+  'stock_expiry_required',
+  'stock_batch_dates',
+  'stock_batch_required',
+  'stock_batch_invalid',
+  'stock_batch_expiry_mismatch',
+  'stock_serial_count',
+  'stock_serial_twice',
+  'stock_serial_in_stock',
+  'stock_serial_not_here',
+  'stock_insufficient',
+  'stock_not_draft',
+  'adjustment_reason_direction',
+  'transfer_same_warehouse',
+  'transfer_not_in_transit',
+  'transfer_lines_mismatch',
+  'transfer_receive_too_many',
+  'transfer_receive_date',
+  'transfer_serial_not_sent',
+  'reorder_level_required',
+  'product_base_unit_locked',
+  'product_tracking_locked',
+  'product_type_locked',
+  // stock values and the books (step 14)
+  'stock_cost_required',
+  'stock_account_missing',
+  'stock_account_invalid',
+  'stock_account_inventory',
+  'journal_account_stock',
+  'journal_is_stock',
+  'revaluation_no_stock',
+  'revaluation_variant_twice',
+  'account_used_by_stock',
+  // customers, VAT rates and price lists (step 15a)
+  'customer_code_format',
+  'customer_code_taken',
+  'customer_name_required',
+  'customer_address_required',
+  'customer_billing_twice',
+  'customer_group_invalid',
+  'customer_in_use',
+  'customer_group_name_required',
+  'customer_group_name_taken',
+  'customer_group_in_use',
+  'tax_rate_name_required',
+  'tax_rate_name_taken',
+  'tax_rate_format',
+  'tax_rate_kind_rate',
+  'tax_rate_default_archived',
+  'tax_rate_default_needed',
+  'tax_rate_invalid',
+  'price_list_name_required',
+  'price_list_name_taken',
+  'price_list_invalid',
+  'price_list_item_twice',
+  'price_list_unit_invalid',
+  'journal_party_required',
+  'journal_party_not_allowed',
+  'journal_party_invalid',
+  'opening_balance_twice',
+  // quotations, orders and deliveries (step 15b)
+  'sales_customer_required',
+  'sales_customer_invalid',
+  'sales_date_required',
+  'sales_lines_required',
+  'sales_price_required',
+  'sales_discount_too_large',
+  'sales_address_invalid',
+  'sales_not_draft',
+  'sales_item_invalid',
+  'quotation_valid_until',
+  'quotation_not_open',
+  'quotation_not_declined',
+  'order_delivery_date',
+  'order_not_confirmed',
+  'order_has_deliveries',
+  'order_nothing_delivered',
+  'order_partly_delivered',
+  'order_numbered',
+  'order_quotation_invalid',
+  'delivery_order_invalid',
+  'delivery_order_line_required',
+  'delivery_order_line_invalid',
+  'delivery_over_order',
+  // invoices, money receipts and the credit limit (step 15c)
+  'sales_branch_invalid',
+  'invoice_due_date',
+  'invoice_warehouse_required',
+  'invoice_line_source',
+  'invoice_stock_not_allowed',
+  'invoice_delivery_line_invalid',
+  'invoice_line_twice',
+  'invoice_delivery_line_billed',
+  'invoice_order_line_invalid',
+  'invoice_order_line_billed',
+  'invoice_vat_mixed',
+  'order_has_invoices',
+  'receipt_amount_required',
+  'receipt_account_invalid',
+  'receipt_over_allocated',
+  'receipt_invoice_invalid',
+  'receipt_invoice_twice',
+  'receipt_over_invoice',
+  'receipt_voided',
+  'receipt_void_reason_required',
+  'receipt_void_date',
+  'credit_limit_exceeded',
+  'credit_override_forbidden',
+  'journal_is_sales',
+  'account_money_type',
+  // sales returns, credit notes and refunds (step 15d)
+  'return_delivery_line_invalid',
+  'return_line_twice',
+  'return_batch_not_allowed',
+  'return_serial_invalid',
+  'return_over_delivered',
+  'return_cost_unknown',
+  'credit_note_invoice_required',
+  'credit_note_invoice_invalid',
+  'credit_note_date',
+  'credit_note_line_invalid',
+  'credit_note_over_quantity',
+  'credit_note_over_line',
+  'credit_note_return_invalid',
+  'credit_note_return_twice',
+  'credit_note_over_return',
+  'credit_note_not_posted',
+  'credit_note_amount_required',
+  'credit_note_allocation_invalid',
+  'credit_note_invoice_twice',
+  'credit_note_over_allocated',
+  'credit_note_over_invoice',
+  'refund_amount_required',
+  'refund_account_invalid',
+  'refund_source',
+  'refund_source_invalid',
+  'refund_over_source',
+  'refund_voided',
+  'receipt_has_refunds',
+  'sales_account_invalid',
+  'account_used_by_sales',
+  // Step 16: documents sent to customers. A draft (no number yet) or a voided receipt is not sent.
+  'document_not_issued',
+  'email_to_required',
+  'email_too_many',
+  'email_subject_required',
+  // The public page behind a share link: an unknown, expired or turned-off link all look the same
+  'share_link_not_found',
+  // Step 17a: suppliers, approvals and purchase requisitions
+  'supplier_code_format',
+  'supplier_code_taken',
+  'supplier_name_required',
+  'supplier_group_invalid',
+  'supplier_in_use',
+  'supplier_group_name_required',
+  'supplier_group_name_taken',
+  'supplier_group_in_use',
+  'supplier_bank_name_required',
+  'supplier_account_name_required',
+  'bank_account_number_format',
+  'routing_number_format',
+  // "Make supplier too" on a party that already is one (or "Make customer too" on a customer)
+  'party_role_exists',
+  'approval_level_order',
+  'approval_role_twice',
+  'approval_role_invalid',
+  'approval_not_pending',
+  'approval_not_allowed',
+  'approval_own_document',
+  'approval_comment_required',
+  'purchase_warehouse_required',
+  'purchase_warehouse_invalid',
+  'purchase_date_required',
+  'purchase_lines_required',
+  'purchase_item_invalid',
+  'purchase_not_draft',
+  'purchase_was_submitted',
+  'purchase_cannot_reopen',
+  'purchase_cannot_cancel',
+  'requisition_needed_by',
+  'requisition_cost_required',
+  // Step 17b: purchase orders and goods receipts. The purchase_* codes of 17a (purchase_not_draft,
+  // purchase_was_submitted, purchase_cannot_reopen, purchase_cannot_cancel) serve the order too.
+  'purchase_supplier_required',
+  'purchase_supplier_invalid',
+  'purchase_expected_date',
+  'purchase_requisition_line_invalid',
+  'purchase_requisition_line_twice',
+  // Cancel refused because a later document uses it (an order buys for the requisition, a goods
+  // receipt brought some of the order in), and close refused because nothing does yet
+  'purchase_close_instead',
+  'purchase_cancel_instead',
+  // Cancel refused on a draft order nobody submitted: it has no number, so it is deleted
+  'purchase_delete_instead',
+  // Reopen or cancel refused while a draft goods receipt points at the order: delete it first
+  'purchase_receipt_draft',
+  // Close, receive or post against a document that is no longer approved: a requisition or an
+  // order someone reopened, closed or cancelled while the page was open
+  'purchase_not_approved',
+  'grn_order_invalid',
+  'grn_order_line_invalid',
+  'grn_over_order',
+  'grn_line_empty',
+  'grn_rejection_reason',
+  'over_receipt_percent_format',
+  // Step 17c: supplier bills and supplier payments. The purchase_* codes of 17a and 17b
+  // (purchase_not_draft, purchase_was_submitted, purchase_cannot_reopen, purchase_cannot_cancel,
+  // purchase_delete_instead) serve them too.
+  'purchase_branch_invalid',
+  'purchase_account_invalid',
+  // Archive or delete refused: the account is chosen in Settings → Purchase
+  'account_used_by_purchase',
+  // Reopen or cancel refused while a bill that is not cancelled bills a service on the order
+  'purchase_order_billed',
+  'bill_supplier_number_required',
+  // The supplier already has a bill with this number that is not cancelled
+  'bill_supplier_number_taken',
+  'bill_due_date',
+  'bill_mushak_number_required',
+  'bill_line_source',
+  'bill_stock_not_allowed',
+  'bill_account_required',
+  'bill_account_not_allowed',
+  'bill_account_invalid',
+  'bill_receipt_line_invalid',
+  // Another bill bills it already, or it is not the whole line
+  'bill_receipt_line_billed',
+  'bill_receipt_line_quantity',
+  'bill_order_line_invalid',
+  'bill_order_line_billed',
+  'bill_line_twice',
+  'bill_vat_mixed',
+  'bill_warehouse_required',
+  'bill_expense_description_required',
+  'bill_expense_amount_required',
+  'payment_amount_required',
+  'payment_account_invalid',
+  'payment_bank_account_invalid',
+  'payment_order_invalid',
+  'payment_bill_invalid',
+  'payment_bill_twice',
+  'payment_over_allocated',
+  'payment_over_bill',
+  // Applying or voiding needs a posted payment
+  'payment_not_posted',
+  'payment_void_reason_required',
+  'payment_void_date',
+  // Step 17d: purchase returns, debit notes and supplier refunds
+  'purchase_return_receipt_line_invalid',
+  'purchase_return_line_twice',
+  'purchase_return_batch_not_allowed',
+  'purchase_return_serial_invalid',
+  // More than the receipt line accepted, less what earlier returns sent back
+  'purchase_return_over_received',
+  'purchase_return_cost_unknown',
+  'debit_note_bill_invalid',
+  'debit_note_date',
+  // A debit note with a bill names that bill's lines; one without a bill names returned goods
+  'debit_note_line_invalid',
+  'debit_note_return_required',
+  'debit_note_tax_rate_not_allowed',
+  'debit_note_expense_invalid',
+  'debit_note_expense_twice',
+  'debit_note_over_quantity',
+  'debit_note_over_line',
+  'debit_note_return_invalid',
+  'debit_note_return_twice',
+  'debit_note_over_return',
+  'debit_note_supplier_credit_required',
+  'debit_note_not_posted',
+  'debit_note_amount_required',
+  'debit_note_allocation_invalid',
+  'debit_note_bill_twice',
+  'debit_note_over_allocated',
+  'debit_note_over_bill',
+  'supplier_refund_amount_required',
+  'supplier_refund_account_invalid',
+  'supplier_refund_source',
+  'supplier_refund_source_invalid',
+  'supplier_refund_over_source',
+  'supplier_refund_voided',
+  // Void refused while a supplier refund paid back some of the payment's advance
+  'payment_has_refunds',
+  'journal_is_purchase',
+  // Step 20b: a POS shift's entry (an opening or closing difference, a pay in or out) is put right
+  // by the next count or by a movement the other way, never by a reversal
+  'journal_is_pos',
+  // Step 18a: devices and the sync. device_not_found also answers another person's device: the
+  // app then registers this browser again.
+  'device_id_invalid',
+  'device_name_required',
+  'device_branch_invalid',
+  'device_not_found',
+  'device_revoked',
+  // The app was built for another version of the sync (SYNC_PROTOCOL): reload it
+  'sync_protocol_mismatch',
+  // Step 18b: a command from a device. An id the device made (a customer, an address, an order) is
+  // already used by something else; a command type this server does not run; the customer a
+  // change is for was deleted, or is no longer a customer.
+  'sync_id_taken',
+  'sync_command_invalid',
+  'sync_customer_gone',
+  // Step 18c: a branch is archived only when no active device is in it. Move or revoke them
+  // first: a device's next pull would otherwise copy a branch that is gone.
+  'branch_has_devices',
+  // Step 20a: POS registers. A register's code is part of every receipt number, so it is checked
+  // like a number series' prefix.
+  'pos_register_code_format',
+  'pos_register_code_taken',
+  'pos_register_name_required',
+  'pos_register_warehouse_invalid',
+  'pos_register_cash_required',
+  // A payment method's account is not an active money account (accounts.ts → moneyAccountIds)
+  'pos_register_account_invalid',
+  'pos_discount_limit_format',
+  // Another device holds the register (claim, archive); it is archived; it is in another branch
+  // than the device; the device already holds another register (it lets go of that one first);
+  // the device lets go of a register it does not hold
+  'pos_register_in_use',
+  'pos_register_archived',
+  'pos_register_branch',
+  'pos_device_has_register',
+  'pos_register_not_held',
+  // A POS sale (the device's schema, and the server again when the command arrives)
+  'pos_payments_required',
+  'pos_payment_amount_required',
+  'pos_payment_short',
+  'pos_change_not_cash',
+  // The register no longer has an account for a method the sale was paid by: someone with
+  // pos.register.manage sets one, then the cashier sends the sale again from the Sync page
+  'pos_method_not_set',
+  // Another sale of the register already has this number: a bug, never a cashier's mistake
+  'pos_number_taken',
+  // Step 20b: shifts. The register's over/short account is not chosen, or is not an active income
+  // or expense account; the bell's limit is not whole taka
+  'pos_over_short_required',
+  'pos_over_short_invalid',
+  'pos_variance_alert_format',
+  // A pay in / pay out reason: no name, a name another reason has, an account it cannot use
+  'pos_reason_name_required',
+  'pos_reason_name_taken',
+  'pos_reason_account_invalid',
+  // The cashier's forms on the device: no reason picked, no amount, an empty count box, a total
+  // that is not what the notes add up to, a pay out of more than the drawer should hold, and a
+  // first shift's float with no reason
+  'pos_reason_required',
+  'pos_cash_amount_required',
+  'pos_count_required',
+  'pos_count_total_mismatch',
+  'pos_pay_out_too_large',
+  'pos_float_reason_required',
+  // The register's shift is still open: its device does not let go of it, does not move to
+  // another branch, and its person does not sign out, until it is closed
+  'pos_shift_still_open',
+  // A manager closes a shift that is closed already
+  'pos_shift_closed',
+  // Bugs, never a cashier's mistake: a shift opened while the server still has the register's
+  // last one open, and a sale, movement or close for a shift the server does not know
+  'pos_shift_already_open',
+  'pos_shift_unknown',
+  // Step 20c: returns. A register's return window is not a whole number of days up to 365; its
+  // exchange account is not an active liability account that is not a group
+  'pos_return_days_format',
+  'pos_exchange_account_invalid',
+  // The cashier's return screen: no receipt with this number (offline: not on this device), a sale
+  // older than the register's window, a sale with nothing left to return, more of a line than is
+  // left, nothing ticked, a refund box left empty, refunds that do not add up to the return's total
+  'pos_return_sale_not_found',
+  'pos_return_too_old',
+  'pos_return_nothing_left',
+  'pos_return_quantity_too_large',
+  'pos_return_lines_required',
+  'pos_refund_amount_required',
+  'pos_refund_mismatch',
+  // The register has no exchange account (any more): someone with pos.register.manage sets one,
+  // then the cashier sends the return again from the Sync page, like pos_method_not_set
+  'pos_exchange_not_set',
+  // Bugs, never a cashier's mistake: an exchange that does not match its return (another amount, a
+  // return used twice, another register's), a sale's exchange for a return the server does not
+  // have, a return number already taken, a sale line twice, a line or a serial number that is not
+  // the sale's
+  'pos_exchange_invalid',
+  'pos_return_unknown',
+  'pos_return_number_taken',
+  'pos_return_line_twice',
+  'pos_return_line_unknown',
+  'pos_return_serial_invalid',
+  // HTTP ও সার্ভার
+  'invalid_cursor',
+  'version_conflict',
+  'upload_incomplete',
+  'attachment_not_ready',
+  'malformed_request',
+  'not_found',
+  'request_failed',
+  'internal_error',
+  // শুধু ক্লায়েন্ট বানায়, সার্ভার কখনো পাঠায় না
+  'network_error',
+  'unexpected_response',
+  'unknown_error',
+  // Step 19b: the device PIN form's own rules. The PIN never leaves the device, so only the app's
+  // schema sends these
+  'pin_format',
+  'pin_too_easy',
+  'pin_mismatch',
+] as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[number];
+
+export function isErrorCode(value: unknown): value is ErrorCode {
+  return ERROR_CODES.some((code) => code === value);
+}
+
+// schema-র ভেতরে মেসেজের জায়গায় code: .min(3, errorCode('slug_too_short'))।
+// সাধারণ string লিখলে বানান ভুল ধরা পড়ত না — এই ফাংশন শুধু ErrorCode নেয়
+export function errorCode(code: ErrorCode): ErrorCode {
+  return code;
+}
+
+// schema যেখানে নিজে code দেয়নি (যেমন .max(120)), সেখানে Zod-এর issue দেখে সাধারণ code।
+// Zod-এর ক্রম: schema-র নিজের মেসেজ > parse-এর সময় দেওয়া এই map > Zod-এর ইংরেজি মেসেজ
+export const contractErrorMap: z.core.$ZodErrorMap = (issue) => {
+  switch (issue.code) {
+    case 'invalid_type':
+      return issue.input === undefined ? 'required' : 'invalid_value';
+    case 'too_small':
+      return issue.origin === 'string' || issue.origin === 'array' ? 'too_short' : 'too_small';
+    case 'too_big':
+      return issue.origin === 'string' || issue.origin === 'array' ? 'too_long' : 'too_large';
+    case 'invalid_format':
+      return 'invalid_format';
+    default:
+      return 'invalid_value';
+  }
+};
+
+// RFC 9457 "Problem Details" — HTTP API-র error-এর প্রচলিত আকার (Content-Type:
+// application/problem+json)। title/status/detail RFC-র নিজের ফিল্ড; code, params, fieldErrors,
+// requestId আমাদের extension। type নেই = RFC অনুযায়ী "about:blank" (title = HTTP status-এর নাম)
+export const problemSchema = z.object({
+  title: z.string(),
+  status: z.number().int(),
+  // ইংরেজি, ডেভেলপার আর লগের জন্য — UI এটা দেখায় না, code অনুবাদ করে দেখায়
+  detail: z.string(),
+  // z.string(), enum না: নতুন সার্ভার নতুন code পাঠালে পুরনো ক্লায়েন্ট (অফলাইন PWA-র ক্যাশ)
+  // parse-এ ভেঙে পড়বে না; isErrorCode() দিয়ে চেনা code-এ নামানো হয়
+  code: z.string(),
+  params: z.record(z.string(), z.union([z.string(), z.number()])).optional(),
+  // ফিল্ডের পাথ (react-hook-form-এর মতো: "items.0.qty") → সেই ফিল্ডের error code
+  fieldErrors: z.record(z.string(), z.array(z.string())).optional(),
+  requestId: z.string().optional(),
+});
+
+export type Problem = z.infer<typeof problemSchema>;

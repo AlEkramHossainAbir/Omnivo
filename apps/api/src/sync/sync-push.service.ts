@@ -1,0 +1,375 @@
+import { Inject, Injectable } from '@nestjs/common';
+import {
+  contractErrorMap,
+  type ErrorCode,
+  isErrorCode,
+  type PermissionKey,
+  routes,
+  SYNC_COMMAND_TYPES,
+  SYNC_PROTOCOL,
+  type SyncChange,
+  type SyncCommand,
+  type SyncCommandError,
+  type SyncCommandType,
+  type SyncNotice,
+  type SyncPush,
+  type syncPushInputSchema,
+  type SyncResult,
+  syncCommandSchema,
+} from '@omnivo/contracts';
+import { posReturns, syncCommands } from '@omnivo/db';
+import { and, eq, sql } from 'drizzle-orm';
+import { z } from 'zod';
+
+import { isUniqueViolation } from '../common/db/pg-errors.js';
+import { AppError } from '../common/http/app-error.js';
+import { getTenantId, runFromDevice } from '../common/tenant/tenant-context.js';
+import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
+import { WITH_TENANT } from '../infra/tokens.js';
+import { PosReturnsService } from '../pos/pos-returns.service.js';
+import { PosSalesService } from '../pos/pos-sales.service.js';
+import { PosShiftsService } from '../pos/pos-shifts.service.js';
+import { type Access, PermissionService } from '../rbac/permission.service.js';
+import { CustomersService } from '../sales/customers.service.js';
+import { SalesOrdersService } from '../sales/sales-orders.service.js';
+import { type DeviceRow, DevicesService } from './devices.service.js';
+import { LOADERS, posScopeOf } from './sync-rows.js';
+
+type PushedCommand = z.output<typeof syncPushInputSchema>['commands'][number];
+type StoredAnswer = typeof syncCommands.$inferSelect;
+
+// The permission each command needs: its API route's own (decision 17), read from the contract,
+// so a route that changes its permission changes the command's too
+const PERMISSION_OF = {
+  'customer.create': routes.customers.create.permission,
+  'customer.update': routes.customers.update.permission,
+  'sales_order.create_draft': routes.salesOrders.create.permission,
+  // Step 20a: no route writes a sale (decision 21), so the cashier's permission comes from the
+  // route that takes a register, which is the same one (decision 31)
+  'pos_sale.create': routes.pos.claimRegister.permission,
+  // Step 20b (decision 10): the cashier's own shift, with the same permission
+  'pos_shift.open': routes.pos.claimRegister.permission,
+  'pos_cash_movement.create': routes.pos.claimRegister.permission,
+  'pos_shift.close': routes.pos.claimRegister.permission,
+  // Step 20c: the permission that finds a sale to take back (decision 30)
+  'pos_return.create': routes.posReturns.returnableSale.permission,
+} satisfies Record<SyncCommandType, PermissionKey>;
+
+// Step 20a (decision 28), step 20b (decision 25): never refused for the permission. The money is
+// in the drawer (and the goods have left), so a refusal would only leave it out of the books; each
+// writes its own audit row instead. Step 20c (decision 20): a return too, whose money was paid back.
+const DONE_AT_THE_COUNTER: ReadonlySet<SyncCommandType> = new Set([
+  'pos_sale.create',
+  'pos_shift.open',
+  'pos_cash_movement.create',
+  'pos_shift.close',
+  'pos_return.create',
+]);
+
+// The ids a device makes (decision 12). One already used — in this workspace or another, the
+// primary keys are global — fails the insert on its primary key, and the command is refused.
+const DEVICE_ID_KEYS = [
+  'parties_pkey',
+  'party_addresses_pkey',
+  'sales_orders_pkey',
+  'pos_sales_pkey',
+  'pos_sale_lines_pkey',
+  'pos_shifts_pkey',
+  'pos_cash_movements_pkey',
+  'pos_returns_pkey',
+] as const;
+
+function isSyncCommandType(type: string): type is SyncCommandType {
+  return SYNC_COMMAND_TYPES.some((known) => known === type);
+}
+
+// The customer, the order, the POS sale, the shift, the pay in / pay out or the POS return a
+// command is about: the answer's entity_id
+function entityOf(command: SyncCommand): string {
+  switch (command.type) {
+    case 'sales_order.create_draft':
+      return command.orderId;
+    case 'pos_sale.create':
+      return command.saleId;
+    case 'pos_shift.open':
+    case 'pos_shift.close':
+      return command.shiftId;
+    case 'pos_cash_movement.create':
+      return command.movementId;
+    case 'pos_return.create':
+      return command.returnId;
+    case 'customer.create':
+    case 'customer.update':
+      return command.customerId;
+  }
+}
+
+// Step 18b: the push. Every command of a batch in the order sent, each in its own transaction:
+//   1. a lock on the command's id, so a second push of the same command waits for this one;
+//   2. the answer kept from before, if there is one: the command is answered from it, not run;
+//   3. the command's work behind a savepoint, with the person's roles of now;
+//   4. the answer inserted, accepted or refused, and the transaction committed.
+// A refusal rolls back to the savepoint, so its half-done work goes and its answer stays. Any
+// other error (a bug, the database gone) fails the whole push with a 500: the commands before it
+// are committed with their answers, and the device sends the batch again (decision 23).
+@Injectable()
+export class SyncPushService {
+  constructor(
+    @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
+    private readonly devices: DevicesService,
+    private readonly permissions: PermissionService,
+    private readonly customers: CustomersService,
+    private readonly orders: SalesOrdersService,
+    private readonly posSales: PosSalesService,
+    private readonly posShifts: PosShiftsService,
+    private readonly posReturns: PosReturnsService,
+  ) {}
+
+  async push(input: z.output<typeof syncPushInputSchema>): Promise<SyncPush> {
+    // As in the pull: an app built for another protocol reloads first (decision 21)
+    if (input.protocol !== SYNC_PROTOCOL) {
+      throw new AppError(409, 'sync_protocol_mismatch', 'Reload the app to sync again.');
+    }
+    // Step 18c: and the sign-in it pushes with (decision 13), in the same short transaction
+    const device = await this.withTenant(async (tx) => {
+      const row = await this.devices.forSync(tx, input.deviceId);
+      await this.devices.keepSession(tx, row);
+      return row;
+    });
+    // The person's roles of now (decision 17), read once for the batch: one request is one moment
+    const access = await this.permissions.ofCurrentUser();
+    const results: SyncResult[] = [];
+    for (const pushed of input.commands) {
+      // One after the other, never in parallel: an order may need the customer before it
+      results.push(await runFromDevice(device.id, () => this.run(device, access, pushed)));
+    }
+    return { results, serverTime: new Date().toISOString() };
+  }
+
+  private async run(device: DeviceRow, access: Access, pushed: PushedCommand): Promise<SyncResult> {
+    // A command the server cannot read is refused alone, and keeps no answer (decision 24): the
+    // same bytes always get the same refusal
+    if (!isSyncCommandType(pushed.type)) {
+      return refused(pushed.id, { code: 'sync_command_invalid' });
+    }
+    const parsed = syncCommandSchema.safeParse(pushed, { error: contractErrorMap });
+    if (!parsed.success) {
+      return refused(pushed.id, {
+        code: 'invalid_input',
+        fieldErrors: fieldErrorsOf(pushed, parsed.error.issues),
+      });
+    }
+    const command = parsed.data;
+
+    return this.withTenant(async (tx) => {
+      // Released by the commit or the rollback; a different command never waits for this one
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${command.id}::text, 0))`);
+      const [stored] = await tx
+        .select()
+        .from(syncCommands)
+        .where(and(eq(syncCommands.tenantId, getTenantId()), eq(syncCommands.id, command.id)));
+      // Sent before: answered from what was kept. Even from another device of the workspace (its
+      // ids are its own, so only a bug sends one): the answer is still the true one.
+      if (stored) return this.answerFrom(tx, device, stored);
+
+      let notices: SyncNotice[];
+      try {
+        // A nested transaction is a savepoint: a refusal undoes this command's work only
+        notices = await tx.transaction((work) => this.apply(work, access, command));
+      } catch (error) {
+        const refusal = refusalOf(error);
+        if (refusal === null) throw error;
+        // Step 20a (decision 37): the refused sale's receipt was printed, so its number stays used.
+        // Step 20c (decision 43): a refused return's slip too.
+        if (command.type === 'pos_sale.create') await this.posSales.keepNumber(tx, command.input);
+        if (command.type === 'pos_return.create') {
+          await this.posReturns.keepNumber(tx, command.input);
+        }
+        await tx.insert(syncCommands).values({
+          ...this.answerKey(device, command),
+          status: 'rejected',
+          error: refusal,
+        });
+        return refused(command.id, refusal);
+      }
+      await tx.insert(syncCommands).values({
+        ...this.answerKey(device, command),
+        status: 'accepted',
+        notices,
+      });
+      return {
+        id: command.id,
+        status: 'accepted',
+        notices,
+        changes: await this.changesOf(tx, device, command.type, entityOf(command)),
+      };
+    });
+  }
+
+  // The command's work, with the same service methods as the API's routes
+  private async apply(
+    tx: Transaction,
+    access: Access,
+    command: SyncCommand,
+  ): Promise<SyncNotice[]> {
+    const permission = PERMISSION_OF[command.type];
+    if (!access.permissions.includes(permission) && !DONE_AT_THE_COUNTER.has(command.type)) {
+      throw new AppError(403, 'permission_missing', `Missing permission: ${permission}.`, {
+        params: { permissions: permission },
+      });
+    }
+    switch (command.type) {
+      case 'customer.create':
+        await this.customers.createFromDevice(tx, command.customerId, command.input);
+        return [];
+      case 'customer.update':
+        return this.customers.updateFromDevice(tx, command);
+      case 'sales_order.create_draft':
+        await this.orders.createDraftFromDevice(tx, command.orderId, command.input);
+        return [];
+      case 'pos_sale.create':
+        await this.posSales.createFromDevice(tx, access, command.saleId, command.input);
+        return [];
+      case 'pos_shift.open':
+        await this.posShifts.openFromDevice(tx, access, command.shiftId, command.input);
+        return [];
+      case 'pos_cash_movement.create':
+        await this.posShifts.moveCashFromDevice(tx, access, command.movementId, command.input);
+        return [];
+      case 'pos_shift.close':
+        await this.posShifts.closeFromDevice(tx, access, command.shiftId, command.input);
+        return [];
+      case 'pos_return.create':
+        await this.posReturns.createFromDevice(tx, access, command.returnId, command.input);
+        return [];
+    }
+  }
+
+  private answerKey(device: DeviceRow, command: SyncCommand) {
+    return {
+      id: command.id,
+      tenantId: getTenantId(),
+      deviceId: device.id,
+      type: command.type,
+      entityId: entityOf(command),
+    };
+  }
+
+  private async answerFrom(
+    tx: Transaction,
+    device: DeviceRow,
+    stored: StoredAnswer,
+  ): Promise<SyncResult> {
+    if (stored.status === 'rejected') {
+      // sync_commands_error_check: a refused answer always has its error
+      if (stored.error === null) throw new Error(`Refused answer ${stored.id} has no error`);
+      return refused(stored.id, stored.error);
+    }
+    return {
+      id: stored.id,
+      status: 'accepted',
+      notices: stored.notices,
+      // The rows as they are now, not as they were then (decision 18)
+      changes: await this.changesOf(tx, device, stored.type, stored.entityId),
+    };
+  }
+
+  // The customer a command made or changed, in the pull's shape: the device writes it at once. A
+  // customer the device may not keep (archived since) goes as a delete, like in a delta pull. An
+  // order and a shift's commands send nothing: neither is on the device as a row (decision 35;
+  // step 20b, decision 30: the register's new lastShift comes with the next pull). Step 20c
+  // (decision 23): a POS sale or return sends the sale's pos_sale row, so the return screen knows
+  // at once what is left of it; a sale the device does not keep (another register's, or older than
+  // its days) goes as a delete, which it ignores.
+  private async changesOf(
+    tx: Transaction,
+    device: DeviceRow,
+    type: SyncCommandType,
+    entityId: string,
+  ): Promise<SyncChange[]> {
+    const tenantId = getTenantId();
+    // The customer loader reads only the tenant, the sale loader the register the device holds:
+    // the branch's warehouses matter to neither
+    const scope = {
+      tenantId,
+      branchId: device.branchId,
+      warehouseIds: [],
+      ...(await posScopeOf(tx, tenantId, device.id)),
+    };
+    if (type === 'pos_sale.create' || type === 'pos_return.create') {
+      const saleId = type === 'pos_sale.create' ? entityId : await this.saleOfReturn(tx, entityId);
+      if (saleId === null) return [];
+      const rows = await LOADERS.pos_sale(tx, scope, { by: 'keys', keys: [saleId] });
+      if (rows.length === 0) return [{ op: 'delete', entity: 'pos_sale', key: saleId }];
+      return rows.map((row) => row.change);
+    }
+    if (type !== 'customer.create' && type !== 'customer.update') return [];
+    const rows = await LOADERS.customer(tx, scope, { by: 'keys', keys: [entityId] });
+    if (rows.length === 0) return [{ op: 'delete', entity: 'customer', key: entityId }];
+    return rows.map((row) => row.change);
+  }
+
+  // An accepted return is there for good (0056 keeps it): null only for a bug
+  private async saleOfReturn(tx: Transaction, returnId: string): Promise<string | null> {
+    const [row] = await tx
+      .select({ saleId: posReturns.saleId })
+      .from(posReturns)
+      .where(and(eq(posReturns.tenantId, getTenantId()), eq(posReturns.id, returnId)));
+    return row?.saleId ?? null;
+  }
+}
+
+function refused(id: string, error: SyncCommandError): SyncResult {
+  return { id, status: 'rejected', error };
+}
+
+// A refusal the person can act on: a rule of the API (AppError, with its code and field errors),
+// or an id the device made that is already used. null: anything else, which fails the push.
+function refusalOf(error: unknown): SyncCommandError | null {
+  if (error instanceof AppError) return { code: error.code, ...error.options };
+  if (DEVICE_ID_KEYS.some((key) => isUniqueViolation(error, key))) {
+    return { code: 'sync_id_taken' };
+  }
+  return null;
+}
+
+// A command's field errors, with the paths of the form it came from (decision 22): inside `input`
+// for a new customer or an order, the field's name for a change ("creditLimit", not
+// "changes.creditLimit.to"), and an address of a change by its id, not its place in the command
+function fieldErrorsOf(pushed: PushedCommand, issues: z.core.$ZodIssue[]) {
+  const fieldErrors: Record<string, ErrorCode[]> = {};
+  for (const issue of issues) {
+    const code = isErrorCode(issue.message) ? issue.message : 'invalid_value';
+    (fieldErrors[formPath(pushed, issue.path)] ??= []).push(code);
+  }
+  return fieldErrors;
+}
+
+function formPath(pushed: PushedCommand, path: PropertyKey[]): string {
+  const [head, field, index, ...rest] = path;
+  if (head === 'input' && field !== undefined) return path.slice(1).map(String).join('.');
+  if (head === 'changes' && field !== undefined) return String(field);
+  if (
+    head === 'addresses' &&
+    (field === 'add' || field === 'change') &&
+    typeof index === 'number'
+  ) {
+    const id = addressIdAt(pushed, field, index);
+    if (id !== null) return ['addresses', id, ...rest].map(String).join('.');
+  }
+  return path.map(String).join('.') || 'command';
+}
+
+// The id of the address at this place of the command, when it is a real id: only then may it
+// stand in a path
+const pushedAddressesSchema = z.object({
+  addresses: z.object({ add: z.array(z.unknown()), change: z.array(z.unknown()) }),
+});
+const addressIdSchema = z.object({ id: z.uuid() });
+
+function addressIdAt(pushed: PushedCommand, list: 'add' | 'change', index: number): string | null {
+  const lists = pushedAddressesSchema.safeParse(pushed);
+  if (!lists.success) return null;
+  const address = addressIdSchema.safeParse(lists.data.addresses[list][index]);
+  return address.success ? address.data.id : null;
+}

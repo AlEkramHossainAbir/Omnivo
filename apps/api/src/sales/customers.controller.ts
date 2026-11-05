@@ -1,0 +1,121 @@
+import { Controller } from '@nestjs/common';
+import { type RouteInput, type RouteResponse, routes } from '@omnivo/contracts';
+
+import { Endpoint } from '../common/http/endpoint.js';
+import { LedgerService } from '../journal/ledger.service.js';
+import { CreditService } from './credit.service.js';
+import { CustomerGroupsService } from './customer-groups.service.js';
+import { CustomersService } from './customers.service.js';
+
+type Routes = typeof routes.customers;
+type GroupRoutes = typeof routes.customerGroups;
+
+@Controller()
+export class CustomersController {
+  constructor(
+    private readonly customers: CustomersService,
+    private readonly ledgers: LedgerService,
+    private readonly credits: CreditService,
+  ) {}
+
+  @Endpoint(routes.customers.list)
+  list({ query }: RouteInput<Routes['list']>): Promise<RouteResponse<Routes['list']>> {
+    return this.customers.list(query);
+  }
+
+  @Endpoint(routes.customers.get)
+  get({ params }: RouteInput<Routes['get']>): Promise<RouteResponse<Routes['get']>> {
+    return this.customers.get(params.id);
+  }
+
+  @Endpoint(routes.customers.create)
+  create({ body }: RouteInput<Routes['create']>): Promise<RouteResponse<Routes['create']>> {
+    return this.customers.create(body);
+  }
+
+  @Endpoint(routes.customers.update)
+  update({ params, body }: RouteInput<Routes['update']>): Promise<RouteResponse<Routes['update']>> {
+    return this.customers.update(params.id, body);
+  }
+
+  @Endpoint(routes.customers.archive)
+  archive({
+    params,
+    body,
+  }: RouteInput<Routes['archive']>): Promise<RouteResponse<Routes['archive']>> {
+    return this.customers.setArchived(params.id, body.version, true);
+  }
+
+  @Endpoint(routes.customers.restore)
+  restore({
+    params,
+    body,
+  }: RouteInput<Routes['restore']>): Promise<RouteResponse<Routes['restore']>> {
+    return this.customers.setArchived(params.id, body.version, false);
+  }
+
+  // Step 17a: "Make customer too" on a supplier's page
+  @Endpoint(routes.customers.fromSupplier)
+  fromSupplier({
+    params,
+    body,
+  }: RouteInput<Routes['fromSupplier']>): Promise<RouteResponse<Routes['fromSupplier']>> {
+    return this.customers.fromSupplier(params.id, body.version);
+  }
+
+  @Endpoint(routes.customers.remove)
+  remove({ params, query }: RouteInput<Routes['remove']>): Promise<void> {
+    return this.customers.remove(params.id, query.version);
+  }
+
+  // The route itself needs sales.customer.balance (the contract's `permission`)
+  @Endpoint(routes.customers.statement)
+  statement({
+    params,
+    query,
+  }: RouteInput<Routes['statement']>): Promise<RouteResponse<Routes['statement']>> {
+    return this.ledgers.statement(params.id, query);
+  }
+
+  // Step 18a: what the customers on the device's list owe, online only
+  @Endpoint(routes.customers.balances)
+  balances({ query }: RouteInput<Routes['balances']>): Promise<RouteResponse<Routes['balances']>> {
+    return this.customers.balances(query.ids);
+  }
+
+  // Step 15c: also sales.customer.balance — the numbers say what the customer owes
+  @Endpoint(routes.customers.credit)
+  credit({ params }: RouteInput<Routes['credit']>): Promise<RouteResponse<Routes['credit']>> {
+    return this.credits.get(params.id);
+  }
+}
+
+@Controller()
+export class CustomerGroupsController {
+  constructor(private readonly groups: CustomerGroupsService) {}
+
+  @Endpoint(routes.customerGroups.list)
+  async list(): Promise<RouteResponse<GroupRoutes['list']>> {
+    return { items: await this.groups.list() };
+  }
+
+  @Endpoint(routes.customerGroups.create)
+  create({
+    body,
+  }: RouteInput<GroupRoutes['create']>): Promise<RouteResponse<GroupRoutes['create']>> {
+    return this.groups.create(body);
+  }
+
+  @Endpoint(routes.customerGroups.update)
+  update({
+    params,
+    body,
+  }: RouteInput<GroupRoutes['update']>): Promise<RouteResponse<GroupRoutes['update']>> {
+    return this.groups.update(params.id, body);
+  }
+
+  @Endpoint(routes.customerGroups.remove)
+  remove({ params, query }: RouteInput<GroupRoutes['remove']>): Promise<void> {
+    return this.groups.remove(params.id, query.version);
+  }
+}

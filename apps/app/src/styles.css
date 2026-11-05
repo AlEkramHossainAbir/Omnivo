@@ -1,0 +1,16 @@
+/* Tailwind-এর entry app-এ: কোন ফাইলে কী class আছে সেটা স্ক্যান আর CSS তৈরি এখানেই।
+   token, font, base style আসে packages/ui থেকে — admin/web অ্যাপও একই লাইন লিখবে */
+@import 'tailwindcss';
+@import '@omnivo/ui/styles.css';
+
+/* auth side panel-এর হালকা খাতার গ্রিড — gradient এখানে শুধু ১px লাইন আঁকে, সাজ না।
+   শুধু লগইন পেজের, তাই ui-তে না */
+@utility auth-grid {
+  background-image:
+    linear-gradient(var(--brand-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--brand-line) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.45;
+  /* mask শুধু alpha দেখে, তাই #000 রঙ token না — মাঝখান থেকে কিনারায় মিলিয়ে যায় */
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, #000 30%, transparent 80%);
+}

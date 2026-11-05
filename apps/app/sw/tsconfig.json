@@ -1,0 +1,12 @@
+{
+  "extends": "../../../packages/config/tsconfig/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "WebWorker"],
+    "types": [],
+    "noEmit": true,
+    "declaration": false
+  },
+  "include": ["*.ts"]
+}

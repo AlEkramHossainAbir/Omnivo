@@ -1,0 +1,537 @@
+import { Injectable } from '@nestjs/common';
+import {
+  type AdjustmentReason,
+  compareMoney,
+  type EntryRef,
+  isZeroMoney,
+  negateMoney,
+  type StockAccountUse,
+  type StockJournalSource,
+  subtractMoney,
+  sumMoney,
+} from '@omnivo/contracts';
+import { journalEntries, ledgerAccounts, stockAccounts, warehouses } from '@omnivo/db';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+
+import { AppError } from '../common/http/app-error.js';
+import { getTenantId } from '../common/tenant/tenant-context.js';
+import type { Transaction } from '../common/tenant/with-tenant.js';
+import { type LineInput, PostingService } from '../journal/posting.service.js';
+import { salesReturnsAccount } from '../sales/sales-books.service.js';
+
+// One amount on one side of the entry before lines are summed: + debit, − credit
+interface Amount {
+  accountId: string;
+  branchId: string | null;
+  amount: string;
+}
+
+// What a stock posting moved, in one warehouse: the books tag it with the warehouse's branch
+interface WarehouseValue {
+  warehouseId: string;
+  value: string;
+}
+
+// The accounts a stock entry may need. inventory, equity and cost of goods sold are found by their
+// purpose (every chart has them, and they cannot be deleted or archived); the others are the
+// choices in Settings → Inventory, each of which must still be an active ledger.
+interface Accounts {
+  inventory: string;
+  openingEquity: string;
+  costOfGoodsSold: () => string;
+  // Step 20a: a POS sale books the sale itself too, not only its cost
+  sales: () => string;
+  vatOutput: () => string;
+  use: (use: StockAccountUse) => string;
+}
+
+function missing(use: string): AppError {
+  return new AppError(
+    409,
+    'stock_account_missing',
+    `No usable account is chosen for "${use}" in Settings → Inventory.`,
+    { params: { use } },
+  );
+}
+
+// The journal half of every stock document (step 14). StockPostingService works out what each
+// movement is worth; this turns those values into one journal entry per posting — the inventory
+// account on one side, the account the document says on the other — and posts it through the
+// journal's PostingService, inside the document's own transaction. So the stock and the books
+// change together or not at all, and the books always say what the stock is worth.
+// Lines are summed per account and branch: an opening stock of 400 items is a two-line entry,
+// not 800 lines. An entry worth nothing (stock at zero cost) is not written at all.
+@Injectable()
+export class StockBooksService {
+  constructor(private readonly posting: PostingService) {}
+
+  // An adjustment: Dr Inventory / Cr the reason's account when stock comes in, the other way round
+  // when it goes out. Opening stock is against opening balance equity, like opening balances.
+  async adjustment(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: {
+      direction: 'in' | 'out';
+      reason: AdjustmentReason;
+      moved: readonly WarehouseValue[];
+    },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const against =
+      input.reason === 'opening' ? accounts.openingEquity : accounts.use(input.reason);
+    const branchOf = await this.branches(tx, input.moved);
+    const sign = input.direction === 'in' ? (value: string) => value : negateMoney;
+    return this.write(tx, document, 'stock_adjustment', `Stock adjustment ${document.number}`, [
+      ...input.moved.map((part) => ({
+        accountId: accounts.inventory,
+        branchId: branchOf(part.warehouseId),
+        amount: sign(part.value),
+      })),
+      ...input.moved.map((part) => ({
+        accountId: against,
+        branchId: branchOf(part.warehouseId),
+        amount: negateMoney(sign(part.value)),
+      })),
+    ]);
+  }
+
+  // A transfer leaving: between two branches, the goods move from the source branch's inventory to
+  // goods in transit (Dr Goods in transit / Cr Inventory). Inside one branch nothing changes in the
+  // books (you chose this): the stock is still that branch's, only in another room.
+  async transferSent(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: { fromWarehouseId: string; toWarehouseId: string; value: string },
+  ): Promise<EntryRef | null> {
+    const branchOf = await this.branches(tx, [
+      { warehouseId: input.fromWarehouseId, value: '0' },
+      { warehouseId: input.toWarehouseId, value: '0' },
+    ]);
+    const from = branchOf(input.fromWarehouseId);
+    if (from === branchOf(input.toWarehouseId)) return null;
+    const accounts = await this.accounts(tx);
+    return this.write(tx, document, 'stock_transfer', `Stock transfer ${document.number} sent`, [
+      { accountId: accounts.use('in_transit'), branchId: null, amount: input.value },
+      { accountId: accounts.inventory, branchId: from, amount: negateMoney(input.value) },
+    ]);
+  }
+
+  // A transfer arriving with `received` of the `sent` value. Between two branches: Dr Inventory at
+  // the destination for what arrived, Dr the shortage account for what did not (the source
+  // branch's loss: it left there), Cr Goods in transit for everything that was sent. Inside one
+  // branch, only a shortage is written: Dr shortage / Cr Inventory.
+  async transferReceived(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: { fromWarehouseId: string; toWarehouseId: string; sent: string; received: string },
+  ): Promise<EntryRef | null> {
+    const branchOf = await this.branches(tx, [
+      { warehouseId: input.fromWarehouseId, value: '0' },
+      { warehouseId: input.toWarehouseId, value: '0' },
+    ]);
+    const from = branchOf(input.fromWarehouseId);
+    const to = branchOf(input.toWarehouseId);
+    const short = subtractMoney(input.sent, input.received);
+    const sameBranch = from === to;
+    if (sameBranch && isZeroMoney(short)) return null;
+    const accounts = await this.accounts(tx);
+    const shortage = isZeroMoney(short)
+      ? []
+      : [{ accountId: accounts.use('transfer_shortage'), branchId: from, amount: short }];
+    const narration = `Stock transfer ${document.number} received`;
+    if (sameBranch) {
+      return this.write(tx, document, 'stock_transfer', narration, [
+        ...shortage,
+        { accountId: accounts.inventory, branchId: from, amount: negateMoney(short) },
+      ]);
+    }
+    return this.write(tx, document, 'stock_transfer', narration, [
+      { accountId: accounts.inventory, branchId: to, amount: input.received },
+      ...shortage,
+      { accountId: accounts.use('in_transit'), branchId: null, amount: negateMoney(input.sent) },
+    ]);
+  }
+
+  // A revaluation: each warehouse's part of the difference on the inventory account (with its
+  // branch), and the opposite on the revaluation account. Worth more: Dr Inventory / Cr
+  // revaluation; worth less: the other way round.
+  async revaluation(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    moved: readonly WarehouseValue[],
+  ): Promise<EntryRef | null> {
+    if (moved.length === 0) return null;
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, moved);
+    const revaluation = accounts.use('revaluation');
+    return this.write(tx, document, 'stock_revaluation', `Stock revaluation ${document.number}`, [
+      ...moved.map((part) => ({
+        accountId: accounts.inventory,
+        branchId: branchOf(part.warehouseId),
+        amount: part.value,
+      })),
+      ...moved.map((part) => ({
+        accountId: revaluation,
+        branchId: branchOf(part.warehouseId),
+        amount: negateMoney(part.value),
+      })),
+    ]);
+  }
+
+  // A delivery (step 15b): the goods leave the inventory account at what they cost, into cost of
+  // goods sold (Dr Cost of goods sold / Cr Inventory), both with the warehouse's branch, so each
+  // branch's profit and loss carries the cost of what it sold. The sale itself is the invoice's
+  // entry (15c): the receivable, the sales account and the VAT.
+  async delivery(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    moved: WarehouseValue,
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [moved]);
+    const branchId = branchOf(moved.warehouseId);
+    return this.write(tx, document, 'sales_delivery', `Delivery ${document.number}`, [
+      { accountId: accounts.costOfGoodsSold(), branchId, amount: moved.value },
+      { accountId: accounts.inventory, branchId, amount: negateMoney(moved.value) },
+    ]);
+  }
+
+  // A sales return (step 15d): the goods come back into the inventory account at what they cost
+  // (Dr Inventory, with the return warehouse's branch), and that cost comes off cost of goods sold
+  // (Cr Cost of goods sold) where it was booked: with the branch of the warehouse each line's
+  // challan took the goods from. A line with no challan takes the return warehouse's branch. So a
+  // return to another branch's Damage/Expiry warehouse moves the stock there and still takes the
+  // cost off the branch that sold it.
+  async salesReturn(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: { warehouseId: string; costs: readonly WarehouseValue[] },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [
+      { warehouseId: input.warehouseId, value: '0' },
+      ...input.costs,
+    ]);
+    const inventoryBranch = branchOf(input.warehouseId);
+    return this.write(tx, document, 'sales_return', `Sales return ${document.number}`, [
+      ...input.costs.map((part) => ({
+        accountId: accounts.inventory,
+        branchId: inventoryBranch,
+        amount: part.value,
+      })),
+      ...input.costs.map((part) => ({
+        accountId: accounts.costOfGoodsSold(),
+        branchId: branchOf(part.warehouseId),
+        amount: negateMoney(part.value),
+      })),
+    ]);
+  }
+
+  // A goods receipt (step 17b): the goods come into the inventory account at the purchase order's
+  // price, and the company owes that amount on "goods received not billed" until the supplier's
+  // bill (17c) moves it to the payable (Dr Inventory / Cr Goods received not billed). Both with the
+  // branch of the warehouse that received them, so each branch's balance sheet carries what it
+  // owes for its own goods. A receipt that turned everything back, or a free sample, is worth
+  // nothing and writes no entry.
+  async purchaseReceipt(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    moved: WarehouseValue,
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [moved]);
+    const branchId = branchOf(moved.warehouseId);
+    return this.write(tx, document, 'purchase_receipt', `Goods receipt ${document.number}`, [
+      { accountId: accounts.inventory, branchId, amount: moved.value },
+      {
+        accountId: accounts.use('received_not_billed'),
+        branchId,
+        amount: negateMoney(moved.value),
+      },
+    ]);
+  }
+
+  // A purchase return (step 17d): goods received not billed takes back what each line's goods
+  // receipt put on it (Dr, the receipt line's cost, with the branch of the receipt's warehouse, so
+  // that account clears branch by branch), and the goods leave the inventory account at what the
+  // stock gave up (Cr, with the return warehouse's branch). The two differ only when the stock
+  // could not give the receipt's cost (StockPostingService's outflowAt: the last of the stock, or
+  // stock worth less now); the difference goes to the purchase price difference account, which the
+  // caller names only then. A line on its own names the return warehouse and its average cost for
+  // both, so it never differs.
+  async purchaseReturn(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: {
+      warehouseId: string;
+      lines: readonly { receiptWarehouseId: string; value: string; moved: string }[];
+      differenceAccountId: string | null;
+    },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [
+      { warehouseId: input.warehouseId, value: '0' },
+      ...input.lines.map((line) => ({ warehouseId: line.receiptWarehouseId, value: line.value })),
+    ]);
+    const inventoryBranch = branchOf(input.warehouseId);
+    const difference = sumMoney(input.lines.map((line) => subtractMoney(line.moved, line.value)));
+    if (!isZeroMoney(difference) && input.differenceAccountId === null) {
+      throw new Error('A purchase return that differs from its receipts needs an account');
+    }
+    return this.write(tx, document, 'purchase_return', `Purchase return ${document.number}`, [
+      ...input.lines.map((line) => ({
+        accountId: accounts.use('received_not_billed'),
+        branchId: branchOf(line.receiptWarehouseId),
+        amount: line.value,
+      })),
+      ...input.lines.map((line) => ({
+        accountId: accounts.inventory,
+        branchId: inventoryBranch,
+        amount: negateMoney(line.moved),
+      })),
+      ...(isZeroMoney(difference) || input.differenceAccountId === null
+        ? []
+        : [
+            { accountId: input.differenceAccountId, branchId: inventoryBranch, amount: difference },
+          ]),
+    ]);
+  }
+
+  // A POS sale (step 20a, decision 29): the sale and its cost in one entry, all with the branch of
+  // the warehouse it sold from. Dr each payment's account for what it brought (the cash less the
+  // change: `payments` carries the change as a minus on the cash account) / Cr Sales for the net /
+  // Cr Output VAT for the VAT, and Dr Cost of goods sold / Cr Inventory for what the goods cost.
+  // No receivable and no customer on any line: the whole amount was paid at the counter. write()
+  // sums per account, so two cash payments are one line; a sale of ৳0 that cost nothing has no
+  // entry.
+  async posSale(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: {
+      warehouseId: string;
+      payments: readonly { accountId: string; amount: string }[];
+      net: string;
+      vat: string;
+      cost: string;
+    },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const branchOf = await this.branches(tx, [{ warehouseId: input.warehouseId, value: '0' }]);
+    const branchId = branchOf(input.warehouseId);
+    return this.write(tx, document, 'pos_sale', `POS sale ${document.number}`, [
+      ...input.payments.map((payment) => ({
+        accountId: payment.accountId,
+        branchId,
+        amount: payment.amount,
+      })),
+      { accountId: accounts.sales(), branchId, amount: negateMoney(input.net) },
+      { accountId: accounts.vatOutput(), branchId, amount: negateMoney(input.vat) },
+      ...(isZeroMoney(input.cost)
+        ? []
+        : [
+            { accountId: accounts.costOfGoodsSold(), branchId, amount: input.cost },
+            { accountId: accounts.inventory, branchId, amount: negateMoney(input.cost) },
+          ]),
+    ]);
+  }
+
+  // A POS return (step 20c): the sale's entry the other way round, for what came back. Dr the
+  // sales returns account (Settings → Sales; the Sales account itself when none is chosen) for the
+  // net / Dr Output VAT for the VAT / Cr each refund's account (an exchange's: the register's
+  // exchange account), and Dr Inventory / Cr Cost of goods sold for what the goods cost when sold.
+  // Two branches, like a sales return of 15d: the money and the goods are where they came back
+  // (the register's warehouse), the sale and its cost come off where it was made (the sale's
+  // warehouse). Online a counter takes back another branch's receipt, and that branch's sales
+  // should fall, not this one's. A return of ৳0 that cost nothing has no entry.
+  async posReturn(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    input: {
+      warehouseId: string;
+      saleWarehouseId: string;
+      refunds: readonly { accountId: string; amount: string }[];
+      net: string;
+      vat: string;
+      cost: string;
+    },
+  ): Promise<EntryRef | null> {
+    const accounts = await this.accounts(tx);
+    const returns = (await salesReturnsAccount(tx)) ?? accounts.sales();
+    const branchOf = await this.branches(tx, [
+      { warehouseId: input.warehouseId, value: '0' },
+      { warehouseId: input.saleWarehouseId, value: '0' },
+    ]);
+    const here = branchOf(input.warehouseId);
+    const sold = branchOf(input.saleWarehouseId);
+    return this.write(tx, document, 'pos_return', `POS return ${document.number}`, [
+      { accountId: returns, branchId: sold, amount: input.net },
+      { accountId: accounts.vatOutput(), branchId: sold, amount: input.vat },
+      ...input.refunds.map((refund) => ({
+        accountId: refund.accountId,
+        branchId: here,
+        amount: negateMoney(refund.amount),
+      })),
+      ...(isZeroMoney(input.cost)
+        ? []
+        : [
+            { accountId: accounts.inventory, branchId: here, amount: input.cost },
+            {
+              accountId: accounts.costOfGoodsSold(),
+              branchId: sold,
+              amount: negateMoney(input.cost),
+            },
+          ]),
+    ]);
+  }
+
+  // The posted entries of a document, oldest first: an adjustment has at most one, a transfer two
+  async entriesOf(tx: Transaction, documentId: string): Promise<EntryRef[]> {
+    const rows = await tx
+      .select({ id: journalEntries.id, number: journalEntries.number })
+      .from(journalEntries)
+      .where(
+        and(eq(journalEntries.tenantId, getTenantId()), eq(journalEntries.documentId, documentId)),
+      )
+      .orderBy(asc(journalEntries.postedAt), asc(journalEntries.id));
+    return rows.flatMap((row) => (row.number === null ? [] : [{ id: row.id, number: row.number }]));
+  }
+
+  // Sums the amounts per account and branch, turns each sum into a debit or a credit line, and
+  // posts the entry. null when nothing is left (every amount was zero).
+  private async write(
+    tx: Transaction,
+    document: { id: string; number: string; date: string },
+    source: StockJournalSource,
+    narration: string,
+    amounts: readonly Amount[],
+  ): Promise<EntryRef | null> {
+    const sums = new Map<string, Amount[]>();
+    for (const amount of amounts) {
+      const key = `${amount.accountId}|${amount.branchId ?? ''}`;
+      sums.set(key, [...(sums.get(key) ?? []), amount]);
+    }
+    const lines: LineInput[] = [...sums.values()].flatMap((group) => {
+      const [first] = group;
+      if (!first) return [];
+      const total = sumMoney(group.map((amount) => amount.amount));
+      if (isZeroMoney(total)) return [];
+      const debit = compareMoney(total, '0') > 0;
+      return [
+        {
+          accountId: first.accountId,
+          branchId: first.branchId,
+          // No stock account is kept per party
+          partyId: null,
+          description: null,
+          debit: debit ? total : '0',
+          credit: debit ? '0' : negateMoney(total),
+        },
+      ];
+    });
+    if (lines.length < 2) return null;
+    const entry = await this.posting.postNew(tx, {
+      date: document.date,
+      narration,
+      source,
+      document: { id: document.id, number: document.number },
+      lines,
+    });
+    if (entry.number === null) throw new Error('A posted entry has no number');
+    return { id: entry.id, number: entry.number };
+  }
+
+  // The inventory and opening equity accounts, and the Settings → Inventory choices. A choice that
+  // is missing, archived or a group is refused with stock_account_missing when a posting needs it:
+  // the person is told where to fix it, and nothing is posted.
+  private async accounts(tx: Transaction): Promise<Accounts> {
+    const tenantId = getTenantId();
+    // FOR SHARE: until we commit, nobody archives or deletes them (AccountsService locks FOR
+    // UPDATE), while other postings to the same accounts go on in parallel
+    const purposes = await tx
+      .select({ id: ledgerAccounts.id, purpose: ledgerAccounts.purpose })
+      .from(ledgerAccounts)
+      .where(
+        and(
+          eq(ledgerAccounts.tenantId, tenantId),
+          inArray(ledgerAccounts.purpose, [
+            'inventory',
+            'opening_balance_equity',
+            'cost_of_goods_sold',
+            'sales',
+            'vat_output',
+          ]),
+        ),
+      )
+      .for('share');
+    const inventory = purposes.find((row) => row.purpose === 'inventory')?.id;
+    const openingEquity = purposes.find((row) => row.purpose === 'opening_balance_equity')?.id;
+    const costOfGoodsSold = purposes.find((row) => row.purpose === 'cost_of_goods_sold')?.id;
+    const sales = purposes.find((row) => row.purpose === 'sales')?.id;
+    const vatOutput = purposes.find((row) => row.purpose === 'vat_output')?.id;
+    // A workspace whose chart is still being made by the setup job
+    if (inventory === undefined) throw missing('inventory');
+    if (openingEquity === undefined) throw missing('opening_balance_equity');
+
+    const chosen = await tx
+      .select({ use: stockAccounts.use, accountId: stockAccounts.accountId })
+      .from(stockAccounts)
+      .innerJoin(
+        ledgerAccounts,
+        and(
+          eq(ledgerAccounts.tenantId, stockAccounts.tenantId),
+          eq(ledgerAccounts.id, stockAccounts.accountId),
+        ),
+      )
+      .where(
+        and(
+          eq(stockAccounts.tenantId, tenantId),
+          eq(ledgerAccounts.isGroup, false),
+          isNull(ledgerAccounts.archivedAt),
+        ),
+      )
+      .for('share', { of: ledgerAccounts });
+    const byUse = new Map(chosen.map((row) => [row.use, row.accountId]));
+    return {
+      inventory,
+      openingEquity,
+      // Asked for only by a delivery and a sales return: the other stock documents never needed it
+      costOfGoodsSold: () => {
+        if (costOfGoodsSold === undefined) throw missing('cost_of_goods_sold');
+        return costOfGoodsSold;
+      },
+      // Asked for only by a POS sale. Every chart has both (templates.spec.ts); only a workspace
+      // whose chart the setup job has not made yet misses them.
+      sales: () => {
+        if (sales === undefined) throw missing('sales');
+        return sales;
+      },
+      vatOutput: () => {
+        if (vatOutput === undefined) throw missing('vat_output');
+        return vatOutput;
+      },
+      use: (use) => {
+        const id = byUse.get(use);
+        if (id === undefined) throw missing(use);
+        return id;
+      },
+    };
+  }
+
+  // warehouse → its branch, for the parts a posting moved
+  private async branches(
+    tx: Transaction,
+    parts: readonly WarehouseValue[],
+  ): Promise<(warehouseId: string) => string> {
+    const ids = [...new Set(parts.map((part) => part.warehouseId))];
+    const rows = await tx
+      .select({ id: warehouses.id, branchId: warehouses.branchId })
+      .from(warehouses)
+      .where(and(eq(warehouses.tenantId, getTenantId()), inArray(warehouses.id, ids)));
+    const byId = new Map(rows.map((row) => [row.id, row.branchId]));
+    return (warehouseId) => {
+      const branchId = byId.get(warehouseId);
+      if (branchId === undefined) throw new Error(`Warehouse ${warehouseId} has no branch`);
+      return branchId;
+    };
+  }
+}

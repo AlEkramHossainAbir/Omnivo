@@ -1,0 +1,43 @@
+{
+  "name": "omnivo",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.5.1",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "turbo run dev dev:worker",
+    "dev:mock": "turbo run dev:mock",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "turbo run build --filter=./packages/* && node --max-old-space-size=6144 node_modules/eslint/bin/eslint.js .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "boundaries": "depcruise apps packages",
+    "test:integration": "turbo run test:integration",
+    "test:tenant-leak": "turbo run test:tenant-leak",
+    "test:e2e": "turbo run test:e2e",
+    "test:e2e:pwa": "turbo run test:e2e:pwa",
+    "test:bundle-size": "turbo run test:bundle-size",
+    "gen:openapi": "turbo run gen:openapi",
+    "test:openapi": "turbo run test:openapi",
+    "db:up": "docker compose -f infra/docker/docker-compose.yml up -d --wait",
+    "db:down": "docker compose -f infra/docker/docker-compose.yml down",
+    "db:psql": "docker compose -f infra/docker/docker-compose.yml exec db psql -U postgres -d omnivo",
+    "db:psql:app": "docker compose -f infra/docker/docker-compose.yml exec db psql postgres://omnivo_app:app_dev_password@localhost:5432/omnivo",
+    "db:generate": "pnpm --filter @omnivo/db generate",
+    "db:migrate": "pnpm --filter @omnivo/db migrate",
+    "db:seed": "pnpm --filter @omnivo/db seed",
+    "db:studio": "pnpm --filter @omnivo/db studio"
+  },
+  "devDependencies": {
+    "@omnivo/config": "workspace:*",
+    "dependency-cruiser": "^18.4.0",
+    "eslint": "^10.11.0",
+    "prettier": "^3.9.8",
+    "turbo": "^2.11.2",
+    "typescript": "^6.0.3"
+  }
+}

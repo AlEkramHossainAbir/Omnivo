@@ -1,0 +1,419 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790239372576,
+      "tag": "0000_overconfident_reptil",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790239378683,
+      "tag": "0001_enable-rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790244301073,
+      "tag": "0002_fix-rls-empty-guc",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790244642842,
+      "tag": "0003_rbac-hardening",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790244663359,
+      "tag": "0004_rls-rbac",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1790505447865,
+      "tag": "0005_auth-tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790505570332,
+      "tag": "0006_drop-users-password-hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790674503927,
+      "tag": "0007_core-platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790674511978,
+      "tag": "0008_core-platform-rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790749690477,
+      "tag": "0009_team-and-roles",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790749710635,
+      "tag": "0010_team-and-roles-rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790761988025,
+      "tag": "0011_worker-outbox",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790762007960,
+      "tag": "0012_worker-outbox-rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790830173281,
+      "tag": "0013_chart-of-accounts",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1790830181835,
+      "tag": "0014_chart-of-accounts-rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1790838508548,
+      "tag": "0015_journal",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1790838528321,
+      "tag": "0016_journal-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1790852842321,
+      "tag": "0017_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790852843551,
+      "tag": "0018_reports-rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1791085253088,
+      "tag": "0019_products",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1791085262398,
+      "tag": "0020_products-rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1791171858773,
+      "tag": "0021_stock",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1791171915511,
+      "tag": "0022_stock-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1791256074857,
+      "tag": "0023_stock-valuation",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1791256097716,
+      "tag": "0024_stock-valuation-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1791276258210,
+      "tag": "0025_customers",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1791276278487,
+      "tag": "0026_customers-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1791346897432,
+      "tag": "0027_sales-documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791346939675,
+      "tag": "0028_sales-documents-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1791451874054,
+      "tag": "0029_invoices-receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791451934858,
+      "tag": "0030_invoices-receipts-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791707781991,
+      "tag": "0031_returns-credit-notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1791707808167,
+      "tag": "0032_returns-credit-notes-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791959910148,
+      "tag": "0033_document-output",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791959911065,
+      "tag": "0034_document-output-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792040730145,
+      "tag": "0035_suppliers-requisitions",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792040807658,
+      "tag": "0036_suppliers-requisitions-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792297207009,
+      "tag": "0037_purchase-orders-receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792297230436,
+      "tag": "0038_purchase-orders-receipts-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792383322000,
+      "tag": "0039_bills-payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792383348392,
+      "tag": "0040_bills-payments-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792424568836,
+      "tag": "0041_purchase-returns-debit-notes",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792424582453,
+      "tag": "0042_purchase-returns-debit-notes-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792491362893,
+      "tag": "0043_sync-devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1792491363789,
+      "tag": "0044_sync-devices-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1792575266254,
+      "tag": "0045_sync-commands",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1792575286229,
+      "tag": "0046_sync-commands-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1792650008025,
+      "tag": "0047_devices-revoke",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1792650008828,
+      "tag": "0048_devices-revoke-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1792993964720,
+      "tag": "0049_devices-secret",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1792993965790,
+      "tag": "0050_devices-secret-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1793084203393,
+      "tag": "0051_pos-sales",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1793084263606,
+      "tag": "0052_pos-sales-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1793183790646,
+      "tag": "0053_pos-shifts",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1793183791725,
+      "tag": "0054_pos-shifts-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1793505742502,
+      "tag": "0055_pos-returns",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1793505769725,
+      "tag": "0056_pos-returns-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1793617940583,
+      "tag": "0057_account-day-totals",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1793617945078,
+      "tag": "0058_account-day-totals-rules",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,843 @@
+import type {
+  AccountPurpose,
+  AccountType,
+  CustomFieldType,
+  Industry,
+  PermissionKey,
+  StockAccountUse,
+  TaxRateKind,
+  UnitDimension,
+} from '@omnivo/contracts';
+
+export interface RoleTemplate {
+  name: string;
+  description: string;
+  permissions: PermissionKey[];
+}
+
+// One node of a template chart. With `children` it is a group (an empty list is a group the
+// company fills itself, like "Bank accounts"); without, it is an account that entries post to.
+export interface AccountTemplate {
+  code: string;
+  name: string;
+  purpose?: AccountPurpose;
+  // Step 15c: money is kept here. On a group, every account the company adds under it.
+  holdsMoney?: true;
+  children?: readonly AccountTemplate[];
+}
+
+// The five top-level groups, one per type. The type is written once here, not on every account:
+// each account takes it from its top-level group, exactly as the database does (the parent FK).
+export type ChartTemplate = Record<AccountType, AccountTemplate>;
+
+// A unit of measure. ratio = how many of the dimension's reference unit (pcs, kg, m, m², l) one of
+// it is; null = a pack whose size each product says.
+export interface UnitTemplate {
+  code: string;
+  name: string;
+  dimension: UnitDimension;
+  ratio: string | null;
+  decimals: number;
+}
+
+// A product category; with children, the categories under it
+export interface CategoryTemplate {
+  name: string;
+  children?: readonly CategoryTemplate[];
+}
+
+export interface CustomFieldTemplate {
+  key: string;
+  label: string;
+  type: CustomFieldType;
+  options?: readonly string[];
+  required?: boolean;
+}
+
+// What a new workspace needs before its first product (step 12)
+export interface CatalogTemplate {
+  units: readonly UnitTemplate[];
+  categories: readonly CategoryTemplate[];
+  customFields: readonly CustomFieldTemplate[];
+}
+
+// A VAT rate a new workspace starts with (step 15a). rate: a percentage as the form writes it.
+export interface TaxRateTemplate {
+  name: string;
+  kind: TaxRateKind;
+  rate: string;
+  isDefault: boolean;
+}
+
+// The same for every business type: VAT in Bangladesh is one law (the VAT and SD Act 2012), not an
+// industry's choice. 15% is the standard rate and the default; the reduced rates are the ones the
+// NBR sets for some goods and services; zero-rated for exports, exempt for what the law leaves out.
+// A workspace archives the ones it never uses, and changes a rate when the NBR does.
+export const TAX_RATES: readonly TaxRateTemplate[] = [
+  { name: 'VAT 15%', kind: 'standard', rate: '15', isDefault: true },
+  { name: 'VAT 10%', kind: 'reduced', rate: '10', isDefault: false },
+  { name: 'VAT 7.5%', kind: 'reduced', rate: '7.5', isDefault: false },
+  { name: 'VAT 5%', kind: 'reduced', rate: '5', isDefault: false },
+  { name: 'Zero-rated', kind: 'zero_rated', rate: '0', isDefault: false },
+  { name: 'Exempt', kind: 'exempt', rate: '0', isDefault: false },
+];
+
+// Starting data for each business type: the roles such a company is staffed with, its chart of
+// accounts, and its units, product categories and custom fields (step 12; a pharma company's
+// products start with batch tracking — contracts' trackingDefault()). Everything here is ordinary
+// data once created: the workspace can rename, change or delete it, and a later change to this
+// file never touches workspaces that already exist.
+export interface IndustryTemplate {
+  roles: RoleTemplate[];
+  chart: ChartTemplate;
+  catalog: CatalogTemplate;
+  // Step 14: the account (by its code in `chart`) each stock use starts with. The owner may choose
+  // others in Settings → Inventory.
+  stockAccounts: Record<StockAccountUse, string>;
+  // Step 15d: the account (by its code in `chart`) credit notes take sales back from, chosen in
+  // Settings → Sales. null = none: a credit note debits the Sales account itself.
+  salesReturnsAccount: string | null;
+}
+
+// Step 15a. The people who sell add and change customers; those who also collect the money see what
+// each customer owes. Price lists are the owner's and the accountant's (and a shop manager's): a
+// salesperson who could change the dealer price could give any discount.
+const SELLING = ['sales.customer.manage', 'sales.customer.balance'] as const;
+const SALES_ADMIN = [...SELLING, 'sales.price_list.manage'] as const;
+
+// Step 15b. The people who sell write quotations and orders; the people who keep the stock post
+// the deliveries (challans). The accountant gets neither: reading a sales document needs no
+// permission, and the books get the delivery's entry without anyone posting it by hand.
+const ORDERING = ['sales.quotation.manage', 'sales.order.manage'] as const;
+const DELIVERING = ['sales.delivery.manage'] as const;
+
+// Step 15c. The accountant bills and takes the money in, and so does a distributor's sales officer,
+// who collects from the retailers they sell to. The people who post challans do not bill them: the
+// person who lets goods out of the gate should not also decide what they cost the customer (a shop
+// manager or a small company's manager runs everything, so they get it all). A cashier takes money.
+// Going over a credit limit is a manager's decision, never the accountant's alone: the person who
+// books the sale should not also wave away the limit on it.
+const INVOICING = ['sales.invoice.manage'] as const;
+const COLLECTING = ['sales.receipt.manage'] as const;
+const CREDIT_OVERRIDE = ['sales.credit.override'] as const;
+
+// Step 15d. Goods that come back are taken in by the people who let them out (the challan's
+// people): a return moves stock, not money. A credit note lowers what a customer owes and the VAT
+// on it, so it is the accountant's, never a sales officer's: the person who collects from a shop
+// should not also be able to write down what that shop owes. A refund pays money out: the
+// accountant (and a manager who runs everything), never a cashier or a sales officer, who only
+// take money in.
+const RETURNING = ['sales.return.manage'] as const;
+const CREDITING = ['sales.credit_note.manage'] as const;
+const REFUNDING = ['sales.refund.manage'] as const;
+
+// Step 17a. The accountant keeps the suppliers' accounts and sees what the company owes each one;
+// bills and payments follow in 17c. The people who run the stock (a store keeper, a depot manager,
+// a production manager, a garments merchandiser buying fabric and trims for a buyer's order) ask
+// for goods with a requisition. Nobody gets an approval: the levels are set by the owner in
+// Settings → Approvals, by role, and a workspace starts with none.
+const SUPPLYING = ['purchase.supplier.manage', 'purchase.supplier.balance'] as const;
+const REQUESTING = ['purchase.requisition.manage'] as const;
+// Step 17b (decision 25). The buyer writes purchase orders: a garments merchandiser buying fabric
+// and trims for a buyer's order, a production manager buying raw materials, a shop's manager.
+// The store keeper (and a depot manager) receives what comes in at the gate. Where a company has
+// both, they are kept apart on purpose: the person who orders the goods does not also sign that
+// they came. A shop's manager and a general manager run everything, so they do both. A pharma or
+// distribution company buys at head office, so its orders are the owner's until the owner gives
+// the permission to a role in Settings → Roles.
+const BUYING = ['purchase.order.manage'] as const;
+const RECEIVING = ['purchase.receipt.manage'] as const;
+// Step 17c. The accountant books the suppliers' bills and pays them, and so does a manager who runs
+// everything. Nobody who orders or receives the goods books the bill: the person who agreed the
+// price, or signed that the goods came, does not also decide what the company owes for them. The
+// approval levels (Settings → Approvals) decide who lets a bill or a payment through.
+const BILLING = ['purchase.bill.manage'] as const;
+const PAYING = ['purchase.payment.manage'] as const;
+// Step 17d. Goods that go back to a supplier are loaded by the people who took them in at the gate
+// (the goods receipt's people): a purchase return moves stock, not money. A debit note lowers what
+// the company owes a supplier and the VAT it claims, so it is the accountant's, next to the bills:
+// the person who signed the goods in does not also write down what the company owes for them. A
+// supplier refund is money a supplier pays back against the payable: the accountant's too, next to
+// the payments.
+const SENDING_BACK = ['purchase.return.manage'] as const;
+const DEBITING = ['purchase.debit_note.manage'] as const;
+const TAKING_REFUNDS = ['purchase.refund.manage'] as const;
+
+// Step 20a. A cashier sells at the counter; the person who runs the shop also sets the registers up
+// and may change a price or give more than the register's discount (a cashier who could would give
+// any discount). Nobody else sells at a counter: an owner gives pos.sale.create to a role in
+// Settings → Roles where a depot also has a counter.
+const SELLING_AT_COUNTER = ['pos.sale.create'] as const;
+// Step 20b: they also read every counter's shifts and close one nobody can close
+const RUNNING_COUNTERS = ['pos.register.manage', 'pos.price.override', 'pos.shift.manage'] as const;
+// Step 20c: the cashier who sold takes goods back at the counter and pays the money back from the
+// drawer, like a sale the other way round. A shop that wants only its manager to take goods back
+// takes it off the Cashier role in Settings → Roles.
+const TAKING_BACK_AT_COUNTER = ['pos.return.create'] as const;
+
+// Step 21a. A module's reports go to the people who answer for it: the accountant reads them all (the
+// VAT report too, under accounting.report.read), and so does a manager who runs everything. The
+// people who keep the stock read the stock reports and the low stock; the people who buy read the
+// purchase reports (21b). Nobody who only sells gets the sales report: it is the whole company's
+// sales, not their own (no document has a salesperson yet), and a cashier sees no totals at all.
+const SALES_REPORTS = ['sales.report.read'] as const;
+const PURCHASE_REPORTS = ['purchase.report.read'] as const;
+const STOCK_REPORTS = ['inventory.report.read'] as const;
+
+// Some roles have few permissions today because the modules they will use (stock, sales) do not
+// exist yet. Each of those steps adds its permissions to these templates for new workspaces.
+const ACCOUNTANT: RoleTemplate = {
+  name: 'Accountant',
+  description: 'Books, VAT returns and Mushak 6.3',
+  permissions: [
+    'core.user.read',
+    'core.audit.read',
+    'accounting.account.manage',
+    'accounting.journal.read',
+    'accounting.journal.create',
+    'accounting.journal.post',
+    'accounting.period.close',
+    'accounting.report.read',
+    // Step 14: what the stock is worth, and putting a wrong cost right
+    'inventory.stock.value',
+    'inventory.stock.revalue',
+    // Step 15a: the customers' accounts, their balances and statements, and the price lists
+    ...SALES_ADMIN,
+    // Step 15c: invoices and money receipts
+    ...INVOICING,
+    ...COLLECTING,
+    // Step 15d: credit notes and refunds
+    ...CREDITING,
+    ...REFUNDING,
+    // Step 17a: the suppliers and what the company owes them
+    ...SUPPLYING,
+    // Step 17c: their bills and the payments
+    ...BILLING,
+    ...PAYING,
+    // Step 17d: debit notes and the money suppliers pay back
+    ...DEBITING,
+    ...TAKING_REFUNDS,
+    // Step 21a: every module's reports
+    ...SALES_REPORTS,
+    ...PURCHASE_REPORTS,
+    ...STOCK_REPORTS,
+  ],
+};
+
+// Step 13: the people who keep the stock adjust it and move it between warehouses
+const STOCK_WORK = ['inventory.stock.adjust', 'inventory.stock.transfer'] as const;
+
+const STORE_KEEPER: RoleTemplate = {
+  name: 'Store keeper',
+  description: 'Receives goods and writes GRNs',
+  permissions: [
+    'inventory.product.manage',
+    ...STOCK_WORK,
+    ...DELIVERING,
+    ...RETURNING,
+    ...REQUESTING,
+    ...RECEIVING,
+    ...SENDING_BACK,
+    ...STOCK_REPORTS,
+  ],
+};
+
+function group(
+  code: string,
+  name: string,
+  children: readonly AccountTemplate[] = [],
+): AccountTemplate {
+  return { code, name, children };
+}
+
+// Step 15c: an account or a group that holds money (a money receipt goes into one of these)
+function money(node: AccountTemplate): AccountTemplate {
+  return { ...node, holdsMoney: true };
+}
+
+// exactOptionalPropertyTypes: `purpose: undefined` is not the same as no purpose, so the key is
+// only added when there is one
+function account(code: string, name: string, purpose?: AccountPurpose): AccountTemplate {
+  return { code, name, ...(purpose !== undefined && { purpose }) };
+}
+
+// What differs by industry. Everything else — cash, banks, VAT, payables, capital, the common
+// expenses — is the same for every company in Bangladesh and comes from standardChart().
+interface IndustryAccounts {
+  // At code 1150: one account for a trader, a group (raw materials → finished goods) for a maker.
+  // Exactly one account in it has the 'inventory' purpose.
+  stock: AccountTemplate;
+  // Current assets from 1180 on
+  currentAssets?: readonly AccountTemplate[];
+  // Current liabilities from 2180 on
+  currentLiabilities?: readonly AccountTemplate[];
+  // Under 4100 Revenue. Exactly one has the 'sales' purpose.
+  revenue: readonly AccountTemplate[];
+  // Other income from 4230 on
+  otherIncome?: readonly AccountTemplate[];
+  // Under 5100 Cost of sales. Exactly one has the 'cost_of_goods_sold' purpose.
+  costOfSales: readonly AccountTemplate[];
+  // Selling and distribution expenses from 5330 on
+  selling?: readonly AccountTemplate[];
+}
+
+// Four-digit codes: the first digit is the type (1 asset … 5 expense), the second the group, the
+// third the account. Gaps of 10 leave room for the company's own accounts in between.
+function standardChart(industry: IndustryAccounts): ChartTemplate {
+  return {
+    asset: group('1000', 'Assets', [
+      group('1100', 'Current assets', [
+        money(account('1110', 'Cash in hand', 'cash')),
+        // Empty: every company adds its own banks ("Dutch-Bangla Bank CD A/C …") and wallets. The
+        // groups hold money, so each bank added under them is a money account with no tick of its own.
+        money(group('1120', 'Bank accounts')),
+        money(group('1130', 'Mobile wallets (bKash, Nagad)')),
+        account('1140', 'Accounts receivable', 'accounts_receivable'),
+        industry.stock,
+        group('1160', 'Advances, deposits and prepayments', [
+          account('1161', 'Advances to suppliers'),
+          account('1162', 'Security deposits'),
+          account('1163', 'Prepaid expenses'),
+          account('1164', 'Advance income tax (AIT)'),
+        ]),
+        account('1170', 'Input VAT', 'vat_input'),
+        // Step 14: stock sent from one branch to another, on its way. Still the company's goods.
+        account('1175', 'Goods in transit'),
+        ...(industry.currentAssets ?? []),
+      ]),
+      group('1200', 'Fixed assets', [
+        account('1210', 'Land and buildings'),
+        account('1220', 'Plant and machinery'),
+        account('1230', 'Furniture and fixtures'),
+        account('1240', 'Vehicles'),
+        account('1250', 'Office equipment and computers'),
+        account('1290', 'Accumulated depreciation'),
+      ]),
+    ]),
+    liability: group('2000', 'Liabilities', [
+      group('2100', 'Current liabilities', [
+        account('2110', 'Accounts payable', 'accounts_payable'),
+        // Step 17b: what goods receipts brought in and no bill has billed yet. A stock account
+        // (Settings → Inventory), not a purpose: an old workspace gets it from the stock accounts
+        // job, which never takes over an account the owner made at this code.
+        account('2115', 'Goods received not billed'),
+        account('2120', 'Output VAT', 'vat_output'),
+        account('2130', 'VAT and tax deducted at source (VDS, TDS)'),
+        account('2140', 'Salaries and wages payable'),
+        account('2150', 'Accrued expenses'),
+        account('2160', 'Advances from customers'),
+        account('2170', 'Short-term loans and overdraft'),
+        ...(industry.currentLiabilities ?? []),
+      ]),
+      group('2200', 'Long-term liabilities', [account('2210', 'Long-term loans')]),
+    ]),
+    equity: group('3000', 'Equity', [
+      account('3100', 'Capital'),
+      account('3200', 'Retained earnings', 'retained_earnings'),
+      // The other side of the opening balances, entered in step 10 when the company moves its
+      // books to Omnivo. It should read zero once everything is entered.
+      account('3300', 'Opening balance equity', 'opening_balance_equity'),
+    ]),
+    income: group('4000', 'Income', [
+      group('4100', 'Revenue', industry.revenue),
+      group('4200', 'Other income', [
+        account('4210', 'Interest income'),
+        account('4220', 'Miscellaneous income'),
+        ...(industry.otherIncome ?? []),
+      ]),
+    ]),
+    expense: group('5000', 'Expenses', [
+      group('5100', 'Cost of sales', [
+        ...industry.costOfSales,
+        // Step 17c: a supplier's charges that are not goods (a dyeing job, transport inward), and
+        // what a bill's price differs from its order's on goods already in stock. The two accounts
+        // of Settings → Purchase (PURCHASE_ACCOUNTS).
+        account('5170', 'Purchased services'),
+        account('5180', 'Purchase price difference'),
+        // Step 14: stock found in a count, corrections and revaluations — gains and losses on the
+        // stock itself, next to what the stock cost when it was sold
+        account('5190', 'Stock adjustments and revaluation'),
+      ]),
+      group('5200', 'Administrative expenses', [
+        account('5210', 'Salaries and allowances'),
+        account('5220', 'Office rent'),
+        account('5230', 'Utilities (electricity, gas, water)'),
+        account('5240', 'Transport and conveyance'),
+        account('5250', 'Printing and stationery'),
+        account('5260', 'Telephone and internet'),
+        account('5270', 'Repairs and maintenance'),
+        account('5280', 'Depreciation'),
+        // Step 14: stock the company uses itself (cleaning stores, a sample for the office)
+        account('5290', 'Consumables and internal use'),
+      ]),
+      group('5300', 'Selling and distribution expenses', [
+        account('5310', 'Advertising and promotion'),
+        account('5320', 'Delivery and carriage outward'),
+        ...(industry.selling ?? []),
+      ]),
+      group('5400', 'Finance costs', [
+        account('5410', 'Bank charges'),
+        account('5420', 'Interest expense'),
+      ]),
+      account('5500', 'Income tax expense'),
+    ]),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Units, categories and custom fields (step 12)
+
+function unit(
+  code: string,
+  name: string,
+  dimension: UnitDimension,
+  ratio: string | null,
+  decimals = 0,
+): UnitTemplate {
+  return { code, name, dimension, ratio, decimals };
+}
+
+function category(name: string, children?: readonly string[]): CategoryTemplate {
+  return children === undefined
+    ? { name }
+    : { name, children: children.map((child) => ({ name: child })) };
+}
+
+// Every company counts, weighs and measures: these units are in every workspace. Packs (box,
+// carton) have no ratio: a box of Napa holds 10 strips, a box of buttons 144 pieces.
+const COMMON_UNITS = [
+  unit('pcs', 'Pieces', 'count', '1'),
+  unit('dozen', 'Dozen', 'count', '12'),
+  unit('kg', 'Kilogram', 'weight', '1', 3),
+  unit('g', 'Gram', 'weight', '0.001'),
+  unit('m', 'Metre', 'length', '1', 2),
+  unit('l', 'Litre', 'volume', '1', 3),
+  unit('ml', 'Millilitre', 'volume', '0.001'),
+  unit('box', 'Box', 'count', null),
+  unit('carton', 'Carton', 'count', null),
+] as const;
+
+// The accounts a new workspace's stock documents post to (step 14). loss: where damaged, expired,
+// lost and short-received stock goes — an industry that already has such an account uses it, the
+// others get "Stock losses" (STOCK_LOSSES). samples: physician samples in pharma, promotion
+// elsewhere. Codes from standardChart(): 1175, 5190, 5290, 5310.
+function stockAccounts(codes: { loss: string; samples?: string }): Record<StockAccountUse, string> {
+  return {
+    in_transit: '1175',
+    found: '5190',
+    damaged: codes.loss,
+    expired: codes.loss,
+    lost: codes.loss,
+    sample: codes.samples ?? '5310',
+    internal_use: '5290',
+    correction: '5190',
+    transfer_shortage: codes.loss,
+    revaluation: '5190',
+    received_not_billed: '2115',
+  };
+}
+
+// The accounts of Settings → Purchase a new workspace starts with (step 17c), by their code in
+// standardChart(): the same for every industry, like the payable.
+export const PURCHASE_ACCOUNTS = { priceDifference: '5180', services: '5170' } as const;
+
+const STOCK_LOSSES = account('5150', 'Stock losses (damaged, expired, lost)');
+
+const TRADER_STOCK = account('1150', 'Inventory', 'inventory');
+const COGS = account('5110', 'Cost of goods sold', 'cost_of_goods_sold');
+// Makers post the sale's cost from finished goods; raw materials move there through production
+const MAKER_COSTS = [
+  COGS,
+  account('5120', 'Direct labour'),
+  account('5130', 'Factory overhead'),
+] as const;
+
+// satisfies Record<Industry, …>: a new industry in contracts does not compile until it has a template
+export const INDUSTRY_TEMPLATES = {
+  garments: {
+    roles: [
+      ACCOUNTANT,
+      {
+        name: 'Merchandiser',
+        description: 'Buyer POs, LCs and shipment dates',
+        // The buyers are the merchandiser's customers
+        permissions: [
+          'core.user.read',
+          'inventory.product.manage',
+          'sales.customer.manage',
+          ...ORDERING,
+          ...REQUESTING,
+          ...BUYING,
+          ...PURCHASE_REPORTS,
+        ],
+      },
+      STORE_KEEPER,
+    ],
+    chart: standardChart({
+      stock: group('1150', 'Inventories', [
+        account('1151', 'Fabrics and yarn'),
+        account('1152', 'Trims and accessories'),
+        account('1153', 'Work in progress'),
+        account('1154', 'Finished garments', 'inventory'),
+      ]),
+      currentAssets: [
+        account('1180', 'Export bills receivable'),
+        account('1190', 'Cash incentive receivable'),
+      ],
+      currentLiabilities: [account('2180', 'Back-to-back LC payable')],
+      revenue: [account('4110', 'Export sales', 'sales'), account('4120', 'Local sales')],
+      otherIncome: [account('4230', 'Cash incentive on exports')],
+      costOfSales: [...MAKER_COSTS, account('5140', 'Subcontract charges'), STOCK_LOSSES],
+      selling: [
+        account('5330', 'Export freight and C&F charges'),
+        account('5340', 'Buying house commission'),
+      ],
+    }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('yard', 'Yard', 'length', '0.9144', 2),
+        unit('gross', 'Gross', 'count', '144'),
+        unit('roll', 'Roll', 'count', null),
+        unit('cone', 'Cone', 'count', null),
+        unit('pair', 'Pair', 'count', null),
+      ],
+      categories: [
+        category('Fabrics', ['Knit', 'Woven', 'Denim']),
+        category('Yarn'),
+        category('Trims and accessories', ['Buttons', 'Zippers', 'Labels', 'Sewing thread']),
+        category('Packing materials', ['Poly bags', 'Cartons', 'Hangers']),
+        category('Finished garments', ['T-shirts', 'Polo shirts', 'Trousers', 'Jackets']),
+      ],
+      customFields: [
+        { key: 'buyer', label: 'Buyer', type: 'text' },
+        { key: 'composition', label: 'Fabric composition', type: 'text' },
+        { key: 'gsm', label: 'GSM', type: 'number' },
+        { key: 'season', label: 'Season', type: 'text' },
+      ],
+    },
+    stockAccounts: stockAccounts({ loss: '5150' }),
+    salesReturnsAccount: null,
+  },
+  pharma: {
+    roles: [
+      ACCOUNTANT,
+      {
+        name: 'Depot manager',
+        description: 'Stock by batch and expiry at a depot',
+        permissions: [
+          'core.branch.manage',
+          // Step 18c: a lost phone is reported to the person in charge of the depot or shop first
+          'core.device.manage',
+          'inventory.product.manage',
+          'inventory.warehouse.manage',
+          ...STOCK_WORK,
+          ...DELIVERING,
+          ...RETURNING,
+          ...REQUESTING,
+          ...RECEIVING,
+          ...SENDING_BACK,
+          ...STOCK_REPORTS,
+        ],
+      },
+      {
+        name: 'Sales representative',
+        description: 'Orders from pharmacies',
+        permissions: ['sales.customer.manage', ...ORDERING],
+      },
+    ],
+    chart: standardChart({
+      stock: group('1150', 'Inventories', [
+        account('1151', 'Raw materials'),
+        account('1152', 'Packing materials'),
+        account('1153', 'Work in progress'),
+        account('1154', 'Finished goods', 'inventory'),
+      ]),
+      revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Sales returns')],
+      costOfSales: MAKER_COSTS,
+      selling: [
+        account('5330', 'Medical promotion and samples'),
+        account('5340', 'Field force allowances'),
+        account('5350', 'Expired and damaged goods'),
+      ],
+    }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('strip', 'Strip', 'count', null),
+        unit('bottle', 'Bottle', 'count', null),
+        unit('vial', 'Vial', 'count', null),
+        unit('ampoule', 'Ampoule', 'count', null),
+        unit('tube', 'Tube', 'count', null),
+        unit('sachet', 'Sachet', 'count', null),
+      ],
+      categories: [
+        category('Finished products', [
+          'Tablets',
+          'Capsules',
+          'Syrups and suspensions',
+          'Injections',
+          'Creams and ointments',
+        ]),
+        category('Raw materials', ['Active ingredients (API)', 'Excipients']),
+        category('Packing materials', ['Foil and blister', 'Bottles and caps', 'Inner cartons']),
+      ],
+      customFields: [
+        { key: 'generic_name', label: 'Generic name', type: 'text', required: true },
+        { key: 'strength', label: 'Strength', type: 'text' },
+        {
+          key: 'dosage_form',
+          label: 'Dosage form',
+          type: 'select',
+          options: ['Tablet', 'Capsule', 'Syrup', 'Suspension', 'Injection', 'Cream', 'Drops'],
+        },
+        { key: 'dar_number', label: 'DAR number', type: 'text' },
+      ],
+    },
+    stockAccounts: stockAccounts({ loss: '5350', samples: '5330' }),
+    salesReturnsAccount: '4120',
+  },
+  distribution: {
+    roles: [
+      ACCOUNTANT,
+      {
+        name: 'Depot manager',
+        description: 'Stock and deliveries at a depot',
+        permissions: [
+          'core.branch.manage',
+          'core.device.manage',
+          'inventory.product.manage',
+          'inventory.warehouse.manage',
+          ...STOCK_WORK,
+          ...DELIVERING,
+          ...RETURNING,
+          ...REQUESTING,
+          ...RECEIVING,
+          ...SENDING_BACK,
+          ...STOCK_REPORTS,
+        ],
+      },
+      {
+        name: 'Sales officer',
+        description: 'Orders and collections from retailers',
+        permissions: [...SELLING, ...ORDERING, ...INVOICING, ...COLLECTING],
+      },
+    ],
+    chart: standardChart({
+      stock: TRADER_STOCK,
+      currentAssets: [account('1180', 'Claims receivable from principals')],
+      revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Trade discounts')],
+      otherIncome: [account('4230', 'Commission and incentives from principals')],
+      costOfSales: [COGS],
+      selling: [
+        account('5330', 'Damaged and expired goods'),
+        account('5340', 'Sales team allowances'),
+      ],
+    }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('case', 'Case', 'count', null),
+        unit('pack', 'Pack', 'count', null),
+        unit('bag', 'Bag', 'count', null),
+        unit('bottle', 'Bottle', 'count', null),
+      ],
+      categories: [
+        category('Beverages'),
+        category('Snacks and biscuits'),
+        category('Personal care'),
+        category('Home care'),
+        category('Dairy and baby food'),
+      ],
+      customFields: [
+        { key: 'principal', label: 'Principal company', type: 'text' },
+        { key: 'brand', label: 'Brand', type: 'text' },
+      ],
+    },
+    stockAccounts: stockAccounts({ loss: '5330' }),
+    salesReturnsAccount: null,
+  },
+  manufacturing: {
+    roles: [
+      ACCOUNTANT,
+      {
+        name: 'Production manager',
+        description: 'Production orders and material use',
+        permissions: [
+          'core.user.read',
+          'inventory.product.manage',
+          ...STOCK_WORK,
+          ...REQUESTING,
+          ...BUYING,
+          ...PURCHASE_REPORTS,
+          ...STOCK_REPORTS,
+        ],
+      },
+      STORE_KEEPER,
+    ],
+    chart: standardChart({
+      stock: group('1150', 'Inventories', [
+        account('1151', 'Raw materials'),
+        account('1152', 'Work in progress'),
+        account('1153', 'Finished goods', 'inventory'),
+        account('1154', 'Stores and spares'),
+      ]),
+      revenue: [account('4110', 'Sales', 'sales')],
+      costOfSales: [...MAKER_COSTS, account('5140', 'Factory power and fuel'), STOCK_LOSSES],
+    }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('ton', 'Metric ton', 'weight', '1000', 3),
+        unit('ft', 'Foot', 'length', '0.3048', 2),
+        unit('sqm', 'Square metre', 'area', '1', 2),
+        unit('sqft', 'Square foot', 'area', '0.092903', 2),
+        unit('drum', 'Drum', 'count', null),
+        unit('bag', 'Bag', 'count', null),
+      ],
+      categories: [
+        category('Raw materials'),
+        category('Components'),
+        category('Finished goods'),
+        category('Spare parts'),
+        category('Consumables'),
+      ],
+      customFields: [
+        { key: 'specification', label: 'Specification', type: 'text' },
+        { key: 'grade', label: 'Grade', type: 'text' },
+      ],
+    },
+    stockAccounts: stockAccounts({ loss: '5150' }),
+    salesReturnsAccount: null,
+  },
+  retail: {
+    roles: [
+      ACCOUNTANT,
+      {
+        name: 'Shop manager',
+        description: 'Runs a shop and its staff',
+        permissions: [
+          'core.user.read',
+          'core.branch.manage',
+          'core.device.manage',
+          'inventory.product.manage',
+          'inventory.warehouse.manage',
+          ...STOCK_WORK,
+          ...SALES_ADMIN,
+          ...ORDERING,
+          ...DELIVERING,
+          ...INVOICING,
+          ...COLLECTING,
+          ...CREDIT_OVERRIDE,
+          ...RETURNING,
+          ...CREDITING,
+          ...REFUNDING,
+          ...SUPPLYING,
+          ...REQUESTING,
+          ...BUYING,
+          ...RECEIVING,
+          ...SENDING_BACK,
+          ...BILLING,
+          ...PAYING,
+          ...DEBITING,
+          ...TAKING_REFUNDS,
+          ...SELLING_AT_COUNTER,
+          ...RUNNING_COUNTERS,
+          ...TAKING_BACK_AT_COUNTER,
+          ...SALES_REPORTS,
+          ...PURCHASE_REPORTS,
+          ...STOCK_REPORTS,
+        ],
+      },
+      {
+        name: 'Cashier',
+        description: 'Sells at the counter',
+        permissions: [...COLLECTING, ...SELLING_AT_COUNTER, ...TAKING_BACK_AT_COUNTER],
+      },
+    ],
+    chart: standardChart({
+      stock: TRADER_STOCK,
+      currentAssets: [account('1180', 'Card and wallet settlements receivable')],
+      // Step 20c: what a POS return's exchange passes through on its way to the new sale (a
+      // register's exchange account, Settings → POS). Always back at zero once both are posted.
+      currentLiabilities: [account('2190', 'POS exchange clearing')],
+      revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Sales returns')],
+      costOfSales: [COGS],
+      selling: [
+        account('5330', 'Card and wallet charges'),
+        account('5340', 'Shrinkage and damaged goods'),
+        // Step 20b: what the counters' drawers were over or short at the counts (a register's
+        // over/short account, Settings → POS)
+        account('5350', 'Cash over and short'),
+      ],
+    }),
+    catalog: {
+      units: [
+        ...COMMON_UNITS,
+        unit('pack', 'Pack', 'count', null),
+        unit('bottle', 'Bottle', 'count', null),
+        unit('sack', 'Sack', 'count', null),
+        unit('tray', 'Tray', 'count', null),
+      ],
+      categories: [
+        category('Groceries', ['Rice', 'Lentils', 'Oil', 'Spices', 'Flour and sugar']),
+        category('Fresh', ['Fruits', 'Vegetables', 'Fish and meat', 'Eggs']),
+        category('Beverages'),
+        category('Snacks'),
+        category('Personal care'),
+        category('Household'),
+      ],
+      customFields: [{ key: 'brand', label: 'Brand', type: 'text' }],
+    },
+    stockAccounts: stockAccounts({ loss: '5340' }),
+    salesReturnsAccount: '4120',
+  },
+  other: {
+    roles: [
+      ACCOUNTANT,
+      {
+        name: 'Manager',
+        description: 'Runs day-to-day work',
+        permissions: [
+          'core.user.read',
+          'inventory.product.manage',
+          'inventory.warehouse.manage',
+          ...STOCK_WORK,
+          ...SALES_ADMIN,
+          ...ORDERING,
+          ...DELIVERING,
+          ...INVOICING,
+          ...COLLECTING,
+          ...CREDIT_OVERRIDE,
+          ...RETURNING,
+          ...CREDITING,
+          ...REFUNDING,
+          ...SUPPLYING,
+          ...REQUESTING,
+          ...BUYING,
+          ...RECEIVING,
+          ...SENDING_BACK,
+          ...BILLING,
+          ...PAYING,
+          ...DEBITING,
+          ...TAKING_REFUNDS,
+          ...SALES_REPORTS,
+          ...PURCHASE_REPORTS,
+          ...STOCK_REPORTS,
+        ],
+      },
+    ],
+    chart: standardChart({
+      stock: TRADER_STOCK,
+      revenue: [account('4110', 'Sales', 'sales'), account('4120', 'Service income')],
+      costOfSales: [COGS, STOCK_LOSSES],
+    }),
+    catalog: {
+      units: COMMON_UNITS,
+      categories: [category('General')],
+      customFields: [],
+    },
+    stockAccounts: stockAccounts({ loss: '5150' }),
+    salesReturnsAccount: null,
+  },
+} satisfies Record<Industry, IndustryTemplate>;

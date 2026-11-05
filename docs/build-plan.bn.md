@@ -61,7 +61,7 @@ Inventory-র স্কিমায় **শুরু থেকেই** batch/lo
 ২. packages/db-এ migration + Drizzle schema   → টেবিল, index (tenant_id দিয়ে শুরু), RLS policy
 ৩. apps/api-তে repository + service           → business rule, ট্রানজ্যাকশন, outbox
 ৪. apps/api-তে controller + permission guard  → REST endpoint, OpenAPI auto-doc
-৫. `pnpm gen:client` চালান                    → typed API client অটো তৈরি
+৫. `pnpm gen:openapi` চালান                   → openapi.json হালনাগাদ (client-এর টাইপ চুক্তি থেকে নিজেই আসে)
 ৬. apps/app-এ পেজ + form + list                → TanStack Query + RHF + packages/ui
 ৭. টেস্ট: unit (rule) + integration (endpoint) + tenant-leak + Playwright (UI)
 ```
@@ -77,7 +77,7 @@ Inventory-র স্কিমায় **শুরু থেকেই** batch/lo
 - [ ] `tenant_id` কলাম + RLS policy আছে, index `tenant_id` দিয়ে শুরু
 - [ ] টাকা `NUMERIC(19,4)`, কোডে `decimal.js`
 - [ ] Permission guard লাগানো
-- [ ] Audit log-এ লেখা হচ্ছে
+- [ ] `audit()` একই transaction-এ লিখছে, শুধু বদলানো ঘর
 - [ ] Tenant-leak টেস্ট পাস (টেন্যান্ট A, টেন্যান্ট B-র ID দিয়ে 404 পায়)
 - [ ] মোবাইল viewport-এ কাজ করে (টেবিল → কার্ড)
 - [ ] বাংলা + ইংরেজি দুই ভাষায় লেবেল আছে
@@ -145,9 +145,9 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 #### ধাপ ৫: কন্ট্র্যাক্ট ও codegen পাইপলাইন · ~১ সপ্তাহ
 
-`packages/contracts/` — Zod schema (একই schema সার্ভারে validation, ক্লায়েন্টে form validation)। NestJS-এ OpenAPI স্পেক জেনারেট → `orval`/`openapi-typescript` দিয়ে typed client + TanStack Query hooks। সাথে ঠিক হবে: error envelope ফরম্যাট, **keyset pagination** কনভেনশন, MSW mock setup।
+`packages/contracts/` — Zod schema (একই schema সার্ভারে validation, ক্লায়েন্টে form validation)। Zod route রেজিস্ট্রি (টাইপ সরাসরি Zod থেকে, codegen নেই) + রেজিস্ট্রি থেকে OpenAPI 3.1 + TanStack Query hooks। সাথে ঠিক হবে: error envelope ফরম্যাট, **keyset pagination** কনভেনশন, MSW mock setup।
 
-**যা দেখবেন:** API-তে একটা ফিল্ডের নাম বদলান → `pnpm gen:client` → ফ্রন্টএন্ডে লাল দাগ। **এটাই parallel dev-এর ইঞ্জিন।**
+**যা দেখবেন:** contracts-এ একটা ফিল্ডের নাম বদলান → সাথে সাথে API আর ফ্রন্টএন্ডে লাল দাগ; `pnpm gen:openapi` → স্পেকের diff। **এটাই parallel dev-এর ইঞ্জিন।**
 **শিখবেন:** OpenAPI, code generation, contract-first ডেভেলপমেন্ট।
 
 ---
@@ -156,9 +156,9 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 | ধাপ | কাজ | ব্যাকএন্ড | ফ্রন্টএন্ড | সময় |
 |---|---|---|---|---|
-| **৬** | সেটিংস ও ভিত্তি | tenant settings (currency, fiscal year, timezone, ভাষা), **numbering series** (`INV-2026-0001`), branches/locations, **audit log interceptor**, attachments (MinIO presigned URL) | Settings পেজ, ব্রাঞ্চ CRUD, Audit log viewer (কে কখন কী বদলাল) | ~২ সপ্তাহ |
-| **৭** | ইউজার ও রোল | invite flow, কাস্টম রোল তৈরি, permission matrix API | ইউজার লিস্ট, ইনভাইট মডাল, **permission matrix গ্রিড** (চেকবক্সের ছক) | ~১.৫ সপ্তাহ |
-| **৮** | Queue, Worker, Outbox | `apps/worker/` (BullMQ), `outbox` টেবিল + relay, **idempotent tenant provisioning job**, ইমেইল (Mailpit), notifications | Onboarding wizard (ব্যবসার ধরন বাছাই → ডিফল্ট সেটআপ), in-app notification bell, job status | ~২ সপ্তাহ |
+| **৬** | সেটিংস ও ভিত্তি | tenant settings (currency, fiscal year, timezone, ভাষা), **numbering series** (`INV-2026-0001`), branches/locations, **audit()** (বদলের সাথে একই transaction-এ, request-এর id/IP নিজে থেকে), attachments (MinIO presigned URL) | Settings পেজ, ব্রাঞ্চ CRUD, Audit log viewer (কে কখন কী বদলাল), ইউজারের ভাষা/থিম, Playwright e2e (MSW) | ~২ সপ্তাহ |
+| **৭** | ইউজার ও রোল | invite flow (ইমেইল, Mailpit), কাস্টম রোল, permission matrix API, owner = system role, escalation বন্ধ, বাদ পড়া সদস্য সাথে সাথে 401 | টিমের পেজ, ইনভাইট মডাল, join পেজ, **permission matrix গ্রিড** (চেকবক্সের ছক) | ~১.৫ সপ্তাহ |
+| **৮** | Queue, Worker, Outbox | apps/api-র দ্বিতীয় entrypoint (`worker.ts`), BullMQ (`email`, `jobs`), transactional outbox + relay (SKIP LOCKED, `omnivo_worker`), idempotent provisioning job (industry template), welcome ও invitation ইমেইল worker থেকে, notifications | Onboarding wizard (ব্যবসার ধরন → কোম্পানির তথ্য → টিম), notification bell, job status (sending/provisioning) | ~২ সপ্তাহ |
 
 **ধাপ ৮-এ যা দেখবেন:** সাইনআপ করলে background-এ chart of accounts + রোল + সেটিংস seed হয়ে যাবে, Mailpit-এ welcome ইমেইল আসবে। **প্রথম async আর্কিটেকচার চোখে দেখা।**
 **শিখবেন:** BullMQ, transactional outbox, idempotency, background worker।
@@ -171,12 +171,12 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 #### ধাপ ৯: Chart of Accounts · ~১.৫ সপ্তাহ
 
-`accounts` টেবিল (tree, account_type: asset/liability/equity/income/expense), বাংলাদেশি রিটেইল ও ফার্মেসির জন্য দুইটা **template JSON** (provisioning job এখান থেকে seed করবে), opening balance।
+`ledger_accounts` টেবিল (tree, type: asset/liability/equity/income/expense, parent FK-এ type — DB নিজেই টাইপ মেলায়), ছয় ইন্ডাস্ট্রির **template** (একটা standard chart + ইন্ডাস্ট্রির অংশ), ১০টা system account (`purpose`), পুরনো workspace-এর জন্য migration থেকে outbox job। Opening balance ধাপ ১০-এ, প্রথম journal entry হিসেবে।
 **দেখবেন:** গাছের মতো অ্যাকাউন্ট ট্রি UI, নতুন অ্যাকাউন্ট যোগ করা।
 
 #### ধাপ ১০: Double-Entry Journal · ~৩ সপ্তাহ · **সবচেয়ে সতর্ক ধাপ**
 
-`journal_entries` + `journal_lines`, **DB constraint/trigger দিয়ে `SUM(debit) = SUM(credit)` যাচাই**, draft → posted state machine, **posted কখনো edit/delete নয় — শুধু reversal**, period lock (বন্ধ মাসে এন্ট্রি হবে না)। সব টাকা `NUMERIC(19,4)` + `decimal.js`।
+`journal_entries` + `journal_lines`, draft → posted (`accounting.journal.create` / `.post`, আলাদা রোল = maker-checker), DB-তে deferred constraint trigger দিয়ে `SUM(debit) = SUM(credit)`, posted entry ও তার লাইন trigger দিয়ে frozen — শুধু reversal, lock date (একটা তারিখ পর্যন্ত বই বন্ধ), ওপেনিং ব্যালান্সের পাতা, লাইনে ঐচ্ছিক ব্রাঞ্চ, `PostingService.postNew()` পরের সব মডিউলের জন্য।
 
 `postJournal()` একটা internal service হবে যেটা পরে Sales/Inventory/Purchase সবাই ডাকবে — **এটাই সব মডিউলের মিলনস্থল**, তাই API ডিজাইনে সময় দিন।
 
@@ -184,7 +184,7 @@ Tailwind preset + design token, shadcn/ui বেস কম্পোনেন্�
 
 #### ধাপ ১১: Financial Statements · ~২ সপ্তাহ
 
-Trial Balance, P&L, Balance Sheet (কাঁচা SQL-এ লিখুন, ORM-এ নয়), fiscal year close, Excel/PDF export (worker-এ)।
+Trial Balance, P&L, Balance Sheet (কাঁচা SQL-এ, API আর worker একই query), ধাপ ১০-এর `postNew()` দিয়ে বছর শেষের ক্লোজিং এন্ট্রি + lock date (ক্রমে ক্লোজ, উল্টো ক্রমে reopen), Excel/PDF এক্সপোর্ট worker-এ (S3 + বেল), আলাদা permission `accounting.report.read`। Cash flow পরে।
 **দেখবেন:** আসল ট্রায়াল ব্যালেন্স যেখানে দুই পাশ মেলে। 🎉
 **শিখবেন:** ডাবল-এন্ট্রি হিসাব, immutable document, state machine, আর্থিক রিপোর্টের SQL।
 
@@ -199,7 +199,10 @@ Trial Balance, P&L, Balance Sheet (কাঁচা SQL-এ লিখুন, ORM-
 
 #### ধাপ ১৩: স্টক লেজার · ~২ সপ্তাহ
 
-`warehouses`, **`stock_movements` (append-only, কখনো UPDATE নয়)**, stock-on-hand ভিউ, transfer, adjustment, reorder level alert।
+`warehouses` (ব্রাঞ্চের অধীনে), **`stock_movements` (append-only — trigger UPDATE/DELETE আটকায়)**,
+`stock_balances` (trigger দিয়ে রাখা, কোড লেখে না), adjustment (opening stock সহ, draft → posted, `ADJ-…`),
+দুই ধাপের transfer (in transit, ঘাটতি থাকে), batch + expiry + FEFO, serial number, reorder level + বেলের alert,
+workspace সেটিং "negative stock" (ডিফল্ট বন্ধ)। `StockPostingService.post()` — স্টকে ঢোকার একমাত্র পথ।
 
 > ⚠️ সিস্টেম ডিজাইনের ৬ নম্বর ভুল: **কখনো `products.quantity` কলাম রাখবেন না।** স্টক = সব মুভমেন্টের যোগফল। এটা অফলাইন sync-এর জন্যও অপরিহার্য।
 
@@ -207,7 +210,11 @@ Trial Balance, P&L, Balance Sheet (কাঁচা SQL-এ লিখুন, ORM-
 
 #### ধাপ ১৪: Valuation + প্রথম মডিউল-ইন্টিগ্রেশন · ~২ সপ্তাহ
 
-Weighted Average valuation (FIFO পরে), আর স্টক মুভমেন্ট হলে **অটো journal post** (Dr Inventory / Cr GRNI ইত্যাদি) ধাপ ১০-এর `postJournal()` দিয়ে।
+Weighted Average (পুরো কোম্পানিতে প্রতি আইটেমের একটা গড় খরচ; FIFO পরে), প্রতিটা স্টক মুভমেন্টের মূল্য
+(`stock_movements.value`, `stock_values` trigger দিয়ে রাখা), আর প্রতিটা স্টক ডকুমেন্টের **নিজের journal entry**
+(`StockBooksService` → ধাপ ১০-এর `PostingService.postNew()`, একই transaction-এ)। Settings → Inventory-তে
+স্টকের অ্যাকাউন্ট, দুই ব্রাঞ্চের মধ্যে transfer "Goods in transit" দিয়ে, "Revalue stock" ডকুমেন্ট (`REV-…`),
+`inventory.stock.value` / `inventory.stock.revalue` permission।
 **দেখবেন:** স্টক রিসিভ করলেন → Balance Sheet-এ Inventory-র অঙ্ক নিজে থেকে বাড়ল। **প্রথমবার দুই মডিউল একসাথে কথা বলল।** 🎉
 **শিখবেন:** append-only ledger, inventory valuation, মডিউল-বাউন্ডারি পেরিয়ে service call।
 
@@ -221,6 +228,92 @@ Weighted Average valuation (FIFO পরে), আর স্টক মুভমে
 | **১৬** | ডকুমেন্ট আউটপুট | Invoice PDF (worker-এ, বাংলা ফন্ট সহ), R2/MinIO-তে সেভ, ইমেইল, WhatsApp শেয়ার লিংক, "কথায় টাকা" (বাংলা + ইংরেজি) | ~১.৫ সপ্তাহ |
 | **১৭** | Purchase | suppliers, **Requisition → PO → Goods Receipt → Bill → Payment**, purchase return/debit note, কনফিগারযোগ্য approval workflow | ~৩ সপ্তাহ |
 
+#### ধাপ ১৫: Sales — চারটা গাইডে
+
+**১৫a (customers, price lists, VAT):** একটা `parties` টেবিল (`is_customer` / `is_supplier`), কাস্টমার গ্রুপ, একাধিক
+ঠিকানা, payment terms, credit limit (চেক ১৫c-তে); AR একটাই control account, প্রতিটা AR লাইনে `party_id` — কাস্টমারের
+balance ও statement সেখান থেকে; opening balances পেজে AR কাস্টমার ধরে ভাগ; VAT rates টেবিল (standard, reduced,
+zero-rated, exempt; একটা default), workspace সেটিং "prices include VAT"; নামসহ price list (variant + unit ধরে দাম)।
+**১৫b (quotation → order → delivery):** quotation (QT, save করলেই নম্বর; open/accepted/declined, মেয়াদ পেরোলে
+"Expired" — পেজ নিজে হিসাব করে), sales order (confirm করলে SO নম্বর; delivered/closed/cancelled), delivery challan
+(DC, post করলে স্টক বের হয়, একটা order কয়েক challan-এ; batch/serial, FEFO)। Delivery post করলেই moving average
+cost-এ Dr Cost of goods sold / Cr Inventory; স্টক hold হয় না, স্টক পেজে "On order"। লাইনের হিসাব (discount, তারপর
+VAT, লাইন ধরে paisa-তে round) contracts-এ, form-API-mock একই function; price lookup: কাস্টমারের price list → প্রোডাক্টের
+দাম। প্রিন্ট নেই (১৫c বা পরে)।
+**১৫c (invoice → money receipt → credit limit):** invoice (post করলে INV নম্বর; এক কাস্টমারের এক বা একাধিক posted
+challan বিল করে — challan-এর প্রতিটা লাইন পুরোটা, একবারই; order-এর service লাইন সরাসরি; নিজের goods লাইন থাকলে
+invoice নিজেই একটা challan post করে, তাই COGS একবারই)। Post করলে Dr AR (কাস্টমার) / Cr Sales / Cr VAT payable।
+Unpaid / Partly paid / Paid, due date পেরোলে Overdue। Money receipt (MR, save করলেই নম্বর ও entry; Dr টাকার
+account / Cr AR), পুরনো invoice আগে (FIFO) ধরা হয়, বাকিটা advance; ভুল বা চেক ফেরত হলে বাতিল (reversal)।
+Credit limit order confirm ও invoice post-এ চেক, `sales.credit.override` থাকলে এগিয়ে যাওয়া যায় (audit log)।
+Chart of accounts-এ "Holds money"। কোটেশন, order, challan, invoice, receipt — এক A4 প্রিন্ট লেআউট (ব্রাউজারের
+Print / Save as PDF, offline)। Mushak 6.3 পরে।
+**১৫d (return → credit note → refund):** sales return (post করলে SR নম্বর; posted challan-এর লাইন থেকে — একই batch
+ও serial, challan যে cost-এ বেরিয়েছিল সেই cost-এ — অথবা Omnivo-র আগের বিক্রির জন্য আলাদা লাইন, সেদিনের average
+cost-এ; সব মাল এক warehouse-এ ফেরে, যেমন "Damage and expiry")। Post করলে Dr Inventory / Cr COGS। Bill হওয়ার
+আগে ফেরত এলে order-এর delivered কমে, invoice বাকিটুকু bill করে। Credit note (CN, সবসময় একটা posted invoice-এর;
+সেই invoice-এর VAT rate-এ): Dr Sales returns (setting; না থাকলে Sales) / Dr VAT payable / Cr AR (কাস্টমার);
+আগে নিজের invoice-এ বসে, বাকিটা advance। "Credit whole invoice" এক ক্লিকে draft। Invoice-এ Credited / Partly
+credited। ৬ মাসের পুরনো invoice-এ শুধু সতর্কবার্তা। Refund (RF, receipt বা credit note-এর বাকি টাকা থেকে; Dr AR /
+Cr টাকার account; ভুল হলে void)। Settings → Sales accounts। Return, credit note, refund প্রিন্ট। Mushak 6.7 পরে।
+
+#### ধাপ ১৬: ডকুমেন্ট আউটপুট
+
+চারটা ডকুমেন্ট বাইরে যায় — quotation, invoice, money receipt, credit note (order, challan, return, refund শুধু
+browser print)। **PDF:** worker-এ pdfkit; API পেজের model (সব শব্দ ও সংখ্যা, ভাষাসহ) বানায়, worker শুধু আঁকে।
+বাংলা ফন্ট Hind Siliguri (fontkit Noto-র ন্দ্র ভাঙে)। প্রথম দরকারে বানায়, MinIO/R2-তে রাখে; ডকুমেন্ট বদলালে
+(যেমন invoice paid হলে) নতুন fingerprint, নতুন ফাইল। **ইমেইল:** dialog (To, CC ≤৫, subject, message), PDF
+attachment, From "Company via Omnivo", reply-to কোম্পানির ইমেইল; ডকুমেন্টে ইমেইলের ইতিহাস; ব্যর্থ হলে bell।
+**WhatsApp:** token লিংক `/d/<token>` (login ছাড়া, ৩০ দিন, বন্ধ করা যায়, DB-তে শুধু hash), `wa.me` মেসেজ
+সহ; public পেজে নম্বর, তারিখ, মোট, বাকি, PDF ডাউনলোড। **কাস্টমারের document language** (English/বাংলা),
+পাঠানোর সময় বদলানো যায়। **কথায় টাকা** (লাখ/কোটি, বাংলা ও ইংরেজি) invoice, receipt, credit note, refund-এ — PDF
+ও প্রিন্টে। পাঠাতে ডকুমেন্টের manage permission, ডাউনলোডে কিছু লাগে না। Mushak 6.3/6.7 পরে।
+
+#### ধাপ ১৭: Purchase — চারটা গাইডে
+
+**১৭a (suppliers, payable, requisition, approval):** supplier একই `parties` টেবিলে (`is_supplier`), নিজের কোড
+সিরিজ (`S-00001`), supplier group, নিজের payment terms, সর্বোচ্চ ৫টা bank account (bank, branch, account name,
+number, routing number)। একই party দুই দিকেই হতে পারে ("Make supplier too" / "Make customer too"); এক দিক
+delete করলে শুধু সেই দিক যায়। AP-ও per party: প্রতিটা payable লাইনে supplier, balance ও statement সেখান থেকে
+(`purchase.supplier.balance` থাকলে); opening balances-এ AP supplier ধরে ভাগ। Requisition (PR, save করলেই নম্বর;
+warehouse, needed-by, লাইনে estimated cost — average cost থেকে, বদলানো যায়; draft → pending → approved,
+cancelled)। **Approval:** প্রতি ডকুমেন্ট ধরনের জন্য সর্বোচ্চ ৫টা level (amount থেকে, একটা role); submit করলে
+যে level-গুলো লাগে সেগুলো ডকুমেন্টে কপি হয়, একটার পর একটা; নিজের ডকুমেন্ট নিজে approve নয় (Owner-এর নিজেরটা
+সাথে সাথে approved, Owner যেকোনো level approve করতে পারে); reject-এ comment লাগে, draft-এ ফেরে; approved
+ডকুমেন্ট lock, Reopen করলে নতুন round; ইতিহাস কখনো মোছে না। Bell, audit log, "Approvals" পেজে আমার জন্য
+অপেক্ষমাণ তালিকা ও count।
+**১৭b (purchase order, goods receipt):** approved requisition-এর লাইন থেকে PO, লাইন ধরে (এক requisition কয়েক
+supplier-এর PO-তে ভাগ হয়, কয়েকটা requisition এক PO-তে; requisition-এ Partly ordered / Ordered, আর Close)। PO-র
+লাইন sales লাইনের মতো (price, discount % বা ৳, VAT rate, "prices include VAT"); শুরুর দাম শেষ কেনা দাম (এই
+supplier-এর, না হলে যেকারো, না হলে average cost); শুধু BDT। প্রথম submit-এ নম্বর (PO), approval ১৭a-র engine-এ,
+VAT-সহ total ধরে; approved হলে lock, goods আসার আগে Reopen, পরে শুধু Close। PDF (দুই ভাষা), email, WhatsApp link।
+**Goods receipt (GRN)** শুধু approved PO থেকে: লাইনে accepted ও rejected (কারণসহ), lot/expiry/serial, supplier
+challan, vehicle; "Receive over the order" % (company setting, default 0) পর্যন্ত বেশি নেওয়া যায়। Post করলে
+accepted মাল PO-র VAT ছাড়া net দামে stock-এ (moving average), entry Dr Inventory / Cr Goods received not billed
+(2115, stock account `received_not_billed`, warehouse-এর branch-এ)। PO: Partly received → Received, বা Close; Late
+pill; stock ও reorder-এ Incoming।
+**১৭c (supplier bill, supplier payment):** bill supplier-এর নিজের bill থেকে টাইপ করা: তাদের bill নম্বর (দরকারি,
+একই supplier-এ একবারই), Mushak 6.3 নম্বর ও তারিখ (ঐচ্ছিক), due date PO-র বা supplier-এর terms থেকে। bill-এর লাইন
+চার রকম: posted goods receipt-এর পুরো লাইন (শুরুর দাম PO-র), PO-র service লাইন (expense account, Settings-এর
+"Purchased services" থেকে শুরু), PO ছাড়া নিজের লাইন (direct bill: নিজের goods receipt বানায়), আর product ছাড়া
+expense (ভাড়া, বিদ্যুৎ, মেরামত)। প্রথম submit-এ নম্বর (BILL), ১৭a-র approval; শেষ approval-ই post করে, level না
+থাকলে "Post" সাথে সাথে। Post করলে Dr Goods received not billed (receipt-এর branch-এ) / Dr expense / Dr VAT input
+/ Cr Accounts payable; PO-র দামের সাথে পার্থক্য "Purchase price difference"-এ (5180, না থাকলে COGS), লাইন ধরে
+দেখানো। **Supplier payment (PV):** cheque, transfer, bKash বা cash, supplier-এর bank account-এ; bill-এ লাগানো
+(পুরনোটা আগে), বাকিটা advance (PO-র নাম দেওয়া যায়); approval, শেষটা post করে; posted payment আবার apply বা void
+করা যায়; browser-এ voucher print। Goods receipt-এ Not billed / Partly billed / Billed; PO-তে billed পরিমাণ,
+bill আর advance।
+**১৭d (purchase return, debit note, supplier refund):** **Purchase return (PRN)** — goods receipt থেকে (একই lot ও
+serial, receipt-এর দামে) বা নিজের লাইন (Omnivo-র আগের মাল, সেদিনের average cost-এ); Dr Goods received not billed
+/ Cr Inventory। bill-এর আগে ফেরত দিলে bill শুধু রাখা মালের bill করে, আর PO-র received কমে (Received → Partly
+received), supplier একই PO-তে আবার পাঠাতে পারে। **Debit note (DN)** — একটা posted bill থেকে টাকা কমায় (ফেরত মাল বা
+দামের ছাড়), bill-এর VAT rate-এ: Dr Accounts payable / Cr Goods received not billed / Cr Purchase price difference /
+Cr VAT input; আগে নিজের bill-এ লাগে, বাকিটা supplier-এর কাছে পাওনা, পরের bill-এ লাগানো যায়। "Debit whole bill" এক
+ক্লিকে পুরো draft; bill ছাড়া debit note Omnivo-র আগের মালের জন্য; supplier-এর credit note (Mushak 6.7) নম্বর ও
+তারিখ ঐচ্ছিক। approval নেই, Draft → Post। **Supplier refund (SRF)** — debit note-এর বা payment-এর advance-এর টাকা
+supplier ফেরত দিলে: Dr Cash/Bank / Cr Accounts payable; ভুল হলে void। তিনটাই browser-এ print। Goods receipt-এ
+Partly returned / Returned, bill-এ Partly debited / Debited।
+
 **দেখবেন:** একটা ইনভয়েস কাটলেন → স্টক কমল → AR বাড়ল → P&L-এ বিক্রি দেখাল → PDF ডাউনলোড হলো। **এখানেই ERP-টা সত্যিকারের ERP হয়ে গেল।** 🎉
 
 ---
@@ -231,19 +324,56 @@ Weighted Average valuation (FIFO পরে), আর স্টক মুভমে
 
 #### ধাপ ১৮: `packages/sync` — সিঙ্ক ইঞ্জিন · ~৪ সপ্তাহ
 
-- **Pull:** প্রতি syncable টেবিলে `updated_at` + টেন্যান্ট-ভিত্তিক monotonic `change_seq`। `GET /sync/pull?since=1520` → পরিবর্তন + tombstone। শুধু দরকারি ডেটা (ইউজারের ব্রাঞ্চ, সক্রিয় প্রোডাক্ট, সাম্প্রতিক কাস্টমার), পুরো ডাটাবেস না।
-- **Push:** ক্লায়েন্টে Dexie-তে outbox, প্রতিটা কাজ একটা **command** (`{id: uuidv7, type: 'pos.sale.create', payload, device_id}`)। `POST /sync/push` — সার্ভার `id` দেখে idempotency নিশ্চিত করবে এবং **সব business rule আবার যাচাই করবে**।
-- **Conflict:** ডেটার ধরন অনুযায়ী আলাদা নীতি (লেনদেন = append-only তাই conflict নেই; মাস্টার ডেটা = field-level LWW; দাম/ক্রেডিট লিমিট = server-wins)।
+**তিনটা গাইডে:** ১৮a pull, ১৮b push + conflict + sync status, ১৮c device list + revoke + সময়ের সীমা।
+
+- **Pull (১৮a):** `sync_changes` change log (trigger) + `xid8` watermark cursor, `GET /sync/pull` (পুরো বা শুধু
+  পরিবর্তন, পাতায় পাতায়), `POST /sync/devices` (ব্রাউজার = device, একটা ব্রাঞ্চে)। "POS-ready" ডেটা Dexie-তে;
+  products ও customers পাতা, customer box আর "Add items" সবসময় device থেকে পড়ে, অনলাইন বা অফলাইন। balance
+  সার্ভার থেকে, শুধু স্ক্রিনের সারিগুলোর।
+- **Push (১৮b):** Dexie-তে `outbox`, তিনটা command: কাস্টমার তৈরি, কাস্টমার বদল (field-level merge, ঠিকানা id
+  ধরে, ক্রেডিট লিমিট/terms/price list/group = server-wins + নোটিস), sales order draft। `POST /sync/push`,
+  `sync_commands`-এ উত্তর রেখে idempotent। অনলাইনে ফর্ম আগের মতো API-তে যায়; অফলাইনে "Save on this device"।
+  সাইডবারে online/offline + অপেক্ষায় থাকা পরিবর্তনের সংখ্যা, Sync পাতা (retry, discard, edit, Sync now)।
+- **Devices (১৮c):** My devices (account menu, সবার) আর Workspace → Devices (`core.device.manage`): নাম বদল,
+  revoke (সিঙ্ক বন্ধ + sign-in শেষ + কপি মুছে ফেলা; আবার sign-in = নতুন device), ব্রাঞ্চ বদল শুধু ওই ডিভাইস থেকে,
+  outbox খালি থাকলে। সদস্য সরালে তার device revoke; device থাকা ব্রাঞ্চ archive হয় না। ২৪ ঘণ্টা পরে সতর্কবার্তা,
+  ৭ দিন পরে অফলাইনে নতুন কাজ বন্ধ।
 
 **দেখবেন:** DevTools-এ নেটওয়ার্ক "Offline" করে প্রোডাক্ট লিস্ট দেখা, একটা কাজ করা, তারপর অনলাইন করলে সার্ভারে পৌঁছানো।
 
 #### ধাপ ১৯: PWA শেল · ~১.৫ সপ্তাহ
 
-Workbox service worker, manifest, install prompt, `navigator.storage.persist()`, UI-তে **"৫টা বিক্রি সিঙ্ক বাকি" ব্যাজ**, IndexedDB-তে সংবেদনশীল ডেটা এনক্রিপ্ট (Web Crypto)।
+**দুটো গাইডে:** ১৯a service worker + অফলাইনে খোলা, ১৯b এনক্রিপশন + PIN।
+
+- **Service worker (১৯a):** `vite-plugin-pwa` (injectManifest) + নিজের `sw/sw.ts` (Workbox), সব JS/CSS/woff2
+  precache, manifest আর আইকন, update notice (ক্লিকে reload), Install app (Chrome-এর prompt, Safari-তে নির্দেশনা),
+  `persist()` + Sync পাতায় স্টোরেজ কার্ড, আইকনে অপেক্ষার সংখ্যা। নেট ছাড়া reload শেষ ব্যবহারকারীর কপি খোলে;
+  অফলাইনে sign-out সঙ্গে সঙ্গে, সার্ভার পরে জানে। worker-এর নিজের e2e (`pnpm test:e2e:pwa`)।
+- **এনক্রিপশন + PIN (১৯b):** ডিভাইসের কপির প্রতিটা সারি AES-GCM-এ (Web Crypto), data key সার্ভারের device key
+  (`devices.secret`, `GET /sync/devices/:id/key`) আর PIN (PBKDF2) দুটো দিয়েই খোলে। ডিভাইস সেট-আপের পরে PIN চাওয়া
+  ("Not now" সহ), Sync পাতায় Device PIN কার্ড, অফলাইন reload-এ আর "Lock now"-এর পরে lock screen, ৫ বার ভুল হলে
+  অফলাইনে খোলা বন্ধ, "Forgot PIN?" = password দিয়ে sign-in। Dexie version 3: পুরনো কপি মুছে আবার pull, outbox
+  থেকে যায়।
 
 #### ধাপ ২০: POS স্ক্রিন · ~৩ সপ্তাহ
 
 দ্রুত বিক্রি স্ক্রিন (বারকোড স্ক্যান, কীবোর্ড শর্টকাট — মাউস ছাড়া পুরো বিক্রি), split payment (ক্যাশ/কার্ড/bKash/Nagad), hold/resume বিল, রিটার্ন, শিফট open/close ও ক্যাশ কাউন্ট, **থার্মাল প্রিন্ট (৫৮/৮০mm)**, **ডিভাইস-ভিত্তিক নম্বর সিরিজ** (`POS1-000123`), negative stock সেটিং।
+
+- **বিক্রি (২০a):** register (কাউন্টার: warehouse, প্রতি পেমেন্ট মেথডের account, সর্বোচ্চ ছাড় %, কাগজ ৫৮/৮০ mm,
+  footer); একটা ডিভাইস একটা register ধরে রাখে আর নিজেই নম্বর দেয় (`POS1-000123`), sign-out-এ ছেড়ে দেয়। `/pos`
+  স্ক্রিন (shell ছাড়া, বারকোড, শর্টকাট), walk-in বা কাস্টমার, পুরো টাকা তখনই (ক্যাশ/কার্ড/bKash/Nagad, split,
+  ভাংতি), `pos_sale.create` সবসময় outbox দিয়ে; সার্ভারে নিজস্ব `pos_sales` ডকুমেন্ট, একটা journal entry আর স্টক,
+  স্টকের জন্য কখনো refuse না ("Sold short" + bell)। ব্রাউজার প্রিন্টে থার্মাল রিসিট। POS sales তালিকা, Settings →
+  POS registers।
+- **শিফট (২০b):** শিফট খোলা থাকলেই বিক্রি; open আর close দুটোতেই drawer গোনা (নোট বা মোট, blind), পার্থক্য
+  register-এর over/short account-এ নিজে থেকে post, সীমার বেশি হলে managers-কে bell। কারণসহ pay in/out (Settings
+  → POS cash reasons, কারণের account-এ), hold/resume বিল (F8/F9, শুধু ডিভাইসে), register-এর idle lock (PIN), sign-out
+  আগে শিফট close। Sales → POS shifts (তালিকা, শিফটের পাতা, close without a count)।
+- **রিটার্ন (২০c):** রিসিট নম্বর দিয়ে ফেরত (F6), অফলাইনেও; যতটা বিক্রি হয়েছিল তার বেশি না, বিক্রির দামে (লাইনের
+  ছাড় আর VAT-এর ভাগ সহ)। নিজস্ব `pos_returns` ডকুমেন্ট (`POS1-R000012`), মাল register-এর warehouse-এ ফেরত, টাকা
+  ক্যাশে বা যেভাবে দিয়েছিল, বা এক্সচেঞ্জ (register-এর exchange account দিয়ে নতুন বিক্রির পেমেন্ট, একসাথে save)।
+  register-এর return window (ডিফল্ট ৭ দিন; স্ক্রিন থামায়, সার্ভার audit করে)। X রিপোর্ট (blind, শিফটের মাঝে) আর Z
+  রিপোর্ট (close-এর পরে) থার্মাল কাগজে। Sales → POS returns (তালিকা, রিটার্নের পাতা)।
 
 **দেখবেন:** ওয়াইফাই বন্ধ করে ট্যাবলেটে ১০টা বিক্রি করে, রিসিট প্রিন্ট করে, তারপর ওয়াইফাই চালু করলে সব সার্ভারে গিয়ে হিসাবে বসল। 🎉 **এটাই Omnivo-র সবচেয়ে বড় প্রতিযোগিতামূলক সুবিধা।**
 **শিখবেন:** offline-first আর্কিটেকচার, conflict কৌশল, service worker, idempotency, Web Crypto।
@@ -252,7 +382,14 @@ Workbox service worker, manifest, install prompt, `navigator.storage.persist()`,
 
 ### পর্ব ৭ — Reports ও Dashboard (ধাপ ২১) · ~২.৫ সপ্তাহ
 
-রিয়েল-টাইম KPI (আজকের বিক্রি, ক্যাশ পজিশন, বকেয়া, লো স্টক), স্ট্যান্ডার্ড রিপোর্ট (Sales, Stock, AR/AP Aging, Tax, P&L) + ফিল্টার + Excel/PDF export, শিডিউল করা রিপোর্ট ইমেইল, materialized view + refresh job।
+রিয়েল-টাইম KPI (আজকের বিক্রি, ক্যাশ পজিশন, বকেয়া, লো স্টক), স্ট্যান্ডার্ড রিপোর্ট (Sales, Stock, AR/AP Aging, Tax, P&L) + ফিল্টার + Excel/PDF export, শিডিউল করা রিপোর্ট ইমেইল, জার্নালের trigger-এ রাখা দিনভিত্তিক যোগফল (`account_day_totals`)।
+
+- **ড্যাশবোর্ড (২১a):** হোম পেজে আজকের ও মাসের বিক্রি (বইয়ের হিসাবে, ফেরত বাদে, VAT ছাড়া), গ্রস মার্জিন, ক্যাশ ও
+  ব্যাংক, ৩০ দিনের চার্ট, সেরা ৫ প্রোডাক্ট, কাস্টমার ও সাপ্লায়ারের বকেয়া (overdue সহ), লো স্টক। প্রতিটা কার্ড নিজের
+  permission-এ (নতুন `sales.report.read`, `purchase.report.read`, `inventory.report.read`); ব্রাঞ্চ বাছলে শুধু
+  বিক্রি, মার্জিন আর সেরা প্রোডাক্ট বদলায়। যোগফল `account_day_totals` থেকে (জার্নালের trigger, COMMIT-এ)। প্রতি
+  মিনিটে নতুন; অফলাইনে ডিভাইসে sealed শেষ উত্তর, "As of …" সহ। নিজেদের SVG `LineChart`, কোনো chart library নেই।
+
 **দেখবেন:** হোম পেজে আসল সংখ্যা সহ ড্যাশবোর্ড।
 
 > 🏁 **এখানে MVP শেষ।** ধাপ ০–২১ = পার্টটাইমে আনুমানিক **১০–১২ মাস**। এই পর্যায়ে ২–৩টা আসল দোকানে বিনামূল্যে বসিয়ে দিন — কোড লেখার চেয়ে এই ফিডব্যাক বেশি দামি।
@@ -343,7 +480,7 @@ HR + Payroll → CRM → Expense → **VAT/মূসক কমপ্লায়
 
 ```
 lint → typecheck → unit test → integration test (Testcontainers)
-  → tenant-leak test  → bundle size (initial < 200 KB gz)
+  → tenant-leak test  → bundle size (initial < 210 KB gz)
   → module boundary check (dependency-cruiser)
 ```
 
@@ -370,7 +507,7 @@ lint → typecheck → unit test → integration test (Testcontainers)
 | **Sync engine গিলে ফেলা** (ধাপ ১৮) | টাইমবক্স করুন। ৬ সপ্তাহ পেরোলে PowerSync/ElectricSQL-এ read-sync অফলোড করুন; write outbox নিজের রাখুন |
 | **পার্টটাইমে গতি হারানো** | প্রতি ধাপ শেষে **একটা দৃশ্যমান জিনিস** — প্রতিটা ধাপের "যা দেখবেন" অংশটাই জ্বালানি |
 | **Scope creep** (নতুন মডিউলের লোভ) | ধাপ ২১-এর আগে কোনো Phase 2 মডিউল ছোঁবেন না |
-| **নতুন টেবিলে RLS ভুলে যাওয়া** | migration লিন্ট: `tenant_id`-ওয়ালা টেবিলে RLS না থাকলে CI fail |
+| **নতুন টেবিলে RLS ভুলে যাওয়া** | rls-coverage টেস্ট (tenant-leak স্যুট): tenant_id-ওয়ালা প্রতিটা টেবিলে FORCE RLS না থাকলে CI fail |
 | **PgBouncer + `SET` বাগ** | ধাপ ২-এ `set_config(..., true)` ছাড়া কিছু লেখা হবে না; PgBouncer transaction mode-এ টেস্ট |
 
 ---
@@ -408,16 +545,17 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 
 ## ৯. অগ্রগতি
 
-- [ ] **ধাপ ০** — Monorepo, Docker Compose, CI কঙ্কাল
-- [ ] **ধাপ ১** — DB ভিত্তি + RLS
-- [ ] **ধাপ ২** — Tenant context + leak test
-- [ ] **ধাপ ৩** — Auth + RBAC + প্রথম ড্যাশবোর্ড
-- [ ] **ধাপ ৪–৫** — ডিজাইন সিস্টেম + কন্ট্র্যাক্ট codegen
-- [ ] **ধাপ ৬–৮** — Core Platform
-- [ ] **ধাপ ৯–১১** — Accounting
-- [ ] **ধাপ ১২–১৪** — Inventory
-- [ ] **ধাপ ১৫–১৭** — Sales + Purchase
-- [ ] **ধাপ ১৮–২০** — POS + অফলাইন
+- [x] **ধাপ ০** — Monorepo, Docker Compose, CI কঙ্কাল
+- [x] **ধাপ ১** — DB ভিত্তি + RLS
+- [x] **ধাপ ২** — Tenant context + leak test
+- [x] **ধাপ ৩** — Auth + RBAC + প্রথম ড্যাশবোর্ড
+- [x] **ধাপ ৪–৫** — ডিজাইন সিস্টেম + API কন্ট্র্যাক্ট
+- [x] **ধাপ ৬–৮** — Core Platform
+- [x] **ধাপ ৯–১১** — Accounting
+- [x] **ধাপ ১২–১৪** — Inventory
+- [x] **ধাপ ১৫–১৭** — Sales + Purchase
+- [x] **ধাপ ১৮–১৯** — সিঙ্ক ইঞ্জিন + PWA শেল (অফলাইন, এনক্রিপশন, PIN)
+- [x] **ধাপ ২০** — POS স্ক্রিন
 - [ ] **ধাপ ২১** — Reports 🏁 MVP
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀

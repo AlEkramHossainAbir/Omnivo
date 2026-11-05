@@ -1,0 +1,1101 @@
+import { PrinterIcon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import {
+  amountDueOf,
+  amountInWords,
+  type CreditNote,
+  type DebitNote,
+  type Delivery,
+  type DocumentTotals,
+  defaultLineDescription,
+  type Invoice,
+  isZeroMoney,
+  plainQuantity,
+  type PurchaseOrder,
+  type PurchaseReturn,
+  type Quotation,
+  type Receipt,
+  type Refund,
+  type SalesLine,
+  type SalesOrder,
+  type SalesReturn,
+  type StockLine,
+  type SupplierPayment,
+  type SupplierRefund,
+  unappliedOf,
+  unappliedPaymentOf,
+} from '@omnivo/contracts';
+import { useLocale } from '@omnivo/i18n';
+import { Button, cn, PrintBlock, type PrintMeta, PrintSheet } from '@omnivo/ui';
+import { useQuery } from '@tanstack/react-query';
+import type { ReactNode } from 'react';
+
+import { settingsQuery } from '../lib/queries';
+import {
+  creditReasonKey,
+  debitReasonKey,
+  purchaseReturnReasonKey,
+  returnReasonKey,
+} from '../lib/returns';
+import { variantName } from '../lib/stock';
+import { useIsoDate, useQuantity, useTenantId, useWarehouses } from './stock-parts';
+
+// The printed quotation, order, challan, invoice and money receipt (step 15c), the sales return,
+// credit note and refund (15d), the purchase order (17b), the supplier payment's voucher (17c), and
+// the purchase return, debit note and supplier refund (17d): one A4 layout, the browser's own
+// Print (or Save as PDF), so it works offline and needs no PDF service. Each page renders its sheet
+// next to itself; PrintSheet keeps it hidden on the screen and alone on paper.
+
+// "Print" in a document's header: the browser prints the sheet of the page
+export function PrintButton() {
+  const { t } = useLocale();
+  return (
+    <Button
+      variant="secondary"
+      onClick={() => {
+        window.print();
+      }}
+    >
+      <HugeiconsIcon icon={PrinterIcon} size={17} strokeWidth={1.5} />
+      {t('print.print')}
+    </Button>
+  );
+}
+
+// The company at the top of every sheet: its legal name (the name on the trade licence) or the
+// workspace's, the address one line per line, the BIN (the NBR asks for it on a VAT invoice), the
+// phone, and the logo. null until the settings arrive.
+function useCompany(): { company: string; lines: string[]; logo: ReactNode } | null {
+  const { t } = useLocale();
+  const settings = useQuery(settingsQuery(useTenantId())).data;
+  if (!settings) return null;
+  return {
+    company: settings.legalName ?? settings.companyName,
+    lines: [
+      ...(settings.address?.split('\n') ?? []),
+      ...(settings.bin === null ? [] : [t('print.bin', { bin: settings.bin })]),
+      ...(settings.phone === null ? [] : [t('print.phone', { phone: settings.phone })]),
+    ],
+    logo:
+      settings.logo === null ? undefined : (
+        // Decoration next to the name, which says the same: an empty alt
+        <img src={settings.logo.url} alt="" className="h-12 w-auto max-w-32 object-contain" />
+      ),
+  };
+}
+
+// The sheet with the company filled in, and the time it was printed at the foot
+function Sheet({
+  title,
+  meta,
+  signatures,
+  children,
+}: {
+  title: string;
+  meta: (PrintMeta | null)[];
+  signatures: string[];
+  children: ReactNode;
+}) {
+  const { t, format } = useLocale();
+  const company = useCompany();
+  if (!company) return null;
+  return (
+    <PrintSheet
+      logo={company.logo}
+      company={company.company}
+      companyLines={company.lines}
+      title={title}
+      meta={meta.filter((item): item is PrintMeta => item !== null)}
+      signatures={signatures}
+      footer={t('print.printedAt', { date: format.date(new Date()) })}
+    >
+      {children}
+    </PrintSheet>
+  );
+}
+
+// Step 16: "In words: Eighteen lakh … taka and fifty paisa only" under a money document's total,
+// in the language of the screen (the PDF has the same words in the customer's language). The
+// currency is the books' own; null until the settings arrive, like the sheet itself.
+function InWords({ amount }: { amount: string }) {
+  const { t, language } = useLocale();
+  const currency = useQuery(settingsQuery(useTenantId())).data?.baseCurrency;
+  if (currency === undefined) return null;
+  return (
+    <p className="break-inside-avoid text-ink-2">
+      {t('print.inWords', { words: amountInWords(amount, language, currency) })}
+    </p>
+  );
+}
+
+// The customer: name and code, then an address as it was saved, one part per line
+function PartyBlock({
+  label,
+  name,
+  code,
+  address,
+}: {
+  label: string;
+  name: string;
+  code?: string;
+  address?: string | null;
+}) {
+  return (
+    <PrintBlock label={label}>
+      <p className="font-medium">{name}</p>
+      {code !== undefined && <p className="font-mono text-caption text-ink-2">{code}</p>}
+      {address !== null && address !== undefined && (
+        <p className="whitespace-pre-line text-ink-2">{address}</p>
+      )}
+    </PrintBlock>
+  );
+}
+
+// A sales line on paper, with what a pharmacy or an electronics shop asks to see under it: the
+// batch and its expiry, the serial numbers, the challan it left on, and (15d, a credit note) the
+// return the goods came back on
+interface PricedLine extends SalesLine {
+  lotNumber?: string | null;
+  expiresOn?: string | null;
+  serialNumbers?: string[];
+  deliveryNumber?: string | null;
+  returnNumber?: string | null;
+}
+
+const CELL = 'border-b border-line px-2 py-1.5 align-top';
+const HEAD = 'border-b border-ink px-2 py-1.5 text-left text-caption font-medium text-ink-2';
+
+function PricedLines({
+  lines,
+  totals,
+  pricesIncludeVat,
+  after,
+  extra,
+  returnWords = 'creditNotes.fromReturn',
+  words = false,
+}: {
+  lines: readonly PricedLine[];
+  totals: DocumentTotals;
+  pricesIncludeVat: boolean;
+  // Rows under the total: what an invoice was paid and still asks for
+  after?: { label: string; value: string }[];
+  // Step 17d: what sits between the lines and the totals, which count it too (a debit note's
+  // expenses)
+  extra?: ReactNode;
+  // Step 17d: how a line names the return its goods went on: "Goods back on SR-…" for a credit
+  // note, "Goods sent back on PRN-…" for a debit note
+  returnWords?: 'creditNotes.fromReturn' | 'debitNotes.fromReturn';
+  // Step 16: the total in words, on the money documents only (decision 7)
+  words?: boolean;
+}) {
+  const { t, format } = useLocale();
+  const quantity = useQuantity();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  const sums = [
+    ...(isZeroMoney(totals.discount)
+      ? []
+      : [{ label: t('salesLines.lineDiscounts'), value: `−${money(totals.discount)}` }]),
+    { label: t('salesLines.net'), value: money(totals.net) },
+    { label: t('salesLines.vat'), value: money(totals.vat) },
+  ];
+  return (
+    <>
+      <table className="w-full border-collapse text-caption">
+        {/* <thead> repeats at the top of every printed page of a long invoice */}
+        <thead>
+          <tr>
+            <th scope="col" className={HEAD}>
+              {t('print.columns.number')}
+            </th>
+            <th scope="col" className={HEAD}>
+              {t('print.columns.item')}
+            </th>
+            <th scope="col" className={cn(HEAD, 'text-right')}>
+              {t('print.columns.quantity')}
+            </th>
+            <th scope="col" className={cn(HEAD, 'text-right')}>
+              {t('print.columns.price')}
+            </th>
+            <th scope="col" className={cn(HEAD, 'text-right')}>
+              {t('print.columns.discount')}
+            </th>
+            <th scope="col" className={cn(HEAD, 'text-right')}>
+              {t('print.columns.vat')}
+            </th>
+            <th scope="col" className={cn(HEAD, 'text-right')}>
+              {t('print.columns.amount')}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((line, index) => {
+            const notes = [
+              ...(line.description === defaultLineDescription(line) ? [] : [variantName(line)]),
+              ...(line.lotNumber === null || line.lotNumber === undefined
+                ? []
+                : [
+                    [
+                      t('print.batch', { lot: line.lotNumber }),
+                      ...(line.expiresOn === null || line.expiresOn === undefined
+                        ? []
+                        : [t('print.expires', { date: isoDate(line.expiresOn) })]),
+                    ].join(', '),
+                  ]),
+              ...(line.serialNumbers === undefined || line.serialNumbers.length === 0
+                ? []
+                : [t('print.serials', { serials: line.serialNumbers.join(', ') })]),
+              ...(line.deliveryNumber === null || line.deliveryNumber === undefined
+                ? []
+                : [t('invoices.fromChallan', { number: line.deliveryNumber })]),
+              ...(line.returnNumber === null || line.returnNumber === undefined
+                ? []
+                : [t(returnWords, { number: line.returnNumber })]),
+            ];
+            return (
+              // break-inside-avoid: a line and its notes stay on one page
+              <tr key={line.id} className="break-inside-avoid">
+                <td className={cn(CELL, 'tabular-nums')}>{index + 1}</td>
+                <td className={CELL}>
+                  <span className="block text-body-sm text-ink">{line.description}</span>
+                  <span className="block font-mono text-ink-3">{line.sku}</span>
+                  {notes.map((note) => (
+                    <span key={note} className="block text-ink-2">
+                      {note}
+                    </span>
+                  ))}
+                </td>
+                <td className={cn(CELL, 'text-right whitespace-nowrap tabular-nums')}>
+                  {quantity(line.quantity, line.unitId)}
+                </td>
+                <td className={cn(CELL, 'text-right whitespace-nowrap tabular-nums')}>
+                  {money(line.unitPrice)}
+                </td>
+                <td className={cn(CELL, 'text-right whitespace-nowrap tabular-nums')}>
+                  {isZeroMoney(line.discount)
+                    ? '—'
+                    : line.discountType === 'percent'
+                      ? `${format.number(plainQuantity(line.discount), 2)}%`
+                      : money(line.discount)}
+                </td>
+                <td className={cn(CELL, 'text-right whitespace-nowrap tabular-nums')}>
+                  {line.taxRate.name}
+                </td>
+                <td className={cn(CELL, 'text-right whitespace-nowrap tabular-nums')}>
+                  {money(pricesIncludeVat ? line.total : line.net)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {extra}
+      <div className="flex break-inside-avoid items-end justify-between gap-6">
+        <p className="text-caption text-ink-2">
+          {pricesIncludeVat ? t('salesLines.pricesWithVat') : t('salesLines.pricesWithoutVat')}
+        </p>
+        <dl className="grid min-w-64 grid-cols-[1fr_auto] gap-x-6 gap-y-1 tabular-nums">
+          {sums.map((sum) => (
+            <div key={sum.label} className="contents">
+              <dt className="text-ink-2">{sum.label}</dt>
+              <dd className="text-right">{sum.value}</dd>
+            </div>
+          ))}
+          <dt className="border-t border-ink pt-1 font-medium">{t('salesLines.total')}</dt>
+          <dd className="border-t border-ink pt-1 text-right font-medium">{money(totals.total)}</dd>
+          {after?.map((sum) => (
+            <div key={sum.label} className="contents">
+              <dt className="text-ink-2">{sum.label}</dt>
+              <dd className="text-right">{sum.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      {words && <InWords amount={totals.total} />}
+    </>
+  );
+}
+
+function Note({ note }: { note: string | null }) {
+  const { t } = useLocale();
+  if (note === null) return null;
+  return (
+    <PrintBlock label={t('salesOrders.note')}>
+      <p className="whitespace-pre-line">{note}</p>
+    </PrintBlock>
+  );
+}
+
+export function QuotationPrint({ quotation }: { quotation: Quotation }) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  return (
+    <Sheet
+      title={t('print.titles.quotation')}
+      meta={[
+        { label: t('print.number'), value: quotation.number },
+        { label: t('print.date'), value: isoDate(quotation.date) },
+        quotation.validUntil === null
+          ? null
+          : { label: t('print.validUntil'), value: isoDate(quotation.validUntil) },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <PartyBlock
+        label={t('print.customer')}
+        name={quotation.customer.name}
+        code={quotation.customer.code}
+      />
+      <PricedLines
+        lines={quotation.lines}
+        totals={quotation}
+        pricesIncludeVat={quotation.pricesIncludeVat}
+      />
+      <Note note={quotation.note} />
+    </Sheet>
+  );
+}
+
+export function SalesOrderPrint({ order }: { order: SalesOrder }) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  return (
+    <Sheet
+      title={t('print.titles.salesOrder')}
+      meta={[
+        { label: t('print.number'), value: order.number ?? '' },
+        { label: t('print.date'), value: isoDate(order.date) },
+        order.deliveryDate === null
+          ? null
+          : { label: t('print.deliveryDate'), value: isoDate(order.deliveryDate) },
+        order.customerReference === null
+          ? null
+          : { label: t('print.customerReference'), value: order.customerReference },
+      ]}
+      signatures={[t('print.signatures.customer'), t('print.signatures.authorised')]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.customer')}
+          name={order.customer.name}
+          code={order.customer.code}
+        />
+        {order.shippingAddress !== null && (
+          <PartyBlock
+            label={t('print.shipTo')}
+            name={order.customer.name}
+            address={order.shippingAddress}
+          />
+        )}
+      </div>
+      <PricedLines lines={order.lines} totals={order} pricesIncludeVat={order.pricesIncludeVat} />
+      <Note note={order.note} />
+    </Sheet>
+  );
+}
+
+// Step 17b: the purchase order, as its PDF draws it (apps/api/src/documents/models.service.ts): the
+// supplier, where the goods go and by when, the terms, the priced lines and the total in words: the
+// company commits to pay it, like a bill
+export function PurchaseOrderPrint({ order }: { order: PurchaseOrder }) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  const place = useWarehouses().byId.get(order.warehouseId);
+  return (
+    <Sheet
+      title={t('print.titles.purchaseOrder')}
+      meta={[
+        { label: t('print.number'), value: order.number ?? '' },
+        { label: t('print.date'), value: isoDate(order.date) },
+        order.expectedDate === null
+          ? null
+          : { label: t('print.deliverBy'), value: isoDate(order.expectedDate) },
+        order.supplierReference === null
+          ? null
+          : { label: t('print.customerReference'), value: order.supplierReference },
+        {
+          label: t('print.paymentTerms'),
+          value:
+            order.paymentTermsDays === 0
+              ? t('print.onDelivery')
+              : t('print.termsDays', { count: order.paymentTermsDays }),
+        },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.supplier')}
+          name={order.supplier.name}
+          code={order.supplier.code}
+        />
+        {place && (
+          <PartyBlock label={t('print.deliverTo')} name={place.name} address={place.address} />
+        )}
+      </div>
+      <PricedLines
+        lines={order.lines}
+        totals={order}
+        pricesIncludeVat={order.pricesIncludeVat}
+        words
+      />
+      <Note note={order.note} />
+    </Sheet>
+  );
+}
+
+// The lines of a challan or (15d) a return on paper: the goods, how much, the batch and serial
+// numbers, no prices. `note` adds a line under an item (the challan a returned line left on).
+function StockPrintLines<L extends StockLine>({
+  lines,
+  note,
+}: {
+  lines: readonly L[];
+  note?: (line: L) => string | null;
+}) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  const quantity = useQuantity();
+  return (
+    <table className="w-full border-collapse text-caption">
+      <thead>
+        <tr>
+          <th scope="col" className={HEAD}>
+            {t('print.columns.number')}
+          </th>
+          <th scope="col" className={HEAD}>
+            {t('print.columns.item')}
+          </th>
+          <th scope="col" className={cn(HEAD, 'text-right')}>
+            {t('print.columns.quantity')}
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {lines.map((line, index) => {
+          const extra = note?.(line) ?? null;
+          return (
+            <tr key={line.id} className="break-inside-avoid">
+              <td className={cn(CELL, 'tabular-nums')}>{index + 1}</td>
+              <td className={CELL}>
+                <span className="block text-body-sm text-ink">{variantName(line)}</span>
+                <span className="block font-mono text-ink-3">{line.sku}</span>
+                {line.lotNumber !== null && (
+                  <span className="block text-ink-2">
+                    {t('print.batch', { lot: line.lotNumber })}
+                    {line.expiresOn !== null &&
+                      `, ${t('print.expires', { date: isoDate(line.expiresOn) })}`}
+                  </span>
+                )}
+                {line.serialNumbers.length > 0 && (
+                  <span className="block break-all text-ink-2">
+                    {t('print.serials', { serials: line.serialNumbers.join(', ') })}
+                  </span>
+                )}
+                {extra !== null && <span className="block text-ink-2">{extra}</span>}
+              </td>
+              <td className={cn(CELL, 'text-right whitespace-nowrap tabular-nums')}>
+                {quantity(line.quantity, line.unitId)}
+                {line.unitId !== line.baseUnitId && (
+                  <span className="block text-ink-3">
+                    {t('stockLines.equals', {
+                      quantity: quantity(line.baseQuantity, line.baseUnitId),
+                    })}
+                  </span>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// The challan goes with the truck: what left and how much, with the batch and serial numbers, and
+// no prices (the invoice prices it)
+export function DeliveryPrint({ delivery }: { delivery: Delivery }) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  return (
+    <Sheet
+      title={t('print.titles.delivery')}
+      meta={[
+        { label: t('print.number'), value: delivery.number ?? '' },
+        { label: t('print.date'), value: isoDate(delivery.date) },
+        delivery.order === null
+          ? null
+          : { label: t('print.order'), value: delivery.order.number ?? '' },
+        delivery.vehicle === null ? null : { label: t('print.vehicle'), value: delivery.vehicle },
+      ]}
+      signatures={[
+        t('print.signatures.receivedBy'),
+        t('print.signatures.preparedBy'),
+        t('print.signatures.authorised'),
+      ]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.customer')}
+          name={delivery.customer.name}
+          code={delivery.customer.code}
+        />
+        {delivery.shippingAddress !== null && (
+          <PartyBlock
+            label={t('print.shipTo')}
+            name={delivery.customer.name}
+            address={delivery.shippingAddress}
+          />
+        )}
+      </div>
+      <StockPrintLines lines={delivery.lines} />
+      <Note note={delivery.note} />
+    </Sheet>
+  );
+}
+
+export function InvoicePrint({ invoice }: { invoice: Invoice }) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  const orders = invoice.orders.flatMap((order) => (order.number === null ? [] : [order.number]));
+  return (
+    <Sheet
+      title={t('print.titles.invoice')}
+      meta={[
+        { label: t('print.number'), value: invoice.number ?? '' },
+        { label: t('print.date'), value: isoDate(invoice.date) },
+        { label: t('print.dueDate'), value: isoDate(invoice.dueDate) },
+        invoice.customerReference === null
+          ? null
+          : { label: t('print.customerReference'), value: invoice.customerReference },
+        orders.length === 0 ? null : { label: t('print.order'), value: orders.join(', ') },
+      ]}
+      signatures={[t('print.signatures.customer'), t('print.signatures.authorised')]}
+    >
+      <PartyBlock
+        label={t('print.billTo')}
+        name={invoice.customer.name}
+        code={invoice.customer.code}
+        address={invoice.billingAddress}
+      />
+      <PricedLines
+        lines={invoice.lines}
+        totals={invoice}
+        pricesIncludeVat={invoice.pricesIncludeVat}
+        words
+        // What is paid by the day it is printed, what credit notes took off (15d), and what is
+        // still due
+        after={
+          isZeroMoney(invoice.amountPaid) && isZeroMoney(invoice.amountCredited)
+            ? []
+            : [
+                ...(isZeroMoney(invoice.amountPaid)
+                  ? []
+                  : [{ label: t('invoices.paid'), value: money(invoice.amountPaid) }]),
+                ...(isZeroMoney(invoice.amountCredited)
+                  ? []
+                  : [{ label: t('invoices.credited'), value: money(invoice.amountCredited) }]),
+                { label: t('invoices.due'), value: money(amountDueOf(invoice)) },
+              ]
+        }
+      />
+      <Note note={invoice.note} />
+    </Sheet>
+  );
+}
+
+// The slip a cashier hands over: who paid, how much, how, and which invoices it paid
+export function ReceiptPrint({ receipt }: { receipt: Receipt }) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  // Step 15d: what a refund paid back is no advance any more
+  const advance = unappliedOf(receipt);
+  return (
+    <Sheet
+      title={t('print.titles.receipt')}
+      meta={[
+        { label: t('print.number'), value: receipt.number },
+        { label: t('print.date'), value: isoDate(receipt.date) },
+      ]}
+      signatures={[t('print.signatures.receivedBy'), t('print.signatures.authorised')]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.receivedFrom')}
+          name={receipt.customer.name}
+          code={receipt.customer.code}
+        />
+        <PrintBlock label={t('print.amountReceived')}>
+          <p className="text-h2 tabular-nums">{money(receipt.amount)}</p>
+        </PrintBlock>
+        <PrintBlock label={t('print.paidBy')}>
+          <p>{t(`receipts.methods.${receipt.method}`)}</p>
+        </PrintBlock>
+        {receipt.reference !== null && (
+          <PrintBlock label={t('print.reference')}>
+            <p>{receipt.reference}</p>
+          </PrintBlock>
+        )}
+      </div>
+      <InWords amount={receipt.amount} />
+      {receipt.allocations.length > 0 && (
+        <PrintBlock label={t('print.appliedTo')}>
+          <table className="w-full border-collapse text-caption">
+            <thead>
+              <tr>
+                <th scope="col" className={HEAD}>
+                  {t('receipts.allocationColumns.invoice')}
+                </th>
+                <th scope="col" className={HEAD}>
+                  {t('receipts.allocationColumns.date')}
+                </th>
+                <th scope="col" className={cn(HEAD, 'text-right')}>
+                  {t('receipts.allocationColumns.total')}
+                </th>
+                <th scope="col" className={cn(HEAD, 'text-right')}>
+                  {t('receipts.allocationColumns.amount')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {receipt.allocations.map((allocation) => (
+                <tr key={allocation.invoiceId} className="break-inside-avoid">
+                  <td className={cn(CELL, 'font-mono tabular-nums')}>{allocation.invoiceNumber}</td>
+                  <td className={cn(CELL, 'tabular-nums')}>{isoDate(allocation.invoiceDate)}</td>
+                  <td className={cn(CELL, 'text-right tabular-nums')}>
+                    {money(allocation.invoiceTotal)}
+                  </td>
+                  <td className={cn(CELL, 'text-right tabular-nums')}>
+                    {money(allocation.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </PrintBlock>
+      )}
+      {!isZeroMoney(advance) && (
+        <p className="tabular-nums">
+          {t('print.advance')}: {money(advance)}
+        </p>
+      )}
+      <Note note={receipt.note} />
+    </Sheet>
+  );
+}
+
+// Step 15d: the return slip the store keeper signs when the goods come in: what came back, from
+// which challan, into which warehouse, and why. No prices: a credit note gives the money back.
+export function SalesReturnPrint({
+  salesReturn,
+  warehouse,
+}: {
+  salesReturn: SalesReturn;
+  warehouse: string;
+}) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  return (
+    <Sheet
+      title={t('print.titles.salesReturn')}
+      meta={[
+        { label: t('print.number'), value: salesReturn.number ?? '' },
+        { label: t('print.date'), value: isoDate(salesReturn.date) },
+        { label: t('print.reason'), value: t(returnReasonKey(salesReturn.reason)) },
+        { label: t('salesReturns.warehouse'), value: warehouse },
+      ]}
+      signatures={[
+        t('print.signatures.customer'),
+        t('print.signatures.receivedBy'),
+        t('print.signatures.authorised'),
+      ]}
+    >
+      <PartyBlock
+        label={t('print.customer')}
+        name={salesReturn.customer.name}
+        code={salesReturn.customer.code}
+      />
+      <StockPrintLines
+        lines={salesReturn.lines}
+        note={(line) =>
+          line.deliveryNumber === null ? null : `${t('print.challan')}: ${line.deliveryNumber}`
+        }
+      />
+      <Note note={salesReturn.note} />
+    </Sheet>
+  );
+}
+
+// Step 15d: the credit note, laid out like the invoice it takes back, with that invoice's number and
+// date at the top: the customer's accountant files it against the invoice
+export function CreditNotePrint({ creditNote }: { creditNote: CreditNote }) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  return (
+    <Sheet
+      title={t('print.titles.creditNote')}
+      meta={[
+        { label: t('print.number'), value: creditNote.number ?? '' },
+        { label: t('print.date'), value: isoDate(creditNote.date) },
+        { label: t('print.originalInvoice'), value: creditNote.invoice.number },
+        { label: t('print.invoiceDate'), value: isoDate(creditNote.invoice.date) },
+        { label: t('print.reason'), value: t(creditReasonKey(creditNote.reason)) },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <PartyBlock
+        label={t('print.billTo')}
+        name={creditNote.customer.name}
+        code={creditNote.customer.code}
+      />
+      <PricedLines
+        lines={creditNote.lines}
+        totals={creditNote}
+        pricesIncludeVat={creditNote.pricesIncludeVat}
+        words
+      />
+      <Note note={creditNote.note} />
+    </Sheet>
+  );
+}
+
+// Step 15d: the slip the customer signs when the money is handed back, the receipt's mirror
+export function RefundPrint({ refund }: { refund: Refund }) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  return (
+    <Sheet
+      title={t('print.titles.refund')}
+      meta={[
+        { label: t('print.number'), value: refund.number },
+        { label: t('print.date'), value: isoDate(refund.date) },
+      ]}
+      signatures={[t('print.signatures.customer'), t('print.signatures.authorised')]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.paidTo')}
+          name={refund.customer.name}
+          code={refund.customer.code}
+        />
+        <PrintBlock label={t('print.amountPaidBack')}>
+          <p className="text-h2 tabular-nums">{money(refund.amount)}</p>
+        </PrintBlock>
+        <PrintBlock label={t('print.paidBy')}>
+          <p>{t(`receipts.methods.${refund.method}`)}</p>
+        </PrintBlock>
+        {refund.reference !== null && (
+          <PrintBlock label={t('print.reference')}>
+            <p>{refund.reference}</p>
+          </PrintBlock>
+        )}
+        <PrintBlock label={t('print.paidBackFrom')}>
+          <p>
+            {t(`refunds.sources.${refund.source.type}`)}{' '}
+            <span className="font-mono tabular-nums">{refund.source.number}</span>
+          </p>
+        </PrintBlock>
+      </div>
+      <InWords amount={refund.amount} />
+      <Note note={refund.note} />
+    </Sheet>
+  );
+}
+
+// Step 17c: the payment voucher (decision 10), signed by whoever handed over the cheque and whoever
+// authorised it. Who was paid and how, from which account, to which of their bank accounts (the
+// routing number is what a BEFTN transfer needs), the amount in words, and the bills it paid with
+// the supplier's own bill numbers, because their accountant matches the voucher against those.
+export function SupplierPaymentPrint({
+  payment,
+  account,
+}: {
+  payment: SupplierPayment;
+  // "1120 · Dutch-Bangla Bank, Motijheel": the account the money left, as the page names it
+  account: string;
+}) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  const advance = unappliedPaymentOf(payment);
+  const bank = payment.supplierBankAccount;
+  return (
+    <Sheet
+      title={t('print.titles.supplierPayment')}
+      meta={[
+        { label: t('print.number'), value: payment.number ?? '' },
+        { label: t('print.date'), value: isoDate(payment.date) },
+      ]}
+      signatures={[
+        t('print.signatures.receivedBy'),
+        t('print.signatures.preparedBy'),
+        t('print.signatures.authorised'),
+      ]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.paidTo')}
+          name={payment.supplier.name}
+          code={payment.supplier.code}
+        />
+        <PrintBlock label={t('print.amountPaid')}>
+          <p className="text-h2 tabular-nums">{money(payment.amount)}</p>
+        </PrintBlock>
+        <PrintBlock label={t('print.paidBy')}>
+          <p>{t(`receipts.methods.${payment.method}`)}</p>
+        </PrintBlock>
+        {payment.reference !== null && (
+          <PrintBlock label={t('print.reference')}>
+            <p>{payment.reference}</p>
+          </PrintBlock>
+        )}
+        <PrintBlock label={t('print.paidFrom')}>
+          <p>{account}</p>
+        </PrintBlock>
+        {bank !== null && (
+          <PrintBlock label={t('print.toAccount')}>
+            <p>{bank.accountName}</p>
+            <p className="tabular-nums">
+              {bank.bankName}
+              {bank.branchName !== null && `, ${bank.branchName}`} · {bank.accountNumber}
+            </p>
+            {bank.routingNumber !== null && (
+              <p className="tabular-nums">{t('print.routing', { number: bank.routingNumber })}</p>
+            )}
+          </PrintBlock>
+        )}
+        {payment.order !== null && (
+          <PrintBlock label={t('print.againstOrder')}>
+            <p className="font-mono tabular-nums">{payment.order.number ?? ''}</p>
+          </PrintBlock>
+        )}
+      </div>
+      <InWords amount={payment.amount} />
+      {payment.allocations.length > 0 && (
+        <PrintBlock label={t('print.billsPaid')}>
+          <table className="w-full border-collapse text-caption">
+            <thead>
+              <tr>
+                <th scope="col" className={HEAD}>
+                  {t('supplierPayments.allocationColumns.bill')}
+                </th>
+                <th scope="col" className={HEAD}>
+                  {t('print.supplierBill')}
+                </th>
+                <th scope="col" className={HEAD}>
+                  {t('print.date')}
+                </th>
+                <th scope="col" className={cn(HEAD, 'text-right')}>
+                  {t('supplierPayments.allocationColumns.total')}
+                </th>
+                <th scope="col" className={cn(HEAD, 'text-right')}>
+                  {t('supplierPayments.allocationColumns.amount')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {payment.allocations.map((allocation) => (
+                <tr key={allocation.billId} className="break-inside-avoid">
+                  <td className={cn(CELL, 'font-mono tabular-nums')}>{allocation.billNumber}</td>
+                  <td className={cn(CELL, 'font-mono tabular-nums')}>
+                    {allocation.supplierBillNumber}
+                  </td>
+                  <td className={cn(CELL, 'tabular-nums')}>{isoDate(allocation.billDate)}</td>
+                  <td className={cn(CELL, 'text-right tabular-nums')}>
+                    {money(allocation.billTotal)}
+                  </td>
+                  <td className={cn(CELL, 'text-right tabular-nums')}>
+                    {money(allocation.amount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </PrintBlock>
+      )}
+      {!isZeroMoney(advance) && (
+        <p className="tabular-nums">
+          {t('print.advance')}: {money(advance)}
+        </p>
+      )}
+      <Note note={payment.note} />
+    </Sheet>
+  );
+}
+
+// Step 17d: the goods-out slip of a purchase return, the paper that goes on the supplier's truck
+// with the goods (decision 7). The sales return's slip the other way round: the supplier's driver
+// signs for what he takes, the store keeper who loaded it, and whoever authorised it. Each line
+// names the goods receipt it came in on, which is how the supplier finds its own challan.
+export function PurchaseReturnPrint({
+  purchaseReturn,
+  warehouse,
+}: {
+  purchaseReturn: PurchaseReturn;
+  warehouse: string;
+}) {
+  const { t } = useLocale();
+  const isoDate = useIsoDate();
+  return (
+    <Sheet
+      title={t('print.titles.purchaseReturn')}
+      meta={[
+        { label: t('print.number'), value: purchaseReturn.number ?? '' },
+        { label: t('print.date'), value: isoDate(purchaseReturn.date) },
+        { label: t('print.reason'), value: t(purchaseReturnReasonKey(purchaseReturn.reason)) },
+        { label: t('print.sentFrom'), value: warehouse },
+      ]}
+      signatures={[
+        t('print.signatures.supplier'),
+        t('print.signatures.preparedBy'),
+        t('print.signatures.authorised'),
+      ]}
+    >
+      <PartyBlock
+        label={t('print.supplier')}
+        name={purchaseReturn.supplier.name}
+        code={purchaseReturn.supplier.code}
+      />
+      <StockPrintLines
+        lines={purchaseReturn.lines}
+        note={(line) =>
+          line.receiptNumber === null ? null : `${t('print.goodsReceipt')}: ${line.receiptNumber}`
+        }
+      />
+      <Note note={purchaseReturn.note} />
+    </Sheet>
+  );
+}
+
+// Step 17d: the debit note, the paper the supplier gets (decision 7), laid out like the credit note:
+// the bill it takes money off, with the supplier's own bill number, since that is what their
+// accountant files it against, and their credit note (Mushak 6.7) when they gave one. Its expenses
+// sit under the lines, inside the totals.
+export function DebitNotePrint({ debitNote }: { debitNote: DebitNote }) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  const { bill } = debitNote;
+  const credit = debitNote.supplierCreditNumber;
+  return (
+    <Sheet
+      title={t('print.titles.debitNote')}
+      meta={[
+        { label: t('print.number'), value: debitNote.number ?? '' },
+        { label: t('print.date'), value: isoDate(debitNote.date) },
+        bill === null
+          ? null
+          : {
+              label: t('print.originalBill'),
+              value: `${bill.number} · ${bill.supplierBillNumber}`,
+            },
+        bill === null ? null : { label: t('print.billDate'), value: isoDate(bill.date) },
+        credit === null
+          ? null
+          : {
+              label: t('print.supplierCredit'),
+              value:
+                debitNote.supplierCreditDate === null
+                  ? credit
+                  : `${credit} · ${isoDate(debitNote.supplierCreditDate)}`,
+            },
+        { label: t('print.reason'), value: t(debitReasonKey(debitNote.reason)) },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <PartyBlock
+        label={t('print.supplier')}
+        name={debitNote.supplier.name}
+        code={debitNote.supplier.code}
+      />
+      <PricedLines
+        lines={debitNote.lines}
+        totals={debitNote}
+        pricesIncludeVat={debitNote.pricesIncludeVat}
+        returnWords="debitNotes.fromReturn"
+        words
+        extra={
+          debitNote.expenses.length > 0 && (
+            <PrintBlock label={t('debitNotes.expensesTitle')}>
+              <table className="w-full border-collapse text-caption">
+                <tbody>
+                  {debitNote.expenses.map((expense) => (
+                    <tr key={expense.id} className="break-inside-avoid">
+                      <td className={CELL}>{expense.description}</td>
+                      <td className={cn(CELL, 'text-right whitespace-nowrap')}>
+                        {expense.taxRate.name}
+                      </td>
+                      <td className={cn(CELL, 'text-right whitespace-nowrap tabular-nums')}>
+                        {money(debitNote.pricesIncludeVat ? expense.total : expense.net)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </PrintBlock>
+          )
+        }
+      />
+      <Note note={debitNote.note} />
+    </Sheet>
+  );
+}
+
+// Step 17d: the voucher of money a supplier paid back (decision 7), the money receipt's mirror:
+// who paid, how much in figures and words, how, into which account, and on which debit note or
+// payment
+export function SupplierRefundPrint({
+  refund,
+  account,
+}: {
+  refund: SupplierRefund;
+  // "1121 · Eastern Bank, Gulshan": the account the money came into, as the page names it
+  account: string;
+}) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  return (
+    <Sheet
+      title={t('print.titles.supplierRefund')}
+      meta={[
+        { label: t('print.number'), value: refund.number },
+        { label: t('print.date'), value: isoDate(refund.date) },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <div className="grid grid-cols-2 gap-6">
+        <PartyBlock
+          label={t('print.receivedFrom')}
+          name={refund.supplier.name}
+          code={refund.supplier.code}
+        />
+        <PrintBlock label={t('print.amountReceived')}>
+          <p className="text-h2 tabular-nums">{money(refund.amount)}</p>
+        </PrintBlock>
+        <PrintBlock label={t('print.paidBy')}>
+          <p>{t(`receipts.methods.${refund.method}`)}</p>
+        </PrintBlock>
+        {refund.reference !== null && (
+          <PrintBlock label={t('print.reference')}>
+            <p>{refund.reference}</p>
+          </PrintBlock>
+        )}
+        <PrintBlock label={t('print.receivedInto')}>
+          <p>{account}</p>
+        </PrintBlock>
+        <PrintBlock label={t('print.paidBackOn')}>
+          <p>
+            {t(`supplierRefunds.sources.${refund.source.type}`)}{' '}
+            <span className="font-mono tabular-nums">{refund.source.number}</span>
+          </p>
+        </PrintBlock>
+      </div>
+      <InWords amount={refund.amount} />
+      <Note note={refund.note} />
+    </Sheet>
+  );
+}

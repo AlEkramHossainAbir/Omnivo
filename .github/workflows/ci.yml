@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lockfile dedupe
+        run: pnpm dedupe --check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format
+        run: pnpm format
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Integration tests (Testcontainers)
+        run: pnpm test:integration
+
+      - name: Tenant leak tests
+        run: pnpm test:tenant-leak
+
+      - name: Install Playwright browser
+        run: pnpm --filter @omnivo/app exec playwright install --with-deps chromium
+
+      - name: E2E (Playwright on MSW mocks)
+        run: pnpm test:e2e
+
+      - name: E2E (service worker on a production build)
+        run: pnpm test:e2e:pwa
+
+      - name: Build
+        run: pnpm build
+
+      - name: Bundle size
+        run: pnpm test:bundle-size
+
+      - name: OpenAPI spec up to date
+        run: pnpm test:openapi
+
+      - name: Module boundaries
+        run: pnpm boundaries

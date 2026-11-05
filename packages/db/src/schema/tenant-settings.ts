@@ -1,0 +1,97 @@
+import { CURRENCIES, DEFAULT_SETTINGS } from '@omnivo/contracts';
+import { sql } from 'drizzle-orm';
+import {
+  boolean,
+  check,
+  foreignKey,
+  numeric,
+  pgTable,
+  smallint,
+  text,
+  uuid,
+} from 'drizzle-orm/pg-core';
+import { baseColumns } from '../base-columns.js';
+import { attachments } from './attachments.js';
+import { ledgerAccounts } from './ledger-accounts.js';
+import { tenants } from './tenants.js';
+
+// প্রতি টেন্যান্টে ঠিক একটা রো, তাই tenant_id নিজেই primary key — আলাদা id লাগে না, আর "একটার বেশি
+// settings রো" অবস্থা DB-লেভেলেই অসম্ভব। কোম্পানির নাম এখানে না: সেটা tenants.name-এ, কারণ লগইন আর
+// workspace switcher সেটা tenant context ছাড়াই পড়ে
+export const tenantSettings = pgTable(
+  'tenant_settings',
+  {
+    tenantId: uuid('tenant_id')
+      .primaryKey()
+      .references(() => tenants.id),
+    legalName: text('legal_name'),
+    bin: text('bin'),
+    phone: text('phone'),
+    email: text('email'),
+    address: text('address'),
+    baseCurrency: text('base_currency', { enum: CURRENCIES })
+      .notNull()
+      .default(DEFAULT_SETTINGS.baseCurrency),
+    fiscalYearStartMonth: smallint('fiscal_year_start_month')
+      .notNull()
+      .default(DEFAULT_SETTINGS.fiscalYearStartMonth),
+    timezone: text('timezone').notNull().default(DEFAULT_SETTINGS.timezone),
+    logoAttachmentId: uuid('logo_attachment_id'),
+    // Step 13: may an untracked product's stock go below zero? Read by migration 0022's trigger.
+    allowNegativeStock: boolean('allow_negative_stock').notNull().default(false),
+    // Step 15a: do the prices the workspace types already hold the VAT? Off = before VAT, the way
+    // a distributor quotes. Read by step 15b's sales lines.
+    pricesIncludeVat: boolean('prices_include_vat').notNull().default(false),
+    // Step 15d: the income account a credit note takes the sale back from ("Sales returns"). NULL =
+    // the Sales account itself. Its own route (/sales-accounts) writes it, never PUT /settings.
+    salesReturnsAccountId: uuid('sales_returns_account_id'),
+    // Step 17b: how much more than ordered a goods receipt may bring in, in percent of the order
+    // line (3.00 = 3%). 0 = never more than ordered.
+    overReceiptPercent: numeric('over_receipt_percent', { precision: 5, scale: 2 })
+      .notNull()
+      .default('0'),
+    // Step 17c (decision 17): the expense account a bill's price difference goes to ("Purchase
+    // price difference"; NULL = the Cost of goods sold account), and the one a service line starts
+    // from ("Purchased services"; NULL = none, the line must name one). Their own route
+    // (/purchase-accounts) writes them, never PUT /settings.
+    purchasePriceDifferenceAccountId: uuid('purchase_price_difference_account_id'),
+    purchaseServicesAccountId: uuid('purchase_services_account_id'),
+    createdAt: baseColumns().createdAt,
+    updatedAt: baseColumns().updatedAt,
+    updatedBy: baseColumns().updatedBy,
+    version: baseColumns().version,
+  },
+  (table) => [
+    check(
+      'tenant_settings_fiscal_month_check',
+      sql`${table.fiscalYearStartMonth} BETWEEN 1 AND 12`,
+    ),
+    // The contract's limit: 100% = double the order line
+    check('tenant_settings_over_receipt_check', sql`${table.overReceiptPercent} BETWEEN 0 AND 100`),
+    // composite FK: লোগো হিসেবে অন্য টেন্যান্টের ফাইল বসানো DB-লেভেলেই অসম্ভব। NULL হলে চেক হয় না
+    foreignKey({
+      name: 'tenant_settings_logo_fk',
+      columns: [table.tenantId, table.logoAttachmentId],
+      foreignColumns: [attachments.tenantId, attachments.id],
+    }),
+    // An account of this workspace. No ON DELETE: the account that is chosen cannot be deleted
+    // (AccountsService: account_in_use). No index: there is one settings row per workspace, and
+    // tenant_id is its key.
+    foreignKey({
+      name: 'tenant_settings_sales_returns_account_fk',
+      columns: [table.tenantId, table.salesReturnsAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    // Step 17c: the same for the two purchase accounts
+    foreignKey({
+      name: 'tenant_settings_price_difference_account_fk',
+      columns: [table.tenantId, table.purchasePriceDifferenceAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    foreignKey({
+      name: 'tenant_settings_services_account_fk',
+      columns: [table.tenantId, table.purchaseServicesAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+  ],
+);

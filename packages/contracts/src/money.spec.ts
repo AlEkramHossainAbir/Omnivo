@@ -1,0 +1,141 @@
+import { describe, expect, it } from 'vitest';
+
+import {
+  absMoney,
+  addMoney,
+  amountSchema,
+  compareMoney,
+  includedTaxOf,
+  isNegativeMoney,
+  isZeroMoney,
+  multiplyMoney,
+  negateMoney,
+  priceInUnit,
+  percentOfMoney,
+  percentOfWhole,
+  prorateMoney,
+  splitMoney,
+  subtractMoney,
+  sumMoney,
+  unitCostOf,
+} from './money.js';
+
+describe('money', () => {
+  it('sums exactly, where JavaScript numbers drift', () => {
+    expect(0.1 + 0.2).not.toBe(0.3);
+    expect(sumMoney(['0.1', '0.2'])).toBe('0.3000');
+    // More digits than a double holds exactly: 2^53 + 1
+    expect(sumMoney(['9007199254740993', '0.0001'])).toBe('9007199254740993.0001');
+  });
+
+  it('counts an empty box as zero, so a half-filled form adds up', () => {
+    expect(sumMoney(['', '1250.5', ''])).toBe('1250.5000');
+    expect(subtractMoney('100', '250.25')).toBe('-150.2500');
+    expect(isZeroMoney('')).toBe(true);
+    expect(isZeroMoney('0.0000')).toBe(true);
+    expect(isZeroMoney('0.0001')).toBe(false);
+    expect(isZeroMoney('-0.0000')).toBe(true);
+    expect(isZeroMoney('100')).toBe(false);
+  });
+
+  it('keeps the sign right around zero, and never writes "-0"', () => {
+    expect(subtractMoney('0', '0')).toBe('0.0000');
+    expect(subtractMoney('0.05', '0.1')).toBe('-0.0500');
+    expect(addMoney('-0.0500', '0.05')).toBe('0.0000');
+    expect(isNegativeMoney('-0.0000')).toBe(false);
+    expect(isNegativeMoney('-0.0001')).toBe(true);
+    expect(absMoney('-1200.5')).toBe('1200.5000');
+  });
+
+  it('takes up to 15 digits and 4 decimals, and stores an empty box as 0', () => {
+    expect(amountSchema.parse(' 18500.25 ')).toBe('18500.25');
+    expect(amountSchema.parse('')).toBe('0');
+    for (const bad of ['-5', '1,200', '12.34567', '1'.repeat(16), 'abc', '1e5']) {
+      expect(amountSchema.safeParse(bad).error?.issues[0]?.message, bad).toBe('money_format');
+    }
+  });
+
+  it('multiplies a quantity by a price, rounded once to the paisa', () => {
+    expect(multiplyMoney('3', '1200.5')).toBe('3601.5000');
+    // 2.74 m at ৳123.4567 = 338.271358 → 338.27
+    expect(multiplyMoney('2.74', '123.4567')).toBe('338.2700');
+    // Half a paisa rounds away from zero, on both sides of it
+    expect(multiplyMoney('1', '0.005')).toBe('0.0100');
+    expect(multiplyMoney('1', '-0.005')).toBe('-0.0100');
+    expect(multiplyMoney('0.0001', '0.0001')).toBe('0.0000');
+  });
+
+  it('shares a value over part of a quantity, and the whole takes all of it', () => {
+    // 30 of 40 pieces worth ৳1,000
+    expect(prorateMoney('1000', '30', '40')).toBe('750.0000');
+    // 1 of 3 pieces worth ৳100: 33.33, never 33.3333 (the books keep paisa)
+    expect(prorateMoney('100', '1', '3')).toBe('33.3300');
+    expect(prorateMoney('100', '3', '3')).toBe('100.0000');
+    expect(prorateMoney('-100', '2', '3')).toBe('-66.6700');
+    expect(() => prorateMoney('100', '1', '0')).toThrow();
+  });
+
+  it('splits a value into pieces that add up to it exactly', () => {
+    expect(splitMoney('100', 3)).toEqual(['33.3300', '33.3300', '33.3400']);
+    expect(splitMoney('-0.05', 2)).toEqual(['-0.0300', '-0.0200']);
+    expect(sumMoney(splitMoney('1234.57', 7))).toBe('1234.5700');
+    expect(splitMoney('5', 1)).toEqual(['5.0000']);
+  });
+
+  it('works out a unit cost to 4 decimals', () => {
+    expect(unitCostOf('1000', '3')).toBe('333.3333');
+    expect(unitCostOf('8.512', '10')).toBe('0.8512');
+    expect(() => unitCostOf('10', '0')).toThrow();
+  });
+
+  it('works out a percent to the paisa', () => {
+    // 15% of ৳1,234.50 = ৳185.175: half a paisa rounds up
+    expect(percentOfMoney('1234.5', '15')).toBe('185.1800');
+    expect(percentOfMoney('100', '7.5')).toBe('7.5000');
+    expect(percentOfMoney('999.99', '0')).toBe('0.0000');
+  });
+
+  it('finds the VAT inside an amount that includes it', () => {
+    expect(includedTaxOf('1150', '15')).toBe('150.0000');
+    expect(includedTaxOf('107.5', '7.50')).toBe('7.5000');
+    // 100 × 15 ÷ 115 = 13.0434…
+    expect(includedTaxOf('100', '15')).toBe('13.0400');
+    expect(includedTaxOf('100', '0')).toBe('0.0000');
+  });
+
+  it('compares and negates', () => {
+    expect(compareMoney('10', '10.0000')).toBe(0);
+    expect(compareMoney('-1', '0')).toBe(-1);
+    expect(negateMoney('12.5')).toBe('-12.5000');
+    expect(negateMoney('0')).toBe('0.0000');
+  });
+
+  it('moves a price to another pack of the product', () => {
+    // A case of 24 at ৳504 is ৳21 a piece, and back
+    expect(priceInUnit('504', '24.000000', '1')).toBe('21.0000');
+    expect(priceInUnit('21', '1', '24')).toBe('504.0000');
+    // ৳500 a case is ৳20.8333… a piece: 4 decimals, rounded
+    expect(priceInUnit('500', '24', '1')).toBe('20.8333');
+    // A yard is 0.9144 m: ৳100 a metre is ৳91.44 a yard
+    expect(priceInUnit('100', '1', '0.914400')).toBe('91.4400');
+    expect(() => priceInUnit('100', '0', '1')).toThrow();
+  });
+
+  it('works out a percent of a whole to one decimal', () => {
+    // A margin: ৳1,150 of ৳4,600
+    expect(percentOfWhole('1150', '4600')).toBe('25.0');
+    // 1 of 3 = 33.33…, 2 of 3 = 66.66…: rounded to the tenth
+    expect(percentOfWhole('1', '3')).toBe('33.3');
+    expect(percentOfWhole('2', '3')).toBe('66.7');
+    // A change line: ৳18,000 today against ৳20,000 yesterday
+    expect(percentOfWhole('-2000', '20000')).toBe('-10.0');
+    // −0.05% rounds away from zero, like a negative paisa
+    expect(percentOfWhole('-1', '2000')).toBe('-0.1');
+    // Less than half a tenth is zero, without a minus
+    expect(percentOfWhole('-1', '30000')).toBe('0.0');
+    // The whole counts by its size: −৳200 to −৳300 is −50%
+    expect(percentOfWhole('-100', '-200')).toBe('-50.0');
+    expect(percentOfWhole('500', '100')).toBe('500.0');
+    expect(() => percentOfWhole('1', '0.0000')).toThrow();
+  });
+});
