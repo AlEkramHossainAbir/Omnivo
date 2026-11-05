@@ -1,6 +1,14 @@
 import type { Page } from '@playwright/test';
 
-import { expect, expectNoSideScroll, listItem, openFromNav, test, waitForCopy } from './helpers.js';
+import {
+  expect,
+  expectNoSideScroll,
+  listItem,
+  openFromNav,
+  pinAnswered,
+  test,
+  waitForCopy,
+} from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -8,6 +16,7 @@ test.beforeEach(async ({ page }) => {
 
 // The nav says "Categories" and "Imports"; their pages say more in their headings
 async function openPage(page: Page, link: string, heading: string) {
+  await pinAnswered(page);
   await page.getByRole('navigation').getByRole('link', { name: link, exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
 }

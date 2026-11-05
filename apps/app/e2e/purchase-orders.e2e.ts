@@ -1,6 +1,14 @@
 import type { Page } from '@playwright/test';
 
-import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
+import {
+  expect,
+  expectNoSideScroll,
+  listItem,
+  openFromNav,
+  pinAnswered,
+  test,
+  toastShown,
+} from './helpers.js';
 
 // Step 17b in the mock garments workspace, where the signed-in person is the Owner. Orders from
 // ৳50,000 with VAT need the Purchase manager (Kamal Uddin), and an Owner's own orders are approved
@@ -40,6 +48,7 @@ test('lists the orders: late, waiting for goods, and a draft', async ({ page }) 
 
 // "Make purchase order" on PR-…-0002, for Gazipur Carton Industries, with its one line
 async function orderMailers(page: Page) {
+  await pinAnswered(page);
   await page.getByRole('navigation').getByRole('link', { name: 'Requisitions' }).click();
   await listItem(page, PR_2).click();
   await expect(page.getByRole('heading', { level: 1, name: PR_2 })).toBeVisible();

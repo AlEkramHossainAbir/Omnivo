@@ -242,6 +242,9 @@ test('changing the branch waits for the outbox, then copies the new branch', asy
   page,
   context,
 }) => {
+  // Two trips offline and back, a discard and the full copy of a new branch: on the CI runner it
+  // reached the last assertion at 30 seconds
+  test.slow();
   await start(page);
   // A change the server refused stays on the device until it is fixed or discarded: H&M's code
   await context.setOffline(true);

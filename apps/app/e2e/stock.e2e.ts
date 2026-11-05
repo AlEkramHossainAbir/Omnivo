@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, pinAnswered, test } from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -8,6 +8,7 @@ test.beforeEach(async ({ page }) => {
 
 // The nav says "Adjustments"; the page says more in its heading
 async function openPage(page: Page, link: string, heading: string) {
+  await pinAnswered(page);
   await page.getByRole('navigation').getByRole('link', { name: link, exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
 }

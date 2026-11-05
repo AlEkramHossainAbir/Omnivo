@@ -5,6 +5,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  pinAnswered,
   test,
   toastShown,
   waitForCopy,
@@ -42,6 +43,7 @@ async function expectPrinted(page: Page, times: number): Promise<void> {
 
 // POS1, then its first shift: ৳2,000 from the owner
 async function openShift(page: Page): Promise<void> {
+  await pinAnswered(page);
   await page.getByRole('navigation').getByRole('link', { name: 'POS', exact: true }).click();
   await page.getByLabel('Register').selectOption({ label: 'POS1 · Showroom counter' });
   await page.getByRole('button', { name: 'Use this register' }).click();

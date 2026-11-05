@@ -5,6 +5,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  pinAnswered,
   test,
   toastShown,
   waitForCopy,
@@ -42,6 +43,7 @@ async function expectPrinted(page: Page, times: number): Promise<void> {
 
 // "POS" alone: "POS sales" and "POS registers" are links too
 async function openPos(page: Page): Promise<void> {
+  await pinAnswered(page);
   await page.getByRole('navigation').getByRole('link', { name: 'POS', exact: true }).click();
 }
 

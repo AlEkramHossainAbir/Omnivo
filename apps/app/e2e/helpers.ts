@@ -137,8 +137,9 @@ export async function openFromNav(page: Page, name: string | RegExp): Promise<vo
 // openFromNav of a test waits until the fixture has answered it. An auto-waiting assertion runs
 // the handler when the dialog shows, so the loop asserts until the handler has run. A copy that
 // has not opened by then has not asked either: the test goes on, and the handler still answers
-// the dialog whenever it shows.
-async function pinAnswered(page: Page): Promise<void> {
+// the dialog whenever it shows. A test file's own nav helper (a link whose page has another
+// heading, or an exact link name) calls it before its click too.
+export async function pinAnswered(page: Page): Promise<void> {
   if (!pinWaiting.has(page)) return;
   const nav = page.getByRole('navigation');
   try {

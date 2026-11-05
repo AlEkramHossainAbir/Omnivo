@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, pinAnswered, test } from './helpers.js';
 
 // Step 14 in the mock garments workspace. Its opening stock was posted with costs (7,200 shirt
 // buttons at ৳0.45 = ৳3,240) as JV-…-0007, and the truck to the Chattogram depot as JV-…-0008.
@@ -10,6 +10,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 async function openPage(page: Page, link: string, heading: string) {
+  await pinAnswered(page);
   await page.getByRole('navigation').getByRole('link', { name: link, exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
 }
