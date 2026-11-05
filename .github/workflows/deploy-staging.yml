@@ -1,0 +1,134 @@
+name: Deploy staging
+
+# Two ways in:
+#   - ci.yml calls this after its gate job passes on a push to dev (workflow_call)
+#   - the "Run workflow" button in the Actions tab, to deploy any branch or commit, or to go back to
+#     an earlier one (workflow_dispatch). GitHub shows the button only once this file is on main.
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to deploy
+        required: true
+        default: dev
+
+# One deploy at a time. A second one waits instead of cancelling the first one halfway through.
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+
+      # The image tag is the full commit, so every build on staging points at one exact commit.
+      # GHCR wants the owner in lower case.
+      - id: meta
+        run: |
+          echo "tag=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The three images share their first stages. One builder builds them one after the other, so
+      # the shared stages are built once. The gha cache keeps every stage for the next run.
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: api
+          push: true
+          tags: ${{ steps.meta.outputs.registry }}/omnivo-api:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=staging
+          cache-to: type=gha,scope=staging,mode=max
+
+      - name: Build and push migrate
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: migrate
+          push: true
+          tags: ${{ steps.meta.outputs.registry }}/omnivo-migrate:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=staging
+
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: web
+          push: true
+          # Vite writes the API's address into the app's JavaScript. It must equal API_BASE_URL in the
+          # server's .env.
+          build-args: VITE_API_URL=${{ vars.STAGING_API_URL }}
+          tags: ${{ steps.meta.outputs.registry }}/omnivo-web:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=staging
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # The server only pulls: the token it is lent may read packages, not write them
+    permissions:
+      contents: read
+      packages: read
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_APP_URL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+
+      # Secrets go through env, never straight into the script, so a value is never read as shell code
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.STAGING_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/staging
+          chmod 600 ~/.ssh/staging
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      # The stack's files come from the commit being deployed. The server's .env is never touched.
+      - name: Copy the stack files
+        env:
+          TARGET: ${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }}
+        run: |
+          scp -i ~/.ssh/staging -r \
+            infra/staging/compose.yml infra/staging/Caddyfile \
+            infra/staging/deploy.sh infra/staging/backup.sh infra/staging/restore.sh \
+            infra/staging/postgres-init \
+            "$TARGET:/srv/omnivo/"
+
+      # The job's own token logs the server in to GHCR for this pull only. No lasting registry
+      # password is kept on the server.
+      - name: Deploy
+        env:
+          TARGET: ${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }}
+          TAG: ${{ needs.build.outputs.tag }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/staging "$TARGET" \
+            "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+          ssh -i ~/.ssh/staging "$TARGET" "cd /srv/omnivo && ./deploy.sh '$TAG'; status=\$?; docker logout ghcr.io >/dev/null; exit \$status"
