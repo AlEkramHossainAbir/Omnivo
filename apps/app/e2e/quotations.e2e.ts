@@ -1,14 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import {
-  expect,
-  expectNoSideScroll,
-  listItem,
-  openFromNav,
-  test,
-  toastShown,
-  waitForCopy,
-} from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15b in the mock garments workspace: three quotations. QT-…-0001 (H&M) was declined,
 // QT-…-0002 (Primark) is open but its date has passed, QT-…-0003 (Aarong) is open. Aarong buys
@@ -17,10 +9,6 @@ import {
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  // Step 19b: the PIN dialog opens when the first pull ends, which on a slow CI runner is in the
-  // middle of a test, and a click or a status filter there is lost. After the copy, the fixture
-  // answers it before the first click.
-  await waitForCopy(page);
 });
 
 const line = (page: Page, number: number) =>

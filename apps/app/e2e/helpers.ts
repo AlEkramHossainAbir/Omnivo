@@ -13,6 +13,8 @@ import {
 export { expect };
 
 const copies = new WeakMap<Page, Promise<void>>();
+// The pages whose PIN dialog the fixture still has to answer (see openFromNav)
+const pinWaiting = new WeakSet<Page>();
 
 // The first pull of the copy ends: a page of /sync/pull with nothing more to send
 function copyOf(page: Page): Promise<void> {
@@ -56,10 +58,13 @@ export const test = base.extend<{ seedDevice: boolean; answerPinDialog: boolean 
   page: async ({ page, seedDevice, answerPinDialog }, provide) => {
     copies.set(page, copyOf(page));
     if (answerPinDialog) {
+      // A new seeded device always asks once; without the seed the branch dialog comes first
+      if (seedDevice) pinWaiting.add(page);
       await page.addLocatorHandler(
         page.getByRole('dialog', { name: 'Set a PIN for this device' }),
         async (dialog) => {
           await dialog.getByRole('button', { name: 'Not now' }).click();
+          pinWaiting.delete(page);
         },
       );
     }
@@ -121,8 +126,29 @@ export function readOnlyItem(page: Page, text: string | RegExp): Locator {
 // Step 17d: a string matches part of the name; a RegExp when another item holds it too ("Refunds" and
 // "Supplier refunds", step 17d).
 export async function openFromNav(page: Page, name: string | RegExp): Promise<void> {
+  await pinAnswered(page);
   await page.getByRole('navigation').getByRole('link', { name }).click();
   await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+}
+
+// Step 19b: the PIN dialog opens when the copy is ready, at a moment the test does not choose. On
+// a slow CI runner that was in the middle of a test: it closed an open dialog, or took a forced
+// click (check({ force: true }) skips the checks that run the locator handler). So the first
+// openFromNav of a test waits until the fixture has answered it. An auto-waiting assertion runs
+// the handler when the dialog shows, so the loop asserts until the handler has run. A copy that
+// has not opened by then has not asked either: the test goes on, and the handler still answers
+// the dialog whenever it shows.
+async function pinAnswered(page: Page): Promise<void> {
+  if (!pinWaiting.has(page)) return;
+  const nav = page.getByRole('navigation');
+  try {
+    await expect(async () => {
+      await expect(nav).toBeVisible();
+      expect(pinWaiting.has(page)).toBe(false);
+    }).toPass({ timeout: 25_000 });
+  } catch {
+    pinWaiting.delete(page);
+  }
 }
 
 // পেজ আড়াআড়ি scroll হয় না (CLAUDE.md → Page gutters) — চওড়া টেবিল শুধু নিজের বাক্সে

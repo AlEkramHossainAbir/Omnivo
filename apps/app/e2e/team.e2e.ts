@@ -1,11 +1,7 @@
-import { expect, expectNoSideScroll, listItem, openFromNav, test, waitForCopy } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  // Step 19b: the PIN dialog opens when the first pull ends, which on a slow CI runner is after
-  // the invite dialog is open, and the click on "Send invitation" is lost. After the copy, the
-  // fixture answers it before the first click.
-  await waitForCopy(page);
   await openFromNav(page, 'Team');
 });
 

@@ -365,6 +365,11 @@ describe('resending and revoking', () => {
 
     const again = await invite('mahbub@rahmangarments.com', [merchandiser.id]);
     expect(again.delivery).toBe('sending');
+    // Until it is sent: a job still in the queue would go to the next test's worker, whose mail
+    // server is dead, and its "failed" bell would come after the one that test reads
+    await eventually(async () => {
+      expect((await openInvitation('mahbub@rahmangarments.com')).delivery).toBe('sent');
+    });
   });
 });
 

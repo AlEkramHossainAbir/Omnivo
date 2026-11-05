@@ -1,12 +1,4 @@
-import {
-  expect,
-  expectNoSideScroll,
-  listItem,
-  openFromNav,
-  test,
-  toastShown,
-  waitForCopy,
-} from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, toastShown } from './helpers.js';
 
 // Step 15b in the mock garments workspace: SO-…-0001 is H&M's confirmed export order (5 dozen
 // polo shirts in M and in L, nothing delivered yet), and Aarong has a draft order without a
@@ -14,10 +6,6 @@ import {
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  // Step 19b: the PIN dialog opens when the first pull ends, which on a slow CI runner is in the
-  // middle of a test, and a click or a status filter there is lost. After the copy, the fixture
-  // answers it before the first click.
-  await waitForCopy(page);
 });
 
 test('lists the orders, and filters them by status and customer', async ({ page }) => {
