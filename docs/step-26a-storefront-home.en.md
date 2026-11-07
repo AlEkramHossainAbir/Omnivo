@@ -154,7 +154,8 @@ Tell me when you have them, or send them and I will check the names.
 | `mock/banners/hero-phone.jpg` | `hero` (138:790) on `home_page_mobile` | JPG, with `hero-content` (138:791) hidden, so only the photo is in the file |
 | `mock/banners/mega-sale-desktop.png` | `Frame 35` (37:3244) | PNG, the whole banner with its words (1280×280) |
 | `mock/banners/mega-sale-phone.jpg` | `mega-sale` (138:841) | JPG, the whole banner with "MEGA SALE" and its dark layer (361×140) |
-| `shapes/footer-glow.svg` | `footer` (37:3481) | SVG, with every layer hidden except `Vector 2` and `Vector 3`, and the frame's fill off (1280×358) |
+| `shapes/footer-glow-left.svg` | `Vector 2` (136:1251) in `footer` | SVG of the vector alone, clipped to the footer frame (555×304) |
+| `shapes/footer-glow-right.svg` | `Vector 3` (136:1252) in `footer` | SVG of the vector alone, clipped to the footer frame (528×289) |
 | `mock/products/<slug>.png` (20 files) | the `image …` layer inside each card's `product_img_slot` | PNG with a transparent or white background; the slugs are in the table below |
 
 | Slug | Figma layer |
@@ -2109,13 +2110,21 @@ const copyright = t('shop.footer.copyright', { year, shop: shop.name });
 
 <footer class="mt-4 md:mt-20">
   <div class="relative overflow-hidden rounded-t-3xl bg-card py-8 md:rounded-2xl md:pt-16 md:pb-16">
-    {/* Figma's Vector 2 and Vector 3: blurred lime strokes, one file for both (see the asset list) */}
+    {/* Figma's Vector 2 and Vector 3: blurred lime strokes, each exported clipped to the footer frame,
+        so each sits in its own bottom corner at its own size (see the asset list) */}
     <img
-      src="/shapes/footer-glow.svg"
+      src="/shapes/footer-glow-left.svg"
       alt=""
       aria-hidden="true"
       loading="lazy"
-      class="pointer-events-none absolute inset-0 hidden size-full object-cover md:block"
+      class="pointer-events-none absolute bottom-0 left-0 hidden md:block"
+    />
+    <img
+      src="/shapes/footer-glow-right.svg"
+      alt=""
+      aria-hidden="true"
+      loading="lazy"
+      class="pointer-events-none absolute right-0 bottom-0 hidden md:block"
     />
     <div class="relative mx-auto flex max-w-[440px] flex-col items-center gap-6 md:gap-12">
       <Logo shop={shop} place="footer" />
@@ -2191,8 +2200,15 @@ const copyright = t('shop.footer.copyright', { year, shop: shop.name });
 - **`rel="noopener"` with `target="_blank"`:** the opened page cannot reach back into the shop's tab.
 - **The copyright appears twice** (inside the card on the phone, under it on desktop), each hidden on the other size.
   One element with two positions would need fragile absolute positioning.
-- **The glow image is lazy and `md:block`:** it is decoration, below the fold, and the phone design has none, so a
-  phone never downloads it.
+- **Two glow images, each pinned to a bottom corner:** each SVG was exported clipped to the footer frame, so the
+  left one starts at the frame's left and bottom edges (555×304) and the right one ends at its right and bottom
+  edges (528×289). At 1280px they land exactly where Figma draws them. One 1280×358 image with `object-cover` would
+  crop its sides on a narrower card (at 768px it cuts about 256px from each side, which removes the left glow).
+- **No size classes on the glows:** the SVGs carry their own `width` and `height`, so they keep their real size and
+  the blur never stretches. `bottom-0` (not `top-[54px]`) keeps them on the bottom edge when a long address makes
+  the card taller.
+- **The glow images are lazy and `md:block`:** they are decoration, below the fold, and the phone design has none,
+  so a phone never downloads them.
 - **`md:mt-20` (80px):** the space between Load More and the footer in Figma (3344 → 3424).
 
 ---

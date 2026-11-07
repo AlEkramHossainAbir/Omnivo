@@ -44,13 +44,21 @@ const copyright = t('shop.footer.copyright', { year, shop: shop.name });
 
 <footer class="mt-4 md:mt-20">
   <div class="relative overflow-hidden rounded-t-3xl bg-card py-8 md:rounded-2xl md:pt-16 md:pb-16">
-    {/* Figma's Vector 2 and Vector 3: blurred lime strokes, one file for both (see the asset list) */}
+    {/* Figma's Vector 2 and Vector 3: blurred lime strokes, each exported clipped to the footer frame,
+        so each sits in its own bottom corner at its own size (see the asset list) */}
     <img
-      src="/shapes/footer-glow.svg"
+      src="/shapes/footer-glow-left.svg"
       alt=""
       aria-hidden="true"
       loading="lazy"
-      class="pointer-events-none absolute inset-0 hidden size-full object-cover md:block"
+      class="pointer-events-none absolute bottom-0 left-0 hidden md:block"
+    />
+    <img
+      src="/shapes/footer-glow-right.svg"
+      alt=""
+      aria-hidden="true"
+      loading="lazy"
+      class="pointer-events-none absolute right-0 bottom-0 hidden md:block"
     />
     <div class="relative mx-auto flex max-w-[440px] flex-col items-center gap-6 md:gap-12">
       <Logo shop={shop} place="footer" />
