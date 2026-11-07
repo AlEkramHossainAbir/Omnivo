@@ -1,0 +1,23 @@
+---
+import type { ImageBanner } from '@omnivo/contracts';
+
+// CLAUDE.md → Storefront → Image banner ("Mega Sale"): only a picture, its words drawn into it.
+// 280px on desktop (Figma 37:3244), 140px on the phone (Figma 138:841), each with its own picture.
+interface Props {
+  banner: ImageBanner;
+}
+
+const { banner } = Astro.props;
+---
+
+<a href={banner.href} class="mt-4 block overflow-hidden rounded-2xl md:mt-12">
+  <picture>
+    <source media="(min-width: 768px)" srcset={banner.desktopImage.url} />
+    <img
+      src={banner.phoneImage.url}
+      alt={banner.desktopImage.alt}
+      loading="lazy"
+      class="h-35 w-full object-cover md:h-70"
+    />
+  </picture>
+</a>

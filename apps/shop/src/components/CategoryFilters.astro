@@ -1,0 +1,93 @@
+---
+import { ArrowDown01Icon, FilterHorizontalIcon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { ShopCategory } from '@omnivo/contracts';
+
+import type { ShopLocale } from '../lib/locale';
+
+// CLAUDE.md → Storefront → Filter row. Desktop (Figma 37:3131): square chips with a chevron and
+// "Sort By" on the right. Phone (Figma 138:799): round pills that wrap, categories only.
+// Step 26a: every chip is a link to its category page (step 26c). The chevrons' menus, the filter
+// panel and the sort menu come with that page; until then they lead to it.
+interface Props {
+  categories: ShopCategory[];
+  locale: ShopLocale;
+}
+
+const { categories, locale } = Astro.props;
+const { t } = locale;
+const top = categories.filter((category) => category.parentId === null);
+
+const chip =
+  'flex h-[38px] items-center gap-2 rounded-lg px-3 text-sf-body whitespace-nowrap transition-colors duration-150';
+// 36px like Figma's pills: the 1px border is inside that height, so 9px of padding, not 10
+const pill =
+  'block rounded-full border px-4 py-[9px] text-sf-small leading-4 transition-colors duration-150';
+---
+
+<nav aria-label={t('shop.home.categoryFilters')}>
+  {/* Desktop */}
+  <div class="hidden items-start justify-between md:flex">
+    <ul class="flex flex-wrap items-center gap-4">
+      <li>
+        <a
+          href="/c/all"
+          aria-current="true"
+          class:list={[chip, 'bg-brand font-medium text-accent']}
+        >
+          {t('shop.home.allCategories')}
+          <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} aria-hidden="true" />
+        </a>
+      </li>
+      {top.map((category) => (
+        <li>
+          <a href={`/c/${category.slug}`} class:list={[chip, 'bg-card hover:bg-cream']}>
+            {category.name}
+            <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} aria-hidden="true" />
+          </a>
+        </li>
+      ))}
+      <li>
+        <a href="/c/all?offer=1" class:list={[chip, 'bg-card hover:bg-cream']}>
+          {t('shop.home.offer')}
+          <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} aria-hidden="true" />
+        </a>
+      </li>
+      <li>
+        <a href="/c/all" class:list={[chip, 'bg-card hover:bg-cream']}>
+          {t('shop.home.allFilter')}
+          <HugeiconsIcon
+            icon={FilterHorizontalIcon}
+            size={14}
+            strokeWidth={1.5}
+            aria-hidden="true"
+          />
+        </a>
+      </li>
+    </ul>
+    <a href="/c/all" class:list={[chip, 'border border-brand font-medium hover:bg-cream']}>
+      {t('shop.home.sortBy')}
+      <HugeiconsIcon icon={FilterHorizontalIcon} size={14} strokeWidth={1.5} aria-hidden="true" />
+    </a>
+  </div>
+
+  {/* Phone */}
+  <ul class="flex flex-wrap gap-2 md:hidden">
+    <li>
+      <a
+        href="/c/all"
+        aria-current="true"
+        class:list={[pill, 'border-brand bg-brand font-semibold text-accent']}
+      >
+        {t('shop.home.all')}
+      </a>
+    </li>
+    {top.map((category) => (
+      <li>
+        <a href={`/c/${category.slug}`} class:list={[pill, 'border-rule bg-card']}>
+          {category.name}
+        </a>
+      </li>
+    ))}
+  </ul>
+</nav>

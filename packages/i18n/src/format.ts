@@ -3,6 +3,12 @@ import type { Language } from './i18n.js';
 // en-IN = লাখ/কোটি গ্রুপিং (18,42,600); bn-BD = একই গ্রুপিং, বাংলা অঙ্কে (১৮,৪২,৬০০)
 const NUMBER_LOCALE = { en: 'en-IN', bn: 'bn-BD' } satisfies Record<Language, string>;
 
+// Step 26a: the Intl locale for a language's numbers, for code that formats in the browser without
+// loading this package (the shop's cart count is a small script, not a React island)
+export function numberLocale(language: Language): string {
+  return NUMBER_LOCALE[language];
+}
+
 const DECIMAL = /^-?\d+(\.\d+)?$/;
 
 // Intl string পেলে পুরো নির্ভুলতায় format করে (number-এ রূপান্তর করে না), কিন্তু টাইপ চায়

@@ -1,0 +1,114 @@
+---
+import {
+  Facebook01Icon,
+  InstagramIcon,
+  Linkedin01Icon,
+  NewTwitterIcon,
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { PublicShop } from '@omnivo/contracts';
+
+import type { ShopLocale } from '../lib/locale';
+import Logo from './Logo.astro';
+
+// CLAUDE.md → Storefront → Footer. Desktop (Figma 37:3481): a 16px-round card, the content 440px wide
+// and centered, two soft lime glows at the bottom, the copyright under the card. Phone (Figma
+// 138:923): only the top corners round, the copyright inside, no glows.
+interface Props {
+  shop: PublicShop;
+  locale: ShopLocale;
+}
+
+const { shop, locale } = Astro.props;
+const { t } = locale;
+const year = new Date().getFullYear();
+
+// Only the networks the shop has filled in; the order is the design's
+const social = [
+  { url: shop.social.facebook, icon: Facebook01Icon, label: t('shop.footer.facebook') },
+  { url: shop.social.instagram, icon: InstagramIcon, label: t('shop.footer.instagram') },
+  { url: shop.social.x, icon: NewTwitterIcon, label: t('shop.footer.x') },
+  { url: shop.social.linkedin, icon: Linkedin01Icon, label: t('shop.footer.linkedin') },
+].flatMap((network) => (network.url === null ? [] : [{ ...network, url: network.url }]));
+
+// Step 26c builds these pages
+const pages = [
+  { href: '/pages/privacy', label: t('shop.footer.privacy') },
+  { href: '/pages/terms', label: t('shop.footer.terms') },
+  { href: '/pages/about', label: t('shop.footer.about') },
+  { href: '/pages/contact', label: t('shop.footer.contact') },
+];
+
+const copyright = t('shop.footer.copyright', { year, shop: shop.name });
+---
+
+<footer class="mt-4 md:mt-20">
+  <div class="relative overflow-hidden rounded-t-3xl bg-card py-8 md:rounded-2xl md:pt-16 md:pb-16">
+    {/* Figma's Vector 2 and Vector 3: blurred lime strokes, one file for both (see the asset list) */}
+    <img
+      src="/shapes/footer-glow.svg"
+      alt=""
+      aria-hidden="true"
+      loading="lazy"
+      class="pointer-events-none absolute inset-0 hidden size-full object-cover md:block"
+    />
+    <div class="relative mx-auto flex max-w-[440px] flex-col items-center gap-6 md:gap-12">
+      <Logo shop={shop} place="footer" />
+      <div class="flex w-full flex-col items-center gap-6">
+        <div class="flex flex-col items-center gap-6 md:flex-col-reverse">
+          {/* The phone puts the address above the social links, the desktop below them */}
+          <p class="text-center text-sf-small text-muted md:trim-text md:text-sf-body md:leading-6">
+            {shop.address}
+          </p>
+          {social.length > 0 && (
+            <ul
+              aria-label={t('shop.footer.social', { shop: shop.name })}
+              class="flex gap-4 md:gap-[14.6px]"
+            >
+              {social.map((network) => (
+                <li>
+                  <a
+                    href={network.url}
+                    rel="noopener"
+                    target="_blank"
+                    aria-label={network.label}
+                    class="grid size-10 place-items-center rounded-full bg-cream text-brand transition-colors duration-150 hover:bg-accent"
+                  >
+                    <HugeiconsIcon
+                      icon={network.icon}
+                      strokeWidth={1.5}
+                      className="size-[18px] md:size-[15px]"
+                      aria-hidden="true"
+                    />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <nav aria-label={t('shop.footer.pages')}>
+          {/* A paragraph of links, not a flex list: text-box trim works on a block of text only */}
+          <p class="text-center text-sf-small text-brand md:trim-text md:text-sf-body md:leading-6">
+            {pages.map((page, index) => (
+              <>
+                {index > 0 && (
+                  <span aria-hidden="true" class="px-1 text-muted">
+                    |
+                  </span>
+                )}
+                <a href={page.href} class="underline-offset-3 hover:underline">
+                  {page.label}
+                </a>
+              </>
+            ))}
+          </p>
+        </nav>
+        <p class="text-sf-meta font-normal text-muted md:hidden">{copyright}</p>
+      </div>
+    </div>
+  </div>
+  <p class="mt-[35px] mb-[34px] hidden text-center text-sf-body leading-6 md:block md:trim-text">
+    {copyright}
+  </p>
+  <div class="h-6 md:hidden"></div>
+</footer>

@@ -5001,6 +5001,67 @@ export const en = {
     loadFailed: "Couldn't open this document. Check your connection and try again.",
     poweredBy: 'Sent with Omnivo',
   },
+  // Step 26a: the tenant's public online shop (apps/shop). Its buttons keep the design's Title Case
+  // ("Load More", "Sort By"), as CLAUDE.md → Storefront design system says
+  shop: {
+    skipToContent: 'Skip to content',
+    header: {
+      home: '{{shop}} home',
+      search: 'Search',
+      searchLabel: 'Search the shop',
+      searchPlaceholder: 'Search for Cosmetics, Food',
+      openSearch: 'Open search',
+      closeSearch: 'Close search',
+      categories: 'Categories',
+      cart_one: 'Cart, {{count}} item',
+      cart_other: 'Cart, {{count}} items',
+      cartEmpty: 'Cart, empty',
+      added: 'Added to cart',
+      account: 'Account',
+    },
+    home: {
+      title: '{{shop}}: shop online',
+      allCategory: 'All Category',
+      allCategories: 'All Categories',
+      categoryFilters: 'Filter the products',
+      all: 'All',
+      offer: 'Offer',
+      allFilter: 'All Filter',
+      sortBy: 'Sort By',
+      featured: 'Featured Products',
+      viewAll: 'View All',
+      loadMore: 'Load More',
+      previous: 'Previous products',
+      next: 'Next products',
+    },
+    card: {
+      addToCart: 'Add to cart',
+      addToCartLabel: 'Add {{name}} to cart',
+      outOfStock: 'Out of Stock',
+      // The ribbon's two lines: "৳10" over "OFF"
+      off: 'OFF',
+      // What a screen reader says for the ribbon
+      discount: '{{amount}} off',
+      badge: {
+        most_picked: 'Most Picked',
+        new: 'NEW',
+        buy_one_get_one: 'Buy 1 Get 1',
+      },
+    },
+    footer: {
+      pages: 'Shop pages',
+      social: '{{shop}} on social media',
+      privacy: 'Privacy Policy',
+      terms: 'Terms & Condition',
+      about: 'About Us',
+      contact: 'Contact Us',
+      copyright: '©{{year}} All rights reserved by {{shop}}',
+      facebook: 'Facebook',
+      instagram: 'Instagram',
+      x: 'X',
+      linkedin: 'LinkedIn',
+    },
+  },
   // The printed quotation, order, challan, invoice and receipt (A4, the browser's Print)
   print: {
     print: 'Print',

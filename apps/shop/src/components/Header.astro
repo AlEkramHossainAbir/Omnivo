@@ -1,0 +1,125 @@
+---
+import { Cancel01Icon, Menu01Icon, Search01Icon, User02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { PublicShop } from '@omnivo/contracts';
+
+import type { ShopLocale } from '../lib/locale';
+import CartButton from './CartButton.astro';
+import Logo from './Logo.astro';
+
+// CLAUDE.md → Storefront → Header: one bar for both sizes. Desktop (Figma 37:3084): menu, logo,
+// the search bar in the middle, cart and account. Phone (Figma 138:774): logo, then search, cart
+// and account as white 40px buttons; the search button opens the search bar over the whole header.
+interface Props {
+  shop: PublicShop;
+  locale: ShopLocale;
+}
+
+const { shop, locale } = Astro.props;
+const { t } = locale;
+---
+
+<header
+  data-on-brand
+  data-shop-header
+  class="group relative mt-4 grid h-16 grid-cols-[1fr_auto] items-center rounded-2xl bg-brand p-3 md:mt-5 md:h-18 md:grid-cols-[1fr_auto_1fr] md:px-6 md:py-0"
+>
+  <div class="flex items-center gap-9">
+    {/* Opens the category drawer in step 26c. The phone has no menu (Figma 138:774) */}
+    <button
+      type="button"
+      aria-label={t('shop.header.categories')}
+      class="hidden text-white md:block"
+    >
+      <HugeiconsIcon icon={Menu01Icon} size={30} strokeWidth={1.5} aria-hidden="true" />
+    </button>
+    <a href="/" aria-label={t('shop.header.home', { shop: shop.name })}>
+      <Logo shop={shop} place="header" />
+    </a>
+  </div>
+
+  {/* On the phone the form is hidden until the search button opens it; then it covers the bar */}
+  <form
+    action="/search"
+    method="get"
+    role="search"
+    class="absolute inset-0 hidden items-center gap-2 rounded-2xl bg-brand p-3 group-data-[search-open]:flex md:static md:flex md:w-80 md:p-0 lg:w-[420px]"
+  >
+    <label class="relative block h-10 flex-1">
+      <span class="sr-only">{t('shop.header.searchLabel')}</span>
+      <input
+        type="search"
+        name="q"
+        required
+        placeholder={t('shop.header.searchPlaceholder')}
+        class="h-full w-full rounded-full bg-card pr-14 pl-5 text-sf-body font-medium text-brand placeholder:text-muted focus-visible:outline-accent"
+      />
+      <button
+        type="submit"
+        aria-label={t('shop.header.search')}
+        class="absolute top-0.5 right-0.5 grid h-9 w-[47px] place-items-center rounded-r-full bg-accent text-brand"
+      >
+        <HugeiconsIcon icon={Search01Icon} size={20} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+    </label>
+    <button
+      type="button"
+      data-search-close
+      aria-label={t('shop.header.closeSearch')}
+      class="grid size-10 place-items-center rounded-xl bg-card text-brand md:hidden"
+    >
+      <HugeiconsIcon icon={Cancel01Icon} size={20} strokeWidth={1.5} aria-hidden="true" />
+    </button>
+  </form>
+
+  <div class="flex items-center justify-end gap-2">
+    <button
+      type="button"
+      data-search-open
+      aria-label={t('shop.header.openSearch')}
+      class="grid size-10 place-items-center rounded-xl bg-card text-brand md:hidden"
+    >
+      <HugeiconsIcon icon={Search01Icon} size={20} strokeWidth={1.5} aria-hidden="true" />
+    </button>
+    <CartButton locale={locale} />
+    {/* Step 26c: the order tracking page. The design's customer name needs a sign-in the shop does not have */}
+    <a
+      href="/track"
+      class="grid size-10 place-items-center rounded-xl bg-card text-brand md:size-[42px] md:border md:border-on-brand-line md:bg-transparent md:text-white md:transition-colors md:duration-150 md:hover:bg-white/10 lg:flex lg:w-auto lg:gap-1 lg:py-2 lg:pr-2.5 lg:pl-2"
+    >
+      <HugeiconsIcon
+        icon={User02Icon}
+        strokeWidth={1.5}
+        className="size-5 md:size-6"
+        aria-hidden="true"
+      />
+      <span class="sr-only font-semibold lg:not-sr-only">{t('shop.header.account')}</span>
+    </a>
+  </div>
+</header>
+
+<script>
+  // The phone's search button: open the search over the bar and put the cursor in it; the close
+  // button or Escape puts the bar back and the focus on the search button
+  for (const header of document.querySelectorAll<HTMLElement>('[data-shop-header]')) {
+    const open = header.querySelector<HTMLButtonElement>('[data-search-open]');
+    const close = header.querySelector<HTMLButtonElement>('[data-search-close]');
+    const input = header.querySelector<HTMLInputElement>('input[type="search"]');
+    if (!open || !close || !input) continue;
+
+    const setOpen = (value: boolean): void => {
+      header.toggleAttribute('data-search-open', value);
+      if (value) input.focus();
+      else open.focus();
+    };
+    open.addEventListener('click', () => {
+      setOpen(true);
+    });
+    close.addEventListener('click', () => {
+      setOpen(false);
+    });
+    header.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && header.hasAttribute('data-search-open')) setOpen(false);
+    });
+  }
+</script>

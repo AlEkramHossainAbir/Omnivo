@@ -58,6 +58,7 @@ export * from './stock-accounts.js';
 export * from './stock-adjustments.js';
 export * from './stock-revaluations.js';
 export * from './stock-transfers.js';
+export * from './storefront.js';
 export * from './supplier-payments.js';
 export * from './supplier-refunds.js';
 export * from './suppliers.js';

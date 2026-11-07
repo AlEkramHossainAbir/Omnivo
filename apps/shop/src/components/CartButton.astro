@@ -1,0 +1,106 @@
+---
+import { ShoppingCart01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { numberLocale } from '@omnivo/i18n';
+
+import type { ShopLocale } from '../lib/locale';
+
+// CLAUDE.md → Storefront → Header: the cart button and its count badge. The count lives in this
+// browser, so the server draws an empty cart and the script below fills it in. A script, not a
+// React island: an island would ship React and the app's translations (about 150 KB gz) for one
+// number. The words it needs are worked out here and handed over in data attributes.
+// Step 26b makes the button open the cart drawer.
+interface Props {
+  locale: ShopLocale;
+}
+
+const { locale } = Astro.props;
+const { t } = locale;
+---
+
+<cart-button
+  class="block"
+  data-locale={numberLocale(locale.language)}
+  data-label-empty={t('shop.header.cartEmpty')}
+  data-label-one={t('shop.header.cart', { count: 1, replace: { count: '{{count}}' } })}
+  data-label-other={t('shop.header.cart', { count: 2, replace: { count: '{{count}}' } })}
+  data-label-added={t('shop.header.added')}
+>
+  <button
+    type="button"
+    aria-label={t('shop.header.cartEmpty')}
+    class="relative grid size-10 place-items-center rounded-xl bg-card text-brand transition-colors duration-150 md:size-[42px] md:border md:border-on-brand-line md:bg-transparent md:text-white md:hover:bg-white/10"
+  >
+    <HugeiconsIcon
+      icon={ShoppingCart01Icon}
+      strokeWidth={1.5}
+      className="size-5 md:size-6"
+      aria-hidden="true"
+    />
+    {/* The label above says the count; the badge is only for the eye */}
+    <span
+      data-badge
+      hidden
+      aria-hidden="true"
+      class="trim-text absolute -top-2 -left-2.5 rounded-full border border-accent bg-brand p-1 text-sf-meta font-semibold text-white tabular-nums"
+    ></span>
+  </button>
+  {/* "Added to cart" for a screen reader: the badge changing is only seen, not heard */}
+  <span data-status role="status" class="sr-only"></span>
+</cart-button>
+
+<script>
+  import { $cartCount } from '../lib/cart';
+
+  // A custom element: the browser runs connectedCallback for every <cart-button> on the page, and
+  // the subscription ends when one is removed, with no global bookkeeping
+  class CartButton extends HTMLElement {
+    private unsubscribe: (() => void) | undefined;
+
+    connectedCallback(): void {
+      const button = this.querySelector('button');
+      const badge = this.querySelector<HTMLElement>('[data-badge]');
+      const status = this.querySelector<HTMLElement>('[data-status]');
+      if (!button || !badge || !status) return;
+
+      const {
+        locale = 'en-IN',
+        labelEmpty = '',
+        labelOne = '',
+        labelOther = '',
+        labelAdded = '',
+      } = this.dataset;
+      const plural = new Intl.PluralRules(locale);
+      const number = new Intl.NumberFormat(locale);
+      let previous: number | undefined;
+      let timer: number | undefined;
+
+      this.unsubscribe = $cartCount.subscribe((count) => {
+        const template = plural.select(count) === 'one' ? labelOne : labelOther;
+        button.setAttribute(
+          'aria-label',
+          count === 0 ? labelEmpty : template.replace('{{count}}', number.format(count)),
+        );
+        badge.hidden = count === 0;
+        badge.textContent = count > 99 ? '99+' : number.format(count);
+
+        // The first value is the stored cart arriving, not something the shopper did now
+        if (previous !== undefined && count > previous) {
+          status.textContent = labelAdded;
+          window.clearTimeout(timer);
+          // Cleared, so the same words are said again on the next add
+          timer = window.setTimeout(() => {
+            status.textContent = '';
+          }, 3000);
+        }
+        previous = count;
+      });
+    }
+
+    disconnectedCallback(): void {
+      this.unsubscribe?.();
+    }
+  }
+
+  customElements.define('cart-button', CartButton);
+</script>

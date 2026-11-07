@@ -1,0 +1,97 @@
+---
+import { ArrowLeft01Icon, ArrowRight01Icon, FireIcon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { ShopCollection } from '@omnivo/contracts';
+
+import type { ShopLocale } from '../lib/locale';
+import ProductCard from './ProductCard.astro';
+
+// CLAUDE.md → Storefront → Section header and Product rows. A titled row of cards that scrolls
+// sideways inside itself: 5 cards in view at xl, 4 at lg, 3 at md, 1 on the phone. The arrows move
+// it by what is in view (one card on the phone); a swipe or a trackpad works too.
+interface Props {
+  collection: ShopCollection;
+  locale: ShopLocale;
+}
+
+const { collection, locale } = Astro.props;
+const { t } = locale;
+const headingId = `row-${collection.id}`;
+---
+
+<section data-product-row aria-labelledby={headingId} class="mt-4 md:mt-12">
+  <div class="flex h-10 items-center justify-between md:h-[86px] md:border-b md:border-rule md:bg-canvas">
+    <h2
+      id={headingId}
+      class="flex items-center gap-2 text-sf-subtitle leading-[23px] font-bold md:trim-text md:text-sf-display md:font-semibold"
+    >
+      {collection.title}
+      {collection.icon === 'fire' && (
+        <HugeiconsIcon
+          icon={FireIcon}
+          strokeWidth={1.5}
+          className="size-5 text-promo md:size-8"
+          aria-hidden="true"
+        />
+      )}
+    </h2>
+    <div class="flex gap-2 md:gap-4">
+      <button
+        type="button"
+        data-row-previous
+        disabled
+        aria-label={t('shop.home.previous')}
+        class="grid size-10 place-items-center rounded-full bg-card text-brand transition-colors duration-150 enabled:hover:bg-accent disabled:opacity-60"
+      >
+        <HugeiconsIcon icon={ArrowLeft01Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        data-row-next
+        aria-label={t('shop.home.next')}
+        class="grid size-10 place-items-center rounded-full bg-card text-brand transition-colors duration-150 enabled:hover:bg-accent disabled:opacity-60"
+      >
+        <HugeiconsIcon icon={ArrowRight01Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+      </button>
+    </div>
+  </div>
+
+  <ul data-row-track class="row-track mt-4 md:mt-9">
+    {collection.listings.map((listing) => (
+      <li class="snap-start">
+        <ProductCard listing={listing} locale={locale} />
+      </li>
+    ))}
+  </ul>
+</section>
+
+<script>
+  // Astro bundles this once for every row on the page. Each row: the arrows scroll by the width
+  // in view, and are disabled at either end, so a shopper never presses a button that does nothing.
+  for (const row of document.querySelectorAll<HTMLElement>('[data-product-row]')) {
+    const track = row.querySelector<HTMLElement>('[data-row-track]');
+    const previous = row.querySelector<HTMLButtonElement>('[data-row-previous]');
+    const next = row.querySelector<HTMLButtonElement>('[data-row-next]');
+    if (!track || !previous || !next) continue;
+
+    const update = (): void => {
+      // 1px of slack: a zoomed page can leave the last scroll position a fraction short
+      previous.disabled = track.scrollLeft <= 1;
+      next.disabled = track.scrollLeft + track.clientWidth >= track.scrollWidth - 1;
+    };
+    const move = (direction: 1 | -1): void => {
+      const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      track.scrollBy({ left: direction * track.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
+    };
+
+    previous.addEventListener('click', () => {
+      move(-1);
+    });
+    next.addEventListener('click', () => {
+      move(1);
+    });
+    track.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    update();
+  }
+</script>

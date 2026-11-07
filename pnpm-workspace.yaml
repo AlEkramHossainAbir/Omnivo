@@ -11,3 +11,9 @@ allowBuilds:
   ssh2: false # remote Docker host-এর জন্য, আমাদের দরকার নেই
   msw: false # postinstall শুধু worker ফাইল কপি করে; আমরা `msw init` নিজে চালিয়ে ফাইলটা commit করি
   msgpackr-extract: false # bullmq: the prebuilt binary comes as an optional platform package; the script only compiles when none matches
+
+overrides:
+  # Step 26a: @astrojs/check's .astro-to-TypeScript converter runs as WebAssembly and needs
+  # @emnapi/runtime 1.x next to @emnapi/core 1.x. rolldown's own WebAssembly fallback asks for the
+  # 2.0 beta, and pnpm handed that beta to both, so `astro check` crashed on start.
+  '@emnapi/runtime': 1.11.3

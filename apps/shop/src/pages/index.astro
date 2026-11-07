@@ -1,0 +1,74 @@
+---
+import CategoryFilters from '../components/CategoryFilters.astro';
+import HeroBanner from '../components/HeroBanner.astro';
+import ImageBanner from '../components/ImageBanner.astro';
+import ProductCard from '../components/ProductCard.astro';
+import ProductRow from '../components/ProductRow.astro';
+import { shopSource } from '../data/source';
+import ShopLayout from '../layouts/ShopLayout.astro';
+import { shopLocale } from '../lib/locale';
+
+// Step 26a: the home page (Figma 37:3083 on desktop, 138:234 on the phone)
+const shop = await shopSource.shop();
+const [locale, categories, home] = await Promise.all([
+  shopLocale(shop.language),
+  shopSource.categories(),
+  shopSource.home(),
+]);
+const { t } = locale;
+---
+
+<ShopLayout shop={shop} locale={locale} title={t('shop.home.title', { shop: shop.name })}>
+  <h1 class="sr-only">{shop.name}</h1>
+
+  <HeroBanner hero={home.hero} />
+
+  {/* Desktop "All Category" (Figma 37:3128); phone "All Categories" and "Featured Products" (138:797, 138:810) */}
+  <section aria-labelledby="all-category" class="mt-4 md:mt-16">
+    <h2
+      id="all-category"
+      class="text-sf-subtitle leading-[23px] font-bold md:trim-text md:text-sf-display md:font-semibold"
+    >
+      <span class="md:hidden">{t('shop.home.allCategories')}</span>
+      <span class="hidden md:inline">{t('shop.home.allCategory')}</span>
+    </h2>
+    <div class="mt-3 md:mt-9">
+      <CategoryFilters categories={categories} locale={locale} />
+    </div>
+
+    <div class="mt-4 flex items-center justify-between md:hidden">
+      <h3 class="text-sf-subtitle leading-[23px] font-bold">{t('shop.home.featured')}</h3>
+      <a href="/c/all" class="text-sf-small font-semibold underline-offset-3 hover:underline">
+        {t('shop.home.viewAll')}
+      </a>
+    </div>
+    <ul class="mt-4 grid gap-4 md:mt-9 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {home.featured.map((listing, index) => (
+        // The phone shows the first two (Figma 138:814); "View All" leads to the rest
+        <li class:list={[index >= 2 && 'max-md:hidden']}>
+          <ProductCard listing={listing} locale={locale} />
+        </li>
+      ))}
+    </ul>
+  </section>
+
+  {home.blocks.map((block) =>
+    block.kind === 'image' ? (
+      <ImageBanner banner={block} />
+    ) : (
+      <ProductRow collection={block.collection} locale={locale} />
+    ),
+  )}
+
+  {home.hasMoreFeatured && (
+    <div class="mt-4 flex justify-center pt-2 pb-6 md:mt-12 md:p-0">
+      {/* Step 26c: the full list; the button's "Loading" state belongs to that page */}
+      <a
+        href="/c/all"
+        class="flex h-[38px] items-center rounded-lg bg-card px-4 font-medium transition-colors duration-150 hover:bg-cream"
+      >
+        {t('shop.home.loadMore')}
+      </a>
+    </div>
+  )}
+</ShopLayout>

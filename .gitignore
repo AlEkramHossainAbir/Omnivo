@@ -14,3 +14,5 @@ coverage/
 test-results/
 playwright-report/
 *.log
+# Astro writes its generated types here on every `astro check` / `astro dev`
+.astro/
