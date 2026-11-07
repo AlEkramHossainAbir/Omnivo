@@ -13,6 +13,8 @@ export default tseslint.config(
       '**/coverage/**',
       '**/.turbo/**',
       '**/mockServiceWorker.js',
+      // Step 26a: Astro's generated types (apps/shop/.astro), rewritten by every `astro check`
+      '**/.astro/**',
     ],
   },
   js.configs.recommended,

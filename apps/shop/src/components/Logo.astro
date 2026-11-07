@@ -1,0 +1,53 @@
+---
+import type { PublicShop } from '@omnivo/contracts';
+
+// The shop's logo (CLAUDE.md → Storefront → Logo). A shop without its own logo gets the Omnivo mark:
+// two offset rounded squares, a filled one and an outlined one. The mark is drawn in `em`, so one
+// font-size per place sets its whole size (header 36px, phone header 24px, footer 48px / 24px).
+interface Props {
+  shop: PublicShop;
+  place: 'header' | 'footer';
+}
+
+const { shop, place } = Astro.props;
+const onBrand = place === 'header';
+---
+
+<span class:list={['inline-flex items-center', onBrand ? 'gap-2 md:gap-1' : 'gap-2 md:gap-[5px]']}>
+  {shop.logo ? (
+    <img
+      src={shop.logo.url}
+      alt=""
+      class:list={[onBrand ? 'size-6 md:size-9' : 'size-6 md:size-12', 'object-contain']}
+    />
+  ) : (
+    <span
+      aria-hidden="true"
+      class:list={[
+        'relative block size-[1em] shrink-0',
+        onBrand ? 'text-[24px] md:text-[36px]' : 'text-[24px] md:text-[48px]',
+      ]}
+    >
+      <span
+        class:list={[
+          'absolute top-0 left-0 size-[0.615em] rounded-[0.19em]',
+          onBrand ? 'bg-accent' : 'bg-brand',
+        ]}
+      />
+      <span
+        class:list={[
+          'absolute right-0 bottom-0 size-[0.615em] rounded-[0.19em] border-[0.077em]',
+          onBrand ? 'border-accent bg-brand' : 'border-brand bg-card',
+        ]}
+      />
+    </span>
+  )}
+  <span
+    class:list={[
+      'font-bold whitespace-nowrap md:font-semibold',
+      onBrand ? 'text-[20px] text-white md:text-[24px]' : 'text-[24px] text-brand md:text-[32px]',
+    ]}
+  >
+    {shop.name}
+  </span>
+</span>

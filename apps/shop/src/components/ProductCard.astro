@@ -1,0 +1,110 @@
+---
+import { Add01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { ShopListing } from '@omnivo/contracts';
+
+import type { ShopLocale } from '../lib/locale';
+
+// CLAUDE.md → Storefront → Product card. Desktop (Figma 37:3174): 243×458, centered, the ribbon on
+// the card's top edge, the picture 54px down. Phone (Figma 138:815): full width, left-aligned, the
+// picture in a 160px box with the ribbon and badge inside it. One "media" box carries the ribbon
+// and badge in both, so they are placed relative to it.
+interface Props {
+  listing: ShopListing;
+  locale: ShopLocale;
+}
+
+const { listing, locale } = Astro.props;
+const { t } = locale;
+
+const discount = listing.discount;
+const discountText =
+  discount === null
+    ? null
+    : discount.kind === 'amount'
+      ? locale.money(discount.value)
+      : `${String(discount.value)}%`;
+
+// NEW sits at the left when the left is free (no ribbon); the first other badge sits at the right
+const newOnLeft = discountText === null && listing.badges.includes('new');
+const rightBadge = listing.badges.find((badge) => !(newOnLeft && badge === 'new'));
+const image = listing.images[0];
+---
+
+<article class="flex h-full flex-col gap-3 rounded-xl bg-card p-3 md:gap-0 md:overflow-hidden md:rounded-lg md:p-0 md:text-center">
+  <div class="relative h-40 overflow-hidden rounded-lg bg-canvas md:h-auto md:rounded-none md:bg-card md:px-2.5 md:pt-13.5">
+    {image && (
+      <img
+        src={image.url}
+        alt={image.alt}
+        loading="lazy"
+        class="size-full object-contain mix-blend-multiply md:h-50"
+      />
+    )}
+    {discountText !== null && (
+      <p class="ribbon-shape absolute top-0 left-2 flex h-10 w-[30px] flex-col items-center bg-price pt-2.5 text-sf-tag font-bold text-white md:left-4">
+        <span aria-hidden="true">{discountText}</span>
+        <span aria-hidden="true">{t('shop.card.off')}</span>
+        <span class="sr-only">{t('shop.card.discount', { amount: discountText })}</span>
+      </p>
+    )}
+    {newOnLeft && (
+      <p class="trim-text absolute top-2 left-2 rounded-full bg-brand p-[7px] text-sf-tag font-bold text-accent md:top-2.5 md:left-2.5">
+        {t('shop.card.badge.new')}
+      </p>
+    )}
+    {rightBadge && (
+      <p
+        class:list={[
+          'trim-text absolute top-2 right-2 rounded-full p-[7px] text-sf-tag font-bold md:top-2.5 md:right-2.5',
+          rightBadge === 'new' ? 'bg-brand text-accent' : 'bg-promo text-white',
+        ]}
+      >
+        {t(`shop.card.badge.${rightBadge}`)}
+      </p>
+    )}
+  </div>
+
+  <div class="flex flex-col gap-1 md:mt-4 md:gap-[23px] md:px-2.5">
+    <div class="flex flex-col gap-1 md:gap-4">
+      {/* Desktop only: Figma trims the desktop text boxes, not the phone ones. line-clamp makes the
+          block a -webkit-box, which keeps the top trim but drops the bottom one (5px at 16/20); the
+          margin gives it back, and min-h keeps two lines' room for a one-line name, so the size and
+          the price sit where Figma has them on every card */}
+      <h3 class="line-clamp-2 text-sf-body leading-[19px] font-semibold md:-mb-[5px] md:min-h-9 md:trim-text md:leading-5">
+        <a href={`/p/${listing.slug}`} class="hover:underline">
+          {listing.name}
+        </a>
+      </h3>
+      <p class="text-sf-small leading-4 text-muted md:trim-text md:text-sf-meta md:font-semibold">
+        {listing.packSize}
+      </p>
+    </div>
+    <p class="text-[18px] leading-[21px] font-bold text-price tabular-nums md:trim-text md:text-sf-title md:leading-5 md:font-semibold">
+      {locale.money(listing.price)}
+    </p>
+  </div>
+
+  {/* mt-auto: the button sits at the card's bottom, so a row of cards lines its buttons up */}
+  <div class="mt-auto md:py-6">
+    {listing.inStock ? (
+      <button
+        type="button"
+        data-add-to-cart={listing.id}
+        aria-label={t('shop.card.addToCartLabel', { name: listing.name })}
+        class="flex h-11 w-full items-center justify-center gap-1 rounded-sm bg-accent pr-4 pl-2.5 text-sf-body font-semibold text-brand transition-colors duration-150 hover:bg-brand hover:text-accent md:mx-auto md:w-[195px]"
+      >
+        <HugeiconsIcon icon={Add01Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+        {t('shop.card.addToCart')}
+      </button>
+    ) : (
+      <button
+        type="button"
+        disabled
+        class="flex h-11 w-full items-center justify-center rounded-sm bg-canvas text-sf-body font-semibold text-muted md:mx-auto md:w-[195px]"
+      >
+        {t('shop.card.outOfStock')}
+      </button>
+    )}
+  </div>
+</article>

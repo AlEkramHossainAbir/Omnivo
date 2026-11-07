@@ -1,0 +1,62 @@
+---
+import '../styles/shop.css';
+
+import type { PublicShop } from '@omnivo/contracts';
+
+import Footer from '../components/Footer.astro';
+import Header from '../components/Header.astro';
+import type { ShopLocale } from '../lib/locale';
+
+// Step 26a: the frame of every shop page: <html> in the shop's language and colors, the header,
+// the page, the footer. A page passes the shop and its locale, worked out once in the page.
+interface Props {
+  shop: PublicShop;
+  locale: ShopLocale;
+  title: string;
+}
+
+const { shop, locale, title } = Astro.props;
+const { t } = locale;
+
+// The tenant's two theme colors win over the stylesheet's defaults. They are #rrggbb (the contract
+// checks that), so nothing else can be written into this style attribute.
+const theme = `--brand: ${shop.theme.brand}; --accent: ${shop.theme.accent}`;
+---
+
+<!doctype html>
+<html lang={locale.language} style={theme}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content={shop.theme.brand} />
+    <title>{title}</title>
+  </head>
+  <body>
+    <a
+      href="#main"
+      class="sr-only rounded-lg bg-card px-4 py-2 font-semibold focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50"
+    >
+      {t('shop.skipToContent')}
+    </a>
+    <div class="shop-container">
+      <Header shop={shop} locale={locale} />
+      <main id="main">
+        <slot />
+      </main>
+      <Footer shop={shop} locale={locale} />
+    </div>
+
+    <script>
+      import { addToCart } from '../lib/cart';
+
+      // One listener for every "Add to cart" on the page, instead of an island per card: a home
+      // page has 20 cards, and each island would load React for one click.
+      document.addEventListener('click', (event) => {
+        if (!(event.target instanceof Element)) return;
+        const button = event.target.closest<HTMLButtonElement>('[data-add-to-cart]');
+        const listingId = button?.dataset.addToCart;
+        if (listingId) addToCart(listingId);
+      });
+    </script>
+  </body>
+</html>

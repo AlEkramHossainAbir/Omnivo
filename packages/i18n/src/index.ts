@@ -13,6 +13,7 @@ export {
   formatTime,
   isDecimalString,
   type MoneyFormatOptions,
+  numberLocale,
 } from './format.js';
 export { useLocale } from './use-locale.js';
 export type { Messages } from './locales/messages.js';

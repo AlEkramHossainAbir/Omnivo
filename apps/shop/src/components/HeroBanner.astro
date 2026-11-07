@@ -1,0 +1,68 @@
+---
+import type { HeroBanner } from '@omnivo/contracts';
+
+// CLAUDE.md → Storefront → Hero banner. One element for both layouts:
+// - desktop (Figma 37:3118): the banner's background color, Figma's slanted panel on the left with
+//   the headline and a pill button, the product picture on the right;
+// - phone (Figma 138:790): the phone photo fills the banner under a dark scrim, the eyebrow pill
+//   at the top, the headline and its line at the bottom, and the whole banner is the link.
+// The colors are the banner's data (#rrggbb, checked by the contract), so they go in style attributes.
+interface Props {
+  hero: HeroBanner;
+}
+
+const { hero } = Astro.props;
+---
+
+<section
+  class="relative mt-4 h-55 overflow-hidden rounded-2xl md:h-70"
+  style={`background-color: ${hero.colors.background}`}
+>
+  {/* One <picture>: the browser downloads only the source that matches, never both */}
+  <picture>
+    <source media="(min-width: 768px)" srcset={hero.desktopImage.url} />
+    <img
+      src={hero.phoneImage.url}
+      alt={hero.phoneImage.alt}
+      fetchpriority="high"
+      class="absolute inset-0 size-full object-cover md:max-lg:hidden md:inset-auto md:-top-6 md:right-[47px] md:h-[313px] md:w-[522px] md:object-contain"
+    />
+  </picture>
+  <div class="hero-scrim absolute inset-0 md:hidden"></div>
+
+  {/* Figma's "Rectangle 4": the panel's path, drawn in the banner's panel color */}
+  <svg
+    aria-hidden="true"
+    viewBox="0 0 588.819 280"
+    class="absolute top-0 left-0 hidden h-70 w-[589px] md:block"
+  >
+    <path
+      d="M0 0L438.603 0C456.754 0 473.93 8.21725 485.32 22.3505L571.108 128.801C588.994 150.994 593.72 181.028 583.515 207.643L555.769 280H0V0Z"
+      fill={hero.colors.panel}
+    ></path>
+  </svg>
+
+  <div class="relative flex h-full flex-col items-start justify-between p-5 md:absolute md:top-1/2 md:left-[102px] md:h-auto md:w-[360px] md:-translate-y-1/2 md:justify-start md:gap-9 md:p-0">
+    {hero.eyebrow && (
+      <p class="rounded-full bg-accent px-3 py-1.5 text-sf-meta leading-none font-bold text-brand uppercase md:hidden">
+        {hero.eyebrow}
+      </p>
+    )}
+    <div class="flex flex-col gap-2">
+      <h2 class="text-[28px] leading-tight font-bold text-white md:text-sf-display md:font-semibold">
+        {hero.headline}
+      </h2>
+      {hero.line && <p class="text-sf-small text-white/80 md:hidden">{hero.line}</p>}
+    </div>
+    <a
+      href={hero.href}
+      class="hidden rounded-full px-6 py-4 text-sf-body font-semibold md:block"
+      style={`background-color: ${hero.colors.button}; color: ${hero.colors.buttonText}`}
+    >
+      {hero.buttonLabel}
+    </a>
+  </div>
+
+  {/* The phone has no button: the whole banner is one link, named by its headline */}
+  <a href={hero.href} class="absolute inset-0 md:hidden" aria-label={hero.headline}></a>
+</section>

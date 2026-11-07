@@ -1,0 +1,199 @@
+/* Step 26a: the shop's own stylesheet (CLAUDE.md → Storefront design system). It does not import
+   @omnivo/ui/styles.css: the shop has its own colors and type scale, and the ERP's tokens would
+   clash with these names. */
+@import 'tailwindcss';
+
+/* Self-hosted like the app: a shop must not wait for Google Fonts, and 700 is here because the
+   phone layout writes its titles and prices bold (Noto Sans Bengali draws the ৳ sign) */
+@import '@fontsource-variable/geist';
+@import '@fontsource/noto-sans-bengali/400.css';
+@import '@fontsource/noto-sans-bengali/500.css';
+@import '@fontsource/noto-sans-bengali/600.css';
+@import '@fontsource/noto-sans-bengali/700.css';
+
+:root {
+  color-scheme: light;
+  --canvas: #f6f7f7;
+  --card: #ffffff;
+  --card-glass: rgb(255 255 255 / 0.7);
+  --cream: #f4f5ec;
+  /* brand and accent are the tenant's theme. ShopLayout writes the shop's own pair on <html>,
+     which wins over these defaults (the Figma colors) */
+  --brand: #005859;
+  --accent: #b8ef69;
+  --price: #a70b1e;
+  --promo: #cc3f29;
+  --promo-soft: rgb(255 108 85 / 0.1);
+  --muted: #707070;
+  --muted-line: #949494;
+  --body: #52524f;
+  --rule: #dee1e1;
+  --field: #e9e9e9;
+  --on-brand-line: rgb(255 255 255 / 0.15);
+  --overlay: rgb(0 25 25 / 0.6);
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-card: var(--card);
+  --color-card-glass: var(--card-glass);
+  --color-cream: var(--cream);
+  --color-brand: var(--brand);
+  --color-accent: var(--accent);
+  --color-price: var(--price);
+  --color-promo: var(--promo);
+  --color-promo-soft: var(--promo-soft);
+  --color-muted: var(--muted);
+  --color-muted-line: var(--muted-line);
+  --color-body: var(--body);
+  --color-rule: var(--rule);
+  --color-field: var(--field);
+  --color-on-brand-line: var(--on-brand-line);
+  --color-overlay: var(--overlay);
+  /* The variable package registers "Geist Variable", not "Geist" (CLAUDE.md → Typography) */
+  --font-sans: 'Geist Variable', 'Noto Sans Bengali', 'Segoe UI', system-ui, sans-serif;
+}
+
+/* The type scale. Fixed values, so outside `inline`. text-sf-display, text-sf-body and so on */
+@theme {
+  --text-sf-display: 36px;
+  --text-sf-display--line-height: 1.2;
+  --text-sf-price-lg: 32px;
+  --text-sf-price-lg--line-height: 1;
+  --text-sf-title: 24px;
+  --text-sf-title--line-height: 30px;
+  --text-sf-subtitle: 20px;
+  --text-sf-subtitle--line-height: 26px;
+  --text-sf-body: 16px;
+  --text-sf-body--line-height: 20px;
+  --text-sf-small: 14px;
+  --text-sf-small--line-height: 24px;
+  --text-sf-meta: 12px;
+  --text-sf-meta--line-height: 20px;
+  --text-sf-tag: 10px;
+  --text-sf-tag--line-height: 11px;
+  /* The page's content is 1280px wide at most (CLAUDE.md → Container) */
+  --container-shop: 1280px;
+}
+
+/* The discount ribbon's zigzag bottom: Figma's "Rectangle 3" (30×40, four teeth 5px deep), as a
+   clip-path so the color stays a token and no image file is needed */
+@utility ribbon-shape {
+  clip-path: polygon(
+    0 0,
+    100% 0,
+    100% 100%,
+    87.5% 87.5%,
+    75% 100%,
+    62.5% 87.5%,
+    50% 100%,
+    37.5% 87.5%,
+    25% 100%,
+    12.5% 87.5%,
+    0 100%
+  );
+}
+
+/* The phone hero's photo darkens toward the bottom, where the white headline sits */
+@utility hero-scrim {
+  background-image: linear-gradient(to bottom, rgb(0 0 0 / 0), rgb(0 0 0 / 0.8));
+}
+
+/* The page's width: 1280px of content, 16px gutters on a phone and 32px from md, so a 1440px
+   screen has the design's 80px on each side and nothing ever scrolls sideways */
+@utility shop-container {
+  margin-inline: auto;
+  width: 100%;
+  max-width: calc(var(--container-shop) + 64px);
+  padding-inline: 16px;
+  @variant md {
+    padding-inline: 32px;
+  }
+}
+
+/* Figma trims every text box to the cap height and the baseline (text-box-trim), and its spacing
+   is measured between those edges. The same CSS property makes the browser match it; a browser
+   without it (Firefox today) shows a few pixels more space, nothing breaks */
+@utility trim-text {
+  text-box: trim-both cap alphabetic;
+}
+
+/* A product row: one line of cards that scrolls sideways and snaps to a card. As many columns in
+   view as the grid above it has (1, 3, 4, 5), each the width the grid's own columns would be. The
+   scrollbar is hidden because the arrows are the visible control */
+@utility row-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 100%;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+  @variant md {
+    grid-auto-columns: calc((100% - 2 * 16px) / 3);
+  }
+  @variant lg {
+    grid-auto-columns: calc((100% - 3 * 16px) / 4);
+  }
+  @variant xl {
+    grid-auto-columns: calc((100% - 4 * 16px) / 5);
+  }
+}
+
+@layer base {
+  body {
+    background: var(--color-canvas);
+    color: var(--color-brand);
+    font-family: var(--font-sans);
+    font-size: var(--text-sf-body);
+    line-height: var(--text-sf-body--line-height);
+    /* Figma's tracking on every text: -2% of the size */
+    letter-spacing: -0.02em;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  /* Every clickable thing shows the hand (CLAUDE.md → Interaction) */
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']),
+  a[href],
+  label[for],
+  summary,
+  select:not(:disabled),
+  input[type='checkbox']:not(:disabled),
+  input[type='radio']:not(:disabled) {
+    cursor: pointer;
+  }
+  :disabled,
+  [aria-disabled='true'] {
+    cursor: not-allowed;
+  }
+
+  /* brand on white is 9:1; on the brand header the outline switches to accent (data-on-brand) */
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+  [data-on-brand] :focus-visible {
+    outline-color: var(--color-accent);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition: none !important;
+      animation: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
