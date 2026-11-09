@@ -1,4 +1,14 @@
-import type { BalanceSheet, ReportSection, TrialBalance } from '@omnivo/contracts';
+import {
+  type AgingAmounts,
+  type AgingReport,
+  type BalanceSheet,
+  costColumns,
+  type PurchaseReport,
+  type ReportSection,
+  type SalesReport,
+  type SalesReportRow,
+  type TrialBalance,
+} from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { buildDocument, type DocCell, type DocumentContext, fileStem } from './document.js';
@@ -9,6 +19,8 @@ const context: DocumentContext = {
   currency: 'BDT',
   timeZone: 'Asia/Dhaka',
   branchName: null,
+  groupName: null,
+  categoryName: null,
   madeAt: new Date('2026-10-01T08:05:00Z'),
 };
 
@@ -102,5 +114,310 @@ describe('the document of a balance sheet', () => {
       ['total', 'মোট মালিকানা স্বত্ব', '965000.0000'],
       ['grand', 'মোট দায় ও মালিকানা স্বত্ব', '965000.0000'],
     ]);
+  });
+});
+
+// Step 21b: the sales and purchase reports and the agings
+
+// A sales row: an item unless a kind is given; the cost columns from the net and the cost
+function salesRow(
+  name: string | null,
+  amounts: { gross: string; returns: string; net: string; cost: string | null },
+  extra: Partial<SalesReportRow> = {},
+): SalesReportRow {
+  return {
+    key: name ?? 'walk_in',
+    kind: 'item',
+    id: null,
+    code: null,
+    name,
+    month: null,
+    quantity: null,
+    baseUnit: null,
+    gross: amounts.gross,
+    returns: amounts.returns,
+    net: amounts.net,
+    ...costColumns(amounts.net, amounts.cost),
+    ...extra,
+  };
+}
+
+function salesReport(
+  items: SalesReportRow[],
+  withCost: boolean,
+  books: string | null,
+): SalesReport {
+  return {
+    items,
+    nextCursor: null,
+    totals: {
+      gross: '5035.0000',
+      returns: '331.0000',
+      net: '4704.0000',
+      ...costColumns('4704.0000', withCost ? '4111.0000' : null),
+    },
+    withCost,
+    books,
+  };
+}
+
+describe('the document of a sales report', () => {
+  const query = {
+    from: '2026-09-06',
+    to: '2026-11-05',
+    groupBy: 'customer' as const,
+    sort: '-net' as const,
+  };
+  const rahim = { gross: '3600.0000', returns: '100.0000', net: '3500.0000', cost: '3040.0000' };
+  const walkIns = { gross: '580.0000', returns: '60.0000', net: '520.0000', cost: '431.0000' };
+
+  it('writes the code before the name, the walk-ins in words, and the cost when allowed', () => {
+    const data = salesReport(
+      [
+        salesRow('Rahim Traders', rahim, { code: 'C-00001' }),
+        salesRow(null, walkIns, { kind: 'walk_in' }),
+      ],
+      true,
+      '5204.0000',
+    );
+    const doc = buildDocument({ report: 'sales_report', query, data }, context);
+    expect(doc.title).toBe('Sales report');
+    // Seven columns do not fit a portrait page
+    expect(doc.landscape).toBe(true);
+    expect(doc.columns.map((column) => [column.header, column.kind])).toEqual([
+      ['Customer', 'text'],
+      ['Sold', 'money'],
+      ['Returns', 'money'],
+      ['Net sales', 'money'],
+      ['Cost', 'money'],
+      ['Margin', 'money'],
+      ['Margin %', 'number'],
+    ]);
+    expect(doc.rows.map((row) => [row.style, ...row.cells.map(read)])).toEqual([
+      [
+        'normal',
+        'C-00001 Rahim Traders',
+        '3600.0000',
+        '100.0000',
+        '3500.0000',
+        '3040.0000',
+        '460.0000',
+        '13.1%',
+      ],
+      [
+        'normal',
+        'Walk-in customers',
+        '580.0000',
+        '60.0000',
+        '520.0000',
+        '431.0000',
+        '89.0000',
+        '17.1%',
+      ],
+      ['grand', 'Total', '5035.0000', '331.0000', '4704.0000', '4111.0000', '593.0000', '12.6%'],
+    ]);
+    // The books' figure under the period, to compare with the total
+    expect(doc.lines).toEqual([
+      '6 Sep 2026 – 5 Nov 2026',
+      'By customer',
+      'In the books: 5,204.00',
+      'Amounts in BDT',
+      'Made on 1 Oct 2026, 14:05',
+    ]);
+  });
+
+  it('leaves the cost out of the file of someone who may not see it', () => {
+    const data = salesReport([salesRow('Rahim Traders', { ...rahim, cost: null })], false, null);
+    const doc = buildDocument({ report: 'sales_report', query, data }, context);
+    expect(doc.landscape).toBe(false);
+    expect(doc.columns.map((column) => column.header)).toEqual([
+      'Customer',
+      'Sold',
+      'Returns',
+      'Net sales',
+    ]);
+    expect(doc.rows.every((row) => row.cells.length === 4)).toBe(true);
+    // With a customer group there is no books' figure
+    expect(doc.lines).not.toContain('In the books: 5,204.00');
+  });
+
+  it('writes a quantity with its unit, by product, and adds none up', () => {
+    const data = salesReport(
+      [
+        salesRow('Miniket rice 5 kg', rahim, {
+          code: 'P-00001',
+          quantity: '1250.0000',
+          baseUnit: { code: 'pcs', decimals: 0 },
+        }),
+      ],
+      false,
+      '4704.0000',
+    );
+    const doc = buildDocument(
+      { report: 'sales_report', query: { ...query, groupBy: 'product' }, data },
+      { ...context, branchName: 'Mirpur shop', categoryName: 'Rice' },
+    );
+    expect(doc.landscape).toBe(true);
+    expect(doc.columns[1]).toMatchObject({ header: 'Quantity', kind: 'number' });
+    expect(doc.rows.map((row) => row.cells.slice(0, 2).map(read))).toEqual([
+      ['P-00001 Miniket rice 5 kg', '1,250 pcs'],
+      ['Total', ''],
+    ]);
+    expect(doc.lines.slice(0, 4)).toEqual([
+      '6 Sep 2026 – 5 Nov 2026',
+      'By product',
+      'Branch: Mirpur shop',
+      'Category: Rice',
+    ]);
+  });
+
+  it('names a month, in Bangla too', () => {
+    const data = salesReport(
+      [salesRow(null, rahim, { key: '2026-10', month: '2026-10' })],
+      false,
+      null,
+    );
+    const ofMonths = {
+      report: 'sales_report' as const,
+      query: { ...query, groupBy: 'month' as const },
+      data,
+    };
+    expect(read(buildDocument(ofMonths, context).rows[0]?.cells[0])).toBe('October 2026');
+    expect(read(buildDocument(ofMonths, { ...context, language: 'bn' }).rows[0]?.cells[0])).toBe(
+      'অক্টোবর ২০২৬',
+    );
+    expect(fileStem(ofMonths)).toBe('sales-2026-09-06-to-2026-11-05');
+  });
+});
+
+describe('the document of a purchase report', () => {
+  const data: PurchaseReport = {
+    items: [
+      {
+        key: 'products',
+        kind: 'products',
+        id: null,
+        code: null,
+        name: null,
+        month: null,
+        quantity: null,
+        baseUnit: null,
+        gross: '2500.0000',
+        returns: '370.0000',
+        net: '2130.0000',
+      },
+    ],
+    nextCursor: null,
+    totals: { gross: '2500.0000', returns: '370.0000', net: '2130.0000' },
+  };
+
+  it('has no cost and no books, and names the Products row in words', () => {
+    const report = {
+      report: 'purchase_report' as const,
+      query: {
+        from: '2026-09-06',
+        to: '2026-11-05',
+        groupBy: 'account' as const,
+        sort: '-net' as const,
+      },
+      data,
+    };
+    const doc = buildDocument(report, { ...context, groupName: 'Local mills' });
+    expect(doc.landscape).toBe(false);
+    expect(doc.columns.map((column) => column.header)).toEqual([
+      'Expense account',
+      'Billed',
+      'Debit notes',
+      'Net purchases',
+    ]);
+    expect(doc.rows.map((row) => row.cells.map(read))).toEqual([
+      ['Products', '2500.0000', '370.0000', '2130.0000'],
+      ['Total', '2500.0000', '370.0000', '2130.0000'],
+    ]);
+    expect(doc.lines.slice(0, 3)).toEqual([
+      '6 Sep 2026 – 5 Nov 2026',
+      'By expense account',
+      'Supplier group: Local mills',
+    ]);
+    expect(fileStem(report)).toBe('purchases-2026-09-06-to-2026-11-05');
+  });
+});
+
+describe('the document of an aging', () => {
+  const amounts = (balance: string): AgingAmounts => ({
+    current: '100.0000',
+    days1To30: '500.0000',
+    days31To60: '900.0000',
+    days61To90: '1300.0000',
+    over90: '800.0000',
+    due: '3600.0000',
+    advances: '0.0000',
+    balance,
+  });
+  const data = (ledger: string | null): AgingReport => ({
+    items: [
+      {
+        party: { id: id(7), code: 'C-00007', name: 'Agrabad Medicine Corner' },
+        ...amounts('3600.0000'),
+      },
+    ],
+    nextCursor: null,
+    asOf: '2026-11-05',
+    totals: amounts('3600.0000'),
+    ledger,
+  });
+
+  // "As at", the balance sheet's words for a picture of one day
+  it("has the page's nine columns, the day and the ledger's figure", () => {
+    const report = {
+      report: 'ar_aging' as const,
+      query: { asOf: '2026-11-05', show: 'all' as const, sort: '-balance' as const },
+      data: data('3600.0000'),
+    };
+    const doc = buildDocument(report, context);
+    expect(doc.title).toBe('Receivables aging');
+    expect(doc.landscape).toBe(true);
+    expect(doc.columns.map((column) => column.header)).toEqual([
+      'Customer',
+      'Current',
+      '1–30 days',
+      '31–60 days',
+      '61–90 days',
+      'Over 90 days',
+      'Total due',
+      'Advances',
+      'Balance',
+    ]);
+    expect(doc.rows[0]?.cells.map(read)).toEqual([
+      'C-00007 Agrabad Medicine Corner',
+      '100.0000',
+      '500.0000',
+      '900.0000',
+      '1300.0000',
+      '800.0000',
+      '3600.0000',
+      '0.0000',
+      '3600.0000',
+    ]);
+    expect(doc.lines.slice(0, 2)).toEqual(['As at 5 Nov 2026', 'In the books: 3,600.00']);
+    expect(fileStem(report)).toBe('receivables-aging-2026-11-05');
+  });
+
+  it('says "Overdue only", with no ledger to compare, for the suppliers too', () => {
+    const report = {
+      report: 'ap_aging' as const,
+      query: { asOf: '2026-11-05', show: 'overdue' as const, sort: '-balance' as const },
+      data: data(null),
+    };
+    const doc = buildDocument(report, { ...context, groupName: 'Yarn mills' });
+    expect(doc.title).toBe('Payables aging');
+    expect(doc.columns[0]?.header).toBe('Supplier');
+    expect(doc.lines.slice(0, 3)).toEqual([
+      'As at 5 Nov 2026',
+      'Supplier group: Yarn mills',
+      'Overdue only',
+    ]);
+    expect(doc.lines.some((line) => line.startsWith('In the books'))).toBe(false);
+    expect(fileStem(report)).toBe('payables-aging-2026-11-05');
   });
 });

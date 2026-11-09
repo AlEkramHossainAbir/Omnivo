@@ -68,6 +68,10 @@ import {
   Wifi01Icon,
   WifiDisconnected02Icon,
   WorkHistoryIcon,
+  ChartLineData01Icon,
+  ShoppingBag01Icon,
+  Time04Icon,
+  TimeQuarterPassIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { THEMES } from '@omnivo/contracts';
@@ -345,6 +349,9 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
   const me = useSession((state) => state.me);
   // লুকানো শুধু সুবিধা — আসল পাহারা API-র PermissionGuard। যেটা খুললেই 403, সেটা মেনুতে না দেখানো
   const can = useCan();
+  const canAccountingReports = can('accounting.report.read');
+  const canSalesReports = can('sales.report.read');
+  const canPurchaseReports = can('purchase.report.read');
   // Step 17a: how many documents wait for this person's decision, polled like the bell's badge
   const { data: waiting = 0 } = useQuery(waitingCountQuery(me?.tenant.id ?? ''));
   // Step 18b: sign out at once with nothing on the device, else ask. Step 20b (decision 6): an
@@ -419,18 +426,45 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
               </>
             )}
           </NavGroup>
-          {/* The statements: for anyone with the report permission, journal or not (a director) */}
-          {can('accounting.report.read') && (
+          {/* The statements: for anyone with the report permission, journal or not (a director).
+              Step 21b: each link by its own permission, and the group shows when any link does.
+              A person with only the sales reports sees "Sales report", "Receivables aging" and
+              Exports (the list shows the kinds they can read). */}
+          {(canAccountingReports || canSalesReports || canPurchaseReports) && (
             <NavGroup label={t('nav.reports')}>
-              <NavLink to="/reports/trial-balance" icon={TableIcon}>
-                {t('nav.trialBalance')}
-              </NavLink>
-              <NavLink to="/reports/profit-and-loss" icon={ChartIncreaseIcon}>
-                {t('nav.profitAndLoss')}
-              </NavLink>
-              <NavLink to="/reports/balance-sheet" icon={PieChartIcon}>
-                {t('nav.balanceSheet')}
-              </NavLink>
+              {canAccountingReports && (
+                <>
+                  <NavLink to="/reports/trial-balance" icon={TableIcon}>
+                    {t('nav.trialBalance')}
+                  </NavLink>
+                  <NavLink to="/reports/profit-and-loss" icon={ChartIncreaseIcon}>
+                    {t('nav.profitAndLoss')}
+                  </NavLink>
+                  <NavLink to="/reports/balance-sheet" icon={PieChartIcon}>
+                    {t('nav.balanceSheet')}
+                  </NavLink>
+                </>
+              )}
+              {canSalesReports && (
+                <>
+                  <NavLink to="/reports/sales" icon={ChartLineData01Icon}>
+                    {t('nav.salesReport')}
+                  </NavLink>
+                  <NavLink to="/reports/ar-aging" icon={TimeQuarterPassIcon}>
+                    {t('nav.arAging')}
+                  </NavLink>
+                </>
+              )}
+              {canPurchaseReports && (
+                <>
+                  <NavLink to="/reports/purchases" icon={ShoppingBag01Icon}>
+                    {t('nav.purchaseReport')}
+                  </NavLink>
+                  <NavLink to="/reports/ap-aging" icon={Time04Icon}>
+                    {t('nav.apAging')}
+                  </NavLink>
+                </>
+              )}
               <NavLink to="/reports/exports" icon={FileDownloadIcon}>
                 {t('nav.exports')}
               </NavLink>

@@ -39,6 +39,7 @@ import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
+import { datedAllocations, workspaceToday } from '../common/db/applied-on.js';
 import { isCheckViolation } from '../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
@@ -353,7 +354,7 @@ export class CreditNotesService {
           throw overAllocatedError();
         }
         const before = await this.allocationsOf(tx, id);
-        await this.apply(tx, row, input.allocations);
+        await this.apply(tx, row, input.allocations, await workspaceToday(tx));
         await tx
           .update(creditNotes)
           .set({ version: sql`${creditNotes.version} + 1`, updatedBy: currentPrincipal().userId })
@@ -657,7 +658,7 @@ export class CreditNotesService {
     const due = amountDueOf(invoice);
     const applied = compareMoney(draft.total, due) <= 0 ? draft.total : due;
     if (compareMoney(applied, '0') > 0) {
-      await this.apply(tx, posted, [{ invoiceId: invoice.id, amount: applied }]);
+      await this.apply(tx, posted, [{ invoiceId: invoice.id, amount: applied }], posted.date);
     }
     await audit(tx, {
       action: 'credit_note.posted',
@@ -669,17 +670,21 @@ export class CreditNotesService {
 
   // Replaces the credit note's allocations with `wanted`, once checkAllocations() has locked every
   // invoice involved and checked each row. invoices.amount_credited and credit_notes.applied are
-  // not written here: the allocations' trigger keeps them (migration 0032).
+  // not written here: the allocations' trigger keeps them (migration 0032). `day` is the
+  // applied_on of a new or changed pair (step 21b): the credit note's date when it is posted, today
+  // when its money is applied again.
   private async apply(
     tx: Transaction,
     creditNote: CreditNoteRow,
     wanted: readonly Allocation[],
+    day: string,
   ): Promise<void> {
     const tenantId = getTenantId();
     const current = await tx
       .select({
         invoiceId: creditNoteAllocations.invoiceId,
         amount: creditNoteAllocations.amount,
+        appliedOn: creditNoteAllocations.appliedOn,
       })
       .from(creditNoteAllocations)
       .where(
@@ -704,12 +709,13 @@ export class CreditNotesService {
       );
     if (wanted.length === 0) return;
     await tx.insert(creditNoteAllocations).values(
-      wanted.map((allocation) => ({
+      datedAllocations(wanted, current, (row) => row.invoiceId, day).map((allocation) => ({
         tenantId,
         creditNoteId: creditNote.id,
         customerId: creditNote.customerId,
         invoiceId: allocation.invoiceId,
         amount: allocation.amount,
+        appliedOn: allocation.appliedOn,
       })),
     );
   }

@@ -14,6 +14,7 @@ import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created } from '../common/audit/audit.js';
+import { datedAllocations, workspaceToday } from '../common/db/applied-on.js';
 import { isCheckViolation } from '../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
@@ -149,7 +150,8 @@ export class ReceiptsService {
             amount: row.amount,
           },
         );
-        await this.apply(tx, row, input.allocations);
+        // Paid on the receipt's own day, like the books (step 21b, decision 25)
+        await this.apply(tx, row, input.allocations, row.date);
         await audit(tx, {
           action: 'receipt.created',
           entityType: 'receipt',
@@ -186,7 +188,7 @@ export class ReceiptsService {
           throw overAllocatedError();
         }
         const before = await this.allocationsOf(tx, id);
-        await this.apply(tx, row, input.allocations);
+        await this.apply(tx, row, input.allocations, await workspaceToday(tx));
         await tx
           .update(receipts)
           .set({ version: sql`${receipts.version} + 1`, updatedBy: currentPrincipal().userId })
@@ -235,8 +237,9 @@ export class ReceiptsService {
       const entry = await this.books.entryOf(tx, id, 'sales_receipt');
       if (entry === null) throw new Error(`Receipt ${id} has no entry`);
       // The allocations first: the database lets a receipt be voided only once nothing of it is
-      // applied (receipts_void_check). Their trigger takes the money off the invoices.
-      await this.apply(tx, row, []);
+      // applied (receipts_void_check). Their trigger takes the money off the invoices. Nothing is
+      // written, so the day is never used.
+      await this.apply(tx, row, [], input.date);
       await tx
         .update(receipts)
         .set({
@@ -264,15 +267,20 @@ export class ReceiptsService {
   // Replaces the receipt's allocations with `wanted`, once checkAllocations() has locked every
   // invoice involved and checked each row (step 15d moved that check to allocations.ts, for the
   // credit notes too). amount_paid and applied are not written here: the allocations' trigger keeps
-  // them (migration 0030).
+  // them (migration 0030). `day` is the applied_on of a new or changed pair (step 21b).
   private async apply(
     tx: Transaction,
     receipt: ReceiptRow,
     wanted: readonly Allocation[],
+    day: string,
   ): Promise<void> {
     const tenantId = getTenantId();
     const current = await tx
-      .select({ invoiceId: receiptAllocations.invoiceId, amount: receiptAllocations.amount })
+      .select({
+        invoiceId: receiptAllocations.invoiceId,
+        amount: receiptAllocations.amount,
+        appliedOn: receiptAllocations.appliedOn,
+      })
       .from(receiptAllocations)
       .where(
         and(
@@ -296,12 +304,13 @@ export class ReceiptsService {
       );
     if (wanted.length === 0) return;
     await tx.insert(receiptAllocations).values(
-      wanted.map((allocation) => ({
+      datedAllocations(wanted, current, (row) => row.invoiceId, day).map((allocation) => ({
         tenantId,
         receiptId: receipt.id,
         customerId: receipt.customerId,
         invoiceId: allocation.invoiceId,
         amount: allocation.amount,
+        appliedOn: allocation.appliedOn,
       })),
     );
   }

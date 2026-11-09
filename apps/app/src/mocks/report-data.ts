@@ -375,6 +375,11 @@ const STEMS = {
   trial_balance: 'trial-balance',
   profit_and_loss: 'profit-and-loss',
   balance_sheet: 'balance-sheet',
+  // Step 21b: the names the API's fileStem() gives
+  sales_report: 'sales',
+  purchase_report: 'purchases',
+  ar_aging: 'receivables-aging',
+  ap_aging: 'payables-aging',
 } satisfies Record<ReportKind, string>;
 
 export function createExport(data: WorkspaceData, input: ReportExportInput): ReportExport {

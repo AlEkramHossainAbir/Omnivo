@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { accountRoutes } from './accounts.js';
+import { agingRoutes } from './aging.js';
 import { approvalRoutes, approvalRuleRoutes } from './approvals.js';
 import { attachmentRoutes } from './attachments.js';
 import { auditRoutes } from './audit.js';
@@ -57,6 +58,7 @@ import { supplierRefundRoutes } from './supplier-refunds.js';
 import { supplierGroupRoutes, supplierRoutes } from './suppliers.js';
 import { syncRoutes } from './sync.js';
 import { taxRateRoutes } from './tax-rates.js';
+import { tradeReportRoutes } from './trade-reports.js';
 import { unitRoutes } from './units.js';
 import { warehouseRoutes } from './warehouses.js';
 
@@ -96,6 +98,8 @@ export const routes = {
   fiscalYears: fiscalYearRoutes,
   reportExports: reportExportRoutes,
   dashboard: dashboardRoutes,
+  tradeReports: tradeReportRoutes,
+  aging: agingRoutes,
   units: unitRoutes,
   productCategories: productCategoryRoutes,
   customFields: customFieldRoutes,

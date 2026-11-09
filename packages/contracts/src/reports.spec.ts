@@ -7,6 +7,7 @@ import {
   profitAndLossQuerySchema,
   type ReportAccount,
   reportExportInputSchema,
+  reportKindsFor,
   reportSection,
   trialBalanceQuerySchema,
 } from './reports.js';
@@ -63,6 +64,36 @@ describe('report queries', () => {
       query: { from: '2026-07-01', to: '2026-09-30' },
     });
     expect(result.error?.issues[0]?.path).toEqual(['query', 'asOf']);
+  });
+
+  it('exports a sales report with its filters, without the page', () => {
+    const result = reportExportInputSchema.parse({
+      report: 'sales_report',
+      format: 'xlsx',
+      query: { from: '2026-10-01', to: '2026-10-31', groupBy: 'product', limit: '50' },
+    });
+    expect(result.query).toEqual({
+      from: '2026-10-01',
+      to: '2026-10-31',
+      groupBy: 'product',
+      sort: '-net',
+    });
+  });
+});
+
+describe('reportKindsFor', () => {
+  it('gives each report by its own module permission, in the list order', () => {
+    expect(reportKindsFor(['purchase.report.read', 'sales.report.read'])).toEqual([
+      'sales_report',
+      'purchase_report',
+      'ar_aging',
+      'ap_aging',
+    ]);
+    expect(reportKindsFor(['accounting.report.read', 'core.user.invite'])).toEqual([
+      'trial_balance',
+      'profit_and_loss',
+      'balance_sheet',
+    ]);
   });
 });
 

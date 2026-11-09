@@ -157,6 +157,10 @@ export const supplierPaymentAllocations = pgTable(
     supplierId: uuid('supplier_id').notNull(),
     billId: uuid('bill_id').notNull(),
     amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
+    // The day it started to count, like a receipt's (receipts.ts). A draft's plan has the
+    // payment's date, which the books use when it is posted; applied again once posted, the day
+    // it was; never before either date
+    appliedOn: date('applied_on', { mode: 'string' }).notNull(),
   },
   (table) => [
     uniqueIndex('supplier_payment_allocations_pair_idx').on(
@@ -164,6 +168,8 @@ export const supplierPaymentAllocations = pgTable(
       table.paymentId,
       table.billId,
     ),
+    // What was applied after a day, for the aging as of that day (receipts.ts)
+    index('supplier_payment_allocations_applied_idx').on(table.tenantId, table.appliedOn),
     // A bill's payments (its page), and the bill FK's check
     index('supplier_payment_allocations_bill_idx').on(table.tenantId, table.billId),
     // A draft deleted for real takes its plan with it

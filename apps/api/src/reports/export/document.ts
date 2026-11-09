@@ -1,6 +1,11 @@
 import {
   absMoney,
   addMoney,
+  AGING_BUCKETS,
+  type AgingAmounts,
+  type AgingReport,
+  type ApAgingFilter,
+  type ArAgingFilter,
   type BalanceSheet,
   type BalanceSheetQuery,
   isNegativeMoney,
@@ -8,25 +13,37 @@ import {
   type LanguageCode,
   type ProfitAndLoss,
   type ProfitAndLossQuery,
+  type PurchaseReport,
+  type PurchaseReportFilter,
+  type PurchaseReportRow,
   type ReportKind,
   type ReportSection,
+  type SalesReport,
+  type SalesReportFilter,
+  type SalesReportRow,
   type TrialBalance,
   type TrialBalanceQuery,
 } from '@omnivo/contracts';
 
 import { COPY, type Copy } from './copy.js';
-import { formatIsoDate, formatMoment } from './format.js';
+import { formatAmount, formatIsoDate, formatMoment, formatMonth, formatNumber } from './format.js';
 
 // One report as a plain table: the Excel and the PDF writer both draw this, so the two files
 // always hold the same rows in the same order. Amounts stay decimal strings here; each writer
 // decides how a cell shows them.
 
+// number (step 21b): a quantity or a percent, already written out ("72 pcs", "22.5%"), right-aligned
+// like an amount but never added up in Excel
 export type DocCell =
-  { kind: 'text'; text: string } | { kind: 'money'; amount: string } | { kind: 'empty' };
+  | { kind: 'text'; text: string }
+  | { kind: 'money'; amount: string }
+  | { kind: 'number'; text: string }
+  | { kind: 'empty' };
 
 export interface DocColumn {
   header: string;
-  kind: 'text' | 'money';
+  // money and number are right-aligned
+  kind: 'text' | 'money' | 'number';
   // Relative width: characters in Excel, a share of the line in the PDF
   width: number;
 }
@@ -57,14 +74,23 @@ export interface ReportDocument {
 export type ReportData =
   | { report: 'trial_balance'; query: TrialBalanceQuery; data: TrialBalance }
   | { report: 'profit_and_loss'; query: ProfitAndLossQuery; data: ProfitAndLoss }
-  | { report: 'balance_sheet'; query: BalanceSheetQuery; data: BalanceSheet };
+  | { report: 'balance_sheet'; query: BalanceSheetQuery; data: BalanceSheet }
+  | { report: 'sales_report'; query: SalesReportFilter; data: SalesReport }
+  | { report: 'purchase_report'; query: PurchaseReportFilter; data: PurchaseReport }
+  | { report: 'ar_aging'; query: ArAgingFilter; data: AgingReport }
+  | { report: 'ap_aging'; query: ApAgingFilter; data: AgingReport };
 
+// The names of what the query filters by, read by the handler: a file says "Branch: Sylhet depot",
+// never an id
 export interface DocumentContext {
   language: LanguageCode;
   company: string;
   currency: string;
   timeZone: string;
   branchName: string | null;
+  // Step 21b: the customer or supplier group, and the product category
+  groupName: string | null;
+  categoryName: string | null;
   madeAt: Date;
 }
 
@@ -260,20 +286,252 @@ function balanceSheetDocument(
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Step 21b: the sales and purchase reports and the agings. Each is one row per item and a totals
+// row; the amounts keep their paisa, like the statements.
+
+type Body = Pick<ReportDocument, 'columns' | 'rows' | 'landscape' | 'lines'>;
+
+// What the first cell of a row says: "C-00042 Sylhet Pharmacy" (the code first, like an account),
+// "October 2026", or the words for a row that is not an item
+function rowName(
+  row: SalesReportRow | PurchaseReportRow,
+  copy: Copy,
+  language: LanguageCode,
+): string {
+  if (row.kind !== 'item') return copy.rowKinds[row.kind];
+  if (row.month !== null) return formatMonth(row.month, language);
+  const name = row.name ?? '';
+  return row.code === null ? name : `${row.code} ${name}`;
+}
+
+// "72 pcs", with the unit's decimals and in the file's digits
+function quantityCell(row: SalesReportRow | PurchaseReportRow, language: LanguageCode): DocCell {
+  if (row.quantity === null || row.baseUnit === null) return empty;
+  return {
+    kind: 'number',
+    text: `${formatNumber(row.quantity, row.baseUnit.decimals, language)} ${row.baseUnit.code}`,
+  };
+}
+
+function percentCell(percent: string | null, language: LanguageCode): DocCell {
+  return percent === null
+    ? empty
+    : { kind: 'number', text: `${formatNumber(percent, 1, language)}%` };
+}
+
+// The lines under the title that the two trade reports share: the period, then each filter
+function tradeLines(
+  query: { from: string; to: string; branchId?: string | undefined },
+  group: string,
+  context: DocumentContext,
+  copy: Copy,
+  groupLine: (name: string) => string,
+): string[] {
+  const date = (iso: string) => formatIsoDate(iso, context.language);
+  return [
+    copy.range(date(query.from), date(query.to)),
+    copy.groupedBy(group),
+    ...(context.branchName === null ? [] : [copy.branch(context.branchName)]),
+    ...(context.groupName === null ? [] : [groupLine(context.groupName)]),
+    ...(context.categoryName === null ? [] : [copy.category(context.categoryName)]),
+  ];
+}
+
+function salesDocument(
+  query: SalesReportFilter,
+  data: SalesReport,
+  copy: Copy,
+  context: DocumentContext,
+): Body {
+  const { language } = context;
+  const byProduct = query.groupBy === 'product';
+  const cost = data.withCost;
+  const costCells = (amounts: {
+    cost: string | null;
+    margin: string | null;
+    marginPercent: string | null;
+  }) =>
+    cost
+      ? [
+          money(amounts.cost ?? '0'),
+          money(amounts.margin ?? '0'),
+          percentCell(amounts.marginPercent, language),
+        ]
+      : [];
+  return {
+    landscape: cost || byProduct,
+    lines: [
+      ...tradeLines(query, copy.groups[query.groupBy], context, copy, copy.customerGroup),
+      // The books' sales of the same period, to compare with the total (decision 2)
+      ...(data.books === null ? [] : [copy.inBooks(formatAmount(data.books, language))]),
+    ],
+    columns: [
+      { header: copy.groups[query.groupBy], kind: 'text', width: 40 },
+      ...(byProduct ? [{ header: copy.quantity, kind: 'number' as const, width: 16 }] : []),
+      { header: copy.sales.gross, kind: 'money', width: 18 },
+      { header: copy.sales.returns, kind: 'money', width: 16 },
+      { header: copy.sales.net, kind: 'money', width: 18 },
+      ...(cost
+        ? [
+            { header: copy.sales.cost, kind: 'money' as const, width: 18 },
+            { header: copy.sales.margin, kind: 'money' as const, width: 18 },
+            { header: copy.sales.marginPercent, kind: 'number' as const, width: 12 },
+          ]
+        : []),
+    ],
+    rows: [
+      ...data.items.map((row): DocRow => ({
+        style: 'normal',
+        indent: 0,
+        cells: [
+          text(rowName(row, copy, language)),
+          ...(byProduct ? [quantityCell(row, language)] : []),
+          money(row.gross),
+          money(row.returns),
+          money(row.net),
+          ...costCells(row),
+        ],
+      })),
+      {
+        style: 'grand',
+        indent: 0,
+        cells: [
+          text(copy.total),
+          // Quantities of different products do not add up
+          ...(byProduct ? [empty] : []),
+          money(data.totals.gross),
+          money(data.totals.returns),
+          money(data.totals.net),
+          ...costCells(data.totals),
+        ],
+      },
+    ],
+  };
+}
+
+function purchaseDocument(
+  query: PurchaseReportFilter,
+  data: PurchaseReport,
+  copy: Copy,
+  context: DocumentContext,
+): Body {
+  const { language } = context;
+  const byProduct = query.groupBy === 'product';
+  return {
+    landscape: false,
+    lines: tradeLines(query, copy.groups[query.groupBy], context, copy, copy.supplierGroup),
+    columns: [
+      { header: copy.groups[query.groupBy], kind: 'text', width: 40 },
+      ...(byProduct ? [{ header: copy.quantity, kind: 'number' as const, width: 16 }] : []),
+      { header: copy.purchases.gross, kind: 'money', width: 18 },
+      { header: copy.purchases.returns, kind: 'money', width: 16 },
+      { header: copy.purchases.net, kind: 'money', width: 18 },
+    ],
+    rows: [
+      ...data.items.map((row): DocRow => ({
+        style: 'normal',
+        indent: 0,
+        cells: [
+          text(rowName(row, copy, language)),
+          ...(byProduct ? [quantityCell(row, language)] : []),
+          money(row.gross),
+          money(row.returns),
+          money(row.net),
+        ],
+      })),
+      {
+        style: 'grand',
+        indent: 0,
+        cells: [
+          text(copy.total),
+          ...(byProduct ? [empty] : []),
+          money(data.totals.gross),
+          money(data.totals.returns),
+          money(data.totals.net),
+        ],
+      },
+    ],
+  };
+}
+
+// The five buckets, then what is due, the advances and the balance: the page's columns
+function agingCells(amounts: AgingAmounts): DocCell[] {
+  return [
+    ...AGING_BUCKETS.map((bucket) => money(amounts[bucket])),
+    money(amounts.due),
+    money(amounts.advances),
+    money(amounts.balance),
+  ];
+}
+
+function agingDocument(
+  query: ArAgingFilter | ApAgingFilter,
+  data: AgingReport,
+  party: 'customer' | 'supplier',
+  copy: Copy,
+  context: DocumentContext,
+): Body {
+  const { language } = context;
+  const groupLine = party === 'customer' ? copy.customerGroup : copy.supplierGroup;
+  return {
+    landscape: true,
+    lines: [
+      copy.asOf(formatIsoDate(query.asOf, language)),
+      ...(context.groupName === null ? [] : [groupLine(context.groupName)]),
+      ...(query.show === 'overdue' ? [copy.overdueOnly] : []),
+      ...(data.ledger === null ? [] : [copy.inBooks(formatAmount(data.ledger, language))]),
+    ],
+    columns: [
+      { header: copy.groups[party], kind: 'text', width: 34 },
+      ...AGING_BUCKETS.map((bucket): DocColumn => ({
+        header: copy.buckets[bucket],
+        kind: 'money',
+        width: 15,
+      })),
+      { header: copy.due, kind: 'money', width: 16 },
+      { header: copy.advances, kind: 'money', width: 15 },
+      { header: copy.balance, kind: 'money', width: 16 },
+    ],
+    rows: [
+      ...data.items.map((row): DocRow => ({
+        style: 'normal',
+        indent: 0,
+        cells: [text(`${row.party.code} ${row.party.name}`), ...agingCells(row)],
+      })),
+      { style: 'grand', indent: 0, cells: [text(copy.total), ...agingCells(data.totals)] },
+    ],
+  };
+}
+
+function bodyOf(report: ReportData, copy: Copy, context: DocumentContext): Body {
+  switch (report.report) {
+    case 'trial_balance':
+      return trialBalanceDocument(report.query, report.data, copy, context.language);
+    case 'profit_and_loss':
+      return profitAndLossDocument(
+        report.query,
+        report.data,
+        copy,
+        context.language,
+        context.branchName,
+      );
+    case 'balance_sheet':
+      return balanceSheetDocument(report.query, report.data, copy, context.language);
+    case 'sales_report':
+      return salesDocument(report.query, report.data, copy, context);
+    case 'purchase_report':
+      return purchaseDocument(report.query, report.data, copy, context);
+    case 'ar_aging':
+      return agingDocument(report.query, report.data, 'customer', copy, context);
+    case 'ap_aging':
+      return agingDocument(report.query, report.data, 'supplier', copy, context);
+  }
+}
+
 export function buildDocument(report: ReportData, context: DocumentContext): ReportDocument {
   const copy: Copy = COPY[context.language];
-  const body =
-    report.report === 'trial_balance'
-      ? trialBalanceDocument(report.query, report.data, copy, context.language)
-      : report.report === 'profit_and_loss'
-        ? profitAndLossDocument(
-            report.query,
-            report.data,
-            copy,
-            context.language,
-            context.branchName,
-          )
-        : balanceSheetDocument(report.query, report.data, copy, context.language);
+  const body = bodyOf(report, copy, context);
   return {
     language: context.language,
     company: context.company,
@@ -296,10 +554,13 @@ export function fileStem(report: ReportData): string {
     trial_balance: 'trial-balance',
     profit_and_loss: 'profit-and-loss',
     balance_sheet: 'balance-sheet',
+    sales_report: 'sales',
+    purchase_report: 'purchases',
+    ar_aging: 'receivables-aging',
+    ap_aging: 'payables-aging',
   };
+  // A picture of one day has its date, a period its two
   const dates =
-    report.report === 'balance_sheet'
-      ? report.query.asOf
-      : `${report.query.from}-to-${report.query.to}`;
+    'asOf' in report.query ? report.query.asOf : `${report.query.from}-to-${report.query.to}`;
   return `${name[report.report]}-${dates}`;
 }

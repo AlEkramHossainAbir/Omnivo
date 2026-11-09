@@ -48,6 +48,7 @@ import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
+import { datedAllocations, workspaceToday } from '../common/db/applied-on.js';
 import { isCheckViolation } from '../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
@@ -477,7 +478,7 @@ export class DebitNotesService {
           throw overAllocatedError();
         }
         const before = await this.allocationsOf(tx, id);
-        await this.apply(tx, row, input.allocations);
+        await this.apply(tx, row, input.allocations, await workspaceToday(tx));
         await tx
           .update(debitNotes)
           .set({ version: sql`${debitNotes.version} + 1`, updatedBy: currentPrincipal().userId })
@@ -964,7 +965,7 @@ export class DebitNotesService {
       const due = billAmountDueOf(bill);
       applied = compareMoney(draft.total, due) <= 0 ? draft.total : due;
       if (compareMoney(applied, '0') > 0) {
-        await this.apply(tx, posted, [{ billId: bill.id, amount: applied }]);
+        await this.apply(tx, posted, [{ billId: bill.id, amount: applied }], posted.date);
       }
     }
     await audit(tx, {
@@ -1061,15 +1062,21 @@ export class DebitNotesService {
   // Replaces the debit note's allocations with `wanted`, once checkBillAllocations() has locked
   // every bill involved and checked each row (the supplier payment's check, decision 24).
   // bills.amount_debited and debit_notes.applied are not written here: the allocations' trigger
-  // keeps them (migration 0042).
+  // keeps them (migration 0042). `day` is the applied_on of a new or changed pair (step 21b), as
+  // for a credit note: its date when posted, today when applied again.
   private async apply(
     tx: Transaction,
     debitNote: DebitNoteRow,
     wanted: readonly { billId: string; amount: string }[],
+    day: string,
   ): Promise<void> {
     const tenantId = getTenantId();
     const current = await tx
-      .select({ billId: debitNoteAllocations.billId, amount: debitNoteAllocations.amount })
+      .select({
+        billId: debitNoteAllocations.billId,
+        amount: debitNoteAllocations.amount,
+        appliedOn: debitNoteAllocations.appliedOn,
+      })
       .from(debitNoteAllocations)
       .where(
         and(
@@ -1093,12 +1100,13 @@ export class DebitNotesService {
       );
     if (wanted.length === 0) return;
     await tx.insert(debitNoteAllocations).values(
-      wanted.map((allocation) => ({
+      datedAllocations(wanted, current, (row) => row.billId, day).map((allocation) => ({
         tenantId,
         debitNoteId: debitNote.id,
         supplierId: debitNote.supplierId,
         billId: allocation.billId,
         amount: allocation.amount,
+        appliedOn: allocation.appliedOn,
       })),
     );
   }

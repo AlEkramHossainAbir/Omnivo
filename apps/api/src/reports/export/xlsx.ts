@@ -33,6 +33,16 @@ function cellOf(cell: DocCell, row: DocRow, first: boolean): Cell {
       : {};
   if (cell.kind === 'money') return { ...amountCell(cell.amount, bold), ...lines };
   if (cell.kind === 'empty') return { value: '', type: String, ...lines };
+  // A quantity with its unit or a percent: text, so Excel keeps "72 pcs" as it is
+  if (cell.kind === 'number') {
+    return {
+      value: cell.text,
+      type: String,
+      align: 'right',
+      ...(bold && { fontWeight: 'bold' }),
+      ...lines,
+    };
+  }
   return {
     value: cell.text,
     type: String,
@@ -56,7 +66,7 @@ export async function writeXlsx(doc: ReportDocument): Promise<Buffer> {
     backgroundColor: '#F1F3F6',
     bottomBorderStyle: 'thin',
     bottomBorderColor: '#D0D5DD',
-    align: column.kind === 'money' ? 'right' : 'left',
+    align: column.kind === 'text' ? 'left' : 'right',
   }));
   const top: Row[] = [
     titleRow(doc.company, 12, true),

@@ -1,4 +1,5 @@
 export * from './accounts.js';
+export * from './aging.js';
 export * from './amount-words.js';
 export * from './approvals.js';
 export * from './attachments.js';
@@ -64,5 +65,6 @@ export * from './supplier-refunds.js';
 export * from './suppliers.js';
 export * from './sync.js';
 export * from './tax-rates.js';
+export * from './trade-reports.js';
 export * from './units.js';
 export * from './warehouses.js';

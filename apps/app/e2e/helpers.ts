@@ -4,6 +4,7 @@ import { test as base, expect, type Locator, type Page, type Response } from '@p
 
 import {
   HEAD_OFFICES,
+  MOCK_NO_HISTORY_KEY,
   MOCK_ROLE_KEY,
   type MockRole,
   OWNER,
@@ -51,12 +52,23 @@ function copyOf(page: Page): Promise<void> {
 // they did. A test of the PIN itself turns this off with test.use({ answerPinDialog: false }).
 // The dialog closes a menu or a panel that was open: a test that opens one right after the first
 // load waits for the copy first (waitForCopy), so the dialog has shown and is answered before.
-export const test = base.extend<{ seedDevice: boolean; answerPinDialog: boolean }>({
+export const test = base.extend<{
+  seedDevice: boolean;
+  answerPinDialog: boolean;
+  tradeHistory: boolean;
+}>({
   seedDevice: [true, { option: true }],
   answerPinDialog: [true, { option: true }],
+  // Step 21b: the year of invoices and bills the reports read (fixtures.ts → MOCK_NO_HISTORY_KEY)
+  tradeHistory: [false, { option: true }],
   // `provide`, not Playwright's usual `use`: the React hooks lint rule reads `use(…)` as a hook
-  page: async ({ page, seedDevice, answerPinDialog }, provide) => {
+  page: async ({ page, seedDevice, answerPinDialog, tradeHistory }, provide) => {
     copies.set(page, copyOf(page));
+    if (!tradeHistory) {
+      await page.addInitScript((key) => {
+        localStorage.setItem(key, '1');
+      }, MOCK_NO_HISTORY_KEY);
+    }
     if (answerPinDialog) {
       // A new seeded device always asks once; without the seed the branch dialog comes first
       if (seedDevice) pinWaiting.add(page);

@@ -113,6 +113,11 @@ export const receiptAllocations = pgTable(
     customerId: uuid('customer_id').notNull(),
     invoiceId: uuid('invoice_id').notNull(),
     amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
+    // The day this money started to count against the invoice, for the aging as of a day (step
+    // 21b): applied with the receipt, the receipt's date; applied again later, the day it was.
+    // Never before either document's date: 0060's trigger moves it up to the later one, so the
+    // aging on any day adds up to the books' balance.
+    appliedOn: date('applied_on', { mode: 'string' }).notNull(),
   },
   (table) => [
     uniqueIndex('receipt_allocations_pair_idx').on(
@@ -122,6 +127,9 @@ export const receiptAllocations = pgTable(
     ),
     // An invoice's payments (its page), and the invoice FK's check
     index('receipt_allocations_invoice_idx').on(table.tenantId, table.invoiceId),
+    // What was applied after a day: the aging as of that day finds the invoices still open then
+    // though paid now, and the receipts that were still an advance
+    index('receipt_allocations_applied_idx').on(table.tenantId, table.appliedOn),
     foreignKey({
       name: 'receipt_allocations_receipt_fk',
       columns: [table.tenantId, table.customerId, table.receiptId],

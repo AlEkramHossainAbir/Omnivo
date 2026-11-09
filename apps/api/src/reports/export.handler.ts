@@ -1,11 +1,24 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  apAgingFilterSchema,
+  arAgingFilterSchema,
   balanceSheetQuerySchema,
   type ExportFormat,
   profitAndLossQuerySchema,
+  purchaseReportFilterSchema,
+  salesReportFilterSchema,
   trialBalanceQuerySchema,
 } from '@omnivo/contracts';
-import { branches, reportExports, tenants, tenantSettings, users } from '@omnivo/db';
+import {
+  branches,
+  customerGroups,
+  productCategories,
+  reportExports,
+  supplierGroups,
+  tenants,
+  tenantSettings,
+  users,
+} from '@omnivo/db';
 import { and, eq } from 'drizzle-orm';
 import type { z } from 'zod';
 
@@ -14,7 +27,9 @@ import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { notify } from '../notifications/notify.js';
+import { holdsPermission } from '../rbac/holds-permission.js';
 import { StorageService } from '../storage/storage.service.js';
+import { payablesAging, receivablesAging } from './aging-queries.js';
 import {
   buildDocument,
   type DocumentContext,
@@ -24,6 +39,7 @@ import {
 import { writePdf } from './export/pdf.js';
 import { writeXlsx } from './export/xlsx.js';
 import { balanceSheet, profitAndLoss, trialBalance } from './report-queries.js';
+import { purchaseReport, salesReport } from './trade-report-queries.js';
 
 const CONTENT_TYPES = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -55,7 +71,95 @@ async function reportData(tx: Transaction, row: ExportRow): Promise<ReportData> 
       const query = queryOf(balanceSheetQuerySchema, row);
       return { report: row.report, query, data: await balanceSheet(tx, query) };
     }
+    // Step 21b: every row (no page), in the page's order (decision 20)
+    case 'sales_report': {
+      const query = queryOf(salesReportFilterSchema, row);
+      // The cost columns as the person may see them when the file is made, not when it was asked
+      // for. The API refused a cost sort without the permission; if it was lost since, the file is
+      // sorted by the net instead, since the order of the rows would tell the cost (decision 17).
+      const withCost = await holdsPermission(tx, row.requestedBy, 'inventory.stock.value');
+      const data = await salesReport(tx, withCost ? query : { ...query, sort: '-net' }, {
+        withCost,
+        page: null,
+      });
+      return { report: row.report, query, data };
+    }
+    case 'purchase_report': {
+      const query = queryOf(purchaseReportFilterSchema, row);
+      return { report: row.report, query, data: await purchaseReport(tx, query, { page: null }) };
+    }
+    case 'ar_aging': {
+      const query = queryOf(arAgingFilterSchema, row);
+      return { report: row.report, query, data: await receivablesAging(tx, query, null) };
+    }
+    case 'ap_aging': {
+      const query = queryOf(apAgingFilterSchema, row);
+      return { report: row.report, query, data: await payablesAging(tx, query, null) };
+    }
   }
+}
+
+// The names the file's heading prints for the query's filters. Read by the export's own tenant:
+// an id of another workspace finds nothing (row-level security), and the line is left out.
+async function filterNames(tx: Transaction, report: ReportData) {
+  const tenantId = getTenantId();
+  const ids = {
+    branchId:
+      report.report === 'profit_and_loss' ||
+      report.report === 'sales_report' ||
+      report.report === 'purchase_report'
+        ? report.query.branchId
+        : undefined,
+    customerGroupId:
+      report.report === 'sales_report' || report.report === 'ar_aging'
+        ? report.query.customerGroupId
+        : undefined,
+    supplierGroupId:
+      report.report === 'purchase_report' || report.report === 'ap_aging'
+        ? report.query.supplierGroupId
+        : undefined,
+    categoryId:
+      report.report === 'sales_report' || report.report === 'purchase_report'
+        ? report.query.categoryId
+        : undefined,
+  };
+  const [[branch], [customerGroup], [supplierGroup], [category]] = await Promise.all([
+    ids.branchId === undefined
+      ? []
+      : tx
+          .select({ name: branches.name })
+          .from(branches)
+          .where(and(eq(branches.tenantId, tenantId), eq(branches.id, ids.branchId))),
+    ids.customerGroupId === undefined
+      ? []
+      : tx
+          .select({ name: customerGroups.name })
+          .from(customerGroups)
+          .where(
+            and(eq(customerGroups.tenantId, tenantId), eq(customerGroups.id, ids.customerGroupId)),
+          ),
+    ids.supplierGroupId === undefined
+      ? []
+      : tx
+          .select({ name: supplierGroups.name })
+          .from(supplierGroups)
+          .where(
+            and(eq(supplierGroups.tenantId, tenantId), eq(supplierGroups.id, ids.supplierGroupId)),
+          ),
+    ids.categoryId === undefined
+      ? []
+      : tx
+          .select({ name: productCategories.name })
+          .from(productCategories)
+          .where(
+            and(eq(productCategories.tenantId, tenantId), eq(productCategories.id, ids.categoryId)),
+          ),
+  ]);
+  return {
+    branchName: branch?.name ?? null,
+    groupName: customerGroup?.name ?? supplierGroup?.name ?? null,
+    categoryName: category?.name ?? null,
+  };
 }
 
 // Writes the file of one report_exports row (step 11). Idempotent like every handler: a finished
@@ -100,20 +204,12 @@ export class ReportExportHandler implements EventHandler<'report.export_requeste
         .from(users)
         .where(eq(users.id, row.requestedBy));
       const report = await reportData(tx, row);
-      const branchId = report.report === 'profit_and_loss' ? report.query.branchId : undefined;
-      const [branch] =
-        branchId === undefined
-          ? []
-          : await tx
-              .select({ name: branches.name })
-              .from(branches)
-              .where(and(eq(branches.tenantId, tenantId), eq(branches.id, branchId)));
       const documentContext: DocumentContext = {
         language: user?.language ?? 'en',
         company: context.company,
         currency: context.currency,
         timeZone: context.timeZone,
-        branchName: branch?.name ?? null,
+        ...(await filterNames(tx, report)),
         madeAt: new Date(),
       };
       return { row, report, documentContext };
