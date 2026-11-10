@@ -62,7 +62,11 @@ function StatusPill({ status }: { status: ReportExport['status'] }) {
 export function ReportExportsPage() {
   const { t, format } = useLocale();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
-  const canRead = useCan()('accounting.report.read');
+  // Step 21b: any report permission opens the page; the API lists only the kinds this person can
+  // still read (REPORT_KIND_PERMISSIONS), so nobody sees another module's file here
+  const can = useCan();
+  const canRead =
+    can('accounting.report.read') || can('sales.report.read') || can('purchase.report.read');
   const showDate = useIsoDate();
   const { data, isError } = useQuery({ ...reportExportsQuery(tenantId), enabled: canRead });
   const timeZone = useQuery(settingsQuery(tenantId)).data?.timezone ?? DEFAULT_SETTINGS.timezone;

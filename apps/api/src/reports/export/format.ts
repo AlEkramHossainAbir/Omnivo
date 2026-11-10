@@ -85,3 +85,14 @@ export function formatMoment(moment: Date, language: LanguageCode, timeZone: str
     language === 'bn' ? `${part('day')} ${part('month')},` : `${part('day')} ${part('month')}`;
   return `${day} ${part('year')}, ${part('hour')}:${part('minute')}`;
 }
+
+const MONTH = {
+  en: new Intl.DateTimeFormat('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+  bn: new Intl.DateTimeFormat('bn-BD', { month: 'long', year: 'numeric', timeZone: 'UTC' }),
+} satisfies Record<LanguageCode, Intl.DateTimeFormat>;
+
+// Step 21b: a month row of the sales or purchase report, "2026-10" → "October 2026" /
+// "অক্টোবর ২০২৬", on the 1st in UTC like formatIsoDate()
+export function formatMonth(month: string, language: LanguageCode): string {
+  return MONTH[language].format(new Date(`${month}-01T00:00:00Z`));
+}

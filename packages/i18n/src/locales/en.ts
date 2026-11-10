@@ -84,6 +84,11 @@ export const en = {
     trialBalance: 'Trial balance',
     profitAndLoss: 'Profit and loss',
     balanceSheet: 'Balance sheet',
+    // Step 21b: each by its own module's report permission
+    salesReport: 'Sales report',
+    purchaseReport: 'Purchase report',
+    arAging: 'Receivables aging',
+    apAging: 'Payables aging',
     exports: 'Exports',
     inventory: 'Inventory',
     products: 'Products',
@@ -1101,6 +1106,10 @@ export const en = {
       trial_balance: 'Trial balance',
       profit_and_loss: 'Profit and loss',
       balance_sheet: 'Balance sheet',
+      sales_report: 'Sales report',
+      purchase_report: 'Purchase report',
+      ar_aging: 'Receivables aging',
+      ap_aging: 'Payables aging',
     },
     formats: { xlsx: 'Excel', pdf: 'PDF' },
     sections: {
@@ -1184,6 +1193,213 @@ export const en = {
       liabilitiesAndEquity: 'Total liabilities and equity',
       emptyTitle: 'Nothing on the books on this day',
       emptyBody: 'Pick a later day, or post the opening balances first.',
+    },
+    // Step 21b. The sales and purchase reports also use period, from, to, branch, allBranches,
+    // total, range, asOf, asAt, loadFailed and export above.
+    groupBy: 'Group by',
+    customerGroup: 'Customer group',
+    supplierGroup: 'Supplier group',
+    allGroups: 'All groups',
+    category: 'Category',
+    allCategories: 'All categories',
+    // The filter takes the categories under the chosen one too (decision 13)
+    categoryHint: 'Its sub-categories count too.',
+    // These reports are made on the server, never from the device's copy
+    needsConnection: 'Reports are made on the server. Connect to the internet to see them.',
+    // The crit empty state of a report that could not load; the button is common.retry
+    loadFailedTitle: "Couldn't load the report",
+    loadFailedBody: 'Check the connection, then try again.',
+    // The books' figure beside a report's total: the sales account, or the receivable or payable
+    // account. amount = whole taka.
+    inBooks: 'In the books: {{amount}}',
+    booksAgree: 'Books agree',
+    booksOutBy: 'Out by {{amount}}',
+    sales: {
+      title: 'Sales report',
+      description: 'What was sold in a period, net of discounts and returns, before VAT',
+      // The "Group by" options, and the first column's header
+      groups: {
+        customer: 'Customer',
+        product: 'Product',
+        category: 'Category',
+        branch: 'Branch',
+        month: 'Month',
+      },
+      // A row for the lines that have no customer or no category, so the rows add up to the total
+      rowKinds: {
+        walk_in: 'Walk-in customers',
+        no_category: 'No category',
+      },
+      // Under the walk-in row's name: where its sales come from
+      rowKindHints: {
+        walk_in: 'POS sales with no customer',
+      },
+      // Under the totals in the KPI strip. percent = one decimal, like the column.
+      kpiHints: {
+        gross: 'Invoices and POS sales',
+        returns: 'Credit notes and POS returns',
+        margin: '{{percent}}% of net sales',
+      },
+      columns: {
+        quantity: 'Quantity',
+        gross: 'Sold',
+        returns: 'Returns',
+        net: 'Net sales',
+        cost: 'Cost',
+        margin: 'Margin',
+        marginPercent: 'Margin %',
+      },
+      // Under the table. Why the report and the books can differ (decision 2), and why there is
+      // no books' figure with a customer group or a category.
+      booksHint:
+        'The books count the sales account less sales returns. A journal entry written by hand on those accounts makes the two differ.',
+      noBooks:
+        'A customer group or a category has no figure in the books: journal lines carry neither.',
+      // With the cost columns only (decision 3)
+      costHint:
+        'Cost is what the sold goods cost, dated by the invoice or the POS sale. The books date a challan’s cost by the challan, so a month here can differ from the profit and loss.',
+      emptyTitle: 'Nothing sold in these dates',
+      emptyBody: 'Pick other dates or filters, or post an invoice or make a POS sale.',
+    },
+    purchases: {
+      title: 'Purchase report',
+      description: 'What was billed in a period, less debit notes, before VAT',
+      groups: {
+        supplier: 'Supplier',
+        product: 'Product',
+        account: 'Expense account',
+        month: 'Month',
+      },
+      // One row each for what the group has no row for (decision 11)
+      rowKinds: {
+        expenses: 'Expenses',
+        products: 'Products',
+      },
+      rowKindHints: {
+        expenses: 'The bills’ account lines and expenses together',
+        products: 'The bills’ product lines together',
+      },
+      kpiHints: {
+        gross: 'Posted supplier bills',
+        returns: 'Taken off the bills',
+      },
+      columns: {
+        quantity: 'Quantity',
+        gross: 'Billed',
+        returns: 'Debit notes',
+        net: 'Net purchases',
+      },
+      // A category keeps product lines only
+      categoryHint:
+        'Its sub-categories count too. Account lines and expenses have no category, so they drop out.',
+      emptyTitle: 'Nothing bought in these dates',
+      emptyBody: 'Pick other dates or filters, or post a supplier bill.',
+    },
+    // What the receivables and payables agings share
+    aging: {
+      show: 'Show',
+      shows: {
+        all: 'Everyone',
+        overdue: 'Overdue only',
+      },
+      // Days past the due date (the buckets of the contract)
+      buckets: {
+        current: 'Current',
+        days1To30: '1–30 days',
+        days31To60: '31–60 days',
+        days61To90: '61–90 days',
+        over90: 'Over 90 days',
+      },
+      columns: {
+        due: 'Total due',
+        advances: 'Advances',
+        balance: 'Balance',
+      },
+      // The KPI strip: the buckets after Current together, and the oldest of them
+      overdue: 'Overdue',
+      over90: '{{amount}} over 90 days',
+      balanceHint: 'Total due less advances',
+      // The empty state of "Overdue only" switches back to everyone
+      showEveryone: 'Show everyone',
+      documentsSubtitle: 'The oldest due date first',
+      bucketsHint: 'Days past the due date. Current is not due yet, or due on this day.',
+      // A day after today is allowed
+      futureHint: 'A day after today shows what will be overdue by then if nothing is paid.',
+      // With "Overdue only" there is no books' figure
+      noLedger:
+        'The books know nothing of due dates, so “Overdue only” has no figure in the books.',
+      // The party's row opens its page at the same day
+      openParty: 'See what {{name}} has open',
+      // The party's page: the documents behind the row, oldest due date first
+      documentColumns: {
+        number: 'Number',
+        date: 'Date',
+        dueDate: 'Due date',
+        total: 'Total',
+        open: 'Still open',
+        daysOverdue: 'Overdue',
+        bucket: 'Age',
+      },
+      notDue: 'Not due',
+      daysOverdue_one: '{{count}} day',
+      daysOverdue_other: '{{count}} days',
+      advancesTitle: 'Advances',
+      advanceColumns: {
+        number: 'Number',
+        date: 'Date',
+        amount: 'Not applied',
+      },
+      partyDescription: 'What was open on {{date}}, document by document',
+      partyEmptyTitle: 'Nothing open on this day',
+      partyEmptyBody: '{{name}} had no open document and no advance on {{date}}. Pick another day.',
+    },
+    arAging: {
+      title: 'Receivables aging',
+      description: 'What each customer owes on a day, by how long it has been due',
+      party: 'Customer',
+      // A balance below zero: the customer paid more than they owe
+      inAdvance: '{{amount}} in advance',
+      ledgerHint:
+        'The receivable account on this day. Opening balances, journal entries written by hand and a receipt voided after this day make the two differ.',
+      openCount_one: '{{count}} open invoice',
+      openCount_other: '{{count}} open invoices',
+      documentsTitle: 'Open invoices',
+      advancesHint: 'Received, not applied yet',
+      advancesSubtitle: 'Money received or credited and not applied to an invoice yet',
+      advanceKinds: {
+        receipt: 'Money receipt',
+        credit_note: 'Credit note',
+      },
+      emptyTitle: 'No customer owes anything on this day',
+      emptyBody:
+        'Pick another day, or post an invoice. Invoices still open and money received but not applied show here.',
+      overdueEmptyTitle: 'Nothing overdue on this day',
+      overdueEmptyBody: 'Every open invoice is still within its terms. Show everyone to see them.',
+    },
+    apAging: {
+      title: 'Payables aging',
+      description: 'What is owed to each supplier on a day, by how long it has been due',
+      party: 'Supplier',
+      // A balance below zero: the supplier owes the company (an advance paid, a debit note)
+      inAdvance: 'They owe you {{amount}}',
+      ledgerHint:
+        'The payable account on this day. Opening balances, journal entries written by hand and a payment voided after this day make the two differ.',
+      openCount_one: '{{count}} open bill',
+      openCount_other: '{{count}} open bills',
+      documentsTitle: 'Open bills',
+      // Under our number: the number on the paper the supplier sent
+      supplierBill: 'Their bill {{number}}',
+      advancesHint: 'Paid, not applied yet',
+      advancesSubtitle: 'Money paid or debited and not applied to a bill yet',
+      advanceKinds: {
+        payment: 'Supplier payment',
+        debit_note: 'Debit note',
+      },
+      emptyTitle: 'Nothing is owed to suppliers on this day',
+      emptyBody:
+        'Pick another day, or post a supplier bill. Bills still open and money paid but not applied show here.',
+      overdueEmptyTitle: 'Nothing overdue on this day',
+      overdueEmptyBody: 'Every open bill is still within its terms. Show everyone to see them.',
     },
   },
   exports: {
@@ -6145,6 +6361,7 @@ export const en = {
       'A closing entry is undone by reopening its year on the Year-end close page.',
     report_range_invalid: 'Pick an end date on or after the start date.',
     report_compare_incomplete: 'Pick both dates of the comparison, or neither.',
+    report_sort_invalid: 'Only the report by product sorts by quantity. Pick another column.',
     year_end_invalid: 'Pick the last day of a fiscal year.',
     year_not_ended: "This year hasn't ended yet. Close it after its last day.",
     year_already_closed: 'This year is closed already. Reload to see it.',

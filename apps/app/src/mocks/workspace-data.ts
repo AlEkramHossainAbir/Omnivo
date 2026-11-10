@@ -36,7 +36,7 @@ import {
   type MockDocumentOutput,
   seedDocumentOutput,
 } from './document-output-data';
-import { HEAD_OFFICES, OWNER, type Workspace } from './fixtures';
+import { HEAD_OFFICES, OWNER, seedsTradeHistory, type Workspace } from './fixtures';
 import { emptyBilling, type MockBilling } from './invoice-data';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
@@ -57,6 +57,7 @@ import {
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
 import { emptySuppliers, type MockSuppliers, seedSuppliers } from './supplier-data';
 import { emptySync, type MockSync, seedDevices } from './sync-data';
+import { seedTradeHistory } from './trade-history-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
 // নিয়মগুলো আসল API-র মতো (version, অনন্য কোড, শেষ চালু ব্রাঞ্চ) — UI-র error-পথ mock দিয়েও দেখা যায়
@@ -220,6 +221,8 @@ function seed(workspace: Workspace): WorkspaceData {
   seedPos(data, garments);
   // Step 20b: after the counters and the accounts: a shift is open on one of them
   seedPosShifts(data, garments);
+  // Step 21b: last, because it uses the stock, the accounts and a counter
+  if (garments && seedsTradeHistory()) seedTradeHistory(data);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });

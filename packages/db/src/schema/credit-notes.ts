@@ -196,6 +196,9 @@ export const creditNoteAllocations = pgTable(
     customerId: uuid('customer_id').notNull(),
     invoiceId: uuid('invoice_id').notNull(),
     amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
+    // The day it started to count, like a receipt's (receipts.ts): applied when it is posted, the
+    // credit note's date; applied again later, the day it was; never before either date
+    appliedOn: date('applied_on', { mode: 'string' }).notNull(),
   },
   (table) => [
     uniqueIndex('credit_note_allocations_pair_idx').on(
@@ -205,6 +208,8 @@ export const creditNoteAllocations = pgTable(
     ),
     // An invoice's credits (its page), and the invoice FK's check
     index('credit_note_allocations_invoice_idx').on(table.tenantId, table.invoiceId),
+    // What was applied after a day, for the aging as of that day (receipts.ts)
+    index('credit_note_allocations_applied_idx').on(table.tenantId, table.appliedOn),
     foreignKey({
       name: 'credit_note_allocations_credit_note_fk',
       columns: [table.tenantId, table.customerId, table.creditNoteId],

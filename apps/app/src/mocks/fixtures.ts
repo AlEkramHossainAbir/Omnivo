@@ -64,6 +64,20 @@ export function mockRole(): MockRole | null {
   }
 }
 
+// Step 21b: the garments workspace comes with a year of invoices and bills for the reports
+// (trade-history-data.ts). They would change the numbers the other e2e tests read, so a test leaves
+// this key (e2e/helpers.ts) and gets the workspace without them, unless it asks for them with
+// test.use({ tradeHistory: true }). `pnpm dev:mock` has no key, so a person sees full reports.
+export const MOCK_NO_HISTORY_KEY = 'omnivo.mock.noTradeHistory';
+
+export function seedsTradeHistory(): boolean {
+  try {
+    return localStorage.getItem(MOCK_NO_HISTORY_KEY) === null;
+  } catch {
+    return true;
+  }
+}
+
 export function meIn(
   workspace: Workspace,
   companyName: string,

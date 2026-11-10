@@ -135,6 +135,8 @@ test('a change saved here reaches the copy, and an archived product leaves it', 
 
 test('signing out deletes the copy on this device', async ({ page }) => {
   await page.goto('/');
+  // The customers list reads only the copy: wait for it, or a slow runner misses H&M in 5 s
+  await waitForCopy(page);
   await openFromNav(page, 'Customers');
   await expect(listItem(page, /H&M Hennes & Mauritz/)).toBeVisible();
   await expect.poll(() => localDatabases(page)).toHaveLength(1);

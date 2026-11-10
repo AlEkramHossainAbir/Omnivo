@@ -303,6 +303,9 @@ export const debitNoteAllocations = pgTable(
     supplierId: uuid('supplier_id').notNull(),
     billId: uuid('bill_id').notNull(),
     amount: numeric('amount', { precision: 19, scale: 4 }).notNull(),
+    // The day it started to count, like a receipt's (receipts.ts): applied when it is posted, the
+    // debit note's date; applied again later, the day it was; never before either date
+    appliedOn: date('applied_on', { mode: 'string' }).notNull(),
   },
   (table) => [
     uniqueIndex('debit_note_allocations_pair_idx').on(
@@ -312,6 +315,8 @@ export const debitNoteAllocations = pgTable(
     ),
     // A bill's debit notes applied to it (its page), and the bill FK's check
     index('debit_note_allocations_bill_idx').on(table.tenantId, table.billId),
+    // What was applied after a day, for the aging as of that day (receipts.ts)
+    index('debit_note_allocations_applied_idx').on(table.tenantId, table.appliedOn),
     foreignKey({
       name: 'debit_note_allocations_debit_note_fk',
       columns: [table.tenantId, table.supplierId, table.debitNoteId],

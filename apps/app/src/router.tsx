@@ -161,6 +161,22 @@ const ledgerRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/ledger'), 'LedgerPage'),
 });
 
+// Step 21b: an aging's day and filters stay in the address, so a party's page comes back to them.
+// Anything else is dropped, and a value that is not what it says is not trusted (a bad date or id
+// would only be a 400 from the API).
+function agingSearch(search: Record<string, unknown>): {
+  asOf?: string;
+  groupId?: string;
+  show?: 'overdue';
+} {
+  return {
+    ...(typeof search.asOf === 'string' && ISO_DATE.test(search.asOf) && { asOf: search.asOf }),
+    ...(typeof search.groupId === 'string' &&
+      UUID.test(search.groupId) && { groupId: search.groupId }),
+    ...(search.show === 'overdue' && { show: 'overdue' as const }),
+  };
+}
+
 const openingBalancesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/opening-balances',
@@ -189,6 +205,47 @@ const balanceSheetRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/reports/balance-sheet',
   component: lazyRouteComponent(() => import('./routes/balance-sheet'), 'BalanceSheetPage'),
+});
+
+// Step 21b: the sales and purchase reports and the two agings, each its own lazy chunk
+const salesReportRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/sales',
+  component: lazyRouteComponent(() => import('./routes/sales-report'), 'SalesReportPage'),
+});
+
+const purchaseReportRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/purchases',
+  component: lazyRouteComponent(() => import('./routes/purchase-report'), 'PurchaseReportPage'),
+});
+
+const arAgingRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/ar-aging',
+  validateSearch: agingSearch,
+  component: lazyRouteComponent(() => import('./routes/aging'), 'ArAgingPage'),
+});
+
+const arAgingPartyRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/ar-aging/$customerId',
+  validateSearch: agingSearch,
+  component: lazyRouteComponent(() => import('./routes/aging-party'), 'ArAgingPartyPage'),
+});
+
+const apAgingRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/ap-aging',
+  validateSearch: agingSearch,
+  component: lazyRouteComponent(() => import('./routes/aging'), 'ApAgingPage'),
+});
+
+const apAgingPartyRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/ap-aging/$supplierId',
+  validateSearch: agingSearch,
+  component: lazyRouteComponent(() => import('./routes/aging-party'), 'ApAgingPartyPage'),
 });
 
 const reportExportsRoute = createRoute({
@@ -980,6 +1037,12 @@ const routeTree = rootRoute.addChildren([
     trialBalanceRoute,
     profitAndLossRoute,
     balanceSheetRoute,
+    salesReportRoute,
+    purchaseReportRoute,
+    arAgingRoute,
+    arAgingPartyRoute,
+    apAgingRoute,
+    apAgingPartyRoute,
     reportExportsRoute,
     productsRoute,
     newProductRoute,

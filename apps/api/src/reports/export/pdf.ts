@@ -18,7 +18,7 @@ const INDENT = 10;
 
 function cellText(cell: DocCell, language: ReportDocument['language']): string {
   if (cell.kind === 'money') return formatAmount(cell.amount, language);
-  return cell.kind === 'text' ? cell.text : '';
+  return cell.kind === 'empty' ? '' : cell.text;
 }
 
 const BOLD = new Set<DocRow['style']>(['group', 'heading', 'total', 'grand']);
@@ -68,7 +68,7 @@ export function writePdf(doc: ReportDocument): Promise<Buffer> {
         size: 7.5,
         bold: true,
         color: INK_3,
-        align: column.kind === 'money' ? 'right' : 'left',
+        align: column.kind === 'text' ? 'left' : 'right',
         width: place.width - (index === 0 ? 6 : 0),
       });
     });
@@ -101,7 +101,7 @@ export function writePdf(doc: ReportDocument): Promise<Buffer> {
         size: row.style === 'grand' ? 9 : FONT_SIZE,
         bold,
         color: row.style === 'heading' ? INK_3 : INK,
-        align: column.kind === 'money' ? 'right' : 'left',
+        align: column.kind === 'text' ? 'left' : 'right',
         width: place.width - indent,
       });
     });

@@ -7,6 +7,7 @@ import {
   compareQuantity,
   dashboardCardsFor,
   type ErrorCode,
+  isCostSort,
   type Preferences,
   type ProductCategory,
   routes,
@@ -147,6 +148,14 @@ import {
   toExport,
   trialBalanceOf,
 } from './report-data';
+import {
+  apAgingOf,
+  apAgingPartyOf,
+  arAgingOf,
+  arAgingPartyOf,
+  purchaseReportOf,
+  salesReportOf,
+} from './trade-report-data';
 import {
   findProduct,
   IMPORT_DELAY_MS,
@@ -1477,6 +1486,57 @@ export const handlers = [
       routes.reports.balanceSheet,
       balanceSheetOf(current(), readQuery(routes.reports.balanceSheet.query, request)),
     ),
+  ),
+
+  // Step 21b: withCost from the person signed in, like the API's TradeReportsService: a sort that
+  // reads the cost is refused without inventory.stock.value, and every cost is null
+  mock(
+    routes.tradeReports.sales,
+    guarded(({ request }) => {
+      const query = readQuery(routes.tradeReports.sales.query, request);
+      const withCost = me().permissions.includes('inventory.stock.value');
+      if (!withCost && isCostSort(query.sort)) throw new MockProblem(403, 'permission_missing');
+      return reply(routes.tradeReports.sales, salesReportOf(current(), query, withCost));
+    }),
+  ),
+
+  mock(routes.tradeReports.purchases, ({ request }) =>
+    reply(
+      routes.tradeReports.purchases,
+      purchaseReportOf(current(), readQuery(routes.tradeReports.purchases.query, request)),
+    ),
+  ),
+
+  mock(routes.aging.receivables, ({ request }) =>
+    reply(
+      routes.aging.receivables,
+      arAgingOf(current(), readQuery(routes.aging.receivables.query, request)),
+    ),
+  ),
+
+  mock(
+    routes.aging.receivablesOf,
+    guarded(({ params, request }) => {
+      const { customerId } = routes.aging.receivablesOf.params.parse(params);
+      const { asOf } = readQuery(routes.aging.receivablesOf.query, request);
+      return reply(routes.aging.receivablesOf, arAgingPartyOf(current(), customerId, asOf));
+    }),
+  ),
+
+  mock(routes.aging.payables, ({ request }) =>
+    reply(
+      routes.aging.payables,
+      apAgingOf(current(), readQuery(routes.aging.payables.query, request)),
+    ),
+  ),
+
+  mock(
+    routes.aging.payablesOf,
+    guarded(({ params, request }) => {
+      const { supplierId } = routes.aging.payablesOf.params.parse(params);
+      const { asOf } = readQuery(routes.aging.payablesOf.query, request);
+      return reply(routes.aging.payablesOf, apAgingPartyOf(current(), supplierId, asOf));
+    }),
   ),
 
   // Step 21a: the cards of the person signed in (me(): the owner, or the role a test left), the

@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 
-import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpers.js';
+import { expect, expectNoSideScroll, listItem, openFromNav, test, waitForCopy } from './helpers.js';
 
 // Step 15a in the mock garments workspace: five customers (C-00001 to C-00005, the last one
 // archived). H&M owes ৳38,50,000 from last year's export sale, Primark ৳24,50,000 from this
@@ -8,6 +8,8 @@ import { expect, expectNoSideScroll, listItem, openFromNav, test } from './helpe
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
+  // The customers list reads only the device's copy: on a slow runner it was not there in 5 s
+  await waitForCopy(page);
 });
 
 const address = (page: Page, number: number) =>

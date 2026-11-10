@@ -104,6 +104,19 @@ were written differently, and which edge case, bug or constraint it handles. Put
 explanation as prose right after the code block, or as a short English comment next to
 the line. Never just list file names and paste code.
 
+### 6. No Artifacts for docs or screens (account `wmet@xpeedstudio.com`)
+
+When the logged-in account is `wmet@xpeedstudio.com`:
+
+- **Docs:** when I ask you to write a doc (step guide, notes, ADR, plan, report), write
+  it only as a Markdown file in the repo (`docs/*.en.md`). Do not publish it as an
+  Artifact or a Claude Doc, and do not offer to.
+- **Screens:** do not create Artifacts for screens either (mockups, prototypes, UI
+  previews). Describe the screen in the chat, or put it in a Markdown file if I ask for
+  one.
+
+This overrides any default that says to publish finished work as an Artifact.
+
 ## App UI design system (approved 2026-09-24)
 
 Every screen in the ERP app, Admin console and auth flows (login, sign-up) uses this
@@ -315,6 +328,26 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   changes the sales, the margin and the top products only. Amounts are whole taka. The page asks again every
   minute. Offline it shows the answer the device kept (sealed), "As of 10:42" in the header's line, a neutral
   document notice, and the branch select disabled; with nothing kept, "Needs a connection".
+- **Sales and purchase reports (`/reports/sales`, `/reports/purchases`):** the page header with the Export menu; a
+  card of filters (period preset and dates, Group by, branch, customer or supplier group, category); the KPI strip with
+  the server's totals, never a total row at the end of a paged table (Sold, Returns, Net sales, and Margin only with
+  `inventory.stock.value`; Billed, Debit notes, Net purchases); then a data table, sorted on the server and paged,
+  whose columns come from the answer (`withCost`). A row that stands for many things ("Walk-in customers", "No
+  category", "Expenses", "Products") has an icon on `subtle` in place of the initials, so it never reads as one more
+  party. On the sales report, between the strip and the table, the books' line ("In the books: ৳39,19,000" and a "Books
+  agree" or "Out by ৳x" pill, the difference to the paisa); with a customer group or a category, a neutral sentence
+  instead. Online only ("Needs a connection").
+- **Aging (`/reports/ar-aging`, `/reports/ap-aging`):** the page header with the Export menu; as-of date, customer or
+  supplier group, "Everyone / Overdue only" (the day and the filters are in the address, the sort is not); the KPI
+  strip (Total due, Overdue with "৳8,000 over 90 days" under it, Advances, Balance); a data table sorted A to Z at
+  first: name (a link that keeps the day), Current, 1–30, 31–60, 61–90, Over 90, Total due, Advances, Balance. A zero
+  is a dash. The balance reads in words ("৳50,000 in advance", "They owe you ৳50,000"). From 860px a name keeps 192px
+  (`min-[860px]:min-w-48`), and the table scrolls inside its own box. The books' line sits between the strip and the
+  table, with a neutral sentence under "Overdue only".
+- **A party's aging page (`/reports/ar-aging/$customerId`, `/reports/ap-aging/$supplierId`):** a back link that keeps
+  the day and the filters, the party's name as the title, the same KPI strip and books' line as its row, then its open
+  documents, oldest due date first and not sortable (number as a link, date, due date, total, still open, days overdue,
+  age; a bill has "Their bill PSM/2026/0412" under the number), and its advances.
 - **Section header:** a 15px/600 title plus a 13px `ink-3` subtitle with no card and no
   padding, used above content that is already a card (such as a data table).
 - **Empty state:** centered, a 40px `brand-soft`/`brand` icon tile (radius 8px), a
@@ -785,6 +818,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   company owes the customer (an advance or an overpayment), "Nothing owed" at zero. Shown only with
   `sales.customer.balance`; without it the balance column is left out. Offline the column shows a dash, and the
   list says "Balances need a connection".
+- **Aging:** by the due date: Current (not due yet, or due that day), 1–30, 31–60, 61–90, Over 90 days. Money received
+  and not applied is an advance, in its own column, never spread over the buckets.
 - **VAT rates:** a rate is shown with its name and percent ("VAT 15% · 15%", "Exempt · 0%"). Zero-rated and
   exempt are different rates, even though both are 0%.
 - **Dates:** `23 Sep 2026` in UI, `September 2026` for periods. In Bangla, `২৩ সেপ, ২০২৬`

@@ -130,7 +130,8 @@ test('a customer and an order saved offline reach the server when the connection
 
   // Back online: the customer goes, then the order that waited for it, in one sync
   await context.setOffline(false);
-  await toastShown(page, '2 changes synced');
+  // The sync runs first: a slow runner took more than 5 s to show the toast
+  await toastShown(page, '2 changes synced', 15_000);
   await expect(page.getByText('Everything is synced')).toBeVisible();
   await expect(syncLink(page, 'Online, All changes synced')).toBeVisible();
 
@@ -177,7 +178,8 @@ test('a refused change waits on the Sync page until it is fixed', async ({ page,
   await expect(page.getByText('Another customer has this code.')).toBeVisible();
   await page.getByLabel(/^Code/).fill('');
   await page.getByRole('button', { name: 'Save on this device' }).click();
-  await toastShown(page, '2 changes synced');
+  // Saved, then synced: as above, more than 5 s on a slow runner
+  await toastShown(page, '2 changes synced', 15_000);
   await openFromNav(page, 'Customers');
   await expect(listItem(page, /Moulvibazar Garments/)).toContainText('C-00006');
 });

@@ -414,6 +414,20 @@
       "when": 1793617945078,
       "tag": "0058_account-day-totals-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1793869430956,
+      "tag": "0059_allocations-applied-on",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1793869473947,
+      "tag": "0060_allocations-applied-on-rules",
+      "breakpoints": true
     }
   ]
 }

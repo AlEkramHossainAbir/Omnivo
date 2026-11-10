@@ -28,8 +28,9 @@ const INITIAL_BUDGET = 230 * 1024;
 // it 120–124 KB, after the shift menu moved to a chunk of its own. Step 20c: 135 KB (you chose
 // this). The screen takes goods back and pays with a return's money (/pos is 121 KB), so the return
 // dialog with it is 133 KB and the pay dialog 129.5 KB, after the refund rows moved to a file of
-// their own.
-const CHUNK_BUDGET = 135 * 1024;
+// their own. Step 21b: 140 KB (you chose this). The return dialog went to 135.1 KB without changing:
+// the route table grew by the four reports' schemas, and every page loads the whole table.
+const CHUNK_BUDGET = 140 * 1024;
 // Step 19a: everything the service worker downloads the first time, gz (the fonts do not shrink).
 // 1.3 MB at 19a. It is downloaded once per device; a new version downloads only the files that
 // changed.

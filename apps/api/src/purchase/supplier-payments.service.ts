@@ -26,6 +26,7 @@ import { and, asc, desc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
+import { datedAllocations, workspaceToday } from '../common/db/applied-on.js';
 import { isCheckViolation } from '../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
@@ -204,7 +205,8 @@ export class SupplierPaymentsService {
           })
           .returning();
         if (!row) throw new Error('Supplier payment insert returned no row');
-        await this.replaceAllocations(tx, row, input.allocations);
+        // The plan is dated by the payment: posting it later keeps that day, like the books
+        await this.replaceAllocations(tx, row, input.allocations, row.date);
         await audit(tx, {
           action: 'supplier_payment.created',
           entityType: 'supplier_payment',
@@ -237,7 +239,7 @@ export class SupplierPaymentsService {
         }
         await this.check(tx, supplier.id, input);
         // The plan first: a new supplier's key would refuse the old supplier's bills
-        await this.replaceAllocations(tx, before, []);
+        await this.clearAllocations(tx, before.id);
         const [updated] = await tx
           .update(supplierPayments)
           .set({
@@ -248,7 +250,8 @@ export class SupplierPaymentsService {
           .where(and(eq(supplierPayments.tenantId, getTenantId()), eq(supplierPayments.id, id)))
           .returning();
         if (!updated) throw notFound('Supplier payment');
-        await this.replaceAllocations(tx, updated, input.allocations);
+        // Written again with the payment's date, which this update may have changed
+        await this.replaceAllocations(tx, updated, input.allocations, updated.date);
         await audit(tx, {
           action: 'supplier_payment.updated',
           entityType: 'supplier_payment',
@@ -384,7 +387,7 @@ export class SupplierPaymentsService {
           wanted: input.allocations,
           errors: PAYMENT_ERRORS,
         });
-        await this.replaceAllocations(tx, row, input.allocations);
+        await this.replaceAllocations(tx, row, input.allocations, await workspaceToday(tx));
         await tx
           .update(supplierPayments)
           .set({
@@ -445,7 +448,7 @@ export class SupplierPaymentsService {
         wanted: [],
         errors: PAYMENT_ERRORS,
       });
-      await this.replaceAllocations(tx, row, []);
+      await this.clearAllocations(tx, row.id);
       await tx
         .update(supplierPayments)
         .set({
@@ -624,31 +627,53 @@ export class SupplierPaymentsService {
 
   // Replaces the payment's rows: a draft's plan on every save, a posted payment's money when it is
   // applied again or voided. amount_paid and applied are not written here: the allocations'
-  // trigger keeps them, and moves a bill only for a posted payment (migration 0040).
+  // trigger keeps them, and moves a bill only for a posted payment (migration 0040). `day` is the
+  // applied_on of a new or changed pair (step 21b): the payment's date for a draft's plan, today
+  // when a posted payment's money is applied again.
   private async replaceAllocations(
     tx: Transaction,
     payment: PaymentRow,
     wanted: readonly Allocation[],
+    day: string,
   ): Promise<void> {
     const tenantId = getTenantId();
-    await tx
-      .delete(supplierPaymentAllocations)
+    const current = await tx
+      .select({
+        billId: supplierPaymentAllocations.billId,
+        amount: supplierPaymentAllocations.amount,
+        appliedOn: supplierPaymentAllocations.appliedOn,
+      })
+      .from(supplierPaymentAllocations)
       .where(
         and(
           eq(supplierPaymentAllocations.tenantId, tenantId),
           eq(supplierPaymentAllocations.paymentId, payment.id),
         ),
       );
+    await this.clearAllocations(tx, payment.id);
     if (wanted.length === 0) return;
     await tx.insert(supplierPaymentAllocations).values(
-      wanted.map((allocation) => ({
+      datedAllocations(wanted, current, (row) => row.billId, day).map((allocation) => ({
         tenantId,
         paymentId: payment.id,
         supplierId: payment.supplierId,
         billId: allocation.billId,
         amount: allocation.amount,
+        appliedOn: allocation.appliedOn,
       })),
     );
+  }
+
+  // Every row of the payment gone: before an update writes its plan again, and when it is voided
+  private async clearAllocations(tx: Transaction, paymentId: string): Promise<void> {
+    await tx
+      .delete(supplierPaymentAllocations)
+      .where(
+        and(
+          eq(supplierPaymentAllocations.tenantId, getTenantId()),
+          eq(supplierPaymentAllocations.paymentId, paymentId),
+        ),
+      );
   }
 
   // FOR UPDATE: every change to a payment takes turns with the others and with an approval

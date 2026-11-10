@@ -389,6 +389,12 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
   permission-এ (নতুন `sales.report.read`, `purchase.report.read`, `inventory.report.read`); ব্রাঞ্চ বাছলে শুধু
   বিক্রি, মার্জিন আর সেরা প্রোডাক্ট বদলায়। যোগফল `account_day_totals` থেকে (জার্নালের trigger, COMMIT-এ)। প্রতি
   মিনিটে নতুন; অফলাইনে ডিভাইসে sealed শেষ উত্তর, "As of …" সহ। নিজেদের SVG `LineChart`, কোনো chart library নেই।
+- **বিক্রি, কেনাকাটা আর aging (২১b):** Reports-এ চারটা নতুন পেজ। বিক্রির রিপোর্ট কাস্টমার, প্রোডাক্ট, ক্যাটাগরি, ব্রাঞ্চ বা মাস ধরে
+  (ইনভয়েস আর POS বিক্রি, ক্রেডিট নোট আর POS রিটার্ন বাদে, VAT ছাড়া; পাশে বইয়ের সংখ্যা; `inventory.stock.value` থাকলে
+  খরচ আর মার্জিন); কেনাকাটার রিপোর্ট সাপ্লায়ার, প্রোডাক্ট, খরচের অ্যাকাউন্ট বা মাস ধরে। AR ও AP aging যেকোনো দিনের হিসাবে, due
+  date থেকে পাঁচ ভাগে, অগ্রিম আলাদা, পাশে বইয়ের ব্যালান্স; সারিতে ক্লিক করলে সেই পার্টির খোলা ডকুমেন্ট। চার allocation
+  টেবিলে নতুন `applied_on` তারিখ (migration 0059, 0060)। তালিকা সার্ভারে sort ও page হয়, যোগফল সার্ভার থেকে; Excel/PDF worker-এ।
+  permission: `sales.report.read`, `purchase.report.read`। অনলাইনে ছাড়া চলে না।
 
 **দেখবেন:** হোম পেজে আসল সংখ্যা সহ ড্যাশবোর্ড।
 

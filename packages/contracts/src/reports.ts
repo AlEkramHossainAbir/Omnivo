@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { ACCOUNT_TYPES, type AccountType, NORMAL_BALANCE } from './accounts.js';
+import { apAgingFilterSchema, arAgingFilterSchema } from './aging.js';
 import { signedUrlSchema } from './attachments.js';
 import { errorCode } from './errors.js';
 import { defineRoute } from './http.js';
@@ -8,6 +9,8 @@ import { addMoney, isZeroMoney, subtractMoney, sumMoney } from './money.js';
 import { periodOf } from './numbering.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 import { shiftIsoDate } from './journal.js';
+import type { PermissionKey } from './permissions.js';
+import { purchaseReportFilterSchema, salesReportFilterSchema } from './trade-reports.js';
 
 // ---------------------------------------------------------------------------------------------
 // Fiscal years. The workspace's settings say in which month a year starts (July in Bangladesh).
@@ -34,13 +37,43 @@ export function fiscalYearLabel(start: string, startMonth: number): string {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The three reports. Every amount is a decimal string with 4 places, like the ledger.
+// The reports a file can be made of: the three statements here, and since step 21b the sales and
+// purchase reports (trade-reports.ts) and the two agings (aging.ts). Every amount is a decimal
+// string with 4 places, like the ledger.
 
-export const REPORT_KINDS = ['trial_balance', 'profit_and_loss', 'balance_sheet'] as const;
+export const REPORT_KINDS = [
+  'trial_balance',
+  'profit_and_loss',
+  'balance_sheet',
+  'sales_report',
+  'purchase_report',
+  'ar_aging',
+  'ap_aging',
+] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
 export function isReportKind(value: string): value is ReportKind {
   return REPORT_KINDS.some((kind) => kind === value);
+}
+
+// The permission each report needs: to read it, to export it, and again to download the file and
+// to see it in the list of exports. A person who lost the permission since the export loses the
+// file too.
+export const REPORT_KIND_PERMISSIONS = {
+  trial_balance: 'accounting.report.read',
+  profit_and_loss: 'accounting.report.read',
+  balance_sheet: 'accounting.report.read',
+  sales_report: 'sales.report.read',
+  purchase_report: 'purchase.report.read',
+  ar_aging: 'sales.report.read',
+  ap_aging: 'purchase.report.read',
+} as const satisfies Record<ReportKind, PermissionKey>;
+
+// The kinds a person may export, in REPORT_KINDS' order. Plain strings, like dashboardCardsFor():
+// me.permissions is z.string()[] on the wire.
+export function reportKindsFor(permissions: readonly string[]): ReportKind[] {
+  const held = new Set(permissions);
+  return REPORT_KINDS.filter((kind) => held.has(REPORT_KIND_PERMISSIONS[kind]));
 }
 
 // Both days included. `to` before `from` is a mistake the form can show under "To".
@@ -384,7 +417,8 @@ export const EXPORT_STATUSES = ['pending', 'ready', 'failed'] as const;
 export type ExportStatus = (typeof EXPORT_STATUSES)[number];
 
 // The report and its query, exactly as the report page asked for it. The worker parses the query
-// with the same schema again when it runs.
+// with the same schema again when it runs. A report with pages exports its filters without the
+// page (limit, cursor): the file has every row, in the page's order.
 export const reportExportInputSchema = z.discriminatedUnion('report', [
   z.object({
     report: z.literal('trial_balance'),
@@ -400,6 +434,26 @@ export const reportExportInputSchema = z.discriminatedUnion('report', [
     report: z.literal('balance_sheet'),
     format: z.enum(EXPORT_FORMATS),
     query: balanceSheetQuerySchema,
+  }),
+  z.object({
+    report: z.literal('sales_report'),
+    format: z.enum(EXPORT_FORMATS),
+    query: salesReportFilterSchema,
+  }),
+  z.object({
+    report: z.literal('purchase_report'),
+    format: z.enum(EXPORT_FORMATS),
+    query: purchaseReportFilterSchema,
+  }),
+  z.object({
+    report: z.literal('ar_aging'),
+    format: z.enum(EXPORT_FORMATS),
+    query: arAgingFilterSchema,
+  }),
+  z.object({
+    report: z.literal('ap_aging'),
+    format: z.enum(EXPORT_FORMATS),
+    query: apAgingFilterSchema,
   }),
 ]);
 export type ReportExportInput = z.infer<typeof reportExportInputSchema>;
@@ -422,13 +476,16 @@ export type ReportExport = z.infer<typeof reportExportSchema>;
 
 export const reportExportPageSchema = pageOf(reportExportSchema);
 
+// No permission on the routes since step 21b: each report has its own (REPORT_KIND_PERMISSIONS),
+// and one route serves them all. The API checks the report's permission when the export is asked
+// for, leaves out of the list the exports of reports the person may no longer read, and refuses
+// their download.
 export const reportExportRoutes = {
   create: defineRoute({
     method: 'POST',
     path: '/report-exports',
     summary: 'Ask the worker to write a report as an Excel or PDF file',
     auth: 'bearer',
-    permission: 'accounting.report.read',
     status: 201,
     body: reportExportInputSchema,
     response: reportExportSchema,
@@ -439,7 +496,6 @@ export const reportExportRoutes = {
     path: '/report-exports',
     summary: "The signed-in user's exports, newest first",
     auth: 'bearer',
-    permission: 'accounting.report.read',
     status: 200,
     query: pageQuerySchema,
     response: reportExportPageSchema,
@@ -449,7 +505,6 @@ export const reportExportRoutes = {
     path: '/report-exports/:id/download',
     summary: 'A short-lived URL to download a finished export',
     auth: 'bearer',
-    permission: 'accounting.report.read',
     status: 200,
     params: z.object({ id: z.uuid() }),
     // The same short-lived link as an attachment's download

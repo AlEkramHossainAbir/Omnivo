@@ -93,6 +93,8 @@ export const ERROR_CODES = [
   // reports and year-end close
   'report_range_invalid',
   'report_compare_incomplete',
+  // Step 21b: a sort the report's group has no column for (quantity outside the product group)
+  'report_sort_invalid',
   'year_end_invalid',
   'year_not_ended',
   'year_already_closed',

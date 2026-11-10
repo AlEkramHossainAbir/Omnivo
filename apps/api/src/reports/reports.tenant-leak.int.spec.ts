@@ -3,18 +3,32 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   type Account,
   accountListSchema,
+  agingReportSchema,
+  billSchema,
   branchSchema,
+  customerGroupSchema,
+  customerSchema,
   fiscalYearListSchema,
   fiscalYearOf,
+  invoiceSchema,
+  productCategoryListSchema,
+  productSchema,
   profitAndLossSchema,
+  purchaseReportSchema,
   reportExportPageSchema,
+  salesReportSchema,
   setupSchema,
   shiftIsoDate,
+  supplierGroupSchema,
+  supplierSchema,
+  taxRateListSchema,
   todayIn,
   trialBalanceSchema,
+  unitListSchema,
 } from '@omnivo/contracts';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { z } from 'zod';
 
 import {
   createTestApp,
@@ -203,5 +217,217 @@ describe('report isolation over HTTP', () => {
     expect((await as(tenantA, 'GET', `/report-exports/${exportOfB}/download`)).statusCode).toBe(
       404,
     );
+  });
+});
+
+// Step 21b: the sales and purchase reports and the agings read documents, not only the journal.
+// B sells a delivery to a pharmacy and buys a repair, both on B's own branch, group and category.
+describe('trade reports and agings over HTTP', () => {
+  let customerOfB: string;
+  let supplierOfB: string;
+  let customerGroupOfB: string;
+  let supplierGroupOfB: string;
+  let categoryOfB: string;
+  const period = `from=${lastYear.start}&to=${today}`;
+
+  async function created<T>(schema: z.ZodType<T>, url: string, body: object): Promise<T> {
+    const res = await as(tenantB, 'POST', url, body);
+    expect(res.statusCode, res.body).toBe(201);
+    return schema.parse(res.json());
+  }
+
+  async function read<T>(who: SignedIn, schema: z.ZodType<T>, url: string): Promise<T> {
+    const res = await as(who, 'GET', url);
+    expect(res.statusCode, res.body).toBe(200);
+    return schema.parse(res.json());
+  }
+
+  beforeAll(async () => {
+    const chart = accountListSchema.parse((await as(tenantB, 'GET', '/accounts')).json()).items;
+    const pcs = unitListSchema
+      .parse((await as(tenantB, 'GET', '/units')).json())
+      .items.find((unit) => unit.code === 'pcs');
+    const exempt = taxRateListSchema
+      .parse((await as(tenantB, 'GET', '/tax-rates')).json())
+      .items.find((rate) => rate.name === 'Exempt');
+    const [category] = productCategoryListSchema.parse(
+      (await as(tenantB, 'GET', '/product-categories')).json(),
+    ).items;
+    if (!pcs || !exempt || !category)
+      throw new Error("B's setup is missing a unit, rate or category");
+    categoryOfB = category.id;
+    const delivery = await created(productSchema, '/products', {
+      code: '',
+      name: 'Cold-chain delivery',
+      type: 'service',
+      categoryId: categoryOfB,
+      description: '',
+      baseUnitId: pcs.id,
+      salesUnitId: '',
+      purchaseUnitId: '',
+      tracking: 'none',
+      hasExpiry: false,
+      taxRateId: '',
+      options: [],
+      variants: [
+        { id: null, sku: '', optionValues: [], barcode: '', salePrice: '', archived: false },
+      ],
+      units: [],
+      // The pharma template asks for the generic name
+      customFields: { generic_name: 'Delivery' },
+    });
+    customerGroupOfB = (
+      await created(customerGroupSchema, '/customer-groups', { name: 'Hospital pharmacies' })
+    ).id;
+    supplierGroupOfB = (
+      await created(supplierGroupSchema, '/supplier-groups', { name: 'Service vendors' })
+    ).id;
+    customerOfB = (
+      await created(customerSchema, '/customers', {
+        code: '',
+        name: 'Mymensingh Medical Pharmacy',
+        groupId: customerGroupOfB,
+        contactPerson: '',
+        phone: '',
+        email: '',
+        documentLanguage: 'en',
+        bin: '',
+        paymentTermsDays: 0,
+        creditLimit: '',
+        priceListId: '',
+        notes: '',
+        addresses: [],
+      })
+    ).id;
+    supplierOfB = (
+      await created(supplierSchema, '/suppliers', {
+        code: '',
+        name: 'Brahmaputra Cold Storage',
+        groupId: supplierGroupOfB,
+        contactPerson: '',
+        phone: '',
+        email: '',
+        documentLanguage: 'en',
+        bin: '',
+        paymentTermsDays: 0,
+        address: '',
+        bankAccounts: [],
+        notes: '',
+      })
+    ).id;
+    await created(invoiceSchema, '/invoices', {
+      customerId: customerOfB,
+      date: today,
+      dueDate: '',
+      customerReference: '',
+      branchId: branchOfB,
+      warehouseId: '',
+      note: '',
+      lines: [
+        {
+          variantId: delivery.variants[0]?.id ?? '',
+          unitId: pcs.id,
+          quantity: '1',
+          description: '',
+          unitPrice: '75000',
+          discountType: 'percent',
+          discount: '',
+          taxRateId: exempt.id,
+          deliveryLineId: '',
+          orderLineId: '',
+          batchId: '',
+          serialNumbers: [],
+        },
+      ],
+      post: true,
+    });
+    await created(billSchema, '/bills', {
+      supplierId: supplierOfB,
+      date: today,
+      dueDate: '',
+      supplierBillNumber: 'BCS-2026-77',
+      mushakNumber: '',
+      mushakDate: '',
+      branchId: branchOfB,
+      warehouseId: '',
+      pricesIncludeVat: false,
+      note: '',
+      lines: [],
+      expenses: [
+        {
+          accountId: idIn(chart, '5270'),
+          description: 'Cold room compressor repair',
+          amount: '42000',
+          taxRateId: exempt.id,
+        },
+      ],
+      submit: true,
+    });
+  }, 120_000);
+
+  it("adds none of B's documents into A's reports, whatever ids A's query names", async () => {
+    for (const filter of [
+      '',
+      `&branchId=${branchOfB}`,
+      `&customerGroupId=${customerGroupOfB}`,
+      `&categoryId=${categoryOfB}`,
+    ]) {
+      for (const groupBy of ['customer', 'product', 'category', 'branch', 'month']) {
+        const report = await read(
+          tenantA,
+          salesReportSchema,
+          `/reports/sales?${period}&groupBy=${groupBy}${filter}`,
+        );
+        expect(report.items, `${groupBy}${filter}`).toEqual([]);
+        expect(report.totals.net).toBe('0.0000');
+      }
+    }
+    // B's books have sales on that branch (the journal entries above); A's have none
+    expect(
+      (await read(tenantA, salesReportSchema, `/reports/sales?${period}&branchId=${branchOfB}`))
+        .books,
+    ).toBe('0.0000');
+    for (const filter of [
+      '',
+      `&supplierGroupId=${supplierGroupOfB}`,
+      `&categoryId=${categoryOfB}`,
+    ]) {
+      for (const groupBy of ['supplier', 'product', 'account', 'month']) {
+        const report = await read(
+          tenantA,
+          purchaseReportSchema,
+          `/reports/purchases?${period}&groupBy=${groupBy}${filter}`,
+        );
+        expect(report.items, `${groupBy}${filter}`).toEqual([]);
+      }
+    }
+    // B sees its own, so the documents above were really there
+    const own = await read(tenantB, salesReportSchema, `/reports/sales?${period}`);
+    expect(own.totals.net).toBe('75000.0000');
+    const ownPurchases = await read(tenantB, purchaseReportSchema, `/reports/purchases?${period}`);
+    expect(ownPurchases.totals.net).toBe('42000.0000');
+  });
+
+  it("owes A nothing of B's, and finds none of B's customers or suppliers", async () => {
+    for (const url of [
+      `/reports/ar-aging?asOf=${today}`,
+      `/reports/ar-aging?asOf=${today}&customerGroupId=${customerGroupOfB}`,
+      `/reports/ap-aging?asOf=${today}`,
+      `/reports/ap-aging?asOf=${today}&supplierGroupId=${supplierGroupOfB}`,
+    ]) {
+      const aging = await read(tenantA, agingReportSchema, url);
+      expect(aging.items, url).toEqual([]);
+      expect(aging.ledger).toBe('0.0000');
+    }
+    for (const url of [
+      `/reports/ar-aging/${customerOfB}?asOf=${today}`,
+      `/reports/ap-aging/${supplierOfB}?asOf=${today}`,
+    ]) {
+      expect((await as(tenantA, 'GET', url)).statusCode, url).toBe(404);
+    }
+    const own = await read(tenantB, agingReportSchema, `/reports/ar-aging?asOf=${today}`);
+    expect(own.totals.balance).toBe('75000.0000');
+    const ownPayables = await read(tenantB, agingReportSchema, `/reports/ap-aging?asOf=${today}`);
+    expect(ownPayables.ledger).toBe('42000.0000');
   });
 });
