@@ -175,6 +175,8 @@ export async function expectNoSideScroll(page: Page): Promise<void> {
 // A toast, then wait for it to close. On a phone it sits over the buttons at the bottom of the
 // page, and it stays open while the pointer that just clicked rests on it: move the pointer away.
 // Step 19b: `timeout` for a toast that waits for the copy to open (the branch dialog's).
+// The close waits 10 seconds, not the config's 5: the toast closes by itself after about 3, and
+// a busy CI runner (two workers, 1.1 h for the suite) ran past 5 before it did.
 export async function toastShown(
   page: Page,
   text: string | RegExp,
@@ -183,7 +185,7 @@ export async function toastShown(
   // No `timeout` key without a value (exactOptionalPropertyTypes): the config's 5 seconds
   await expect(page.getByText(text)).toBeVisible(timeout === undefined ? {} : { timeout });
   await page.mouse.move(0, 0);
-  await expect(page.getByText(text)).toBeHidden();
+  await expect(page.getByText(text)).toBeHidden({ timeout: 10_000 });
 }
 
 // Step 21a: the person signs in with this role, not as the owner (fixtures.ts → MOCK_ROLE_KEY).
