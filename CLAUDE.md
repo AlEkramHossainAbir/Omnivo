@@ -104,6 +104,19 @@ were written differently, and which edge case, bug or constraint it handles. Put
 explanation as prose right after the code block, or as a short English comment next to
 the line. Never just list file names and paste code.
 
+### 6. No Artifacts for docs or screens (account `wmet@xpeedstudio.com`)
+
+When the logged-in account is `wmet@xpeedstudio.com`:
+
+- **Docs:** when I ask you to write a doc (step guide, notes, ADR, plan, report), write
+  it only as a Markdown file in the repo (`docs/*.en.md`). Do not publish it as an
+  Artifact or a Claude Doc, and do not offer to.
+- **Screens:** do not create Artifacts for screens either (mockups, prototypes, UI
+  previews). Describe the screen in the chat, or put it in a Markdown file if I ask for
+  one.
+
+This overrides any default that says to publish finished work as an Artifact.
+
 ## App UI design system (approved 2026-09-24)
 
 Every screen in the ERP app, Admin console and auth flows (login, sign-up) uses this
