@@ -1,4 +1,6 @@
-import { formatMoney, i18n, setLanguage, type Language } from '@omnivo/i18n';
+import { i18n, setLanguage, type Language } from '@omnivo/i18n';
+
+import { shopMoney } from './money';
 
 // Step 26a: the words and number format of one page, worked out once in the page and handed to
 // every component. The shop speaks its own language (PublicShop.language), not the shopper's last
@@ -18,11 +20,3 @@ export async function shopLocale(language: Language) {
 }
 
 export type ShopLocale = Awaited<ReturnType<typeof shopLocale>>;
-
-// A shop price is a unit price: whole taka when it is whole ("৳1,199"), paisa only when it has
-// them ("৳49.50"). CLAUDE.md → Money keeps decimals for unit prices only; this keeps a shelf of
-// whole prices from showing ".00" on every card.
-export function shopMoney(value: string, language: Language): string {
-  const hasPaisa = /\.\d*[1-9]/.test(value);
-  return formatMoney(value, language, { decimals: hasPaisa ? 2 : 0 });
-}

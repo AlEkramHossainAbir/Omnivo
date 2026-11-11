@@ -1,0 +1,548 @@
+---
+import {
+  Add01Icon,
+  Alert02Icon,
+  Cancel01Icon,
+  Delete02Icon,
+  Loading03Icon,
+  MinusSignIcon,
+  ShoppingCart01Icon,
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { numberLocale } from '@omnivo/i18n';
+
+import type { ShopLocale } from '../lib/locale';
+
+// CLAUDE.md → Storefront → Cart drawer (not in Figma): from the right, 420px wide (the whole width
+// on a phone), the checkout's lines with a 96×80 picture, the subtotal, and Checkout. One per page,
+// in ShopLayout; the header's cart button opens it.
+// A custom element around a native <dialog>, not a React island (decision 21): showModal() gives
+// the focus trap, Escape, the inert page behind and the backdrop for free, and the script stays a
+// few KB instead of React plus the translations.
+// The server draws everything that never changes: the frame, the four states and one line as a
+// <template>, icons included. The script clones the template for each line and fills in the text,
+// so all markup and classes stay in this file.
+interface Props {
+  locale: ShopLocale;
+}
+
+const { locale } = Astro.props;
+const { t } = locale;
+
+// Words with a name or a count in them go to the script as templates; it puts the value in
+const name = { name: '{{name}}' };
+const stepper =
+  'grid size-10 place-items-center rounded-[5px] bg-cream text-brand transition-colors duration-150 not-aria-disabled:hover:bg-accent aria-disabled:text-muted';
+---
+
+<cart-drawer
+  class="group/cart"
+  data-language={locale.language}
+  data-number-locale={numberLocale(locale.language)}
+  data-label-decrease={t('shop.cart.decrease', name)}
+  data-label-increase={t('shop.cart.increase', name)}
+  data-label-quantity={t('shop.cart.quantity', name)}
+  data-label-remove={t('shop.cart.remove', name)}
+  data-label-removed-one={t('shop.cart.removed', { count: 1, replace: { count: '{{count}}' } })}
+  data-label-removed-other={t('shop.cart.removed', { count: 2, replace: { count: '{{count}}' } })}
+>
+  {/* The native dialog is centered and padded; these classes pin it to the right edge, full
+      height. `max-w-none max-h-none`: the browser's own style keeps a modal 2em off every edge */}
+  <dialog
+    data-cart-drawer
+    aria-labelledby="cart-drawer-title"
+    class="m-0 ml-auto h-dvh max-h-none w-full max-w-none border-0 bg-card p-0 text-brand backdrop:bg-overlay md:w-[420px]"
+  >
+    <div class="flex h-full flex-col">
+      <div class="flex items-center justify-between gap-4 border-b border-rule px-5 py-4 md:px-6 md:py-5">
+        <h2 id="cart-drawer-title" class="text-sf-title font-semibold">
+          {t('shop.cart.title')}
+        </h2>
+        <button
+          type="button"
+          data-close
+          aria-label={t('shop.cart.close')}
+          class="-mr-2 grid size-10 place-items-center rounded-lg text-muted transition-colors duration-150 hover:bg-canvas hover:text-brand"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      </div>
+
+      {/* Only the first time: later answers keep the lines on screen and grey the amounts */}
+      <div data-state="loading" class="grid flex-1 place-items-center p-6">
+        <p role="status" class="flex items-center gap-2.5 font-medium text-muted">
+          <HugeiconsIcon
+            icon={Loading03Icon}
+            size={24}
+            strokeWidth={1.5}
+            className="animate-spin"
+            aria-hidden="true"
+          />
+          {t('shop.cart.loading')}
+        </p>
+      </div>
+
+      {/* role="alert": the shopper is waiting for prices, so a failure is said at once */}
+      <div data-state="failed" hidden class="grid flex-1 place-items-center p-6">
+        <div role="alert" class="flex max-w-80 flex-col items-center gap-6 text-center">
+          <span class="grid size-16 place-items-center rounded-full bg-promo-soft text-promo">
+            <HugeiconsIcon icon={Alert02Icon} size={28} strokeWidth={1.5} aria-hidden="true" />
+          </span>
+          <p class="text-body">{t('shop.cart.failed')}</p>
+          <button
+            type="button"
+            data-retry
+            class="h-11 rounded-sm bg-cream px-6 font-semibold transition-colors duration-150 hover:bg-accent"
+          >
+            {t('shop.cart.retry')}
+          </button>
+        </div>
+      </div>
+
+      {/* CLAUDE.md → Storefront → Empty state, without its card: the drawer is the card */}
+      <div data-state="empty" hidden class="grid flex-1 place-items-center px-6 py-12">
+        <div class="flex flex-col items-center gap-4 text-center">
+          <span class="grid size-16 place-items-center rounded-full bg-cream">
+            <HugeiconsIcon
+              icon={ShoppingCart01Icon}
+              size={28}
+              strokeWidth={1.5}
+              aria-hidden="true"
+            />
+          </span>
+          <h3 class="text-sf-title font-semibold">{t('shop.cart.emptyTitle')}</h3>
+          <p class="max-w-72 text-muted">{t('shop.cart.emptyText')}</p>
+          <button
+            type="button"
+            data-close
+            data-continue
+            class="mt-2 h-11 rounded-sm bg-accent px-6 font-semibold transition-colors duration-150 hover:bg-brand hover:text-accent"
+          >
+            {t('shop.cart.continueShopping')}
+          </button>
+        </div>
+      </div>
+
+      <div data-state="ready" hidden class="flex min-h-0 flex-1 flex-col">
+        {/* The lines scroll; the subtotal and Checkout stay at the bottom */}
+        <ul
+          data-lines
+          class="min-h-0 flex-1 divide-y divide-rule overflow-y-auto px-5 md:px-6"
+        ></ul>
+        <div class="border-t border-rule px-5 pt-5 pb-[max(20px,env(safe-area-inset-bottom))] md:px-6 md:pb-6">
+          <p class="flex items-center justify-between gap-4">
+            <span class="font-semibold">{t('shop.cart.subtotal')}</span>
+            {/* Grey while a newer cart is being priced: the amount is not today's answer yet */}
+            <span
+              data-subtotal
+              class="text-sf-subtitle font-semibold text-price tabular-nums transition-colors duration-150 group-data-pricing/cart:text-muted"
+            ></span>
+          </p>
+          {/* A link, not a button: checkout is a page. aria-disabled (and no href) when nothing
+              in the cart can be sold now */}
+          <a
+            href="/checkout"
+            data-checkout
+            class="mt-5 flex h-13 w-full items-center justify-center rounded-sm bg-accent font-semibold transition-colors duration-150 hover:bg-brand hover:text-accent aria-disabled:bg-canvas aria-disabled:text-muted"
+          >
+            {t('shop.cart.checkout')}
+          </a>
+        </div>
+      </div>
+
+      {/* "2 items are no longer sold…": nothing on screen says it, so a screen reader hears it */}
+      <p data-announce role="status" class="sr-only"></p>
+    </div>
+
+    <template data-line-template>
+      <li data-line class="flex gap-4 py-5">
+        {/* A block, not a grid: in a grid cell the picture's 100% height has nothing fixed to
+            measure against, and a tall photo (a can) would spill out of the 80px */}
+        <span class="block h-20 w-24 shrink-0 overflow-hidden rounded-lg bg-canvas">
+          {/* alt="": the name next to it says what it is */}
+          <img data-image alt="" class="size-full object-contain mix-blend-multiply" />
+        </span>
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <div class="flex items-start justify-between gap-3">
+            <a data-name class="line-clamp-2 font-semibold hover:underline"></a>
+            <span
+              data-line-total
+              class="shrink-0 font-semibold text-price tabular-nums transition-colors duration-150 group-data-pricing/cart:text-muted"
+            ></span>
+          </div>
+          <p data-pack class="text-sf-meta font-semibold text-muted"></p>
+          <p
+            data-out-of-stock
+            hidden
+            class="flex items-center gap-1 text-sf-small font-medium text-promo"
+          >
+            <HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={1.5} aria-hidden="true" />
+            {t('shop.cart.outOfStock')}
+          </p>
+          <div class="mt-2 flex items-center gap-4">
+            <div class="flex items-center gap-1.5">
+              {/* aria-disabled, not disabled: a disabled button loses the focus, and the shopper
+                  pressing "one less" down to 1 would be thrown out of the stepper */}
+              <button type="button" data-decrease class={stepper}>
+                <HugeiconsIcon
+                  icon={MinusSignIcon}
+                  size={14}
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+              </button>
+              <input
+                type="text"
+                inputmode="numeric"
+                autocomplete="off"
+                data-quantity
+                class="h-10 w-15 rounded-[5px] border-[1.5px] border-cream bg-card text-center text-[20px] tabular-nums disabled:text-muted"
+              />
+              <button type="button" data-increase class={stepper}>
+                <HugeiconsIcon icon={Add01Icon} size={14} strokeWidth={1.5} aria-hidden="true" />
+              </button>
+            </div>
+            <button
+              type="button"
+              data-remove
+              class="grid size-10 place-items-center rounded-[5px] bg-promo-soft text-promo transition-colors duration-150 hover:bg-promo hover:text-white"
+            >
+              <HugeiconsIcon icon={Delete02Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </li>
+    </template>
+  </dialog>
+</cart-drawer>
+
+<script>
+  import type { ShopCartQuote, ShopCartQuoteLine } from '@omnivo/contracts';
+  import type { Language } from '@omnivo/i18n';
+
+  import { $cart, MAX_QUANTITY, removeFromCart, setQuantity, type CartLine } from '../lib/cart';
+  import { shopMoney } from '../lib/money';
+  import { fetchQuote } from '../lib/quote';
+
+  type State = 'loading' | 'failed' | 'empty' | 'ready';
+  // The lines the drawer draws: an unavailable one has only its id, and leaves the cart
+  type ShownLine = Exclude<ShopCartQuoteLine, { status: 'unavailable' }>;
+
+  // How long the stepper waits for the next click before asking for prices: five quick clicks on
+  // "one more" make one request, not five
+  const QUOTE_DELAY = 250;
+
+  // The cart as a string, to tell whether the quote on screen is the answer for this cart
+  function cartKey(lines: readonly CartLine[]): string {
+    return JSON.stringify(lines);
+  }
+
+  // A Bangla keyboard types ০–৯; the cart keeps ASCII numbers
+  function parseQuantity(text: string): number | undefined {
+    const ascii = text.replace(/[০-৯]/g, (digit) => String(digit.charCodeAt(0) - 0x09e6));
+    return /^\d+$/.test(ascii.trim()) ? Number(ascii.trim()) : undefined;
+  }
+
+  function part<T extends Element>(root: ParentNode, selector: string): T {
+    const element = root.querySelector<T>(selector);
+    // The markup is in the same file: a missing part is a bug to see at once, not to skip
+    if (!element) throw new Error(`cart drawer: ${selector} is missing`);
+    return element;
+  }
+
+  class CartDrawer extends HTMLElement {
+    private quote: ShopCartQuote | undefined;
+    // The cart the quote on screen answered. '' after opening: the drawer always asks again,
+    // because the shop may have changed a price since the last time it was open
+    private quotedKey = '';
+    private controller: AbortController | undefined;
+    private timer: number | undefined;
+    private unsubscribe: (() => void) | undefined;
+    private language: Language = 'en';
+    private number = new Intl.NumberFormat('en-IN');
+
+    // Any [data-open-cart] on the page opens the drawer: the header's cart button today. One
+    // listener on the document, like "Add to cart" in ShopLayout
+    private readonly onDocumentClick = (event: MouseEvent): void => {
+      if (event.target instanceof Element && event.target.closest('[data-open-cart]')) this.open();
+    };
+
+    private get dialog(): HTMLDialogElement {
+      return part(this, 'dialog');
+    }
+
+    private get list(): HTMLUListElement {
+      return part(this, '[data-lines]');
+    }
+
+    connectedCallback(): void {
+      // 'bn' or anything else: the page writes only 'en' or 'bn'
+      this.language = this.dataset.language === 'bn' ? 'bn' : 'en';
+      this.number = new Intl.NumberFormat(this.dataset.numberLocale ?? 'en-IN');
+      const dialog = this.dialog;
+
+      document.addEventListener('click', this.onDocumentClick);
+      for (const button of this.querySelectorAll('[data-close]')) {
+        button.addEventListener('click', () => {
+          dialog.close();
+        });
+      }
+      // A click on the dim backdrop lands on the <dialog> itself; a click inside lands on its
+      // content, which fills the whole dialog
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+      // Escape, the close button, the backdrop: every way out ends here. The browser puts the
+      // focus back on the cart button by itself
+      dialog.addEventListener('close', () => {
+        this.stop();
+      });
+      part(this, '[data-retry]').addEventListener('click', () => {
+        this.show('loading');
+        this.requestQuote(0);
+      });
+
+      const list = this.list;
+      list.addEventListener('click', (event) => {
+        this.onLineClick(event);
+      });
+      list.addEventListener('change', (event) => {
+        this.onQuantityTyped(event);
+      });
+    }
+
+    disconnectedCallback(): void {
+      document.removeEventListener('click', this.onDocumentClick);
+      this.stop();
+    }
+
+    open(): void {
+      const dialog = this.dialog;
+      if (dialog.open) return;
+      dialog.showModal();
+      this.quotedKey = '';
+      // While open only: a closed drawer has nothing to draw, and asks for no prices. subscribe()
+      // calls back at once with the cart as it is now
+      this.unsubscribe = $cart.subscribe((lines) => {
+        this.cartChanged(lines);
+      });
+    }
+
+    private stop(): void {
+      this.unsubscribe?.();
+      this.unsubscribe = undefined;
+      window.clearTimeout(this.timer);
+      // An answer that comes after closing would be drawn for nobody
+      this.controller?.abort();
+      this.controller = undefined;
+    }
+
+    private show(state: State): void {
+      for (const element of this.querySelectorAll<HTMLElement>('[data-state]')) {
+        element.hidden = element.dataset.state !== state;
+      }
+    }
+
+    // The cart changed: opening the drawer, a click in it, or another tab. The new quantities show
+    // at once; the prices follow when the server answers
+    private cartChanged(lines: readonly CartLine[]): void {
+      if (lines.length === 0) {
+        window.clearTimeout(this.timer);
+        this.controller?.abort();
+        this.show('empty');
+        return;
+      }
+      if (this.quote) this.render(lines);
+      else this.show('loading');
+      // The quote on screen answers this very cart (a line the server dropped was just removed)
+      if (cartKey(lines) === this.quotedKey) return;
+      // The first request after opening goes at once; the rest wait for the clicks to stop
+      this.requestQuote(this.quotedKey === '' ? 0 : QUOTE_DELAY);
+    }
+
+    private requestQuote(delay: number): void {
+      window.clearTimeout(this.timer);
+      this.timer = window.setTimeout(() => {
+        void this.loadQuote();
+      }, delay);
+    }
+
+    private async loadQuote(): Promise<void> {
+      const lines = $cart.get();
+      if (lines.length === 0) return;
+      // One request at a time: the older one's answer is for a cart that no longer exists
+      this.controller?.abort();
+      const controller = new AbortController();
+      this.controller = controller;
+
+      let quote: ShopCartQuote;
+      try {
+        quote = await fetchQuote(lines, controller.signal);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        console.error(error);
+        // Old prices could be wrong now, so they go: the shopper sees why and can try again
+        this.quote = undefined;
+        this.show('failed');
+        return;
+      }
+      if (controller !== this.controller) return;
+
+      this.quote = quote;
+      // Listings the shop no longer sells leave the stored cart. The rest of the answer is still
+      // right without them (they add nothing to the subtotal), so the quote counts as the answer
+      // for the cart that is left, and removing them asks for nothing again
+      const gone = new Set(
+        quote.lines.filter((line) => line.status === 'unavailable').map((line) => line.listingId),
+      );
+      this.quotedKey = cartKey(lines.filter((line) => !gone.has(line.listingId)));
+      if (gone.size > 0) {
+        this.say(gone.size);
+        removeFromCart(gone);
+      }
+      const now = $cart.get();
+      if (now.length === 0) this.show('empty');
+      else this.render(now);
+    }
+
+    private say(count: number): void {
+      const { labelRemovedOne = '', labelRemovedOther = '', numberLocale = 'en-IN' } = this.dataset;
+      const one = new Intl.PluralRules(numberLocale).select(count) === 'one';
+      part<HTMLElement>(this, '[data-announce]').textContent = (
+        one ? labelRemovedOne : labelRemovedOther
+      ).replace('{{count}}', this.number.format(count));
+    }
+
+    // Draws the quote's lines that are still in the cart, with the cart's quantities. Lines are
+    // kept by listing and only moved when the order changed: replacing them would drop the focus
+    // from the stepper button the shopper is pressing
+    private render(cart: readonly CartLine[]): void {
+      const quote = this.quote;
+      if (!quote) return;
+      const quantities = new Map(cart.map((line) => [line.listingId, line.quantity]));
+      const shown = quote.lines.filter(
+        (line): line is ShownLine =>
+          line.status !== 'unavailable' && quantities.has(line.listingId),
+      );
+      // Everything in the cart came from another tab after this quote: wait for the next one
+      if (shown.length === 0) {
+        this.show('loading');
+        return;
+      }
+
+      const list = this.list;
+      const existing = new Map(
+        [...list.querySelectorAll<HTMLLIElement>('[data-line]')].map((li) => [li.dataset.line, li]),
+      );
+      shown.forEach((line, index) => {
+        const li = existing.get(line.listingId) ?? this.newLine();
+        existing.delete(line.listingId);
+        this.fill(li, line, quantities.get(line.listingId) ?? line.quantity);
+        if (list.children[index] !== li) list.insertBefore(li, list.children[index] ?? null);
+      });
+      for (const li of existing.values()) li.remove();
+
+      part(this, '[data-subtotal]').textContent = shopMoney(quote.subtotal, this.language);
+      const checkout = part<HTMLAnchorElement>(this, '[data-checkout]');
+      // Every line out of stock: nothing to order
+      if (quote.itemCount > 0) {
+        checkout.href = '/checkout';
+        checkout.removeAttribute('aria-disabled');
+      } else {
+        checkout.removeAttribute('href');
+        checkout.setAttribute('aria-disabled', 'true');
+      }
+      this.toggleAttribute('data-pricing', cartKey(cart) !== this.quotedKey);
+      this.show('ready');
+    }
+
+    private newLine(): HTMLLIElement {
+      const template = part<HTMLTemplateElement>(this, '[data-line-template]');
+      // importNode, not cloneNode: same copy, but typed as the fragment it is
+      return part<HTMLLIElement>(document.importNode(template.content, true), 'li');
+    }
+
+    private fill(li: HTMLLIElement, line: ShownLine, quantity: number): void {
+      const {
+        labelDecrease = '',
+        labelIncrease = '',
+        labelQuantity = '',
+        labelRemove = '',
+      } = this.dataset;
+      const label = (template: string): string => template.replace('{{name}}', line.name);
+      const inStock = line.status === 'available';
+      li.dataset.line = line.listingId;
+
+      const image = part<HTMLImageElement>(li, '[data-image]');
+      // Setting the same src again would not reload it, but checking keeps the intent plain
+      if (image.getAttribute('src') !== line.image.url) image.src = line.image.url;
+      const name = part<HTMLAnchorElement>(li, '[data-name]');
+      // The slug comes from the server; encoded, it can only ever be a path under /p/
+      name.href = `/p/${encodeURIComponent(line.slug)}`;
+      name.textContent = line.name;
+      part(li, '[data-pack]').textContent = line.packSize;
+
+      const total = part<HTMLElement>(li, '[data-line-total]');
+      total.hidden = !inStock;
+      total.textContent = inStock ? shopMoney(line.lineTotal, this.language) : '';
+      part<HTMLElement>(li, '[data-out-of-stock]').hidden = inStock;
+
+      const decrease = part<HTMLButtonElement>(li, '[data-decrease]');
+      const increase = part<HTMLButtonElement>(li, '[data-increase]');
+      const input = part<HTMLInputElement>(li, '[data-quantity]');
+      decrease.setAttribute('aria-label', label(labelDecrease));
+      increase.setAttribute('aria-label', label(labelIncrease));
+      input.setAttribute('aria-label', label(labelQuantity));
+      part(li, '[data-remove]').setAttribute('aria-label', label(labelRemove));
+      decrease.setAttribute('aria-disabled', String(!inStock || quantity <= 1));
+      increase.setAttribute('aria-disabled', String(!inStock || quantity >= MAX_QUANTITY));
+      // An out-of-stock line can only be removed: its count changes nothing
+      input.disabled = !inStock;
+      // Not while the shopper is typing in it: the box would jump back under their fingers
+      if (document.activeElement !== input) input.value = this.number.format(quantity);
+    }
+
+    private onLineClick(event: MouseEvent): void {
+      if (!(event.target instanceof Element)) return;
+      const button = event.target.closest('button');
+      const li = button?.closest<HTMLLIElement>('[data-line]');
+      const id = li?.dataset.line;
+      if (!button || !li || !id || button.getAttribute('aria-disabled') === 'true') return;
+      const current = $cart.get().find((line) => line.listingId === id)?.quantity;
+      if (current === undefined) return;
+
+      if (button.hasAttribute('data-decrease')) setQuantity(id, current - 1);
+      else if (button.hasAttribute('data-increase')) setQuantity(id, current + 1);
+      else if (button.hasAttribute('data-remove')) this.removeLine(li, id);
+    }
+
+    // The focus goes to the next line's delete button (or the one before), so a shopper clearing
+    // the cart from the keyboard keeps pressing Enter; with nothing left, to "Continue shopping"
+    private removeLine(li: HTMLLIElement, id: string): void {
+      const neighbour = li.nextElementSibling ?? li.previousElementSibling;
+      const next = neighbour instanceof HTMLElement ? neighbour.dataset.line : undefined;
+      removeFromCart(new Set([id]));
+      // The cart's subscriber has drawn the new list by now: set() calls it straight away
+      const target = next
+        ? this.list.querySelector<HTMLElement>(`[data-line="${CSS.escape(next)}"] [data-remove]`)
+        : this.querySelector<HTMLElement>('[data-continue]');
+      target?.focus();
+    }
+
+    // 'change' fires on Enter and when the box loses the focus, not on every key: typing "12"
+    // never sets the line to 1 on the way
+    private onQuantityTyped(event: Event): void {
+      const input = event.target;
+      if (!(input instanceof HTMLInputElement)) return;
+      const id = input.closest<HTMLElement>('[data-line]')?.dataset.line;
+      if (!id) return;
+      const typed = parseQuantity(input.value);
+      if (typed !== undefined) setQuantity(id, typed);
+      // A typed 0 became 1 and 500 became 99; letters put the old number back
+      const kept = $cart.get().find((line) => line.listingId === id)?.quantity;
+      if (kept !== undefined) input.value = this.number.format(kept);
+    }
+  }
+
+  customElements.define('cart-drawer', CartDrawer);
+</script>

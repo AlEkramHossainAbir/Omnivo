@@ -989,8 +989,9 @@ payment section, the removed Reviews tab, no emoji, one badge style on every scr
 the confirmation's SMS wording.
 
 What still applies from the rest of this file: HugeIcons Stroke Rounded only, no `any`, every string through
-`t()` (keys under `shop.*`), money as decimal strings, `cursor: pointer` on everything clickable, a visible focus
-state, 150ms color-only transitions and `prefers-reduced-motion`. Light theme only for now
+`t()` (keys under `shop.*`), money as decimal strings (formatted in browser scripts with `@omnivo/i18n/format`: the
+package's main entry starts i18next with every word, so a browser script never imports it), `cursor: pointer` on
+everything clickable, a visible focus state, 150ms color-only transitions and `prefers-reduced-motion`. Light theme only for now
 (`color-scheme: light`); Figma has no dark design.
 
 ### Storefront color tokens
@@ -1000,9 +1001,9 @@ the tokens, never raw hex.
 
 | Token | Value | Figma name | Use |
 |---|---|---|---|
-| `canvas` | `#F6F7F7` | Off White | Page background, section header background, checkout line image box, promo box |
-| `card` | `#FFFFFF` | White | Product cards, inputs, footer, gallery card, white description sections |
-| `card-glass` | `rgb(255 255 255 / .7)` | — | Product info card and checkout card (on `canvas`) |
+| `canvas` | `#F6F7F7` | Off White | Page background, section header background, description sections (with `cream`), checkout line image box, promo box |
+| `card` | `#FFFFFF` | White | Product cards, inputs, footer, gallery card and thumbnails, the cart drawer |
+| `card-glass` | `rgb(255 255 255 / .7)` | — | Product info card, description card and checkout card (on `canvas`) |
 | `cream` | `#F4F5EC` | Ivory | Radio cards, tab bar, checkout card header, secondary button, stepper buttons, alternate description sections, social circles |
 | `brand` | `#005859` | Dark Teal | Header, titles, product names, labels, selected chip, active tab, `NEW` badge, apply-coupon button |
 | `accent` | `#B8EF69` | Lime Green | Add to cart, Place Order, Confirm Order, search button, text on `brand` fills |
@@ -1153,24 +1154,26 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   at 12px `muted`. No blobs on the phone. It ends 24px above the page's bottom.
 - **Product page, top:** two cards 16px apart. Gallery (524×440, `card`, radius 16): the ribbon and badge as on
   the product card, the photo centered and `object-contain`. Under it, 16px down, four 119×92 thumbnails, 16px
-  apart, `card`, radius 8; the selected one has a 1px `brand` border. Info card (740×548, `card-glass`, radius
+  apart, radius 16, with a 2px `card` border that turns `brand` on the one shown. Info card (740×548, `card-glass`, radius
   16, padding 32px 36px): the countdown row (`Clock01` 20px plus "01 : 12 : 10 : 32" 16px/600, both `promo`,
   12px apart; only when the listing has a `sale_until`), 24px down the name (`sf-title`, `brand`), 24px down the
   size chip (`card`, 1px `muted-line` border, radius 999, padding 8px 12px, 16px/600 `brand`), 36px down the
   price (`sf-price-lg` `price`) with the old price 8px after it (16px/600 `muted`, struck through, bottom
   aligned), 16px down "Per Piece" (16px/400 `muted`), 32px down two 195×44 buttons 16px apart: Place Order
-  (`accent`, `ShoppingBag01`, 8px gap; buys now and opens checkout) and Add to cart (`cream`, `Add01`, 4px gap),
+  (`accent`, `ShoppingBag01`, 8px gap; puts the product in the cart once, never a second time, and opens checkout) and Add to cart (`cream`, `Add01`, 4px gap),
   both 16px/600 `brand`, radius 4. Then 36px down: "Available in stock" (`CheckmarkBadge01`) and 20px below "SKU:
   MD2346" (`ShoppingBag01`), 16px icons, 14px/500 `brand`, 8px gap; out of stock shows an `Alert02` with
   "Out of stock" in `promo`. A 1px `rule` line 36px below, then 26px down "Hotline:" (`price`) and the number
-  (`brand`) at 16px/600 after a 24px `Call02` icon, 12px apart. Below `lg` the two cards stack and the buttons
-  share the width.
-- **Product page, description:** a `card` (radius 16, 8px padding) with the tab bar (`cream`, radius 8, 8px
-  padding) holding one 160×48 tab, "Overview" (`brand` fill, `accent` 16px/600, radius 4). Reviews is removed:
-  there are no reviews in the data model. Then the description sections 8px apart, each radius 8, padding 36px
-  (20px on phones), alternating `card` and `cream` starting with `card`: heading `sf-subtitle` (30px
-  line-height) `brand`, 24px down the text 14px/24px `body`, lists with discs indented 21px, label words at 600.
-  The sections come from the listing's `description_html`, styled by one prose class, never per-section markup.
+  (`brand`) at 16px/600 after a 24px `price` `Call02` icon, 12px apart. Below `lg` the two cards stack, the gallery stays
+  at most 524px wide and centered, and the buttons share the width.
+- **Product page, description:** a `card-glass` card (radius 16, 8px padding) with the tab bar (`cream`, radius
+  8, 8px padding) holding one 160×48 "Overview" label in the tab's look (`brand` fill, `accent` 16px/600, radius 4).
+  It is a label, not a `tablist`: Reviews is removed (there are no reviews in the data model), and a list of one
+  tab would tell a screen reader there is a choice. Then the description sections 8px apart, each radius 8,
+  padding 36px (20px on phones), alternating `canvas` and `cream` starting with `canvas`: heading `sf-subtitle`
+  (30px line-height) `brand`, 24px down the text 14px/24px `body`, lists with discs (numbers for an `<ol>`)
+  indented 21px, label words at 600. The sections come from the listing's `description_html`, styled by one prose
+  class (`shop-prose`), never per-section markup. No description: no card.
 - **Checkout card:** max 848px, centered, 36px below the header (128px from the page top), `card-glass`, radius
   16, 4px inset. Header: `cream`, top radius 12, padding 24px, "Shipping & Contact Details" `sf-title` `brand`
   centered. Body: 36px padding, 32px between blocks. Field: label 16px/600 `brand`, 12px gap, input 48px high,
@@ -1216,9 +1219,19 @@ These follow the same tokens and components. Use them exactly as written here un
   (44px, radius 4). Used for empty cart (`ShoppingCart01`), no results (`Search01`), page not found, and a shop
   that is closed.
 - **Cart drawer:** opens from the cart button, from the right, 420px wide (full width on phones), `card`, with
-  `overlay` behind it and no blur. Title "Your Cart" `sf-title` `brand`, a close icon button, the
-  checkout lines (image box 96×80), the subtotal row, and "Checkout" (full width, 52px, `accent`, radius 4,
-  16px/600 `brand`). Empty: the empty state.
+  `overlay` behind it and no blur. A native `<dialog>` (`showModal()`), so the focus stays inside, Escape and a
+  click on the backdrop close it, and the focus goes back to the cart button. It does not slide in. The header:
+  "Your Cart" `sf-title` `brand` and a close icon button, a 1px `rule` line under it. The lines are the checkout's
+  at drawer size, 1px `rule` lines between them: the image box 96×80 (`canvas`, radius 8), 16px gap, the name
+  16px/600 `brand` (two lines, then an ellipsis) with the line total 16px/600 `price` to its right, the pack size
+  (`sf-meta` `muted`), then the checkout's stepper and delete button (same sizes and gaps). An out-of-stock line
+  says "Out of stock: not in the subtotal" in `promo` with `Alert02` and keeps only its delete button. Padding
+  24px (20px on phones). At the bottom, above a 1px `rule` line: "Subtotal" and the amount (`sf-subtitle`
+  `price`), and "Checkout" (full width, 52px, `accent`, radius 4, 16px/600 `brand`; greyed and not a link when
+  every line is out of stock). The prices come from the server's quote, asked each time the drawer opens and 250ms
+  after the last change; until the answer, the amounts are `muted`. A quantity changes at once. A failed quote
+  shows no prices: a `promo-soft` tile, "The prices did not load…" and "Try again" (`cream`). Empty: the empty
+  state (`ShoppingCart01`, "Continue shopping" closes the drawer).
 - **Phone verification (`/checkout/verify`):** the checkout card at 560px: header "Verify Your Phone", a 16px
   `body` line "We sent a 6-digit code to +880 17•• ••• 356", one 48px input (`tabular-nums`, centered, Bangla
   digits become ASCII), "Confirm Order" (the checkout's button), and "Resend code" as a `brand` text link (with

@@ -1,0 +1,141 @@
+---
+import {
+  Add01Icon,
+  Alert02Icon,
+  Call02Icon,
+  CheckmarkBadge01Icon,
+  ShoppingBag01Icon,
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { PublicShop, ShopProduct } from '@omnivo/contracts';
+
+import type { ShopLocale } from '../lib/locale';
+import SaleCountdown from './SaleCountdown.astro';
+
+// CLAUDE.md → Product page, top: the info card (Figma 37:3571, 740×548). Every gap below is
+// Figma's, measured between trimmed text boxes (trim-text), so the card is 548px tall at 1440px
+// with the design's words.
+interface Props {
+  product: ShopProduct;
+  shop: PublicShop;
+  locale: ShopLocale;
+  // Worked out by the page once per request: the sale's end, or null when there is no sale left
+  saleUntil: Date | null;
+}
+
+const { product, shop, locale, saleUntil } = Astro.props;
+const { t } = locale;
+
+// tel: takes digits and a leading + only; "+880 1786 120356" is for the eye
+const phoneHref = `tel:${shop.hotline.replace(/[^\d+]/g, '')}`;
+
+// The two buttons share their look; only the fill and the icon differ. Below lg they share the
+// card's width (two columns), from lg they are Figma's 195px
+const button =
+  'flex h-11 items-center justify-center rounded-sm pr-4 pl-2.5 font-semibold transition-colors duration-150 disabled:bg-canvas disabled:text-muted lg:w-[195px]';
+---
+
+<div class="rounded-2xl bg-card-glass px-5 pt-6 pb-7 md:px-9 md:pt-8 md:pb-9">
+  {saleUntil && (
+    <div class="mb-6">
+      <SaleCountdown until={saleUntil} timeZone={shop.timeZone} locale={locale} />
+    </div>
+  )}
+
+  {/* lg:max-w-72: Figma's title box is 288px, which breaks the name onto two lines */}
+  <h1 class="trim-text text-sf-title font-semibold lg:max-w-72">{product.name}</h1>
+
+  {product.packSize !== '' && (
+    // Not a button: a listing is one size (see "Not in this step"). The chip only shows it
+    <p class="mt-6 w-fit rounded-full border border-muted-line bg-card px-3 py-2 font-semibold">
+      <span class="sr-only">{t('shop.product.size')}: </span>
+      <span class="trim-text block">{product.packSize}</span>
+    </p>
+  )}
+
+  <div class="mt-9 flex items-end gap-2">
+    <p class="trim-text text-sf-price-lg font-semibold text-price tabular-nums">
+      {locale.money(product.price)}
+    </p>
+    {product.compareAtPrice !== null && (
+      <p class="trim-text font-semibold text-muted tabular-nums">
+        {/* <s> alone is not read as "was" by most screen readers: they hear the sentence, the
+              eye sees the struck-out price */}
+        <span class="sr-only">
+          {t('shop.product.wasPrice', { price: locale.money(product.compareAtPrice) })}
+        </span>
+        <s aria-hidden="true">{locale.money(product.compareAtPrice)}</s>
+      </p>
+    )}
+  </div>
+  <p class="trim-text mt-4 text-muted">{t('shop.product.perUnit', { unit: product.unitName })}</p>
+
+  <div class="mt-8 grid grid-cols-2 gap-4 lg:flex">
+    {/* The page's script handles both: this one puts the product in the cart and opens checkout */}
+    <button
+      type="button"
+      data-place-order={product.id}
+      disabled={!product.inStock}
+      class:list={[
+        button,
+        'gap-2 bg-accent text-brand enabled:hover:bg-brand enabled:hover:text-accent',
+      ]}
+    >
+      <HugeiconsIcon icon={ShoppingBag01Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+      <span class="trim-text">{t('shop.product.placeOrder')}</span>
+    </button>
+    {/* ShopLayout's one listener adds it, as for every card ("data-add-to-cart") */}
+    <button
+      type="button"
+      data-add-to-cart={product.id}
+      disabled={!product.inStock}
+      class:list={[button, 'gap-1 bg-cream text-brand enabled:hover:bg-accent']}
+    >
+      <HugeiconsIcon icon={Add01Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+      <span class="trim-text">{t('shop.card.addToCart')}</span>
+    </button>
+  </div>
+
+  <ul class="mt-9 flex flex-col gap-5 text-sf-small font-medium">
+    {product.inStock ? (
+      <li class="flex items-center gap-2">
+        <HugeiconsIcon icon={CheckmarkBadge01Icon} size={16} strokeWidth={1.5} aria-hidden="true" />
+        <span class="trim-text">{t('shop.product.inStock')}</span>
+      </li>
+    ) : (
+      <li class="flex items-center gap-2 text-promo">
+        <HugeiconsIcon icon={Alert02Icon} size={16} strokeWidth={1.5} aria-hidden="true" />
+        <span class="trim-text">{t('shop.product.outOfStock')}</span>
+      </li>
+    )}
+    {product.sku !== null && (
+      <li class="flex items-center gap-2">
+        <HugeiconsIcon icon={ShoppingBag01Icon} size={16} strokeWidth={1.5} aria-hidden="true" />
+        <span class="trim-text">{t('shop.product.sku', { sku: product.sku })}</span>
+      </li>
+    )}
+  </ul>
+
+  <div class="mt-9 border-t border-rule"></div>
+
+  {/* 25px: Figma's 26px is measured from a line with no height; this rule is a 1px border */}
+  <p class="mt-[25px] flex items-center gap-3 font-semibold">
+    <HugeiconsIcon
+      icon={Call02Icon}
+      size={24}
+      strokeWidth={1.5}
+      className="text-price"
+      aria-hidden="true"
+    />
+    <span class="trim-text">
+      <span class="text-price">{t('shop.product.hotline')}</span>{' '}
+      <a
+        href={phoneHref}
+        aria-label={t('shop.product.callHotline', { phone: shop.hotline })}
+        class="underline-offset-3 hover:underline"
+      >
+        {shop.hotline}
+      </a>
+    </span>
+  </p>
+</div>

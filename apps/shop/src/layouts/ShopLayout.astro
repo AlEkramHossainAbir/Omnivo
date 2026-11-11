@@ -3,6 +3,7 @@ import '../styles/shop.css';
 
 import type { PublicShop } from '@omnivo/contracts';
 
+import CartDrawer from '../components/CartDrawer.astro';
 import Footer from '../components/Footer.astro';
 import Header from '../components/Header.astro';
 import type { ShopLocale } from '../lib/locale';
@@ -45,6 +46,9 @@ const theme = `--brand: ${shop.theme.brand}; --accent: ${shop.theme.accent}`;
       </main>
       <Footer shop={shop} locale={locale} />
     </div>
+    {/* Step 26b: one drawer for the whole page, outside the layout's box: as a modal dialog it is
+        drawn above everything anyway, and the header's cart button opens it */}
+    <CartDrawer locale={locale} />
 
     <script>
       import { addToCart } from '../lib/cart';

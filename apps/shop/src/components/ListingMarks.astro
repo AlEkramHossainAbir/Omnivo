@@ -1,0 +1,52 @@
+---
+import type { ShopListing } from '@omnivo/contracts';
+
+import type { ShopLocale } from '../lib/locale';
+
+// Step 26b: the discount ribbon and the badges of a listing, taken out of ProductCard so the
+// product page's gallery draws exactly the same ones (Figma puts them at the same places on the
+// card and on the gallery: the ribbon 16px from the left on the top edge, the badge 10px in from
+// the top right). The parent is the positioned box: it needs `relative`.
+interface Props {
+  listing: ShopListing;
+  locale: ShopLocale;
+}
+
+const { listing, locale } = Astro.props;
+const { t } = locale;
+
+const discount = listing.discount;
+const discountText =
+  discount === null
+    ? null
+    : discount.kind === 'amount'
+      ? locale.money(discount.value)
+      : `${String(discount.value)}%`;
+
+// NEW sits at the left when the left is free (no ribbon); the first other badge sits at the right
+const newOnLeft = discountText === null && listing.badges.includes('new');
+const rightBadge = listing.badges.find((badge) => !(newOnLeft && badge === 'new'));
+---
+
+{discountText !== null && (
+  <p class="ribbon-shape absolute top-0 left-2 flex h-10 w-[30px] flex-col items-center bg-price pt-2.5 text-sf-tag font-bold text-white md:left-4">
+    <span aria-hidden="true">{discountText}</span>
+    <span aria-hidden="true">{t('shop.card.off')}</span>
+    <span class="sr-only">{t('shop.card.discount', { amount: discountText })}</span>
+  </p>
+)}
+{newOnLeft && (
+  <p class="trim-text absolute top-2 left-2 rounded-full bg-brand p-[7px] text-sf-tag font-bold text-accent md:top-2.5 md:left-2.5">
+    {t('shop.card.badge.new')}
+  </p>
+)}
+{rightBadge && (
+  <p
+    class:list={[
+      'trim-text absolute top-2 right-2 rounded-full p-[7px] text-sf-tag font-bold md:top-2.5 md:right-2.5',
+      rightBadge === 'new' ? 'bg-brand text-accent' : 'bg-promo text-white',
+    ]}
+  >
+    {t(`shop.card.badge.${rightBadge}`)}
+  </p>
+)}

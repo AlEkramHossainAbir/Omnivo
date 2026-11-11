@@ -1,3 +1,6 @@
+// Step 26b: this file is also the package's own entry '@omnivo/i18n/format', which the shop's
+// browser scripts import to format money without i18next and its translations. So it may import
+// only types from the rest of the package: one value import would bring all of it back.
 import type { Language } from './i18n.js';
 
 // en-IN = লাখ/কোটি গ্রুপিং (18,42,600); bn-BD = একই গ্রুপিং, বাংলা অঙ্কে (১৮,৪২,৬০০)

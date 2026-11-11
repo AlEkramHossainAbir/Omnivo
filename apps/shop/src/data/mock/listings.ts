@@ -14,7 +14,9 @@ interface MockProduct {
   inStock?: boolean;
 }
 
-function listing(product: MockProduct): ShopListing {
+// Exported in step 26b: products.ts makes the product page's listing with it, so that listing has
+// the same id and photo rules as every card
+export function listing(product: MockProduct): ShopListing {
   return {
     id: `lst-${product.slug}`,
     slug: product.slug,

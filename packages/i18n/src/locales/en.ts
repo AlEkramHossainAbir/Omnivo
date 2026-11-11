@@ -5492,6 +5492,49 @@ export const en = {
         buy_one_get_one: 'Buy 1 Get 1',
       },
     },
+    // The product page (/p/<slug>)
+    product: {
+      title: '{{name}} | {{shop}}',
+      gallery: 'Photos of {{name}}',
+      showPhoto: 'Show photo {{index}} of {{count}}',
+      // The countdown's words for a screen reader, read once: a clock that changes every second
+      // is not read out
+      saleEnds: 'Sale ends {{date}}',
+      size: 'Size',
+      // Before the struck-out price, for a screen reader: <s> alone is not read as "was"
+      wasPrice: 'Was {{price}}',
+      perUnit: 'Per {{unit}}',
+      placeOrder: 'Place Order',
+      inStock: 'Available in stock',
+      outOfStock: 'Out of stock',
+      sku: 'SKU: {{sku}}',
+      hotline: 'Hotline:',
+      callHotline: 'Call {{phone}}',
+      details: 'Product details',
+      overview: 'Overview',
+      related: 'Related Products',
+    },
+    // The cart drawer, opened from the header's cart button
+    cart: {
+      title: 'Your Cart',
+      close: 'Close cart',
+      loading: 'Getting today’s prices…',
+      failed: 'The prices did not load. Check the connection, then try again.',
+      retry: 'Try again',
+      decrease: 'One less {{name}}',
+      increase: 'One more {{name}}',
+      quantity: 'How many {{name}}',
+      remove: 'Remove {{name}}',
+      outOfStock: 'Out of stock: not in the subtotal',
+      // Said when the answer drops listings the shop no longer sells
+      removed_one: '{{count}} item is no longer sold, so it left your cart.',
+      removed_other: '{{count}} items are no longer sold, so they left your cart.',
+      subtotal: 'Subtotal',
+      checkout: 'Checkout',
+      emptyTitle: 'Your cart is empty',
+      emptyText: 'Add products with “Add to cart” and they wait for you here.',
+      continueShopping: 'Continue shopping',
+    },
     footer: {
       pages: 'Shop pages',
       social: '{{shop}} on social media',

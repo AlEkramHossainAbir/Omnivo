@@ -1,0 +1,20 @@
+---
+// CLAUDE.md → Storefront → Load More, as a link: the page's list continues on its category page
+// (26d gives that page the button's "Loading" state). Shared by the home page and the product page
+// since step 26b.
+interface Props {
+  href: string;
+  label: string;
+}
+
+const { href, label } = Astro.props;
+---
+
+<div class="mt-4 flex justify-center pt-2 pb-6 md:mt-12 md:p-0">
+  <a
+    href={href}
+    class="flex h-[38px] items-center rounded-lg bg-card px-4 font-medium transition-colors duration-150 hover:bg-cream"
+  >
+    {label}
+  </a>
+</div>
