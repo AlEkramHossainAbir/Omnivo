@@ -3,6 +3,7 @@ import {
   BalanceScaleIcon,
   Book02Icon,
   BookOpen02Icon,
+  CalendarClockIcon,
   CalendarLock01Icon,
   Cashier02Icon,
   CashierIcon,
@@ -36,6 +37,7 @@ import {
   Notebook02Icon,
   NoteRemoveIcon,
   PackageIcon,
+  PackageMovingIcon,
   PackageOutOfStockIcon,
   PackageReceiveIcon,
   PackageRemoveIcon,
@@ -52,6 +54,7 @@ import {
   Store01Icon,
   TableIcon,
   Tag01Icon,
+  TaxesIcon,
   TaskAdd01Icon,
   TaskEdit01Icon,
   TextIcon,
@@ -352,6 +355,8 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
   const canAccountingReports = can('accounting.report.read');
   const canSalesReports = can('sales.report.read');
   const canPurchaseReports = can('purchase.report.read');
+  // Step 21c: the stock movement report has the stock reports' permission
+  const canInventoryReports = can('inventory.report.read');
   // Step 17a: how many documents wait for this person's decision, polled like the bell's badge
   const { data: waiting = 0 } = useQuery(waitingCountQuery(me?.tenant.id ?? ''));
   // Step 18b: sign out at once with nothing on the device, else ask. Step 20b (decision 6): an
@@ -430,7 +435,10 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
               Step 21b: each link by its own permission, and the group shows when any link does.
               A person with only the sales reports sees "Sales report", "Receivables aging" and
               Exports (the list shows the kinds they can read). */}
-          {(canAccountingReports || canSalesReports || canPurchaseReports) && (
+          {(canAccountingReports ||
+            canSalesReports ||
+            canPurchaseReports ||
+            canInventoryReports) && (
             <NavGroup label={t('nav.reports')}>
               {canAccountingReports && (
                 <>
@@ -442,6 +450,10 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
                   </NavLink>
                   <NavLink to="/reports/balance-sheet" icon={PieChartIcon}>
                     {t('nav.balanceSheet')}
+                  </NavLink>
+                  {/* Step 21c: VAT belongs to the accounts (decision 11) */}
+                  <NavLink to="/reports/vat" icon={TaxesIcon}>
+                    {t('nav.vatReport')}
                   </NavLink>
                 </>
               )}
@@ -465,9 +477,20 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
                   </NavLink>
                 </>
               )}
+              {canInventoryReports && (
+                <NavLink to="/reports/stock-movement" icon={PackageMovingIcon}>
+                  {t('nav.stockMovement')}
+                </NavLink>
+              )}
               <NavLink to="/reports/exports" icon={FileDownloadIcon}>
                 {t('nav.exports')}
               </NavLink>
+              {/* Step 21c: the scheduled emails, for the people who may make them */}
+              {can('core.report.schedule') && (
+                <NavLink to="/reports/schedules" icon={CalendarClockIcon}>
+                  {t('nav.reportSchedules')}
+                </NavLink>
+              )}
             </NavGroup>
           )}
           {/* Sales (step 15a): everyone reads the customers and the price lists — every sales

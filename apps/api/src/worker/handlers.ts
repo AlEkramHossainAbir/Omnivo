@@ -11,6 +11,8 @@ import { ShiftVarianceHandler } from '../pos/shift-variance.handler.js';
 import { SoldShortHandler } from '../pos/sold-short.handler.js';
 import { ProductImportHandler } from '../products/import.handler.js';
 import { ReportExportHandler } from '../reports/export.handler.js';
+import { ReportScheduleEmailHandler } from '../reports/report-schedule-email.handler.js';
+import { ReportScheduleRunHandler } from '../reports/report-schedule-run.handler.js';
 import { CatalogHandler } from '../setup/catalog.handler.js';
 import { ChartHandler } from '../setup/chart.handler.js';
 import { ProvisioningHandler } from '../setup/provisioning.handler.js';
@@ -44,6 +46,8 @@ export class EventHandlers {
     documentEmail: DocumentEmailHandler,
     soldShort: SoldShortHandler,
     shiftVariance: ShiftVarianceHandler,
+    scheduleRun: ReportScheduleRunHandler,
+    scheduleEmail: ReportScheduleEmailHandler,
   ) {
     this.byType = {
       'workspace.created': welcome,
@@ -61,6 +65,8 @@ export class EventHandlers {
       'document.email_requested': documentEmail,
       'pos.sold_short': soldShort,
       'pos.shift_variance': shiftVariance,
+      'report.schedule_due': scheduleRun,
+      'report.schedule_email': scheduleEmail,
     };
   }
 

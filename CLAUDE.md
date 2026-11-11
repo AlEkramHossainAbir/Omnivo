@@ -348,6 +348,35 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   the day and the filters, the party's name as the title, the same KPI strip and books' line as its row, then its open
   documents, oldest due date first and not sortable (number as a link, date, due date, total, still open, days overdue,
   age; a bill has "Their bill PSM/2026/0412" under the number), and its advances.
+- **VAT report (`/reports/vat`):** the page header with the Export menu; period (last month at first, the month
+  presets and dates) and branch; the KPI strip: Output VAT ("৳75 taken off by credit notes and POS returns" under it),
+  Input VAT ("taken off by debit notes", and "৳450 on bills with no Mushak 6.3 number"), Net VAT without its sign and
+  in words ("To pay", "To carry forward", "Nothing to pay"); the books' line for each side; the rates as a statement
+  table in a card (a sticky first column, "VAT 15% · 15%" with its kind under it, zero-rated and exempt each their
+  own row, the total in `<tfoot>`); then a section header "Documents" with an Output / Input segmented control and a
+  data table in the register's order, not sortable (number as a link with its kind, date, customer or supplier, BIN,
+  and on Input the Mushak 6.3 number or a `warn` "No Mushak 6.3" pill, before VAT, VAT; a credit or debit note is a
+  minus). Every amount on the page with paisa, because it fills in a return. Online only.
+- **Stock movement (`/reports/stock-movement`):** the page header with the Export menu; period (this month at first),
+  warehouse, category, "Only what moved / Also what did not move"; the KPI strip (Products, with "In each product's
+  base unit, so the quantities have no total", Opening value, Closing value); a data table sorted on the server and
+  paged, one row per variant in its base unit: product (a link to its stock card), Opening, Purchased, Sold,
+  Transfers, Adjusted, Closing, then Opening value and Closing value. A zero is a dash; a minus in Transfers is stock
+  still on the way, and a line under the table says so. Without `inventory.stock.value` the value cells and KPIs are
+  left out. Online only.
+- **Scheduled emails (`/reports/schedules`, `core.report.schedule`):** the page header with no New button (a schedule
+  is made from a report's Export menu, "Email on a schedule"), "5 of 20 scheduled emails", and a data table (cards on a
+  phone), not sortable: the report (a `brand-soft` icon tile, its name and its filter lines in 12px `ink-3`), when
+  ("Every Sunday at 08:00"), sent to ("3 people", and "1 person gets nothing" in `warn`), the next email and "Last sent
+  …" or "Not sent yet", the status (Active `good` `CheckmarkCircle02`, or Paused neutral `PauseCircle` with its
+  reason under it) and a row menu: Change, Pause or Resume, Delete (asks first). Only the schedules of reports the
+  person may read. Empty state: "Open a report, like the sales report, choose Export, then Email on a schedule."
+- **Schedule dialog:** the dialog, "Email the VAT report on a schedule" or "Change the VAT report email". File (Excel
+  or PDF); How often, then Day (weekly) or Day of the month (1–28, monthly), and Time (whole hours, in the workspace's
+  time zone), with a hint of what each email holds ("Each email has the 7 days up to yesterday."); the filters as
+  lines on `subtle`, never boxes (they never change once saved); "Send to", a checkbox group of the members who may
+  read the report (up to 10). On a change, someone who may not read it any more is listed unticked and disabled with
+  "Gets nothing: may not read this report now", and saving drops them. "Schedule email" / "Save changes".
 - **Section header:** a 15px/600 title plus a 13px `ink-3` subtitle with no card and no
   padding, used above content that is already a card (such as a data table).
 - **Empty state:** centered, a 40px `brand-soft`/`brand` icon tile (radius 8px), a

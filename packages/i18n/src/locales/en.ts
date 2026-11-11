@@ -89,7 +89,12 @@ export const en = {
     purchaseReport: 'Purchase report',
     arAging: 'Receivables aging',
     apAging: 'Payables aging',
+    // Step 21c: the VAT report by the accounts' report permission, the stock movement by the
+    // stock reports' one; the scheduled emails by core.report.schedule
+    vatReport: 'VAT report',
+    stockMovement: 'Stock movement',
     exports: 'Exports',
+    reportSchedules: 'Scheduled emails',
     inventory: 'Inventory',
     products: 'Products',
     categories: 'Categories',
@@ -1110,6 +1115,8 @@ export const en = {
       purchase_report: 'Purchase report',
       ar_aging: 'Receivables aging',
       ap_aging: 'Payables aging',
+      vat_report: 'VAT report',
+      stock_movement: 'Stock movement',
     },
     formats: { xlsx: 'Excel', pdf: 'PDF' },
     sections: {
@@ -1166,6 +1173,8 @@ export const en = {
       xlsx: 'Excel (.xlsx)',
       pdf: 'PDF',
       started: "Preparing the {{format}} file. The bell tells you when it's ready.",
+      // Step 21c: the menu's last item. It opens the schedule dialog with the page's filters.
+      schedule: 'Email on a schedule',
     },
     trialBalance: {
       title: 'Trial balance',
@@ -1401,6 +1410,119 @@ export const en = {
       overdueEmptyTitle: 'Nothing overdue on this day',
       overdueEmptyBody: 'Every open bill is still within its terms. Show everyone to see them.',
     },
+    // Step 21c. The VAT report also uses presets, branch, allBranches, range, booksAgree,
+    // booksOutBy, needsConnection, loadFailedTitle, loadFailedBody and export above.
+    vat: {
+      title: 'VAT report',
+      description: 'The VAT charged and paid in a period, by rate, to prepare the monthly return',
+      // It helps with Mushak 9.1, which comes in Phase 2; it is not the return
+      notReturn: 'Use it to fill in Mushak 9.1. It is not the return itself.',
+      kpis: {
+        output: 'Output VAT',
+        input: 'Input VAT',
+        net: 'Net VAT',
+      },
+      kpiHints: {
+        // amount = what came off, already left out of the VAT above it
+        outputReturned: '{{amount}} taken off by credit notes and POS returns',
+        inputReturned: '{{amount}} taken off by debit notes',
+        // Decision 2: this VAT stays in the input VAT, as in the books; the line says which
+        // bills to check
+        withoutMushak: '{{amount}} on bills with no Mushak 6.3 number',
+        // Under the net VAT, which the strip shows without its sign
+        payable: 'To pay',
+        carryForward: 'To carry forward',
+        nothing: 'Nothing to pay',
+      },
+      // A net VAT below zero in the table: never a bare minus
+      carry: '{{amount}} to carry forward',
+      // As the VAT rates show everywhere: "VAT 15% · 15%"
+      rate: '{{name}} · {{percent}}%',
+      columns: {
+        rate: 'VAT rate',
+        outputNet: 'Sales before VAT',
+        outputVat: 'Output VAT',
+        inputNet: 'Purchases before VAT',
+        inputVat: 'Input VAT',
+        netVat: 'Net VAT',
+      },
+      // The books' line has one figure for each side, each with its own pill
+      inBooksOutput: 'Output VAT in the books: {{amount}}',
+      inBooksInput: 'Input VAT in the books: {{amount}}',
+      booksHint:
+        'The books count the output VAT and input VAT accounts. A journal entry written by hand on them makes the two differ.',
+      documents: {
+        title: 'Documents',
+        subtitle: 'Every posted document with VAT in these dates, oldest first',
+        sides: { output: 'Output', input: 'Input' },
+        // VAT_DOCUMENT_KINDS in the contract
+        kinds: {
+          invoice: 'Invoice',
+          pos_sale: 'POS sale',
+          credit_note: 'Credit note',
+          pos_return: 'POS return',
+          bill: 'Supplier bill',
+          debit_note: 'Debit note',
+        },
+        columns: {
+          number: 'Number',
+          date: 'Date',
+          customer: 'Customer',
+          supplier: 'Supplier',
+          bin: 'BIN',
+          mushak: 'Mushak number',
+          net: 'Before VAT',
+          vat: 'VAT',
+        },
+        walkIn: 'Walk-in customer',
+        // A bill without its Mushak 6.3 number: the input VAT to check
+        noMushak: 'No Mushak 6.3',
+        emptyOutput: 'No sales with VAT in these dates.',
+        emptyInput: 'No purchases with VAT in these dates.',
+      },
+      emptyTitle: 'No VAT in these dates',
+      emptyBody: 'Pick other dates, or post an invoice or a supplier bill with VAT.',
+    },
+    // Step 21c. Also uses presets, category, allCategories, categoryHint and the rest above.
+    // The words match the exported file's (apps/api/src/reports/export/copy.ts).
+    stockMovement: {
+      title: 'Stock movement',
+      description:
+        'What each product opened with, what came in and went out, and what it closed with',
+      warehouse: 'Warehouse',
+      allWarehouses: 'All warehouses',
+      show: 'Show',
+      shows: { moved: 'Only what moved', all: 'Also what did not move' },
+      kpis: {
+        variants: 'Products',
+        openingValue: 'Opening value',
+        closingValue: 'Closing value',
+      },
+      // Why the strip has no total quantity
+      kpiHints: {
+        variants: 'In each product’s base unit, so the quantities have no total',
+      },
+      columns: {
+        product: 'Product',
+        opening: 'Opening',
+        purchased: 'Purchased',
+        sold: 'Sold',
+        transfers: 'Transfers',
+        adjusted: 'Adjusted',
+        closing: 'Closing',
+        openingValue: 'Opening value',
+        closingValue: 'Closing value',
+      },
+      // Under the table: where a return goes, and what a minus in Transfers means (decision 25)
+      returnsHint:
+        'A return comes off its own column: a sales return off Sold, a purchase return off Purchased.',
+      transfersHint:
+        'With every warehouse, a received transfer adds up to zero. A minus in Transfers is stock still on the way.',
+      openCard: 'Open the stock card of {{name}}',
+      emptyTitle: 'Nothing moved in these dates',
+      emptyBody: 'Pick other dates or filters, or show what did not move too.',
+      emptyAllBody: 'No product had stock or moved. Pick other dates or filters.',
+    },
   },
   exports: {
     title: 'Exports',
@@ -1421,6 +1543,112 @@ export const en = {
     emptyTitle: 'No exports yet',
     emptyBody: 'Open a report, like the trial balance, and choose Export. The file shows up here.',
     loadFailed: "Couldn't load your exports. Refresh the page to try again.",
+  },
+  // Step 21c: reports that go by email on a schedule. The dialog opens from a report's Export
+  // menu; the page lists the workspace's schedules.
+  reportSchedules: {
+    title: 'Scheduled emails',
+    description: 'Reports that go by email by themselves, with their own dates each time',
+    newTitle: 'Email the {{report}} on a schedule',
+    newDescription: 'Each person gets their own file, with what their role may see.',
+    editTitle: 'Change the {{report}} email',
+    format: 'File',
+    frequency: 'How often',
+    frequencies: { daily: 'Every day', weekly: 'Every week', monthly: 'Every month' },
+    // What each email covers (decision 8). The day it goes is never in it.
+    periods: {
+      daily: 'Each email has yesterday.',
+      weekly: 'Each email has the 7 days up to yesterday.',
+      monthly: 'Each email has the whole month before.',
+    },
+    // An aging or a balance sheet shows one day
+    asOfHint: 'The report shows the last day of that period.',
+    weekday: 'Day',
+    // 0 = Sunday in the contract; the page keeps the order in a list of these keys
+    weekdays: {
+      sunday: 'Sunday',
+      monday: 'Monday',
+      tuesday: 'Tuesday',
+      wednesday: 'Wednesday',
+      thursday: 'Thursday',
+      friday: 'Friday',
+      saturday: 'Saturday',
+    },
+    dayOfMonth: 'Day of the month',
+    dayOfMonthHint: 'Up to the 28th, so every month has it.',
+    hour: 'Time',
+    hourHint: 'In the workspace’s time zone, {{timeZone}}.',
+    recipients: 'Send to',
+    recipientsHint: 'Members who may read this report. Up to {{count}}.',
+    noCandidates: 'Nobody may read this report yet. Give a role its permission on the Roles page.',
+    filters: 'Filters',
+    // Decision 10: the filters are kept and never change
+    filtersHint:
+      'The filters on the page now go with every email. For other filters, make a new email from the report.',
+    noFilters: 'None',
+    fixedHint:
+      'The report and its filters stay as they were made. For others, make a new email from the report.',
+    create: 'Schedule email',
+    save: 'Save changes',
+    // date = the first run, as a date and time in the workspace's time zone
+    created: 'The {{report}} is scheduled. The first email goes on {{date}}.',
+    updated: 'The {{report}} email is changed',
+    // In the list. time = "08:00"; weekday = one of the weekdays above
+    when: {
+      daily: 'Every day at {{time}}',
+      weekly: 'Every {{weekday}} at {{time}}',
+      monthly: 'Day {{day}} of every month at {{time}}',
+    },
+    columns: {
+      report: 'Report',
+      when: 'When',
+      recipients: 'Sent to',
+      nextRun: 'Next email',
+      status: 'Status',
+      // Screen readers only: the column of each row's menu
+      actions: 'Actions',
+    },
+    statuses: { active: 'Active', paused: 'Paused' },
+    // Under the Paused pill
+    pausedReasons: {
+      manual: 'Someone paused it. Resume it to send it again.',
+      no_recipients:
+        'Nobody on it may read the report any more. Add someone who may, then resume it.',
+    },
+    recipientCount_one: '{{count}} person',
+    recipientCount_other: '{{count}} people',
+    // Someone on the schedule who left, or lost the report's permission
+    cannotReceive: 'Gets nothing: may not read this report now',
+    cannotReceiveCount_one: '{{count}} person gets nothing',
+    cannotReceiveCount_other: '{{count}} people get nothing',
+    lastRun: 'Last sent {{date}}',
+    notSentYet: 'Not sent yet',
+    createdBy: 'Made by {{name}}',
+    // Decision 6: up to 20 in a workspace
+    count: '{{count}} of {{max}} scheduled emails',
+    actionsFor: 'Actions for {{report}}',
+    edit: 'Change',
+    pause: 'Pause',
+    resume: 'Resume',
+    delete: 'Delete',
+    paused: 'The {{report}} email is paused',
+    resumed: 'The {{report}} email is on again',
+    deleteTitle: 'Delete this scheduled email?',
+    deleteBody: 'Nobody gets it any more. Files already sent stay on each person’s Exports page.',
+    deleteConfirm: 'Delete schedule',
+    deleted: 'The {{report}} email is deleted',
+    // Under the report's name in the list (filterNames in the contract)
+    filterLines: {
+      branch: 'Branch: {{name}}',
+      warehouse: 'Warehouse: {{name}}',
+      group: 'Group: {{name}}',
+      category: 'Category: {{name}}',
+      // The sales and purchase reports' Group by; name = the group's word ("Customer")
+      groupBy: 'Group by: {{name}}',
+    },
+    emptyTitle: 'No scheduled emails yet',
+    emptyBody: 'Open a report, like the sales report, choose Export, then Email on a schedule.',
+    loadFailed: "Couldn't load the scheduled emails. Refresh the page to try again.",
   },
   products: {
     title: 'Products',
@@ -5512,6 +5740,7 @@ export const en = {
       settings: { manage: 'Edit company settings and numbering' },
       branch: { manage: 'Add, edit and archive branches' },
       audit: { read: 'See the audit log' },
+      report: { schedule: 'Email reports on a schedule' },
     },
     accounting: {
       account: { manage: 'Add, change, archive and delete accounts' },
@@ -5670,6 +5899,7 @@ export const en = {
       pos_cash_reason: 'POS cash reasons',
       pos_shift: 'POS shifts',
       pos_return: 'POS returns',
+      report_schedule: 'Scheduled emails',
     },
     columns: {
       when: 'When',
@@ -5986,6 +6216,14 @@ export const en = {
         amounts_differ: 'The device and the server worked out different money back',
         without_permission: 'Took goods back at a POS counter after losing the permission',
       },
+      // Step 21c. paused with no actor: the worker found that nobody on it may read the report
+      report_schedule: {
+        created: 'Scheduled a report email',
+        updated: 'Changed a scheduled report email',
+        paused: 'Paused a scheduled report email',
+        resumed: 'Resumed a scheduled report email',
+        deleted: 'Deleted a scheduled report email',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -6159,6 +6397,15 @@ export const en = {
       returnedOn: 'Date on the device',
       sale: 'Sale',
       refunds: 'Paid back',
+      // Step 21c: a scheduled report email
+      report: 'Report',
+      format: 'File',
+      frequency: 'How often',
+      hour: 'Hour',
+      weekday: 'Day of the week',
+      dayOfMonth: 'Day of the month',
+      recipients: 'Sent to',
+      pausedReason: 'Why it stopped',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -6233,6 +6480,14 @@ export const en = {
       report: {
         ready: '{{report}} ({{format}}) is ready to download.',
         failed: "{{report}} ({{format}}) couldn't be made. Try the export again.",
+        // Step 21c: to the person who made the schedule (decision 12). {{count}} is a number of
+        // people, so no plural keys: the sentence reads right for 1 and for many
+        schedule_skipped:
+          '{{report}} went out, but not to everyone: some may no longer read it. People left out: {{count}}.',
+        schedule_paused:
+          '{{report}} stopped going out: nobody on it may read it any more. Add someone who may, then resume it.',
+        schedule_failed:
+          "The scheduled {{report}} ({{format}}) couldn't be made or sent to one person. The next email tries again.",
       },
       import: {
         done: '{{file}}: {{count}} products imported.',
@@ -6362,6 +6617,14 @@ export const en = {
     report_range_invalid: 'Pick an end date on or after the start date.',
     report_compare_incomplete: 'Pick both dates of the comparison, or neither.',
     report_sort_invalid: 'Only the report by product sorts by quantity. Pick another column.',
+    // Step 21c: scheduled report emails
+    report_schedule_limit:
+      'A workspace has up to 20 scheduled emails. Delete one you no longer need, then try again.',
+    report_schedule_recipients_needed: 'Pick at least one person to send it to.',
+    report_schedule_recipients_too_many: 'Pick up to 10 people. Make a second email for the rest.',
+    report_schedule_recipient_invalid: 'Pick only members who may read this report.',
+    report_schedule_no_recipients:
+      'Nobody on this email may read the report now. Add someone who may, then resume it.',
     year_end_invalid: 'Pick the last day of a fiscal year.',
     year_not_ended: "This year hasn't ended yet. Close it after its last day.",
     year_already_closed: 'This year is closed already. Reload to see it.',

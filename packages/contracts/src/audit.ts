@@ -246,6 +246,13 @@ export const AUDIT_ACTIONS = [
   'pos_return.over_returned',
   'pos_return.amounts_differ',
   'pos_return.without_permission',
+  // Step 21c: a report sent by email on a schedule. paused with no actor: the worker found that
+  // nobody on it may read the report any more (the changes say why).
+  'report_schedule.created',
+  'report_schedule.updated',
+  'report_schedule.paused',
+  'report_schedule.resumed',
+  'report_schedule.deleted',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -303,6 +310,7 @@ export const AUDIT_ENTITY_TYPES = [
   'pos_cash_reason',
   'pos_shift',
   'pos_return',
+  'report_schedule',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

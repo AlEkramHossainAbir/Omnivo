@@ -5,6 +5,9 @@ import {
   type PurchaseReportFilter,
   routes,
   type SalesReportFilter,
+  type StockMovementFilter,
+  type VatReportFilter,
+  type VatReportSide,
 } from '@omnivo/contracts';
 import type { SortingState } from '@omnivo/ui';
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
@@ -67,6 +70,44 @@ export function apAgingQuery(tenantId: string, filter: ApAgingFilter) {
     queryKey: ['journal', tenantId, 'ap-aging', filter],
     queryFn: ({ pageParam }: { pageParam: string | null }) =>
       call(routes.aging.payables, {
+        query: { ...filter, limit: PAGE, ...(pageParam !== null && { cursor: pageParam }) },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// Step 21c: the VAT report's summary (one answer: a few rates) and its documents, one side at a
+// time, paged. Under 'journal' like the rest: posting an invoice or a bill moves the VAT.
+export function vatReportQuery(tenantId: string, filter: VatReportFilter) {
+  return queryOptions({
+    queryKey: ['journal', tenantId, 'vat-report', filter],
+    queryFn: () => call(routes.vatReport.summary, { query: filter }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function vatDocumentsQuery(tenantId: string, filter: VatReportFilter, side: VatReportSide) {
+  return infiniteQueryOptions({
+    queryKey: ['journal', tenantId, 'vat-report', 'documents', side, filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.vatReport.documents, {
+        query: { ...filter, side, limit: PAGE, ...(pageParam !== null && { cursor: pageParam }) },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    placeholderData: keepPreviousData,
+  });
+}
+
+// Step 21c: the stock movement report. Every stock document writes a journal entry (step 14), so
+// the 'journal' prefix refreshes it after a delivery, a receipt or an adjustment too.
+export function stockMovementQuery(tenantId: string, filter: StockMovementFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['journal', tenantId, 'stock-movement', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.stockMovementReport.report, {
         query: { ...filter, limit: PAGE, ...(pageParam !== null && { cursor: pageParam }) },
       }),
     initialPageParam: null,

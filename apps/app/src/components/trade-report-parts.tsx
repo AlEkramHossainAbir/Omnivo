@@ -22,11 +22,15 @@ export function BooksLine({
   report,
   books,
   noBooks,
+  inBooks,
 }: {
   // What the report adds up to, in the same sense as the books (net sales, or the balance)
   report: string;
   books: string | null;
   noBooks: string;
+  // Step 21c: the words beside the pill. The VAT page has a line per side, each with its own words
+  // and with paisa; the 21b reports keep "In the books: ৳39,19,000".
+  inBooks?: ((books: string) => string) | undefined;
 }) {
   const { t, format } = useLocale();
   if (books === null) {
@@ -56,7 +60,7 @@ export function BooksLine({
         </Pill>
       )}
       <span className="text-label font-normal text-ink-3 tabular-nums">
-        {t('reports.inBooks', { amount: format.money(books) })}
+        {inBooks ? inBooks(books) : t('reports.inBooks', { amount: format.money(books) })}
       </span>
     </div>
   );

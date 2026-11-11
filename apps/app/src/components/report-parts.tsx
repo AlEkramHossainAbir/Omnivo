@@ -3,6 +3,7 @@ import {
   ArrowDown01Icon,
   CheckmarkCircle02Icon,
   FileDownloadIcon,
+  MailSend01Icon,
   Pdf01Icon,
   Xls01Icon,
 } from '@hugeicons/core-free-icons';
@@ -22,6 +23,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Field,
   Pill,
@@ -30,13 +32,15 @@ import {
 } from '@omnivo/ui';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { type ReactNode, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useState } from 'react';
 
 import { call } from '../lib/api';
 import { balanceSide } from '../lib/journal';
+import { useCan } from '../lib/permissions';
 import { type DateRange, PERIOD_PRESETS, type PeriodPreset, presetRange } from '../lib/reports';
 import { useSession } from '../lib/session-store';
 import { failureOf } from './journal-parts';
+import type { ScheduleFilterNames } from './report-schedule-dialog';
 import { useAmount, useReportCalendar } from './report-hooks';
 
 // Step 15c: the two hooks live in report-hooks.ts; the report pages still import them from here
@@ -122,12 +126,37 @@ export function PeriodFields({
   );
 }
 
+// Step 21c: a branch as the report pages' selects name it ("DHK · Dhaka HQ"), for the schedule
+// dialog's lines. undefined when no branch is chosen ('' = every branch).
+export function branchName(
+  branches: readonly { id: string; code: string; name: string }[] | undefined,
+  id: string,
+): string | undefined {
+  const branch = branches?.find((item) => item.id === id);
+  return branch && `${branch.code} · ${branch.name}`;
+}
+
+// Step 21c: the schedule dialog is its own chunk, loaded the first time someone opens it
+const ReportScheduleDialog = lazy(async () => ({
+  default: (await import('./report-schedule-dialog')).ReportScheduleDialog,
+}));
+
 // Export → Excel or PDF. The click only asks; the worker writes the file and the bell says when
-// it is ready, so a large report never holds the page.
-export function ExportMenu({ request }: { request: (format: ExportFormat) => ReportExportInput }) {
+// it is ready, so a large report never holds the page. Step 21c: then "Email on a schedule", for
+// people with core.report.schedule. `names` are the names of the page's chosen filters, for the
+// dialog's lines (the query has only their ids).
+export function ExportMenu({
+  request,
+  names = {},
+}: {
+  request: (format: ExportFormat) => ReportExportInput;
+  names?: ScheduleFilterNames;
+}) {
   const { t, errorText } = useLocale();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
   const queryClient = useQueryClient();
+  const can = useCan();
+  const [scheduling, setScheduling] = useState(false);
   const create = useMutation({
     mutationFn: (format: ExportFormat) =>
       call(routes.reportExports.create, { body: request(format) }),
@@ -140,38 +169,66 @@ export function ExportMenu({ request }: { request: (format: ExportFormat) => Rep
     },
   });
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="secondary" disabled={create.isPending}>
-          <HugeiconsIcon icon={FileDownloadIcon} size={17} strokeWidth={1.5} />
-          {t('reports.export.button')}
-          <HugeiconsIcon
-            icon={ArrowDown01Icon}
-            size={16}
-            strokeWidth={1.5}
-            className="text-ink-3"
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="secondary" disabled={create.isPending}>
+            <HugeiconsIcon icon={FileDownloadIcon} size={17} strokeWidth={1.5} />
+            {t('reports.export.button')}
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              size={16}
+              strokeWidth={1.5}
+              className="text-ink-3"
+            />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem
+            icon={Xls01Icon}
+            onSelect={() => {
+              create.mutate('xlsx');
+            }}
+          >
+            {t('reports.export.xlsx')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            icon={Pdf01Icon}
+            onSelect={() => {
+              create.mutate('pdf');
+            }}
+          >
+            {t('reports.export.pdf')}
+          </DropdownMenuItem>
+          {can('core.report.schedule') && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                icon={MailSend01Icon}
+                onSelect={() => {
+                  setScheduling(true);
+                }}
+              >
+                {t('reports.export.schedule')}
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {/* Outside the menu, like the device lists' dialogs: the menu closes first and gives the
+          focus back, then the dialog takes it */}
+      {scheduling && (
+        <Suspense fallback={null}>
+          <ReportScheduleDialog
+            // The export the page asks for now; the dialog sends its own format instead
+            target={{ kind: 'new', request: request('xlsx'), names }}
+            onClose={() => {
+              setScheduling(false);
+            }}
           />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          icon={Xls01Icon}
-          onSelect={() => {
-            create.mutate('xlsx');
-          }}
-        >
-          {t('reports.export.xlsx')}
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          icon={Pdf01Icon}
-          onSelect={() => {
-            create.mutate('pdf');
-          }}
-        >
-          {t('reports.export.pdf')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </Suspense>
+      )}
+    </>
   );
 }
 

@@ -7,7 +7,10 @@ import {
   type ReportSection,
   type SalesReport,
   type SalesReportRow,
+  type StockMovementReport,
+  type StockMovementRow,
   type TrialBalance,
+  type VatReport,
 } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
@@ -21,6 +24,7 @@ const context: DocumentContext = {
   branchName: null,
   groupName: null,
   categoryName: null,
+  warehouseName: null,
   madeAt: new Date('2026-10-01T08:05:00Z'),
 };
 
@@ -419,5 +423,229 @@ describe('the document of an aging', () => {
     ]);
     expect(doc.lines.some((line) => line.startsWith('In the books'))).toBe(false);
     expect(fileStem(report)).toBe('payables-aging-2026-11-05');
+  });
+});
+
+describe('the document of a VAT report', () => {
+  const rate = (name: string, kind: 'standard' | 'exempt', percent: string) => ({
+    key: `${id(1)}:${kind}:${percent}`,
+    taxRateId: id(1),
+    name,
+    kind,
+    rate: percent,
+  });
+  const data: VatReport = {
+    rows: [
+      {
+        ...rate('VAT 15%', 'standard', '15.00'),
+        outputNet: '4704.0000',
+        outputVat: '705.6000',
+        inputNet: '2430.0000',
+        inputVat: '364.5000',
+        netVat: '341.1000',
+      },
+      {
+        ...rate('Exempt', 'exempt', '0.00'),
+        outputNet: '0.0000',
+        outputVat: '0.0000',
+        inputNet: '11000.0000',
+        inputVat: '0.0000',
+        netVat: '0.0000',
+      },
+    ],
+    totals: {
+      outputNet: '4704.0000',
+      outputVat: '705.6000',
+      outputVatReturned: '49.6500',
+      inputNet: '13430.0000',
+      inputVat: '364.5000',
+      inputVatReturned: '55.5000',
+      inputVatWithoutMushak: '420.0000',
+      netVat: '341.1000',
+    },
+    books: { output: '705.6000', input: '364.5000' },
+  };
+  const query = { from: '2026-10-01', to: '2026-10-31' };
+
+  it("has a row per rate with the rate's name and percent, the total, and the books", () => {
+    const doc = buildDocument(
+      { report: 'vat_report', query, data },
+      { ...context, branchName: 'Agrabad depot' },
+    );
+    expect(doc.landscape).toBe(true);
+    expect(doc.columns.map((column) => column.header)).toEqual([
+      'VAT rate',
+      'Sales before VAT',
+      'Output VAT',
+      'Purchases before VAT',
+      'Input VAT',
+      'Net VAT',
+    ]);
+    expect(doc.rows.map((row) => row.cells.map(read))).toEqual([
+      ['VAT 15% · 15%', '4704.0000', '705.6000', '2430.0000', '364.5000', '341.1000'],
+      ['Exempt · 0%', '0.0000', '0.0000', '11000.0000', '0.0000', '0.0000'],
+      ['Total', '4704.0000', '705.6000', '13430.0000', '364.5000', '341.1000'],
+    ]);
+    expect(doc.rows.at(-1)?.style).toBe('grand');
+    expect(doc.lines).toEqual([
+      '1 Oct 2026 – 31 Oct 2026',
+      'Branch: Agrabad depot',
+      'In the books: output VAT 705.60, input VAT 364.50',
+      'Taken off: 49.65 output VAT (credit notes and POS returns), 55.50 input VAT (debit notes)',
+      'Input VAT on bills with no Mushak 6.3: 420.00',
+      'Amounts in BDT',
+      'Made on 1 Oct 2026, 14:05',
+    ]);
+    expect(fileStem({ report: 'vat_report', query, data })).toBe('vat-2026-10-01-to-2026-10-31');
+  });
+
+  it('leaves out the lines of zeros, and writes Bangla digits in Bangla', () => {
+    const quiet: VatReport = {
+      ...data,
+      totals: {
+        ...data.totals,
+        outputVatReturned: '0.0000',
+        inputVatReturned: '0.0000',
+        inputVatWithoutMushak: '0.0000',
+      },
+    };
+    const doc = buildDocument(
+      { report: 'vat_report', query, data: quiet },
+      { ...context, language: 'bn' },
+    );
+    // The dates, the books, then the currency and the time: no "taken off", no "no 6.3"
+    expect(doc.lines).toHaveLength(4);
+    expect(doc.lines[1]).toBe('হিসাবের খাতায়: আউটপুট VAT ৭০৫.৬০, ইনপুট VAT ৩৬৪.৫০');
+    // The rate's own name stays as the workspace wrote it; the percent is in Bangla digits
+    expect(doc.rows[0]?.cells.map(read)[0]).toBe('VAT 15% · ১৫%');
+  });
+});
+
+describe('the document of a stock movement report', () => {
+  const row = (
+    n: number,
+    name: string,
+    unit: { code: string; decimals: number },
+    numbers: [string, string, string, string, string, string],
+    options: string[] = [],
+  ): StockMovementRow => ({
+    variantId: id(n),
+    productId: id(100 + n),
+    productCode: `P-${String(n)}`,
+    productName: name,
+    optionValues: options,
+    sku: `SKU-${String(n)}`,
+    baseUnitId: id(200 + n),
+    baseUnit: unit,
+    opening: numbers[0],
+    purchased: numbers[1],
+    sold: numbers[2],
+    transfers: numbers[3],
+    adjusted: numbers[4],
+    closing: numbers[5],
+    openingValue: '1500.0000',
+    closingValue: '1250.0000',
+  });
+  const data: StockMovementReport = {
+    items: [
+      row(
+        1,
+        'Napa 500mg',
+        { code: 'pcs', decimals: 0 },
+        ['1200.0000', '500.0000', '440.0000', '-10.0000', '0.0000', '1250.0000'],
+        ['Strip'],
+      ),
+      row(2, 'Gauze roll', { code: 'm', decimals: 2 }, [
+        '12.5000',
+        '0.0000',
+        '2.7400',
+        '0.0000',
+        '-0.5000',
+        '9.2600',
+      ]),
+    ],
+    nextCursor: null,
+    withValue: true,
+    totals: { variants: 2, openingValue: '3000.0000', closingValue: '2500.0000' },
+  };
+  const query = {
+    from: '2026-10-01',
+    to: '2026-10-31',
+    show: 'all',
+    sort: 'name',
+  } as const;
+
+  it('writes each quantity with its own unit, and adds up only the values', () => {
+    const doc = buildDocument(
+      { report: 'stock_movement', query, data },
+      { ...context, warehouseName: 'Agrabad depot', categoryName: 'Medicines' },
+    );
+    expect(doc.landscape).toBe(true);
+    expect(doc.columns).toHaveLength(10);
+    expect(doc.rows.map((item) => item.cells.map(read))).toEqual([
+      [
+        'Napa 500mg (Strip)',
+        'SKU-1',
+        '1,200 pcs',
+        '500 pcs',
+        '440 pcs',
+        '-10 pcs',
+        '0 pcs',
+        '1,250 pcs',
+        '1500.0000',
+        '1250.0000',
+      ],
+      [
+        'Gauze roll',
+        'SKU-2',
+        '12.50 m',
+        '0.00 m',
+        '2.74 m',
+        '0.00 m',
+        '-0.50 m',
+        '9.26 m',
+        '1500.0000',
+        '1250.0000',
+      ],
+      // Pieces and metres never add up: the total row has the values only
+      ['Total', '', '', '', '', '', '', '', '3000.0000', '2500.0000'],
+    ]);
+    expect(doc.lines.slice(0, 4)).toEqual([
+      '1 Oct 2026 – 31 Oct 2026',
+      'Warehouse: Agrabad depot',
+      'Category: Medicines',
+      'Also the products that did not move',
+    ]);
+    expect(fileStem({ report: 'stock_movement', query, data })).toBe(
+      'stock-movement-2026-10-01-to-2026-10-31',
+    );
+  });
+
+  it('has no value columns and no total row for someone who may not see the value', () => {
+    const doc = buildDocument(
+      {
+        report: 'stock_movement',
+        query: { ...query, show: 'moved' },
+        data: {
+          ...data,
+          withValue: false,
+          items: data.items.map((item) => ({ ...item, openingValue: null, closingValue: null })),
+          totals: { variants: 2, openingValue: null, closingValue: null },
+        },
+      },
+      context,
+    );
+    expect(doc.columns.map((column) => column.header)).toEqual([
+      'Product',
+      'SKU',
+      'Opening',
+      'Purchased',
+      'Sold',
+      'Transfers',
+      'Adjusted',
+      'Closing',
+    ]);
+    expect(doc.rows).toHaveLength(2);
+    expect(doc.lines[1]).toBe('Amounts in BDT');
   });
 });

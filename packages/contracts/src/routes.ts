@@ -16,7 +16,9 @@ import { memberRoutes } from './members.js';
 import { notificationRoutes } from './notifications.js';
 import { numberSeriesRoutes } from './numbering.js';
 import { meRoutes } from './preferences.js';
+import { reportScheduleRoutes } from './report-schedules.js';
 import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js';
+import { stockMovementReportRoutes } from './stock-movement-report.js';
 import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
@@ -59,6 +61,7 @@ import { supplierGroupRoutes, supplierRoutes } from './suppliers.js';
 import { syncRoutes } from './sync.js';
 import { taxRateRoutes } from './tax-rates.js';
 import { tradeReportRoutes } from './trade-reports.js';
+import { vatReportRoutes } from './vat-report.js';
 import { unitRoutes } from './units.js';
 import { warehouseRoutes } from './warehouses.js';
 
@@ -100,6 +103,9 @@ export const routes = {
   dashboard: dashboardRoutes,
   tradeReports: tradeReportRoutes,
   aging: agingRoutes,
+  vatReport: vatReportRoutes,
+  stockMovementReport: stockMovementReportRoutes,
+  reportSchedules: reportScheduleRoutes,
   units: unitRoutes,
   productCategories: productCategoryRoutes,
   customFields: customFieldRoutes,

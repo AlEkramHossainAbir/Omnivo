@@ -11,20 +11,29 @@ import {
   fiscalYearListSchema,
   fiscalYearOf,
   invoiceSchema,
+  memberPageSchema,
   productCategoryListSchema,
   productSchema,
   profitAndLossSchema,
   purchaseReportSchema,
   reportExportPageSchema,
+  type ReportSchedule,
+  reportScheduleCandidateListSchema,
+  reportScheduleListSchema,
+  reportScheduleSchema,
   salesReportSchema,
   setupSchema,
   shiftIsoDate,
+  stockMovementReportSchema,
   supplierGroupSchema,
   supplierSchema,
   taxRateListSchema,
   todayIn,
   trialBalanceSchema,
   unitListSchema,
+  vatDocumentPageSchema,
+  vatReportSchema,
+  warehouseListSchema,
 } from '@omnivo/contracts';
 import postgres from 'postgres';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -429,5 +438,198 @@ describe('trade reports and agings over HTTP', () => {
     expect(own.totals.balance).toBe('75000.0000');
     const ownPayables = await read(tenantB, agingReportSchema, `/reports/ap-aging?asOf=${today}`);
     expect(ownPayables.ledger).toBe('42000.0000');
+  });
+});
+
+// Step 21c: the VAT report reads B's documents' lines, the stock movement report B's movements and
+// balances, and the schedules are rows the worker reads across every workspace.
+describe('VAT, stock movement and report schedules over HTTP', () => {
+  let warehouseOfB: string;
+  let categoryOfB: string;
+  let ownerOfB: string;
+  let scheduleOfB: ReportSchedule;
+  const period = `from=${shiftIsoDate(today, -30)}&to=${today}`;
+
+  async function read<T>(who: SignedIn, schema: z.ZodType<T>, url: string): Promise<T> {
+    const res = await as(who, 'GET', url);
+    expect(res.statusCode, res.body).toBe(200);
+    return schema.parse(res.json());
+  }
+
+  async function created<T>(who: SignedIn, schema: z.ZodType<T>, url: string, body: object) {
+    const res = await as(who, 'POST', url, body);
+    expect(res.statusCode, res.body).toBe(201);
+    return schema.parse(res.json());
+  }
+
+  // B's stock: 5 insulin cool boxes in its main store, and a daily trial balance by email
+  beforeAll(async () => {
+    const pcs = unitListSchema
+      .parse((await as(tenantB, 'GET', '/units')).json())
+      .items.find((unit) => unit.code === 'pcs');
+    const [category] = productCategoryListSchema.parse(
+      (await as(tenantB, 'GET', '/product-categories')).json(),
+    ).items;
+    const [warehouse] = warehouseListSchema.parse(
+      (await as(tenantB, 'GET', '/warehouses')).json(),
+    ).items;
+    const [owner] = memberPageSchema.parse((await as(tenantB, 'GET', '/members')).json()).items;
+    if (!pcs || !category || !warehouse || !owner) throw new Error("B's setup is incomplete");
+    categoryOfB = category.id;
+    warehouseOfB = warehouse.id;
+    ownerOfB = owner.userId;
+    const coolBox = await created(tenantB, productSchema, '/products', {
+      code: '',
+      name: 'Insulin cool box',
+      type: 'goods',
+      categoryId: categoryOfB,
+      description: '',
+      baseUnitId: pcs.id,
+      salesUnitId: '',
+      purchaseUnitId: '',
+      tracking: 'none',
+      hasExpiry: false,
+      taxRateId: '',
+      options: [],
+      variants: [
+        { id: null, sku: '', optionValues: [], barcode: '', salePrice: '', archived: false },
+      ],
+      units: [],
+      customFields: { generic_name: 'Cool box' },
+    });
+    const stocked = await as(tenantB, 'POST', '/stock-adjustments', {
+      date: today,
+      warehouseId: warehouseOfB,
+      direction: 'in',
+      reason: 'opening',
+      note: '',
+      lines: [
+        {
+          variantId: coolBox.variants[0]?.id ?? '',
+          unitId: pcs.id,
+          quantity: '5',
+          batchId: '',
+          lotNumber: '',
+          expiresOn: '',
+          manufacturedOn: '',
+          serialNumbers: [],
+          unitCost: '1200',
+        },
+      ],
+      post: true,
+    });
+    expect(stocked.statusCode, stocked.body).toBe(201);
+    scheduleOfB = await created(tenantB, reportScheduleSchema, '/report-schedules', {
+      report: 'trial_balance',
+      format: 'pdf',
+      query: { from: today, to: today },
+      when: { frequency: 'daily', hour: 8 },
+      recipientIds: [ownerOfB],
+    });
+  }, 60_000);
+
+  it("adds none of B's VAT or stock into A's reports, whatever ids A's query names", async () => {
+    for (const filter of ['', `&branchId=${branchOfB}`]) {
+      const vat = await read(tenantA, vatReportSchema, `/reports/vat?${period}${filter}`);
+      expect(vat.rows, filter).toEqual([]);
+      expect(vat.totals.outputNet).toBe('0.0000');
+      expect(vat.totals.inputNet).toBe('0.0000');
+      // A's journal has sales, but no VAT
+      expect(vat.books).toEqual({ output: '0.0000', input: '0.0000' });
+      for (const side of ['output', 'input']) {
+        const documents = await read(
+          tenantA,
+          vatDocumentPageSchema,
+          `/reports/vat/documents?${period}${filter}&side=${side}`,
+        );
+        expect(documents.items, `${side}${filter}`).toEqual([]);
+      }
+    }
+    for (const filter of ['', `&warehouseId=${warehouseOfB}`, `&categoryId=${categoryOfB}`]) {
+      const stock = await read(
+        tenantA,
+        stockMovementReportSchema,
+        `/reports/stock-movement?${period}&show=all${filter}`,
+      );
+      expect(stock.items, filter).toEqual([]);
+      expect(stock.totals).toEqual({ variants: 0, openingValue: '0.0000', closingValue: '0.0000' });
+    }
+    // B sees its own, so the documents and the stock were really there
+    const ownVat = await read(tenantB, vatReportSchema, `/reports/vat?${period}`);
+    expect(ownVat.totals).toMatchObject({ outputNet: '75000.0000', inputNet: '42000.0000' });
+    const ownStock = await read(
+      tenantB,
+      stockMovementReportSchema,
+      `/reports/stock-movement?${period}`,
+    );
+    expect(ownStock.items.map((row) => [row.productName, row.closing, row.closingValue])).toEqual([
+      ['Insulin cool box', '5.0000', '6000.0000'],
+    ]);
+  });
+
+  it("never lists, changes or sends B's schedules, nor to B's people", async () => {
+    expect((await read(tenantA, reportScheduleListSchema, '/report-schedules')).items).toEqual([]);
+    for (const [method, url, body] of [
+      [
+        'PUT',
+        `/report-schedules/${scheduleOfB.id}`,
+        {
+          format: 'xlsx',
+          when: { frequency: 'daily', hour: 9 },
+          recipientIds: [ownerOfB],
+          version: scheduleOfB.version,
+        },
+      ],
+      ['POST', `/report-schedules/${scheduleOfB.id}/pause`, { version: scheduleOfB.version }],
+      ['POST', `/report-schedules/${scheduleOfB.id}/resume`, { version: scheduleOfB.version }],
+      ['DELETE', `/report-schedules/${scheduleOfB.id}`, undefined],
+    ] as const) {
+      const res = await app.inject({
+        method,
+        url,
+        headers: bearer(tenantA.accessToken),
+        ...(body && { payload: body }),
+      });
+      expect(res.statusCode, `${method} ${url}`).toBe(404);
+    }
+    // B's owner is not someone A may send to, and is not offered
+    const candidates = await read(
+      tenantA,
+      reportScheduleCandidateListSchema,
+      '/report-schedules/recipients?report=trial_balance',
+    );
+    expect(candidates.items.map((item) => item.userId)).not.toContain(ownerOfB);
+    const toB = await as(tenantA, 'POST', '/report-schedules', {
+      report: 'trial_balance',
+      format: 'pdf',
+      query: { from: today, to: today },
+      when: { frequency: 'daily', hour: 8 },
+      recipientIds: [ownerOfB],
+    });
+    expect(toB.statusCode).toBe(409);
+    // Still there, unchanged, for B
+    const own = await read(tenantB, reportScheduleListSchema, '/report-schedules');
+    expect(own.items.map((item) => [item.id, item.version, item.status])).toEqual([
+      [scheduleOfB.id, 1, 'active'],
+    ]);
+  });
+
+  it('lets the worker role read only which schedules are due, in every workspace', async () => {
+    // The sweep's connection (decision 37): no tenant is set, and it needs none for these columns
+    const sql = postgres(pg.workerUrl, { max: 1, onnotice: () => undefined });
+    try {
+      const due = await sql<{ id: string }[]>`
+        SELECT id, tenant_id, next_run_at FROM report_schedules WHERE id = ${scheduleOfB.id}`;
+      expect(due.map((row) => row.id)).toEqual([scheduleOfB.id]);
+      // Never what a schedule sends, or to whom
+      await expect(sql`SELECT filters FROM report_schedules`).rejects.toMatchObject({
+        code: '42501',
+      });
+      await expect(sql`SELECT user_id FROM report_schedule_recipients`).rejects.toMatchObject({
+        code: '42501',
+      });
+    } finally {
+      await sql.end();
+    }
   });
 });

@@ -16,6 +16,7 @@ const QUEUE_OF = {
   'workspace.created': 'email',
   'invitation.issued': 'email',
   'document.email_requested': 'email',
+  'report.schedule_email': 'email',
   'workspace.setup_requested': 'jobs',
   'member.joined': 'jobs',
   'workspace.chart_requested': 'jobs',
@@ -28,10 +29,15 @@ const QUEUE_OF = {
   'document.file_requested': 'jobs',
   'pos.sold_short': 'jobs',
   'pos.shift_variance': 'jobs',
+  'report.schedule_due': 'jobs',
 } satisfies Record<OutboxEventType, QueueName>;
 
 // The hourly maintenance job. Not an outbox event: no request asks for it, a scheduler adds it.
 export const OUTBOX_CLEANUP = 'outbox.cleanup';
+
+// Step 21c: every 5 minutes, look for the scheduled reports that are due (decision 9). Like the
+// cleanup, a scheduler adds it, not a request.
+export const REPORT_SCHEDULE_SWEEP = 'report-schedules.sweep';
 
 // What a job carries: the outbox row minus its bookkeeping. The job name is the event type.
 // Redis is data from outside this process, so the worker checks this shape before using it.
@@ -50,6 +56,7 @@ export function isOutboxEventType(value: string): value is OutboxEventType {
 type OutboxRow = typeof outboxEvents.$inferSelect;
 
 const HOUR_MS = 60 * 60 * 1000;
+const SWEEP_MS = 5 * 60 * 1000;
 const DAY_S = 24 * 60 * 60;
 
 @Injectable()
@@ -112,6 +119,16 @@ export class Queues implements OnApplicationShutdown {
       'outbox-cleanup',
       { every: HOUR_MS },
       { name: OUTBOX_CLEANUP },
+    );
+  }
+
+  // The same, for the report schedules' sweep. Every 5 minutes, so a schedule at 08:00 goes out by
+  // 08:05 (decision 13: whole hours only, so nothing promises a minute).
+  async scheduleReportSweep(): Promise<void> {
+    await this.queues.jobs.upsertJobScheduler(
+      'report-schedules-sweep',
+      { every: SWEEP_MS },
+      { name: REPORT_SCHEDULE_SWEEP },
     );
   }
 

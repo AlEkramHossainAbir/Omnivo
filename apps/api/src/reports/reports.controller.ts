@@ -6,12 +6,15 @@ import { FiscalYearsService } from './fiscal-years.service.js';
 import { ReportExportsService } from './report-exports.service.js';
 import { ReportsService } from './reports.service.js';
 import { TradeReportsService } from './trade-reports.service.js';
+import { VatStockReportsService } from './vat-stock-reports.service.js';
 
 type Reports = typeof routes.reports;
 type Trade = typeof routes.tradeReports;
 type Aging = typeof routes.aging;
 type Years = typeof routes.fiscalYears;
 type Exports = typeof routes.reportExports;
+type Vat = typeof routes.vatReport;
+type StockMovement = typeof routes.stockMovementReport;
 
 @Controller()
 export class ReportsController {
@@ -20,6 +23,7 @@ export class ReportsController {
     private readonly years: FiscalYearsService,
     private readonly exports: ReportExportsService,
     private readonly trade: TradeReportsService,
+    private readonly vatStock: VatStockReportsService,
   ) {}
 
   @Endpoint(routes.reports.trialBalance)
@@ -79,6 +83,23 @@ export class ReportsController {
     query,
   }: RouteInput<Aging['payablesOf']>): Promise<RouteResponse<Aging['payablesOf']>> {
     return this.trade.payablesOf(params.supplierId, query.asOf);
+  }
+
+  @Endpoint(routes.vatReport.summary)
+  vat({ query }: RouteInput<Vat['summary']>): Promise<RouteResponse<Vat['summary']>> {
+    return this.vatStock.vat(query);
+  }
+
+  @Endpoint(routes.vatReport.documents)
+  vatDocuments({ query }: RouteInput<Vat['documents']>): Promise<RouteResponse<Vat['documents']>> {
+    return this.vatStock.vatDocuments(query);
+  }
+
+  @Endpoint(routes.stockMovementReport.report)
+  stockMovement({
+    query,
+  }: RouteInput<StockMovement['report']>): Promise<RouteResponse<StockMovement['report']>> {
+    return this.vatStock.stockMovement(query);
   }
 
   @Endpoint(routes.fiscalYears.list)

@@ -4,10 +4,13 @@ import {
   arAgingFilterSchema,
   balanceSheetQuerySchema,
   type ExportFormat,
+  isStockValueSort,
   profitAndLossQuerySchema,
   purchaseReportFilterSchema,
   salesReportFilterSchema,
+  stockMovementFilterSchema,
   trialBalanceQuerySchema,
+  vatReportFilterSchema,
 } from '@omnivo/contracts';
 import {
   branches,
@@ -18,11 +21,17 @@ import {
   tenants,
   tenantSettings,
   users,
+  warehouses,
 } from '@omnivo/db';
 import { and, eq } from 'drizzle-orm';
 import type { z } from 'zod';
 
-import { type EventHandler, type OutboxEvent, PermanentJobError } from '../common/outbox/outbox.js';
+import {
+  emit,
+  type EventHandler,
+  type OutboxEvent,
+  PermanentJobError,
+} from '../common/outbox/outbox.js';
 import { getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
@@ -39,7 +48,10 @@ import {
 import { writePdf } from './export/pdf.js';
 import { writeXlsx } from './export/xlsx.js';
 import { balanceSheet, profitAndLoss, trialBalance } from './report-queries.js';
+import { notifyScheduleCreator } from './report-schedule-bells.js';
+import { stockMovementReport } from './stock-movement-queries.js';
 import { purchaseReport, salesReport } from './trade-report-queries.js';
+import { vatReport } from './vat-queries.js';
 
 const CONTENT_TYPES = {
   xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -96,6 +108,21 @@ async function reportData(tx: Transaction, row: ExportRow): Promise<ReportData> 
       const query = queryOf(apAgingFilterSchema, row);
       return { report: row.report, query, data: await payablesAging(tx, query, null) };
     }
+    // Step 21c: the VAT summary by rate, and every row of the stock movement report
+    case 'vat_report': {
+      const query = queryOf(vatReportFilterSchema, row);
+      return { report: row.report, query, data: await vatReport(tx, query) };
+    }
+    case 'stock_movement': {
+      const query = queryOf(stockMovementFilterSchema, row);
+      // As for the sales report's cost: the values as the person may see them now, and a value
+      // sort they lost falls back to the name (decision 24)
+      const withValue = await holdsPermission(tx, row.requestedBy, 'inventory.stock.value');
+      const sorted =
+        withValue || !isStockValueSort(query.sort) ? query : { ...query, sort: 'name' as const };
+      const data = await stockMovementReport(tx, sorted, { withValue, page: null });
+      return { report: row.report, query, data };
+    }
   }
 }
 
@@ -107,9 +134,11 @@ async function filterNames(tx: Transaction, report: ReportData) {
     branchId:
       report.report === 'profit_and_loss' ||
       report.report === 'sales_report' ||
-      report.report === 'purchase_report'
+      report.report === 'purchase_report' ||
+      report.report === 'vat_report'
         ? report.query.branchId
         : undefined,
+    warehouseId: report.report === 'stock_movement' ? report.query.warehouseId : undefined,
     customerGroupId:
       report.report === 'sales_report' || report.report === 'ar_aging'
         ? report.query.customerGroupId
@@ -119,11 +148,13 @@ async function filterNames(tx: Transaction, report: ReportData) {
         ? report.query.supplierGroupId
         : undefined,
     categoryId:
-      report.report === 'sales_report' || report.report === 'purchase_report'
+      report.report === 'sales_report' ||
+      report.report === 'purchase_report' ||
+      report.report === 'stock_movement'
         ? report.query.categoryId
         : undefined,
   };
-  const [[branch], [customerGroup], [supplierGroup], [category]] = await Promise.all([
+  const [[branch], [customerGroup], [supplierGroup], [category], [warehouse]] = await Promise.all([
     ids.branchId === undefined
       ? []
       : tx
@@ -154,11 +185,18 @@ async function filterNames(tx: Transaction, report: ReportData) {
           .where(
             and(eq(productCategories.tenantId, tenantId), eq(productCategories.id, ids.categoryId)),
           ),
+    ids.warehouseId === undefined
+      ? []
+      : tx
+          .select({ name: warehouses.name })
+          .from(warehouses)
+          .where(and(eq(warehouses.tenantId, tenantId), eq(warehouses.id, ids.warehouseId))),
   ]);
   return {
     branchName: branch?.name ?? null,
     groupName: customerGroup?.name ?? supplierGroup?.name ?? null,
     categoryName: category?.name ?? null,
+    warehouseName: warehouse?.name ?? null,
   };
 }
 
@@ -225,7 +263,9 @@ export class ReportExportHandler implements EventHandler<'report.export_requeste
     await this.storage.put(key, bytes, contentType);
 
     // 3) Mark it ready and tell the person. `status = 'pending'` in the WHERE: if two runs raced
-    //    this far, only one row update (and one notification) happens.
+    //    this far, only one row update (and one notification) happens. A scheduled report's file
+    //    goes by email instead (step 21c): the email job, in the same transaction as the mark, so
+    //    a file that is ready is always emailed, and only once.
     await this.withTenant(async (tx) => {
       const [done] = await tx
         .update(reportExports)
@@ -246,6 +286,11 @@ export class ReportExportHandler implements EventHandler<'report.export_requeste
         )
         .returning({ id: reportExports.id });
       if (!done) return;
+      const { scheduleId } = event.payload;
+      if (scheduleId !== undefined) {
+        await emit(tx, 'report.schedule_email', { exportId: row.id, scheduleId });
+        return;
+      }
       await notify(tx, {
         userId: row.requestedBy,
         type: 'report.ready',
@@ -275,10 +320,22 @@ export class ReportExportHandler implements EventHandler<'report.export_requeste
           format: reportExports.format,
         });
       if (!failed) return;
+      const params = { report: failed.report, format: failed.format };
+      // Nobody asked for a scheduled file: the person who made the schedule hears it (decision 32)
+      const { scheduleId } = event.payload;
+      if (scheduleId !== undefined) {
+        await notifyScheduleCreator(tx, {
+          scheduleId,
+          type: 'report.schedule_failed',
+          params,
+          eventId: event.id,
+        });
+        return;
+      }
       await notify(tx, {
         userId: failed.requestedBy,
         type: 'report.failed',
-        params: { report: failed.report, format: failed.format },
+        params,
         eventId: event.id,
       });
     });

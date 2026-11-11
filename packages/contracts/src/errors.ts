@@ -95,6 +95,12 @@ export const ERROR_CODES = [
   'report_compare_incomplete',
   // Step 21b: a sort the report's group has no column for (quantity outside the product group)
   'report_sort_invalid',
+  // Step 21c: scheduled report emails
+  'report_schedule_limit',
+  'report_schedule_recipients_needed',
+  'report_schedule_recipients_too_many',
+  'report_schedule_recipient_invalid',
+  'report_schedule_no_recipients',
   'year_end_invalid',
   'year_not_ended',
   'year_already_closed',

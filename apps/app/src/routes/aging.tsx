@@ -280,7 +280,16 @@ function AgingView({
     <PageHeader
       title={t(`reports.${namespace}.title`)}
       description={t(`reports.${namespace}.description`)}
-      actions={canRead && online && asOf !== '' && <ExportMenu request={exportRequest} />}
+      actions={
+        canRead &&
+        online &&
+        asOf !== '' && (
+          <ExportMenu
+            request={exportRequest}
+            names={{ group: groups.find((group) => group.id === groupId)?.name }}
+          />
+        )
+      }
     />
   );
   if (!canRead) {

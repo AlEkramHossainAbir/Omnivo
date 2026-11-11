@@ -18,8 +18,9 @@ export const outboxPayloadSchemas = {
   'member.joined': z.object({ membershipId: z.uuid(), inviterId: z.uuid().nullable() }),
   // Nothing to carry: the workspace is the event's tenant, and its business type is on its row
   'workspace.chart_requested': z.object({}),
-  // The report_exports row says which report, which dates and for whom
-  'report.export_requested': z.object({ exportId: z.uuid() }),
+  // The report_exports row says which report, which dates and for whom. scheduleId (step 21c): the
+  // file is for a scheduled report email, so it goes by email instead of the bell.
+  'report.export_requested': z.object({ exportId: z.uuid(), scheduleId: z.uuid().optional() }),
   // Like the chart's: the workspace and its business type say everything
   'workspace.catalog_requested': z.object({}),
   // The product_imports row says which file, and who uploaded it
@@ -45,6 +46,11 @@ export const outboxPayloadSchemas = {
   // Step 20b: a shift's closing count was further from the expected cash than its register's
   // limit. The shift's row has the numbers; the worker tells the managers.
   'pos.shift_variance': z.object({ shiftId: z.uuid() }),
+  // Step 21c: a scheduled report is due. runAt is the run it stands for: the period is worked out
+  // from its day, not from the moment the job happens to run.
+  'report.schedule_due': z.object({ scheduleId: z.uuid(), runAt: z.iso.datetime() }),
+  // Step 21c: a scheduled report's file is ready; email it to the person it was made for
+  'report.schedule_email': z.object({ exportId: z.uuid(), scheduleId: z.uuid() }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

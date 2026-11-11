@@ -93,6 +93,7 @@ describe('reportKindsFor', () => {
       'trial_balance',
       'profit_and_loss',
       'balance_sheet',
+      'vat_report',
     ]);
   });
 });
