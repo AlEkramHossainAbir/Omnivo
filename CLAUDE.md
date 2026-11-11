@@ -1154,7 +1154,8 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   at 12px `muted`. No blobs on the phone. It ends 24px above the page's bottom.
 - **Product page, top:** two cards 16px apart. Gallery (524×440, `card`, radius 16): the ribbon and badge as on
   the product card, the photo centered and `object-contain`. Under it, 16px down, four 119×92 thumbnails, 16px
-  apart, radius 16, with a 2px `card` border that turns `brand` on the one shown. Info card (740×548, `card-glass`, radius
+  apart, radius 16, with a 2px `card` border and no selected look (as in Figma; `aria-pressed` marks the one shown). Product
+  names (this title and the card's) use `text-wrap: wrap`, not the headings' balance, so they break where Figma does. Info card (740×548, `card-glass`, radius
   16, padding 32px 36px): the countdown row (`Clock01` 20px plus "01 : 12 : 10 : 32" 16px/600, both `promo`,
   12px apart; only when the listing has a `sale_until`), 24px down the name (`sf-title`, `brand`), 24px down the
   size chip (`card`, 1px `muted-line` border, radius 999, padding 8px 12px, 16px/600 `brand`), 36px down the

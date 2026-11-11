@@ -50,7 +50,9 @@ const first = images[0];
               data-thumb
               aria-label={t('shop.product.showPhoto', { index: index + 1, count: images.length })}
               aria-pressed={index === 0 ? 'true' : 'false'}
-              class="block aspect-[119/92] w-full overflow-hidden rounded-2xl border-2 border-card bg-card transition-colors duration-150 hover:border-rule aria-pressed:border-brand"
+              // Figma draws every thumbnail alike, with no selected look: the big photo shows which
+              // one is open, aria-pressed tells a screen reader, and the global focus ring the keyboard
+              class="block aspect-[119/92] w-full overflow-hidden rounded-2xl border-2 border-card bg-card"
             >
               {/* The button's label names it; the photo's own words are said once, on the big one */}
               <img

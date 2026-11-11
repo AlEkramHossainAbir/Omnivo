@@ -42,8 +42,10 @@ const button =
     </div>
   )}
 
-  {/* lg:max-w-72: Figma's title box is 288px, which breaks the name onto two lines */}
-  <h1 class="trim-text text-sf-title font-semibold lg:max-w-72">{product.name}</h1>
+  {/* lg:max-w-72: Figma's title box is 288px, which breaks the name onto two lines. text-wrap:
+      wrap, not the headings' balance: Figma fills the first line ("Himalaya Purifying Neem / Face
+      Wash 150ml"); balance would even the two lines out and move "Neem" down */}
+  <h1 class="trim-text text-sf-title font-semibold text-wrap lg:max-w-72">{product.name}</h1>
 
   {product.packSize !== '' && (
     // Not a button: a listing is one size (see "Not in this step"). The chip only shows it

@@ -97,11 +97,12 @@ const NEEM_DESCRIPTION = `<section>
 
 const neemProduct: Omit<ShopProduct, 'saleUntil'> = {
   ...neemListing,
+  // Figma's four thumbnails (37:3563 to 37:3569) are one photo, straight and tilted, twice
   images: [
     { url: `/mock/products/${NEEM_SLUG}.png`, alt: `${NEEM_NAME} 150ml, front` },
     { url: `/mock/products/${NEEM_SLUG}-2.png`, alt: `${NEEM_NAME}, tube tilted` },
-    { url: `/mock/products/${NEEM_SLUG}-3.png`, alt: `${NEEM_NAME}, tube beside its 150 ml label` },
-    { url: `/mock/products/${NEEM_SLUG}-4.png`, alt: `${NEEM_NAME}, tube on a plain background` },
+    { url: `/mock/products/${NEEM_SLUG}.png`, alt: `${NEEM_NAME} 150ml, front` },
+    { url: `/mock/products/${NEEM_SLUG}-2.png`, alt: `${NEEM_NAME}, tube tilted` },
   ],
   sku: 'MD2346',
   unitName: 'Piece',
@@ -130,8 +131,18 @@ export function mockProductPage(slug: string, now: Date): ShopProductPage | null
         ...neemProduct,
         saleUntil: new Date(now.getTime() + SALE_LEFT_MS).toISOString(),
       },
-      // The design's "Related Products" row is the Himalaya shelf of the home page
-      related: himalayaListings,
+      // The design's "Related Products" row is the Himalaya shelf of the home page, then the rest
+      // of the category: Figma's row has more than its five cards (the right arrow is on), and
+      // with five that fit, both arrows would be off
+      related: [
+        ...himalayaListings,
+        ...mockCatalog.filter(
+          (other) =>
+            other.categoryId === neemListing.categoryId &&
+            other.id !== neemListing.id &&
+            !himalayaListings.includes(other),
+        ),
+      ].slice(0, RELATED_MAX),
     };
   }
 

@@ -200,6 +200,11 @@
     & li {
       margin-inline-start: 21px;
     }
+    /* Figma's bullet is a small "•", not the browser's disc at the text's 14px. Bullets only: an
+       <ol>'s numbers stay the text's size */
+    & ul > li::marker {
+      font-size: 10px;
+    }
     & strong {
       font-weight: 600;
     }
