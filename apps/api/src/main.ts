@@ -10,7 +10,7 @@ async function bootstrap(): Promise<void> {
   const config = loadConfig(process.env);
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule.register(config),
-    createAdapter(),
+    createAdapter(config.trustProxy),
   );
   await configureApp(app, config);
   // SIGTERM/SIGINT-এ onApplicationShutdown চলে — DB pool আর Redis বন্ধ হয়

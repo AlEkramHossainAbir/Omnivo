@@ -26,6 +26,10 @@ const envSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
   API_BASE_URL: z.url(),
   BETTER_AUTH_SECRET: z.string().min(32),
   JWT_SECRET: z.string().min(32),
+  // "true" only when a proxy you run (Caddy on staging) is the one thing that can reach the API.
+  // Fastify then takes the client's address from X-Forwarded-For, so the audit log records the
+  // person's IP, not the proxy's. Left off, a client could write any IP into that header.
+  TRUST_PROXY: z.stringbool().default(false),
 });
 
 const workerEnvSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
@@ -70,6 +74,7 @@ export function loadConfig(env: Record<string, string | undefined>) {
   return {
     port: e.PORT,
     apiBaseUrl: e.API_BASE_URL,
+    trustProxy: e.TRUST_PROXY,
     // /openapi.json আর /docs — production-এ API-র পুরো নকশা বাইরে দেখানো হয় না
     exposeDocs: e.NODE_ENV !== 'production',
     databaseUrl: e.DATABASE_URL,

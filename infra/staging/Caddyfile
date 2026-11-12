@@ -1,0 +1,63 @@
+# Caddy on staging: one server in front of everything. It gets and renews the HTTPS certificates
+# by itself (Let's Encrypt). Each site address is a full URL from the server's .env, so the
+# addresses live in one place. The API, the S3 client and this file all read the same values.
+
+{
+	email {$ACME_EMAIL}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		# Staging must never show up in a search engine
+		X-Robots-Tag "noindex, nofollow"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+# The app: static files from the image
+{$APP_ORIGIN} {
+	import common
+	root * /srv/app
+
+	# Built files have a hash in their name, so a new build never reuses a name. They can be kept
+	# for a year. A missing one is a plain 404: never index.html, or an old tab would run HTML as JS.
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else (index.html, sw.js, the manifest, the icons, and every app route like /login or
+	# /d/<token>) must be checked again on each load. The service worker finds a new version only
+	# when sw.js is not cached.
+	handle {
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# The API
+{$API_BASE_URL} {
+	import common
+	reverse_proxy api:3000
+}
+
+# File storage (MinIO). The browser uploads and downloads here with presigned URLs. Caddy keeps
+# the Host header as it is, which matters: it is part of the URL's signature.
+{$S3_ENDPOINT} {
+	header X-Robots-Tag "noindex, nofollow"
+	reverse_proxy storage:9000
+}
+
+# Mailpit: every email staging sends. Mailpit asks for the password itself (MP_UI_AUTH).
+{$MAIL_URL} {
+	import common
+	reverse_proxy mail:8025
+}

@@ -1,0 +1,21 @@
+# What `docker build .` never sends to the builder. node_modules and dist are built inside the
+# image for Linux; a copy from a Mac would hold the wrong native binaries and stale output.
+**/node_modules
+**/dist
+**/dist-worker
+**/.turbo
+**/.vite
+**/*.tsbuildinfo
+**/test-results
+**/playwright-report
+**/coverage
+.git
+.github
+.guide
+docs
+infra/staging
+# Secrets stay out of every image
+.env
+.env.*
+!.env.example
+**/.DS_Store
