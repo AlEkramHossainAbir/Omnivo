@@ -8,6 +8,9 @@ import {
   shopCartQuoteRequestSchema,
   shopCartQuoteSchema,
   shopCheckoutSettingsSchema,
+  SHOP_PAGE_SIZE,
+  shopListingPageSchema,
+  shopListingQuerySchema,
   shopOrderPlacedSchema,
   shopOrderRequestSchema,
   shopOrderSchema,
@@ -406,5 +409,77 @@ describe('order', () => {
       total: '578.0000',
     };
     expect(shopOrderSchema.parse(order)).toEqual(order);
+  });
+});
+
+// Step 26d
+describe('listing query', () => {
+  // /c/cosmetics?sort=price_asc&min=100&max=500&stock=1, as the page sends it to the source
+  const QUERY = {
+    category: 'cosmetics',
+    q: null,
+    sort: 'price_asc',
+    minPrice: '100',
+    maxPrice: '500',
+    inStock: true,
+    offer: false,
+    cursor: null,
+  };
+
+  it('takes a category page with its filters', () => {
+    expect(shopListingQuerySchema.parse(QUERY)).toEqual(QUERY);
+  });
+
+  it('takes a Bangla search and trims it', () => {
+    const query = shopListingQuerySchema.parse({ ...QUERY, category: null, q: '  নিম ফেস ওয়াশ ' });
+    expect(query.q).toBe('নিম ফেস ওয়াশ');
+  });
+
+  // Spaces only is no search: the page must send null, so the source never matches every listing
+  // against an empty word
+  it('refuses a search of spaces only', () => {
+    expect(shopListingQuerySchema.safeParse({ ...QUERY, q: '   ' }).success).toBe(false);
+  });
+
+  // A slug goes into links and the source's lookup as it is
+  it('refuses a category that is not a slug', () => {
+    for (const category of ['Cosmetics', '../admin', 'skin care', '-tea']) {
+      expect(shopListingQuerySchema.safeParse({ ...QUERY, category }).success).toBe(false);
+    }
+  });
+
+  it('refuses paisa, a minus and a leading zero in a price filter', () => {
+    for (const minPrice of ['99.50', '-1', '0100', '1e3']) {
+      expect(shopListingQuerySchema.safeParse({ ...QUERY, minPrice }).success).toBe(false);
+    }
+  });
+
+  // As strings "90" sorts after "500"; the check must compare the amounts
+  it('compares the prices as numbers', () => {
+    expect(shopListingQuerySchema.safeParse({ ...QUERY, minPrice: '90' }).success).toBe(true);
+    const result = shopListingQuerySchema.safeParse({ ...QUERY, minPrice: '600' });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]).toMatchObject({ path: ['maxPrice'], message: 'invalid_value' });
+  });
+
+  it('refuses a sort the page has no words for', () => {
+    expect(shopListingQuerySchema.safeParse({ ...QUERY, sort: 'popular' }).success).toBe(false);
+  });
+});
+
+describe('listing page', () => {
+  const card = { ...NEEM_PRODUCT };
+
+  it('reads a page of cards and the next cursor', () => {
+    const page = { items: [card], nextCursor: 'eyJvIjoyMH0' };
+    expect(shopListingPageSchema.parse(page)).toMatchObject({ nextCursor: 'eyJvIjoyMH0' });
+  });
+
+  it('refuses more cards than one page holds', () => {
+    const page = {
+      items: Array.from({ length: SHOP_PAGE_SIZE + 1 }, () => card),
+      nextCursor: null,
+    };
+    expect(shopListingPageSchema.safeParse(page).success).toBe(false);
   });
 });

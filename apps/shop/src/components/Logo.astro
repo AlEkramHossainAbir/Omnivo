@@ -13,7 +13,14 @@ const { shop, place } = Astro.props;
 const onBrand = place === 'header';
 ---
 
-<span class:list={['inline-flex items-center', onBrand ? 'gap-2 md:gap-1' : 'gap-2 md:gap-[5px]']}>
+{/* Step 26d.4: in the header the name is cut with an ellipsis when the bar runs out of room
+    (max-w-full + min-w-0 + truncate); the menu button took 48px of a phone's bar */}
+<span
+  class:list={[
+    'inline-flex max-w-full items-center',
+    onBrand ? 'gap-2 md:gap-1' : 'gap-2 md:gap-[5px]',
+  ]}
+>
   {shop.logo ? (
     <img
       src={shop.logo.url}
@@ -44,8 +51,10 @@ const onBrand = place === 'header';
   )}
   <span
     class:list={[
-      'font-bold whitespace-nowrap md:font-semibold',
-      onBrand ? 'text-[20px] text-white md:text-[24px]' : 'text-[24px] text-brand md:text-[32px]',
+      'font-bold md:font-semibold',
+      onBrand
+        ? 'min-w-0 truncate text-[20px] text-white md:text-[24px]'
+        : 'whitespace-nowrap text-[24px] text-brand md:text-[32px]',
     ]}
   >
     {shop.name}

@@ -5,6 +5,7 @@ import {
   featuredListings,
   himalayaListings,
   listing,
+  shelfListings,
   trendingListings,
 } from './listings';
 
@@ -17,6 +18,7 @@ const SALE_LEFT_MS = (((1 * 24 + 12) * 60 + 10) * 60 + 32) * 1000;
 
 const NEEM_SLUG = 'himalaya-purifying-neem-face-wash-150ml';
 const NEEM_NAME = 'Himalaya Purifying Neem Face Wash';
+const NEEM_SKU = 'MD2346';
 
 const neemListing: ShopListing = {
   ...listing({
@@ -25,7 +27,7 @@ const neemListing: ShopListing = {
     name: `${NEEM_NAME} 150ml`,
     packSize: '150ml',
     price: '229',
-    categoryId: 'cat-cosmetics',
+    categoryId: 'cat-skin-care',
     badges: ['most_picked'],
     // ৳299 − ৳229: the ribbon says what the struck-out price says
     discount: { kind: 'amount', value: '70' },
@@ -104,20 +106,28 @@ const neemProduct: Omit<ShopProduct, 'saleUntil'> = {
     { url: `/mock/products/${NEEM_SLUG}.png`, alt: `${NEEM_NAME} 150ml, front` },
     { url: `/mock/products/${NEEM_SLUG}-2.png`, alt: `${NEEM_NAME}, tube tilted` },
   ],
-  sku: 'MD2346',
+  sku: NEEM_SKU,
   unitName: 'Piece',
   descriptionHtml: NEEM_DESCRIPTION,
 };
 
 // Every listing the mock shop sells: the home page's and the product page's. The quote looks a
-// cart's ids up here, so a listing added to the cart from any page can be priced
+// cart's ids up here, so a listing added to the cart from any page can be priced.
+// Step 26d: and the shelves' (62 in all), newest first: the order is when the shop published them,
+// which "Newest" sorts by. The home page's five come first, so its "All Category" grid is the
+// start of /c/all, where its Load More link goes
 export const mockCatalog: ShopListing[] = [
   ...featuredListings,
   ...himalayaListings,
   ...trendingListings,
   ...diabeticListings,
   neemListing,
+  ...shelfListings,
 ];
+
+// Step 26d: the SKUs the search looks in, by listing id. A card has no SKU (only the product page
+// shows it), so the mock keeps them beside the catalog; only the design's product has one
+export const mockSkus: ReadonlyMap<string, string> = new Map([[neemListing.id, NEEM_SKU]]);
 
 const RELATED_MAX = 12;
 

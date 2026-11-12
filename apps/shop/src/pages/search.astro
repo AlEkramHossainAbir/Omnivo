@@ -1,0 +1,33 @@
+---
+import ListingView from '../components/ListingView.astro';
+import { shopSource } from '../data/source';
+import ShopLayout from '../layouts/ShopLayout.astro';
+import { loadListing } from '../lib/listing-page';
+import { shopLocale } from '../lib/locale';
+
+// Step 26d.3: the header's search (/search?q=neem), across every category (decision 8). The words
+// go to the source; the page draws the answer like a category's
+const [shop, load] = await Promise.all([
+  shopSource.shop(),
+  loadListing(null, Astro.url.searchParams),
+]);
+
+// No words (an empty box): /c/all. A cursor the source did not make: the first page. A search has
+// no slug, so it is never 'missing'
+if (load.kind !== 'found') return Astro.redirect(load.kind === 'restart' ? load.href : '/c/all');
+
+const locale = await shopLocale(shop.language);
+const { t } = locale;
+const { query, page, categories } = load;
+const title = t('shop.listing.searchTitle', { q: query.q ?? '' });
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.listing.pageTitle', { title, shop: shop.name })}
+  search={query.q}
+  categories={categories}
+>
+  <ListingView title={title} query={query} page={page} categories={categories} locale={locale} />
+</ShopLayout>

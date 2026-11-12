@@ -1,8 +1,9 @@
 import type { ShopSource } from '../types';
+import { listListings, type BrowseContext } from './browse';
 import { mockCheckoutSettings, mockCoupons } from './checkout';
 import { mockHome } from './home';
 import { createOrderBook, MOCK_CODE } from './orders';
-import { mockCatalog, mockProductPage } from './products';
+import { mockCatalog, mockProductPage, mockSkus } from './products';
 import { quoteCart, type QuoteContext } from './quote';
 import { mockCategories, mockShop } from './shop';
 
@@ -18,6 +19,13 @@ export function mockQuoteContext(now: Date): QuoteContext {
   };
 }
 
+// Step 26d: what the category and search pages read. Exported for the tests, like the quote's
+export const mockBrowseContext: BrowseContext = {
+  catalog: mockCatalog,
+  categories: mockCategories,
+  skus: mockSkus,
+};
+
 // Step 26c: a mock source with its own order book and clock. The shop uses one (mockSource below);
 // a test makes its own, so its orders and its time are its own and no test sees another's orders
 export function createMockSource(now: () => Date = () => new Date()): ShopSource {
@@ -32,6 +40,7 @@ export function createMockSource(now: () => Date = () => new Date()): ShopSource
     home: () => Promise.resolve(mockHome),
     product: (slug) => Promise.resolve(mockProductPage(slug, now())),
     quote: (request) => Promise.resolve(quoteCart(request, context())),
+    listings: (query) => Promise.resolve(listListings(query, mockBrowseContext)),
 
     checkoutSettings: () => Promise.resolve(mockCheckoutSettings),
     // The order is priced again here from its own lines, zone and coupon, never from anything the

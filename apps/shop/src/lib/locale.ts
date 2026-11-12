@@ -1,4 +1,5 @@
-import { i18n, setLanguage, type Language } from '@omnivo/i18n';
+import { i18n, type Language } from '@omnivo/i18n';
+import { setShopLanguage } from '@omnivo/i18n/shop';
 
 import { shopMoney } from './money';
 
@@ -7,9 +8,9 @@ import { shopMoney } from './money';
 // choice in the ERP, so the stored preference is neither read nor written here.
 export async function shopLocale(language: Language) {
   // Loads the language's words (Bangla is a chunk of its own). It also makes it the current
-  // language, which step 26b's React islands render with on the server. remember: false, so the
-  // build never writes a preference
-  await setLanguage(language, { remember: false });
+  // language, which step 26b's React islands render with on the server. Step 26d: the shop's own
+  // words come from '@omnivo/i18n/shop', which also never writes a stored preference
+  await setShopLanguage(language);
   // A t() fixed to this language: the components never depend on which language is current
   const t = i18n.getFixedT(language);
   return {

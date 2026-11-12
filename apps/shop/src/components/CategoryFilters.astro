@@ -1,60 +1,185 @@
 ---
-import { ArrowDown01Icon, FilterHorizontalIcon } from '@hugeicons/core-free-icons';
+import { ArrowDown01Icon, FilterHorizontalIcon, Tick02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import type { ShopCategory } from '@omnivo/contracts';
+import { SHOP_SORTS, type ShopCategory, type ShopListingQuery } from '@omnivo/contracts';
 
+import { hasPanelFilters, listingHref, listingPath } from '../lib/listing-query';
 import type { ShopLocale } from '../lib/locale';
 
-// CLAUDE.md → Storefront → Filter row. Desktop (Figma 37:3131): square chips with a chevron and
-// "Sort By" on the right. Phone (Figma 138:799): round pills that wrap, categories only.
-// Step 26a: every chip is a link to its category page (step 26c). The chevrons' menus, the filter
-// panel and the sort menu come with that page; until then they lead to it.
+// CLAUDE.md → Storefront → Filter row. Desktop (Figma 37:3131): square chips and "Sort By" on the
+// right. Phone (Figma 138:799): round pills that wrap, categories only.
+// Step 26d.3: the row works. Every chip is a link that changes one choice of the list on screen
+// (`query`), or a button that opens a native popover (decision 5): a category's menu, the filter
+// panel, the sort menu. No script opens or closes them: the browser does, with Escape and a click
+// outside, and only one is open at a time. The home page passes the defaults, so there the row
+// leads to /c/all
 interface Props {
   categories: ShopCategory[];
+  query: ShopListingQuery;
   locale: ShopLocale;
 }
 
-const { categories, locale } = Astro.props;
+const { categories, query, locale } = Astro.props;
 const { t } = locale;
-const top = categories.filter((category) => category.parentId === null);
+
+// The categories under one, in the shop's order, each with its depth for the menu's indent. Every
+// level, not only the first: a real shop may have Beverages → Tea → Green tea
+interface Entry {
+  category: ShopCategory;
+  depth: number;
+}
+function below(parent: ShopCategory, depth = 0): Entry[] {
+  return categories
+    .filter((category) => category.parentId === parent.id)
+    .flatMap((category) => [{ category, depth }, ...below(category, depth + 1)]);
+}
+
+const top = categories
+  .filter((category) => category.parentId === null)
+  .map((category) => {
+    const children = below(category);
+    return {
+      category,
+      children,
+      // The chip of the list on screen: its own page or one under it (/c/skin-care lights Cosmetics)
+      selected:
+        query.category === category.slug ||
+        children.some((entry) => entry.category.slug === query.category),
+    };
+  });
+
+const panelOn = hasPanelFilters(query);
+// "Clear" in the panel: the price and the stock go, the rest stays
+const clearHref = listingHref(query, { minPrice: null, maxPrice: null, inStock: false });
 
 const chip =
   'flex h-[38px] items-center gap-2 rounded-lg px-3 text-sf-body whitespace-nowrap transition-colors duration-150';
+const chipOn = 'bg-brand font-medium text-accent';
+const chipOff = 'bg-card hover:bg-cream';
 // 36px like Figma's pills: the 1px border is inside that height, so 9px of padding, not 10
 const pill =
   'block rounded-full border px-4 py-[9px] text-sf-small leading-4 transition-colors duration-150';
+// Not in Figma: the menus are white cards with the rule line, no shadow (the storefront has none)
+const menu =
+  'chip-menu w-max max-w-80 min-w-56 rounded-lg border border-rule bg-card p-2 text-brand';
+const item =
+  'flex items-center justify-between gap-3 rounded-sm py-2.5 pr-3 transition-colors duration-150 hover:bg-cream aria-[current]:font-semibold';
+const field =
+  'h-12 w-full min-w-0 rounded-lg border border-field bg-card px-4 tabular-nums transition-colors duration-150 hover:border-muted-line focus:border-brand focus:outline-2 focus:outline-offset-0 focus:outline-brand';
+const button =
+  'flex h-11 flex-1 items-center justify-center rounded-sm font-semibold transition-colors duration-150';
 ---
 
 <nav aria-label={t('shop.home.categoryFilters')}>
   {/* Desktop */}
-  <div class="hidden items-start justify-between md:flex">
+  <div class="hidden items-start justify-between gap-4 md:flex">
     <ul class="flex flex-wrap items-center gap-4">
+      {/* Every listing, with the search and the filters kept. A link with no menu, so no chevron:
+          the menu Figma draws on it would only repeat the chips beside it (decision 23) */}
       <li>
         <a
-          href="/c/all"
-          aria-current="true"
-          class:list={[chip, 'bg-brand font-medium text-accent']}
+          href={listingHref(query, { category: null })}
+          aria-current={query.category === null ? 'true' : undefined}
+          class:list={[chip, query.category === null ? chipOn : chipOff]}
         >
           {t('shop.home.allCategories')}
-          <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} aria-hidden="true" />
         </a>
       </li>
-      {top.map((category) => (
-        <li>
-          <a href={`/c/${category.slug}`} class:list={[chip, 'bg-card hover:bg-cream']}>
-            {category.name}
-            <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} aria-hidden="true" />
-          </a>
-        </li>
-      ))}
+
+      {top.map(({ category, children, selected }, index) =>
+        children.length === 0 ? (
+          // Nothing under it: a menu with one line would be a click for nothing
+          <li>
+            <a
+              href={listingHref(query, { category: category.slug })}
+              aria-current={selected ? 'true' : undefined}
+              class:list={[chip, selected ? chipOn : chipOff]}
+            >
+              {category.name}
+            </a>
+          </li>
+        ) : (
+          <li>
+            {/* The chip and its menu share an anchor name, so CSS places the menu under the chip
+                (the chip-menu utility in shop.css). By index: a category's id may hold characters
+                a CSS name cannot */}
+            <button
+              type="button"
+              popovertarget={`chip-menu-${String(index)}`}
+              style={`anchor-name: --chip-${String(index)}`}
+              class:list={[chip, selected ? chipOn : chipOff]}
+            >
+              {category.name}
+              <HugeiconsIcon
+                icon={ArrowDown01Icon}
+                size={14}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            </button>
+            <div
+              id={`chip-menu-${String(index)}`}
+              popover
+              style={`position-anchor: --chip-${String(index)}`}
+              class={menu}
+            >
+              <ul>
+                {[{ category, depth: -1 }, ...children].map((entry) => {
+                  const current = query.category === entry.category.slug;
+                  return (
+                    <li>
+                      {/* 12px in, 16px more per level. A style, not a class: the depth has no end */}
+                      <a
+                        href={listingHref(query, { category: entry.category.slug })}
+                        aria-current={current ? 'page' : undefined}
+                        style={`padding-inline-start: ${String(12 + (entry.depth + 1) * 16)}px`}
+                        class={item}
+                      >
+                        {entry.depth === -1
+                          ? t('shop.listing.allOf', { category: category.name })
+                          : entry.category.name}
+                        {current && (
+                          <HugeiconsIcon
+                            icon={Tick02Icon}
+                            size={16}
+                            strokeWidth={1.5}
+                            aria-hidden="true"
+                          />
+                        )}
+                      </a>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </li>
+        ),
+      )}
+
+      {/* A switch, not a menu: no chevron (decision 6). The link turns it on or off; the label says
+          its state, because a link cannot be aria-pressed */}
       <li>
-        <a href="/c/all?offer=1" class:list={[chip, 'bg-card hover:bg-cream']}>
+        <a
+          href={listingHref(query, { offer: !query.offer })}
+          aria-label={
+            query.offer ? t('shop.listing.on', { filter: t('shop.home.offer') }) : undefined
+          }
+          class:list={[chip, query.offer ? chipOn : chipOff]}
+        >
           {t('shop.home.offer')}
-          <HugeiconsIcon icon={ArrowDown01Icon} size={14} strokeWidth={1.5} aria-hidden="true" />
         </a>
       </li>
+
       <li>
-        <a href="/c/all" class:list={[chip, 'bg-card hover:bg-cream']}>
+        <button
+          type="button"
+          popovertarget="filter-panel"
+          style="anchor-name: --chip-filter"
+          aria-label={
+            panelOn ? t('shop.listing.on', { filter: t('shop.home.allFilter') }) : undefined
+          }
+          class:list={[chip, panelOn ? chipOn : chipOff]}
+        >
           {t('shop.home.allFilter')}
           <HugeiconsIcon
             icon={FilterHorizontalIcon}
@@ -62,32 +187,154 @@ const pill =
             strokeWidth={1.5}
             aria-hidden="true"
           />
-        </a>
+        </button>
+        {/* A GET form (decision 7): Apply loads the same list with the new filters, with or
+            without JavaScript. The choices the panel does not show ride along as hidden fields,
+            in the order listingHref writes them, so Apply gives the address a link would */}
+        <form
+          id="filter-panel"
+          popover
+          method="get"
+          action={listingPath(query.category, query.q)}
+          aria-label={t('shop.listing.filter.title')}
+          data-filter-form
+          style="position-anchor: --chip-filter"
+          class:list={[menu, 'w-80 p-5']}
+        >
+          {query.q !== null && <input type="hidden" name="q" value={query.q} />}
+          {query.sort !== 'newest' && <input type="hidden" name="sort" value={query.sort} />}
+          <fieldset>
+            <legend class="font-semibold">{t('shop.listing.filter.price')}</legend>
+            <div class="mt-3 grid grid-cols-2 gap-3">
+              {/* Text, not type="number": a Bangla keyboard types ০–৯, which a number box refuses
+                  (the page converts them, as the cart does) */}
+              <label class="flex flex-col gap-2 text-sf-small font-medium">
+                {t('shop.listing.filter.from')}
+                <input
+                  type="text"
+                  name="min"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  value={query.minPrice ?? ''}
+                  class={field}
+                />
+              </label>
+              <label class="flex flex-col gap-2 text-sf-small font-medium">
+                {t('shop.listing.filter.to')}
+                <input
+                  type="text"
+                  name="max"
+                  inputmode="numeric"
+                  autocomplete="off"
+                  value={query.maxPrice ?? ''}
+                  class={field}
+                />
+              </label>
+            </div>
+          </fieldset>
+          <label class="mt-5 flex items-center gap-3 font-semibold">
+            <input
+              type="checkbox"
+              name="stock"
+              value="1"
+              checked={query.inStock}
+              class="size-5 shrink-0 accent-brand"
+            />
+            {t('shop.listing.filter.inStock')}
+          </label>
+          {query.offer && <input type="hidden" name="offer" value="1" />}
+          <div class="mt-6 flex gap-3">
+            <a href={clearHref} class:list={[button, 'bg-cream hover:bg-accent']}>
+              {t('shop.listing.filter.clear')}
+            </a>
+            <button
+              type="submit"
+              class:list={[button, 'bg-accent hover:bg-brand hover:text-accent']}
+            >
+              {t('shop.listing.filter.apply')}
+            </button>
+          </div>
+        </form>
       </li>
     </ul>
-    <a href="/c/all" class:list={[chip, 'border border-brand font-medium hover:bg-cream']}>
+
+    <button
+      type="button"
+      popovertarget="sort-menu"
+      style="anchor-name: --chip-sort"
+      class:list={[chip, 'border border-brand font-medium hover:bg-cream']}
+    >
       {t('shop.home.sortBy')}
       <HugeiconsIcon icon={FilterHorizontalIcon} size={14} strokeWidth={1.5} aria-hidden="true" />
-    </a>
+    </button>
+    <div id="sort-menu" popover style="position-anchor: --chip-sort" class={menu}>
+      <ul aria-label={t('shop.listing.sort.title')}>
+        {SHOP_SORTS.map((sort) => (
+          <li>
+            <a
+              href={listingHref(query, { sort })}
+              aria-current={query.sort === sort ? 'true' : undefined}
+              class:list={[item, 'pl-3']}
+            >
+              {t(`shop.listing.sort.${sort}`)}
+              {query.sort === sort && (
+                <HugeiconsIcon icon={Tick02Icon} size={16} strokeWidth={1.5} aria-hidden="true" />
+              )}
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
   </div>
 
-  {/* Phone */}
+  {/* Phone: the categories only (CLAUDE.md), the top ones. A category under one is reached from
+      the category drawer (26d.4); its top category's pill shows as chosen */}
   <ul class="flex flex-wrap gap-2 md:hidden">
     <li>
       <a
-        href="/c/all"
-        aria-current="true"
-        class:list={[pill, 'border-brand bg-brand font-semibold text-accent']}
+        href={listingHref(query, { category: null })}
+        aria-current={query.category === null ? 'true' : undefined}
+        class:list={[
+          pill,
+          query.category === null
+            ? 'border-brand bg-brand font-semibold text-accent'
+            : 'border-rule bg-card',
+        ]}
       >
         {t('shop.home.all')}
       </a>
     </li>
-    {top.map((category) => (
+    {top.map(({ category, selected }) => (
       <li>
-        <a href={`/c/${category.slug}`} class:list={[pill, 'border-rule bg-card']}>
+        <a
+          href={listingHref(query, { category: category.slug })}
+          aria-current={selected ? 'true' : undefined}
+          class:list={[
+            pill,
+            selected ? 'border-brand bg-brand font-semibold text-accent' : 'border-rule bg-card',
+          ]}
+        >
           {category.name}
         </a>
       </li>
     ))}
   </ul>
 </nav>
+
+<script>
+  // The filter panel without its empty boxes: a native GET form sends "min=&max=" for two empty
+  // boxes, two keys in the address that mean nothing, and one list would get a second address.
+  // The script sends the same form without them. Without JavaScript the native form still works:
+  // the page reads an empty value as "not set"
+  document.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.hasAttribute('data-filter-form')) return;
+    event.preventDefault();
+    const params = new URLSearchParams();
+    for (const [key, value] of new FormData(form)) {
+      if (typeof value === 'string' && value.trim() !== '') params.append(key, value.trim());
+    }
+    const search = params.toString();
+    window.location.assign(`${form.action}${search === '' ? '' : `?${search}`}`);
+  });
+</script>

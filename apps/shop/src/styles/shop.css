@@ -116,6 +116,22 @@
   }
 }
 
+/* Step 26d.3: the filter row's menus and panel (native popovers, decision 5), under their chip.
+   The chip and its menu share an anchor name (style attributes in CategoryFilters.astro), and
+   flip-inline moves a menu that would leave the screen (Sort By, at the right edge) to the chip's
+   other side. margin: auto first, because preflight's margin: 0 beats the browser's own centering:
+   a browser without anchor positioning then shows the menu in the middle of the screen, still
+   usable and still closed by Escape, instead of in the top-left corner */
+@utility chip-menu {
+  margin: auto;
+  @supports (position-area: bottom) {
+    inset: auto;
+    margin: 8px 0 0;
+    position-area: bottom span-right;
+    position-try-fallbacks: flip-inline;
+  }
+}
+
 /* Figma trims every text box to the cap height and the baseline (text-box-trim), and its spacing
    is measured between those edges. The same CSS property makes the browser match it; a browser
    without it (Firefox today) shows a few pixels more space, nothing breaks */

@@ -6,6 +6,8 @@ import type {
   ShopCheckoutSettings,
   ShopCodeResent,
   ShopHome,
+  ShopListingPage,
+  ShopListingQuery,
   ShopOrder,
   ShopOrderConfirmed,
   ShopOrderPlaced,
@@ -59,6 +61,11 @@ export interface ShopSource {
   // Step 26b: today's prices for a cart. The route checks the request first
   // (shopCartQuoteRequestSchema), so a source never sees a quantity of 0 or one listing twice
   quote(request: ShopCartQuoteRequest): Promise<ShopCartQuote>;
+  // Step 26d: one page of cards for /c/<slug> and /search. The page builds the query from the
+  // address (lib/listing-query.ts), so a source never sees a broken price or an unknown sort. null:
+  // the cursor is not one this source made (edited by hand, or left from an older source); the page
+  // then starts again from the first page. Not an error, like an unknown slug in product()
+  listings(query: ShopListingQuery): Promise<ShopListingPage | null>;
 
   // Step 26c: the checkout. The routes check every request with its schema first, as for quote()
   checkoutSettings(): Promise<ShopCheckoutSettings>;

@@ -21,19 +21,39 @@ describe('the mock shop', () => {
   });
 
   it('gives every listing a unique id and slug', () => {
-    const listings = [
+    // Step 26d: the whole catalog, not only the home page: the shelves' listings are pages too
+    expect(new Set(mockCatalog.map((listing) => listing.id)).size).toBe(mockCatalog.length);
+    expect(new Set(mockCatalog.map((listing) => listing.slug)).size).toBe(mockCatalog.length);
+  });
+
+  it('puts every listing in a known category', () => {
+    const ids = new Set(mockCategories.map((category) => category.id));
+    for (const listing of mockCatalog) expect(ids.has(listing.categoryId)).toBe(true);
+  });
+
+  it('sells only what the catalog holds on the home page', () => {
+    // The quote prices a cart from the catalog: a card that is not in it could not be bought
+    const ids = new Set(mockCatalog.map((listing) => listing.id));
+    const onHome = [
       ...mockHome.featured,
       ...mockHome.blocks.flatMap((block) =>
         block.kind === 'collection' ? block.collection.listings : [],
       ),
     ];
-    expect(new Set(listings.map((listing) => listing.id)).size).toBe(listings.length);
-    expect(new Set(listings.map((listing) => listing.slug)).size).toBe(listings.length);
+    for (const listing of onHome) expect(ids.has(listing.id)).toBe(true);
   });
 
-  it('puts every listing in a known category', () => {
-    const ids = new Set(mockCategories.map((category) => category.id));
-    for (const listing of mockHome.featured) expect(ids.has(listing.categoryId)).toBe(true);
+  it('has a photo for every listing', () => {
+    // Step 26d: a shelf listing shows another pack size's photo (`photo` in listings.ts); a typo
+    // there would be a broken image on the card, which no type check sees
+    const photos = new Set(
+      Object.keys(import.meta.glob('../../../public/mock/products/*.png')).map((path) =>
+        path.replace('../../../public', ''),
+      ),
+    );
+    for (const listing of mockCatalog) {
+      for (const image of listing.images) expect(photos).toContain(image.url);
+    }
   });
 });
 

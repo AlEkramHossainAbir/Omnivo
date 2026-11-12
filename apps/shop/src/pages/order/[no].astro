@@ -20,7 +20,8 @@ const order = token === undefined ? null : await shopSource.order(orderNo, token
 // same "page not found" for each, so the page never tells a stranger that an order exists
 if (order === null) return Astro.rewrite('/404');
 
-const shop = await shopSource.shop();
+// Step 26d.4: the categories for the header's drawer
+const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
 const locale = await shopLocale(shop.language);
 const { t, money } = locale;
 const when = (iso: string) => formatDateTime(new Date(iso), locale.language, shop.timeZone);
@@ -44,6 +45,7 @@ const heading = 'font-semibold';
   shop={shop}
   locale={locale}
   title={t('shop.order.pageTitle', { orderNo: order.orderNo, shop: shop.name })}
+  categories={categories}
 >
   {/* The checkout card at 848px, read-only (CLAUDE.md), 160px above the footer like the checkout */}
   <div class="mx-auto mt-4 max-w-[848px] rounded-2xl bg-card-glass p-1 md:mt-9 md:mb-40">

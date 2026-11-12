@@ -1,0 +1,28 @@
+---
+import ListingGrid from '../../../components/ListingGrid.astro';
+import { shopSource } from '../../../data/source';
+import { loadListing } from '../../../lib/listing-page';
+import { shopLocale } from '../../../lib/locale';
+
+// Step 26d.3: the cards Load More's script asks for (decision 3). A partial: only this component's
+// HTML, no <html>, header or footer. The address is the page's own, so the cards are the ones the
+// page's link would show
+export const partial = true;
+
+const [shop, load] = await Promise.all([
+  shopSource.shop(),
+  loadListing(Astro.params.slug ?? '', Astro.url.searchParams),
+]);
+
+// No redirect here: fetch() would follow it to the first page and the script would add those
+// cards a second time. A status the script reads as "follow the link" instead, and the page itself
+// redirects
+if (load.kind === 'missing') return new Response(null, { status: 404 });
+if (load.kind === 'restart') return new Response(null, { status: 409 });
+
+// A piece of a page, not a page: search engines skip it
+Astro.response.headers.set('X-Robots-Tag', 'noindex');
+const locale = await shopLocale(shop.language);
+---
+
+<ListingGrid query={load.query} page={load.page} locale={locale} />

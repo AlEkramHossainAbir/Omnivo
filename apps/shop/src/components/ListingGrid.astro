@@ -1,0 +1,37 @@
+---
+import type { ShopListingPage, ShopListingQuery } from '@omnivo/contracts';
+
+import { listingHref, listingMoreHref } from '../lib/listing-query';
+import type { ShopLocale } from '../lib/locale';
+import LoadMore from './LoadMore.astro';
+import ProductCard from './ProductCard.astro';
+
+// Step 26d.3: one page of cards and the Load More after it. The page draws it, and so does the
+// partial that Load More's script asks for (pages/c/[slug]/more.astro): the script moves the
+// partial's <li> into the page's grid and takes the partial's Load More link. One component for
+// both, so the cards it adds are the very markup the page drew (decision 3)
+interface Props {
+  query: ShopListingQuery;
+  page: ShopListingPage;
+  locale: ShopLocale;
+}
+
+const { query, page, locale } = Astro.props;
+const cursor = page.nextCursor;
+---
+
+{/* The home page's "All Category" grid: one card a row on a phone, then 3, 4 and 5 columns */}
+<ul data-listing-grid class="grid gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+  {page.items.map((listing) => (
+    <li>
+      <ProductCard listing={listing} locale={locale} />
+    </li>
+  ))}
+</ul>
+{cursor !== null && (
+  <LoadMore
+    href={listingHref(query, { cursor })}
+    more={listingMoreHref(query, cursor)}
+    locale={locale}
+  />
+)}

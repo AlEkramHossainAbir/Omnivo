@@ -1,0 +1,21 @@
+---
+import ListingGrid from '../../components/ListingGrid.astro';
+import { shopSource } from '../../data/source';
+import { loadListing } from '../../lib/listing-page';
+import { shopLocale } from '../../lib/locale';
+
+// Step 26d.3: Load More's cards for the search page, like /c/<slug>/more
+export const partial = true;
+
+const [shop, load] = await Promise.all([
+  shopSource.shop(),
+  loadListing(null, Astro.url.searchParams),
+]);
+
+if (load.kind !== 'found') return new Response(null, { status: 409 });
+
+Astro.response.headers.set('X-Robots-Tag', 'noindex');
+const locale = await shopLocale(shop.language);
+---
+
+<ListingGrid query={load.query} page={load.page} locale={locale} />

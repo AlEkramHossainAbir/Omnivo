@@ -11,6 +11,10 @@
     "./format": {
       "types": "./dist/format.d.ts",
       "default": "./dist/format.js"
+    },
+    "./shop": {
+      "types": "./dist/shop.d.ts",
+      "default": "./dist/shop.js"
     }
   },
   "scripts": {

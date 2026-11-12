@@ -96,7 +96,8 @@ describe('shop imports', () => {
     // A broken pattern would find nothing to check; cart, quote and money at least
     expect(libs.size).toBeGreaterThanOrEqual(3);
 
-    const heavy = /^(zod|react|react-dom|@omnivo\/contracts|@omnivo\/i18n)$/;
+    // Step 26d: '@omnivo/i18n/shop' as well, which imports the main entry and adds the shop's words
+    const heavy = /^(zod|react|react-dom|@omnivo\/contracts|@omnivo\/i18n(\/shop)?)$/;
     const offenders = [
       ...scripts,
       ...[...libs].map((path) => ({ path, source: files[path] ?? '' })),
@@ -131,7 +132,7 @@ describe('shop imports', () => {
     const offenders = islands
       .filter(([, source]) =>
         importsOf(source, VALUE_IMPORT).some(
-          (name) => name === '@omnivo/i18n' || name.endsWith('/lib/locale'),
+          (name) => /^@omnivo\/i18n(\/shop)?$/.test(name) || name.endsWith('/lib/locale'),
         ),
       )
       .map(([path]) => path);

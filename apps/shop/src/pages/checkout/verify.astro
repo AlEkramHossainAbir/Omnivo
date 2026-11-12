@@ -21,7 +21,8 @@ const wait = token === null ? null : await shopSource.codeWait(token);
 // and their cart is still there (decision 23)
 if (wait === null) return Astro.redirect('/checkout');
 
-const shop = await shopSource.shop();
+// Step 26d.4: the categories for the header's drawer
+const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
 const locale = await shopLocale(shop.language);
 const { t } = locale;
 const numbers = numberLocale(locale.language);
@@ -52,7 +53,12 @@ const textLink =
   'font-semibold text-brand underline-offset-3 transition-colors duration-150 not-aria-disabled:hover:underline aria-disabled:cursor-not-allowed aria-disabled:text-muted';
 ---
 
-<ShopLayout shop={shop} locale={locale} title={t('shop.verify.pageTitle', { shop: shop.name })}>
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.verify.pageTitle', { shop: shop.name })}
+  categories={categories}
+>
   <verify-code
     data-length={SHOP_CODE_LENGTH}
     data-number-locale={numbers}

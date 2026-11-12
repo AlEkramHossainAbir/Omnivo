@@ -1,0 +1,36 @@
+---
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+
+// CLAUDE.md → Storefront screens not in Figma → Empty state: a card with a round cream tile, a
+// title, a line that says what to do, and an optional button. Step 26d.3 uses it for a list with
+// no cards; 26e for "page not found" and a closed shop. The cart drawer draws its own copy without
+// the card, because the drawer is the card
+interface Props {
+  icon: IconSvgElement;
+  title: string;
+  text: string;
+  // A link, never a button: every action here goes to another page
+  action?: { href: string; label: string };
+  // The title's level: h2 under a page's h1, h1 when the empty state is the whole page (26e)
+  level?: 'h1' | 'h2';
+}
+
+const { icon, title, text, action, level = 'h2' } = Astro.props;
+const Heading = level;
+---
+
+<div class="flex flex-col items-center gap-4 rounded-2xl bg-card px-4 py-12 text-center md:p-12">
+  <span class="grid size-16 place-items-center rounded-full bg-cream">
+    <HugeiconsIcon icon={icon} size={28} strokeWidth={1.5} aria-hidden="true" />
+  </span>
+  <Heading class="text-sf-title font-semibold">{title}</Heading>
+  <p class="max-w-96 text-muted">{text}</p>
+  {action && (
+    <a
+      href={action.href}
+      class="mt-2 flex h-11 items-center rounded-sm bg-accent px-6 font-semibold transition-colors duration-150 hover:bg-brand hover:text-accent"
+    >
+      {action.label}
+    </a>
+  )}
+</div>

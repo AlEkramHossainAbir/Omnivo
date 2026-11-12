@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { errorCode } from './errors.js';
 import { isMoneyAmount } from './money.js';
+import { pageOf } from './pagination.js';
 import { LANGUAGE_CODES } from './preferences.js';
 import { isTimeZone } from './settings.js';
 
@@ -498,3 +499,67 @@ export type ShopCodeResent = z.infer<typeof shopCodeResentSchema>;
 export type ShopOrderStatus = (typeof SHOP_ORDER_STATUSES)[number];
 export type ShopOrderLine = z.infer<typeof shopOrderLineSchema>;
 export type ShopOrder = z.infer<typeof shopOrderSchema>;
+
+// ---------------------------------------------------------------------------------------------
+// Step 26d: the category and search pages (/c/<slug>, /search).
+
+// "Sort By". newest: the most recently published first, the order a shop shows by default. The
+// four a shopper understands without a word of help; "Popular" needs sales numbers the public API
+// does not give
+export const SHOP_SORTS = ['newest', 'price_asc', 'price_desc', 'name'] as const;
+
+// Cards per answer: four rows of the desktop grid's five columns, so Load More always adds whole
+// rows. Not a request field: a shopper cannot ask for 1,000 cards in one page
+export const SHOP_PAGE_SIZE = 20;
+
+// A search word longer than this is never a real search. The header's box has the same maxlength
+export const SHOP_SEARCH_MAX_LENGTH = 100;
+
+// A price filter: whole taka, as a decimal string like every amount. A shopper types "500", never
+// paisa, and an amount over ৳999,999,999 is not a filter
+const shopPriceFilterSchema = z.string().regex(/^(0|[1-9]\d{0,8})$/);
+
+// What the category and search pages ask the source for. The page builds it from the address
+// (apps/shop/src/lib/listing-query.ts), where every value is optional and a broken one is dropped,
+// so this is the clean shape: every field is present, with null for "not set"
+export const shopListingQuerySchema = z
+  .object({
+    // A category's slug: its listings and those of every category under it. null: every listing
+    // (/c/all and /search). The same characters the ERP allows in a slug, so it is safe in a URL
+    category: z
+      .string()
+      .max(100)
+      .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/)
+      .nullable(),
+    // The search words. Trimmed first, so "  " is no search at all and the page sends null
+    q: z.string().trim().min(1).max(SHOP_SEARCH_MAX_LENGTH).nullable(),
+    sort: z.enum(SHOP_SORTS),
+    // On the price the shopper pays (`price`), not the struck-out one
+    minPrice: shopPriceFilterSchema.nullable(),
+    maxPrice: shopPriceFilterSchema.nullable(),
+    inStock: z.boolean(),
+    // Only listings on sale: with a discount ribbon or a struck-out price (the "Offer" chip)
+    offer: z.boolean(),
+    // Where the previous answer stopped (pagination.ts: opaque, only the source reads it). null:
+    // the first page
+    cursor: z.string().min(1).max(512).nullable(),
+  })
+  // Compared as numbers: as strings "90" > "500". The page swaps a pair typed the wrong way round
+  // before it gets here, so this only stops a source call that skipped the page
+  .refine(
+    (query) =>
+      query.minPrice === null ||
+      query.maxPrice === null ||
+      Number(query.minPrice) <= Number(query.maxPrice),
+    { message: errorCode('invalid_value'), path: ['maxPrice'] },
+  );
+
+// One page of cards, the ERP's list shape (pagination.ts): items and the next page's cursor, null
+// on the last page. No total on purpose, as in the ERP: the pages never show a count
+export const shopListingPageSchema = pageOf(shopListingSchema).extend({
+  items: z.array(shopListingSchema).max(SHOP_PAGE_SIZE),
+});
+
+export type ShopSort = (typeof SHOP_SORTS)[number];
+export type ShopListingQuery = z.infer<typeof shopListingQuerySchema>;
+export type ShopListingPage = z.infer<typeof shopListingPageSchema>;
