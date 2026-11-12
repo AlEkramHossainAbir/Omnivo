@@ -1,9 +1,12 @@
 # Omnivo on the home VPS
 
-This is how the demo (staging) copy of Omnivo runs on the VPS at `192.140.255.22`. It uses the
+This is how the demo (staging) copy of Omnivo runs on the home VPS. It uses the
 files in [`infra/staging/`](../infra/staging/), which are explained line by line in
 [staging-deploy.en.md](staging-deploy.en.md). This page says what is different on this server and
-how to run it day to day.
+how to run it day to day. All the addresses are listed in [domains.en.md](domains.en.md).
+
+This repository is public, so the server's IP address, SSH port and user names are not written
+here. They are in the VPS access sheet and in the `myvps` entry of `~/.ssh/config` on your Mac.
 
 ## The addresses
 
@@ -27,7 +30,7 @@ browser ──HTTPS──> Cloudflare ──tunnel──> cloudflared ──HTTP
                                           (container)         (web)
 ```
 
-The VPS runs on a home connection. Only SSH (port 2222) is open from outside, and the IP address can
+The VPS runs on a home connection. Only SSH is open from outside, and the IP address can
 change. So the server opens no web port at all:
 
 - **cloudflared** (the `tunnel` service in `compose.yml`) opens an outgoing connection to
@@ -47,7 +50,7 @@ hand.
 
 | | |
 | --- | --- |
-| Login | `ssh myvps` (the entry in `~/.ssh/config` on the Mac: port 2222, user `guest_abir`) |
+| Login | `ssh myvps` (the entry in `~/.ssh/config` on the Mac) |
 | Machine | 2 vCPU, 3 GB RAM, 30 GB disk, x86-64, Ubuntu 24.04 |
 | Swap | 2 GB, in `/swapfile` |
 | Docker | Docker Engine and the Compose plugin, from Docker's own apt repository |
@@ -77,8 +80,8 @@ GitHub settings it uses:
 
 | Where | Name | Value |
 | --- | --- | --- |
-| Environment `staging`, secret | `STAGING_SSH_HOST` | `192.140.255.22` |
-| Environment `staging`, secret | `STAGING_SSH_PORT` | `2222` |
+| Environment `staging`, secret | `STAGING_SSH_HOST` | The VPS's IP address |
+| Environment `staging`, secret | `STAGING_SSH_PORT` | The VPS's SSH port (not 22) |
 | Environment `staging`, secret | `STAGING_SSH_USER` | `deploy` |
 | Environment `staging`, secret | `STAGING_SSH_KEY` | The private half of the deploy key. Only GitHub has it |
 | Environment `staging`, secret | `STAGING_KNOWN_HOSTS` | The server's SSH fingerprints |
@@ -101,11 +104,29 @@ then:
 ```bash
 # 1. GitHub Actions
 gh secret set STAGING_SSH_HOST --env staging --body <new IP>
-ssh-keyscan -p 2222 -t ed25519,ecdsa,rsa <new IP> 2>/dev/null | gh secret set STAGING_KNOWN_HOSTS --env staging
+ssh-keyscan -p <SSH port> -t ed25519,ecdsa,rsa <new IP> 2>/dev/null | gh secret set STAGING_KNOWN_HOSTS --env staging
 # 2. Your Mac: change HostName in the "Host myvps" entry of ~/.ssh/config
 ```
 
 Then re-run the failed deploy in **Actions**.
+
+## A new address on the tunnel
+
+The tunnel was made from the server with `cloudflared` commands, so its routes are managed there,
+not in the Cloudflare dashboard. The Cloudflare login that allows this was deleted after the setup,
+because it can change every DNS record of the domain. To add an address (for example
+`shop.omnivosoft.com`):
+
+```bash
+ssh myvps
+sudo -iu deploy
+cf() { docker run --rm --user "$(id -u):$(id -g)" -e HOME=/cf -v /home/deploy/.cloudflared:/cf/.cloudflared cloudflare/cloudflared:2026.10.6 "$@"; }
+cf tunnel login            # prints a link: open it, pick omnivosoft.com, click Authorize
+cf tunnel route dns omnivo shop.omnivosoft.com
+rm /home/deploy/.cloudflared/cert.pem   # delete the login again
+```
+
+Then add the site to the Caddyfile. The link works for about 10 minutes.
 
 ## Mailpit
 
@@ -132,11 +153,12 @@ These copies are on the same VM, and the VM has no backup. So also copy them to 
 then:
 
 ```bash
-scp -P 2222 'guest_abir@192.140.255.22:/srv/omnivo/backups/*.dump' ~/omnivo-backups/
+mkdir -p ~/omnivo-backups
+scp 'myvps:/srv/omnivo/backups/*.dump' ~/omnivo-backups/
 ```
 
-(If `scp` says "Permission denied", the files belong to `deploy`; run
-`ssh myvps 'sudo chmod o+r /srv/omnivo/backups/*.dump'` first, or copy them through `sudo`.)
+The `backups` folder must exist before the first night: cron opens `backup.log` in it before
+`backup.sh` runs. It was made by hand on 12 Nov 2026, with a first backup.
 
 Uploaded files (logos) live in the `storage-data` Docker volume and are not in the dump. On a demo
 that is acceptable; for real customers, plan off-site backups first (see
