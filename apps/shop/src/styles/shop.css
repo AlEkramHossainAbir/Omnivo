@@ -6,6 +6,9 @@
 /* Self-hosted like the app: a shop must not wait for Google Fonts, and 700 is here because the
    phone layout writes its titles and prices bold (Noto Sans Bengali draws the ৳ sign) */
 @import '@fontsource-variable/geist';
+/* Step 26c: for the order number on /order/<no> (CLAUDE.md: Geist Mono). A @font-face costs nothing
+   until a page draws text in it, so the other pages never download this file */
+@import '@fontsource-variable/geist-mono';
 @import '@fontsource/noto-sans-bengali/400.css';
 @import '@fontsource/noto-sans-bengali/500.css';
 @import '@fontsource/noto-sans-bengali/600.css';
@@ -52,6 +55,8 @@
   --color-overlay: var(--overlay);
   /* The variable package registers "Geist Variable", not "Geist" (CLAUDE.md → Typography) */
   --font-sans: 'Geist Variable', 'Noto Sans Bengali', 'Segoe UI', system-ui, sans-serif;
+  /* The same stack as the app's (packages/ui/src/styles.css) */
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 
 /* The type scale. Fixed values, so outside `inline`. text-sf-display, text-sf-body and so on */

@@ -992,7 +992,8 @@ What still applies from the rest of this file: HugeIcons Stroke Rounded only, no
 `t()` (keys under `shop.*`), money as decimal strings (formatted in browser scripts with `@omnivo/i18n/format`: the
 package's main entry starts i18next with every word, so a browser script never imports it), `cursor: pointer` on
 everything clickable, a visible focus state, 150ms color-only transitions and `prefers-reduced-motion`. Light theme only for now
-(`color-scheme: light`); Figma has no dark design.
+(`color-scheme: light`); Figma has no dark design. Pages are Astro with small scripts; the checkout form is the only
+React island, and it gets its words from the server as props (no i18next in the browser).
 
 ### Storefront color tokens
 
@@ -1034,7 +1035,7 @@ the tokens, never raw hex.
 - **Family:** the app's stack (`"Geist Variable", "Noto Sans Bengali", "Segoe UI", system-ui, sans-serif`),
   self-hosted, in place of Figma's Roboto and Helvetica. Sizes, weights and line heights stay as in Figma. Every
   text uses `letter-spacing: -0.02em` (Figma's tracking). Prices, quantities and the countdown use
-  `tabular-nums`.
+  `tabular-nums`. Order numbers use `Geist Mono` (self-hosted, `--font-mono`), as in the app.
 - Scale (desktop; the phone values from `home_page_mobile` in brackets):
 
 | Token | Size / line-height | Weight | Where |
@@ -1177,26 +1178,32 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   class (`shop-prose`), never per-section markup. No description: no card.
 - **Checkout card:** max 848px, centered, 36px below the header (128px from the page top), `card-glass`, radius
   16, 4px inset. Header: `cream`, top radius 12, padding 24px, "Shipping & Contact Details" `sf-title` `brand`
-  centered. Body: 36px padding, 32px between blocks. Field: label 16px/600 `brand`, 12px gap, input 48px high,
+  centered. Body: 36px from the card's edge (36px under the header, and 32px inside the 4px inset at the sides and
+  the bottom), 32px between blocks, except 36px before the lines and 48px around the promo box and the payment
+  cards. Every gap is measured between trimmed text boxes (`trim-text`). The card ends 160px above the footer. Field: label 16px/600 `brand`, 12px gap, input 48px high,
   `card`, 1px `field` border, radius 8; focus uses a `brand` border plus a 2px `brand` outline. Full Name and
   Mobile Number side by side (16px apart), Delivery Address full width. Radio card: `cream`, radius 8, padding
   20px 30px, a 24px radio (`brand` ring, `brand` dot when checked) plus 16px/600 `brand`, 4px apart; the whole
   card is the label. Groups: "Delivery Location" (Inside Dhaka — ৳80, Outside Dhaka — ৳120; the zones come
-  from the shop's settings) and "Payment Method" (Cash on Delivery, Mobile Banking), each two cards side by
+  from the shop's settings; no location is picked at first: until one is, the Delivery Charge row says "Pick a
+  location" in `muted`) and "Payment Method" (Cash on Delivery, Mobile Banking), each two cards side by
   side, 16px apart. Free delivery is not a choice: when the order reaches the shop's threshold, the Delivery
   Charge row says "Free", and a 14px `muted` line under Delivery Location says "Free delivery on orders over
   ৳1,000".
 - **Checkout lines:** per line, a 155×130 `canvas` image box (radius 8), 20px gap, then the name (`sf-subtitle`,
-  `brand`, max 288px) and 20px below it the stepper: minus and plus 40px `cream` buttons (radius 5,
+  `brand`, max 288px) and 20px below it the stepper (the name and the stepper centered beside the image): minus and plus 40px `cream` buttons (radius 5,
   `MinusSign` / `Add01` 14px `brand`), a 60×40 quantity box between them (`card`, 1.5px `cream` border, radius 5,
   20px), 6px apart, then 16px later the delete button (40px, `promo-soft`, radius 5, `Delete02` 24px `promo`).
   The line total is at the right, `sf-subtitle` `price`. Quantity never goes below 1; delete removes the line.
-  1px `rule` lines above and below the Delivery Charge row (16px/600 `brand`, amount right). "Total" row 20px/700:
+  1px `rule` lines above and below the Delivery Charge row (16px/600 `brand`, amount right), the first 30px under
+  the lines. While a coupon is applied, a Discount row ("Discount (WELCOME10)", the amount after a minus sign) sits
+  above it inside the same rules, 24px apart. "Total" row 20px/700:
   label `brand`, amount `price`. Promo box: 60px `canvas` pill, "Add Promo" placeholder 16px/600 `muted` at
   36px in, and an "Apply Coupon" button inside it (156×52, 4px inset, `brand`, `accent` 16px/600, radius 999).
   Terms: a 20px checkbox (`CheckmarkSquare02` `brand` when checked) and "I agree with the Terms and Conditions"
-  18px `body`, the link underlined, 12px apart. Confirm Order: full width, 64px, `accent`, radius 4, 18px/600
-  `brand`; disabled until the terms are ticked. Below `md` the card fills the width, its body padding is 20px,
+  18px `body`, the link underlined (it opens in a new tab), 12px apart. Confirm Order: full width, 64px, `accent`,
+  radius 4, 18px/600 `brand`; disabled until the terms are ticked, while newer prices load, with an out-of-stock
+  line, and under the shop's minimum order (a `promo` line under Total says how much more to add). Below `md` the card fills the width, its body padding is 20px,
   and every two-card row is one column.
 - **Order confirmed dialog (Figma `confirmation_status`):** after the order is placed (after the phone code for
   Cash on Delivery), over the checkout page with `overlay` behind it. 440px wide (the screen minus 32px on a
@@ -1236,11 +1243,15 @@ These follow the same tokens and components. Use them exactly as written here un
 - **Phone verification (`/checkout/verify`):** the checkout card at 560px: header "Verify Your Phone", a 16px
   `body` line "We sent a 6-digit code to +880 17•• ••• 356", one 48px input (`tabular-nums`, centered, Bangla
   digits become ASCII), "Confirm Order" (the checkout's button), and "Resend code" as a `brand` text link (with
-  "in 0:45" while it waits). A wrong code shows an `Alert02` line in `promo` under the input.
+  "in 0:45" while it waits). A wrong code shows an `Alert02` line in `promo` under the input, with the tries left.
+  After 5 wrong codes the order is dropped: the box goes and "Back to checkout" takes its place (the cart is kept).
+  The page finds its order by an httpOnly cookie, never by the number, and with no order waiting it goes to
+  `/checkout`. The mock shows its test code in a line under the sentence.
 - **Order details (`/order/[no]`, from "View Order Details"):** the checkout card at 848px: header "Order
   Details", the order number in `Geist Mono` `sf-title` `brand`, the status timeline of the track page, the
   delivery details (name, phone, address, area) in 16px `body`, and the lines and totals as in checkout,
-  read-only (no stepper, no delete).
+  read-only (no stepper, no delete; "150ml · 2 × ৳229" under the name), with a Subtotal row above Delivery Charge.
+  Only the browser that placed the order sees it (a cookie); anyone else gets page not found.
 - **Track order (`/track`):** the checkout card: Mobile Number and Order Number fields, "Track Order" (`accent`),
   then a vertical timeline: 24px dots (done: `brand` fill with an `accent` tick; current: 2px `accent` ring on
   `brand`; later: 1px `rule` ring), 2px connecting line, 16px/600 `brand` status and a 14px `muted` date.

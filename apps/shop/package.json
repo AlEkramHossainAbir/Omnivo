@@ -15,7 +15,9 @@
     "@astrojs/node": "~11.1.11",
     "@astrojs/react": "^7.1.4",
     "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@fontsource/noto-sans-bengali": "^5.3.0",
+    "@hookform/resolvers": "^5.9.1",
     "@hugeicons/core-free-icons": "^4.3.5",
     "@hugeicons/react": "^1.1.10",
     "@omnivo/contracts": "workspace:*",
@@ -23,7 +25,9 @@
     "astro": "^7.4.7",
     "nanostores": "^1.5.5",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "react-hook-form": "^7.89.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",

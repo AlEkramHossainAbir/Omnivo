@@ -1,0 +1,462 @@
+---
+import { Alert02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { numberLocale } from '@omnivo/i18n';
+import { SHOP_CODE_LENGTH } from '@omnivo/contracts';
+
+import OrderConfirmedDialog from '../../components/OrderConfirmedDialog.astro';
+import { shopSource } from '../../data/source';
+import ShopLayout from '../../layouts/ShopLayout.astro';
+import { shopLocale } from '../../lib/locale';
+import { waitText } from '../../lib/verify';
+import { checkoutToken } from '../../server/cookies';
+
+// Step 26c: the phone code for a Cash on Delivery order (decision 4; CLAUDE.md → Phone
+// verification, not in Figma). The order is found by the token in the httpOnly checkout cookie,
+// so this page can only ever show the order this browser placed.
+const token = checkoutToken(Astro.request);
+const wait = token === null ? null : await shopSource.codeWait(token);
+// No order waits here: never placed, already confirmed (a reload after the dialog), dropped after
+// five wrong codes, or past its hour. The checkout is where a shopper can do something about it,
+// and their cart is still there (decision 23)
+if (wait === null) return Astro.redirect('/checkout');
+
+const shop = await shopSource.shop();
+const locale = await shopLocale(shop.language);
+const { t } = locale;
+const numbers = numberLocale(locale.language);
+
+// Words with a value in them go to the script as templates with their {{placeholders}} kept. Literal
+// objects, not a helper: t() checks each key's values against its words, and a computed key
+// would lose that
+const count = { replace: { count: '{{count}}' } };
+const words = {
+  wrong: t('errors.shop_code_wrong'),
+  triesOne: t('shop.verify.triesLeft', { ...count, count: 1 }),
+  triesOther: t('shop.verify.triesLeft', { ...count, count: 2 }),
+  tooMany: t('errors.shop_code_too_many'),
+  noOrder: t('errors.shop_code_no_order'),
+  format: t('errors.shop_code_format'),
+  wait: t('errors.shop_code_resend_wait'),
+  failed: t('shop.verify.failed'),
+  resendIn: t('shop.verify.resendIn', { time: '{{time}}' }),
+  resent: t('shop.verify.resent'),
+  checking: t('shop.verify.checking'),
+  confirm: t('shop.checkout.confirm'),
+};
+
+// The page is this shopper's own (their cookie), so no cache may keep it
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+const textLink =
+  'font-semibold text-brand underline-offset-3 transition-colors duration-150 not-aria-disabled:hover:underline aria-disabled:cursor-not-allowed aria-disabled:text-muted';
+---
+
+<ShopLayout shop={shop} locale={locale} title={t('shop.verify.pageTitle', { shop: shop.name })}>
+  <verify-code
+    data-length={SHOP_CODE_LENGTH}
+    data-number-locale={numbers}
+    data-listing-ids={JSON.stringify(wait.listingIds)}
+    data-resend-in={wait.resendInSeconds}
+    data-words={JSON.stringify(words)}
+  >
+    {/* The checkout card at 560px (CLAUDE.md), with the checkout's 4px glass frame, and the
+        checkout's 160px to the footer */}
+    <div class="mx-auto mt-4 max-w-[560px] rounded-2xl bg-card-glass p-1 md:mt-9 md:mb-40">
+      <div class="rounded-t-xl bg-cream p-6 text-center">
+        <h1 class="trim-text text-sf-title font-semibold">{t('shop.verify.title')}</h1>
+      </div>
+      {/* noValidate: the browser's own bubbles would be in the browser's language */}
+      <form novalidate class="flex flex-col gap-8 p-5 md:p-9">
+        <div class="flex flex-col gap-3">
+          <p class="text-body">{t('shop.verify.sent', { phone: wait.maskedPhone })}</p>
+          {/* Only a test shop has a code to show (ShopSource.testCode): the mock sends no SMS */}
+          {shopSource.testCode !== null && (
+            <p class="rounded-lg bg-canvas px-4 py-3 text-sf-small font-medium text-body">
+              {t('shop.verify.mockCode', { code: shopSource.testCode })}
+            </p>
+          )}
+        </div>
+
+        {/* The box and its error line share one block: as two children of the form, the empty
+            error line would still take the form's 32px gap */}
+        <div class="flex flex-col">
+          <div data-code-field class="flex flex-col gap-3">
+            <label for="verify-code" class="trim-text font-semibold">
+              {t('shop.verify.code')}
+            </label>
+            {/* one-time-code: a phone offers the code from the SMS above the keyboard.
+              inputmode numeric: the digit keyboard; type stays text, because a number box drops
+              a leading 0 and shows a spinner */}
+            <input
+              id="verify-code"
+              name="code"
+              type="text"
+              inputmode="numeric"
+              autocomplete="one-time-code"
+              aria-describedby="verify-error"
+              class="h-12 w-full min-w-0 rounded-lg border border-field bg-card px-4 text-center text-sf-title tracking-[0.3em] tabular-nums transition-colors duration-150 hover:border-muted-line focus:border-brand focus:outline-2 focus:outline-offset-0 focus:outline-brand aria-invalid:border-promo"
+            />
+          </div>
+          {/* role="alert": the shopper pressed the button and waits for this answer. Empty until
+            there is something to say; the script fills the text and shows the line, and only
+            then is it 12px under the box. It stays when the box goes (five wrong codes) */}
+          <div id="verify-error" role="alert" class="has-[>p:not([hidden])]:pt-3">
+            <p
+              data-error
+              hidden
+              class="flex items-start gap-1.5 text-sf-small font-medium text-promo"
+            >
+              <HugeiconsIcon
+                icon={Alert02Icon}
+                size={16}
+                strokeWidth={1.5}
+                className="mt-1 shrink-0"
+                aria-hidden="true"
+              />
+              <span data-error-text></span>
+            </p>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-6">
+          {/* aria-disabled, not disabled, while it waits: a disabled button loses the focus */}
+          <button
+            type="submit"
+            data-submit
+            class="h-16 w-full rounded-sm bg-accent text-[18px] font-semibold transition-colors duration-150 not-aria-disabled:hover:bg-brand not-aria-disabled:hover:text-accent aria-disabled:bg-canvas aria-disabled:text-muted"
+          >
+            {words.confirm}
+          </button>
+          <p data-resend-row class="text-center">
+            <button
+              type="button"
+              data-resend
+              aria-disabled={wait.resendInSeconds > 0 ? 'true' : undefined}
+              class={textLink}
+            >
+              {/* The space is part of the text, so the button's name reads "Resend code in 0:45".
+                  Astro drops the line break before the <span>, so a typed space would be lost */}
+              {`${t('shop.verify.resend')} `}
+              {/* The server's wait, drawn here first so the page does not jump when the script
+                  starts; the script counts it down */}
+              <span data-resend-wait class="tabular-nums" hidden={wait.resendInSeconds === 0}>
+                {t('shop.verify.resendIn', { time: waitText(wait.resendInSeconds, numbers) })}
+              </span>
+            </button>
+          </p>
+          {/* "A new code is on its way." Polite: it is news, not an error */}
+          <p
+            data-status
+            role="status"
+            class="text-center text-sf-small text-muted empty:hidden"
+          ></p>
+          {/* After five wrong codes or a dropped order: the only way on is a new order */}
+          <a
+            data-start-again
+            href="/checkout"
+            hidden
+            class="flex h-11 items-center justify-center rounded-sm bg-cream font-semibold transition-colors duration-150 hover:bg-accent"
+          >
+            {t('shop.verify.startAgain')}
+          </a>
+        </div>
+      </form>
+    </div>
+  </verify-code>
+
+  <OrderConfirmedDialog locale={locale} />
+</ShopLayout>
+
+<script>
+  import { removeFromCart } from '../../lib/cart';
+  import { announceOrderConfirmed } from '../../lib/order-events';
+  import {
+    codeDigits,
+    fillWords,
+    isOrderConfirmed,
+    problemParts,
+    resendSeconds,
+    waitText,
+    type ProblemParts,
+  } from '../../lib/verify';
+
+  // The page's words, as the server wrote them (see `words` above)
+  const WORD_KEYS = [
+    'wrong',
+    'triesOne',
+    'triesOther',
+    'tooMany',
+    'noOrder',
+    'format',
+    'wait',
+    'failed',
+    'resendIn',
+    'resent',
+    'checking',
+    'confirm',
+  ] as const;
+  type WordKey = (typeof WORD_KEYS)[number];
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  function readIds(json: string | undefined): Set<string> {
+    const value: unknown = JSON.parse(json ?? '[]');
+    return new Set(
+      Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : [],
+    );
+  }
+
+  function part<T extends Element>(root: ParentNode, selector: string): T {
+    const element = root.querySelector<T>(selector);
+    if (!element) throw new Error(`verify: ${selector} is missing`);
+    return element;
+  }
+
+  async function post(url: string, body?: unknown): Promise<Response> {
+    return fetch(url, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+
+  // A body that is not JSON (a proxy's error page) is "no body", not a crash
+  async function bodyOf(response: Response): Promise<unknown> {
+    try {
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  class VerifyCode extends HTMLElement {
+    private words: Record<string, unknown> = {};
+    private length = 6;
+    private numbers = 'en-IN';
+    private listingIds = new Set<string>();
+    private resendAt = 0;
+    private timer: number | undefined;
+    private busy = false;
+    private done = false;
+
+    connectedCallback(): void {
+      const words: unknown = JSON.parse(this.dataset.words ?? '{}');
+      this.words = isRecord(words) ? words : {};
+      // Every word is read once now, so a missing one fails when the page opens, not when a
+      // shopper first types a wrong code
+      for (const key of WORD_KEYS) this.word(key);
+      this.length = Number(this.dataset.length ?? '6');
+      this.numbers = this.dataset.numberLocale ?? 'en-IN';
+      this.listingIds = readIds(this.dataset.listingIds);
+      this.startWait(Number(this.dataset.resendIn ?? '0'));
+
+      const input = this.input;
+      // Bangla digits become ASCII as they are typed, and anything else is dropped (CLAUDE.md)
+      input.addEventListener('input', () => {
+        const digits = codeDigits(input.value, this.length);
+        if (digits !== input.value) input.value = digits;
+      });
+      part(this, 'form').addEventListener('submit', (event) => {
+        event.preventDefault();
+        void this.verify();
+      });
+      part(this, '[data-resend]').addEventListener('click', () => {
+        void this.resend();
+      });
+    }
+
+    disconnectedCallback(): void {
+      window.clearInterval(this.timer);
+    }
+
+    // JSON from our own page, checked anyway: a missing word would show "undefined" to a shopper
+    private word(key: WordKey): string {
+      const word = this.words[key];
+      if (typeof word !== 'string') throw new Error(`verify: word ${key} is missing`);
+      return word;
+    }
+
+    private get input(): HTMLInputElement {
+      return part(this, '#verify-code');
+    }
+
+    private showError(text: string | null): void {
+      const line = part<HTMLElement>(this, '[data-error]');
+      part(this, '[data-error-text]').textContent = text ?? '';
+      line.hidden = text === null;
+      // The box is outlined in promo while its code is the problem
+      if (text === null) this.input.removeAttribute('aria-invalid');
+      else this.input.setAttribute('aria-invalid', 'true');
+    }
+
+    private say(text: string): void {
+      part(this, '[data-status]').textContent = text;
+    }
+
+    private setBusy(busy: boolean): void {
+      this.busy = busy;
+      const submit = part<HTMLButtonElement>(this, '[data-submit]');
+      submit.textContent = busy ? this.word('checking') : this.word('confirm');
+      submit.setAttribute('aria-disabled', String(busy || this.done));
+    }
+
+    // The order can no longer get a code: too many wrong ones, or it is gone. The form goes; the
+    // way back to the checkout takes its place and the focus
+    private end(text: string): void {
+      this.done = true;
+      window.clearInterval(this.timer);
+      for (const selector of ['[data-code-field]', '[data-submit]', '[data-resend-row]']) {
+        part<HTMLElement>(this, selector).hidden = true;
+      }
+      this.say('');
+      part<HTMLElement>(this, '[data-error]').hidden = false;
+      part(this, '[data-error-text]').textContent = text;
+      const back = part<HTMLAnchorElement>(this, '[data-start-again]');
+      back.hidden = false;
+      back.focus();
+    }
+
+    private async verify(): Promise<void> {
+      if (this.busy || this.done) return;
+      const code = codeDigits(this.input.value, this.length);
+      if (code.length !== this.length) {
+        this.showError(this.word('format'));
+        this.input.focus();
+        return;
+      }
+      this.showError(null);
+      this.say('');
+      this.setBusy(true);
+
+      let response: Response;
+      try {
+        response = await post('/api/orders/verify', { code });
+      } catch (error) {
+        console.error(error);
+        this.setBusy(false);
+        this.showError(this.word('failed'));
+        return;
+      }
+      const body = await bodyOf(response);
+
+      if (response.ok && isOrderConfirmed(body)) {
+        // The order is real now: its lines leave this browser's cart (decision 23), and the
+        // dialog opens over this page. The form stays, unusable, behind it
+        this.done = true;
+        this.setBusy(false);
+        window.clearInterval(this.timer);
+        removeFromCart(this.listingIds);
+        announceOrderConfirmed(body);
+        return;
+      }
+      this.setBusy(false);
+      this.refused(response.ok ? null : problemParts(body));
+    }
+
+    private refused(problem: ProblemParts | null): void {
+      switch (problem?.code) {
+        case 'shop_code_wrong': {
+          const left = problem.params.triesLeft;
+          const tries =
+            typeof left === 'number'
+              ? ` ${fillWords(
+                  new Intl.PluralRules(this.numbers).select(left) === 'one'
+                    ? this.word('triesOne')
+                    : this.word('triesOther'),
+                  { count: new Intl.NumberFormat(this.numbers).format(left) },
+                )}`
+              : '';
+          this.showError(`${this.word('wrong')}${tries}`);
+          // Ready for the next try: the wrong digits go, the focus stays in the box
+          this.input.value = '';
+          this.input.focus();
+          return;
+        }
+        case 'shop_code_too_many':
+          this.end(this.word('tooMany'));
+          return;
+        case 'shop_code_no_order':
+          this.end(this.word('noOrder'));
+          return;
+        // The route's own check (400) says the same as the page's check above
+        case 'invalid_input':
+          this.showError(this.word('format'));
+          this.input.focus();
+          return;
+        default:
+          this.showError(this.word('failed'));
+      }
+    }
+
+    private async resend(): Promise<void> {
+      if (this.done || this.waiting()) return;
+      this.say('');
+      let response: Response;
+      try {
+        response = await post('/api/orders/resend');
+      } catch (error) {
+        console.error(error);
+        this.showError(this.word('failed'));
+        return;
+      }
+      const body = await bodyOf(response);
+      const seconds = resendSeconds(body);
+
+      if (response.ok && seconds !== null) {
+        this.showError(null);
+        this.say(this.word('resent'));
+        this.startWait(seconds);
+        return;
+      }
+      const problem = problemParts(body);
+      if (problem?.code === 'shop_code_no_order') {
+        this.end(this.word('noOrder'));
+      } else if (problem?.code === 'shop_code_resend_wait' && seconds !== null) {
+        // Another tab asked a moment ago: the server's wait is the one that counts
+        this.say(this.word('wait'));
+        this.startWait(seconds);
+      } else {
+        this.showError(this.word('failed'));
+      }
+    }
+
+    private waiting(): boolean {
+      return Date.now() < this.resendAt;
+    }
+
+    // "Resend code in 0:45", counted down from the server's number of seconds. The clock is the
+    // browser's; the server checks its own clock again when the button is pressed
+    private startWait(seconds: number): void {
+      window.clearInterval(this.timer);
+      this.resendAt = Date.now() + seconds * 1000;
+      this.tick();
+      if (seconds > 0) {
+        this.timer = window.setInterval(() => {
+          this.tick();
+        }, 1000);
+      }
+    }
+
+    private tick(): void {
+      const left = (this.resendAt - Date.now()) / 1000;
+      const button = part<HTMLButtonElement>(this, '[data-resend]');
+      const label = part<HTMLElement>(this, '[data-resend-wait]');
+      if (left <= 0) {
+        window.clearInterval(this.timer);
+        button.removeAttribute('aria-disabled');
+        label.hidden = true;
+        return;
+      }
+      button.setAttribute('aria-disabled', 'true');
+      label.hidden = false;
+      label.textContent = fillWords(this.word('resendIn'), {
+        time: waitText(left, this.numbers),
+      });
+    }
+  }
+
+  customElements.define('verify-code', VerifyCode);
+</script>

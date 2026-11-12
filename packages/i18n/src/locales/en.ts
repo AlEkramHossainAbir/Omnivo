@@ -5535,6 +5535,102 @@ export const en = {
       emptyText: 'Add products with “Add to cart” and they wait for you here.',
       continueShopping: 'Continue shopping',
     },
+    // Step 26c: /checkout (Figma checkout_process). The words of the React island come from here
+    // too: the page translates them on the server and hands them over as props
+    checkout: {
+      title: 'Checkout',
+      // The browser tab: the page, then the shop
+      pageTitle: 'Checkout | {{shop}}',
+      heading: 'Shipping & Contact Details',
+      name: 'Full Name',
+      phone: 'Mobile Number',
+      address: 'Delivery Address',
+      zone: 'Delivery Location',
+      zoneOption: '{{name}} — {{charge}}',
+      freeDeliveryFrom: 'Free delivery on orders over {{amount}}',
+      items: 'Your items',
+      outOfStock: 'Out of stock: remove it to order',
+      // Under a line whose price changed after Confirm Order was refused (shop_order_changed)
+      priceChanged: 'Was {{old}}',
+      deliveryCharge: 'Delivery Charge',
+      free: 'Free',
+      // In the Delivery Charge row before a location is picked
+      pickZone: 'Pick a location',
+      discount: 'Discount ({{code}})',
+      total: 'Total',
+      promo: 'Promo code',
+      promoPlaceholder: 'Add Promo',
+      apply: 'Apply Coupon',
+      applying: 'Applying…',
+      removeCoupon: 'Remove the code',
+      couponApplied: '{{code}} applied: {{off}} off',
+      payment: 'Payment Method',
+      cod: 'Cash on Delivery',
+      online: 'Mobile Banking',
+      // Three parts, because the link sits inside the sentence and Bangla puts it first
+      termsBefore: 'I agree with the ',
+      termsLink: 'Terms and Conditions',
+      termsAfter: '',
+      confirm: 'Confirm Order',
+      placing: 'Placing the order…',
+      // No answer from the server: the order may not have reached it
+      orderFailed: 'The order was not sent. Check the connection, then try again.',
+      belowMinimum: 'Orders start at {{minimum}}. Add {{more}} more to order.',
+      emptyTitle: 'Your cart is empty',
+      emptyText: 'Add products to your cart, then come back here to order them.',
+    },
+    // Step 26c: /checkout/verify, the phone code for Cash on Delivery
+    verify: {
+      title: 'Verify Your Phone',
+      pageTitle: 'Verify your phone | {{shop}}',
+      sent: 'We sent a 6-digit code to {{phone}}',
+      code: '6-digit code',
+      triesLeft_one: '{{count}} try left.',
+      triesLeft_other: '{{count}} tries left.',
+      resend: 'Resend code',
+      resendIn: 'in {{time}}',
+      resent: 'A new code is on its way.',
+      checking: 'Checking the code…',
+      // No answer from the server: the code may not have reached it
+      failed: 'The code was not sent. Check the connection, then try again.',
+      // Only in the mock shop, which sends no SMS
+      mockCode: 'Test shop: no SMS is sent. The code is {{code}}.',
+      startAgain: 'Back to checkout',
+    },
+    // Step 26c: the dialog after the order (Figma confirmation_status)
+    confirmed: {
+      title: 'Order Confirmed',
+      // The phone sits between two parts, in weight 500
+      textBefore: 'We have received your order. We’ll send updates by SMS to ',
+      textAfter: '.',
+      close: 'Close',
+      details: 'View Order Details',
+      continueShopping: 'Continue shopping',
+    },
+    // Step 26c: /order/<no>
+    order: {
+      title: 'Order Details',
+      // The browser tab: the number, then the shop
+      pageTitle: 'Order {{orderNo}} | {{shop}}',
+      placedOn: 'Placed on {{date}}',
+      timeline: 'Order status',
+      statuses: {
+        pending: 'Order placed',
+        confirmed: 'Confirmed',
+        packed: 'Packed',
+        shipped: 'On the way',
+        delivered: 'Delivered',
+        cancelled: 'Cancelled',
+        returned: 'Returned',
+      },
+      delivery: 'Delivery details',
+      payment: 'Payment',
+      items: 'Items',
+      lineQuantity: '{{quantity}} × {{price}}',
+      subtotal: 'Subtotal',
+      // The Delivery Charge row of an order that went out for free
+      free: 'Free',
+    },
     footer: {
       pages: 'Shop pages',
       social: '{{shop}} on social media',
@@ -7265,6 +7361,24 @@ export const en = {
     pin_format: 'Use exactly 6 digits.',
     pin_too_easy: 'Pick a PIN that is harder to guess than 123456 or 000000.',
     pin_mismatch: 'The two PINs are different. Type the same 6 digits in both boxes.',
+    // Step 26c: the shop's checkout and phone code
+    shop_coupon_format: 'A code has only letters, digits and dashes, up to 20.',
+    shop_coupon_unknown: 'This code does not exist. Check how it is spelled.',
+    shop_coupon_expired: 'This code has expired.',
+    shop_coupon_minimum: 'This code needs items worth {{minimum}} or more.',
+    shop_phone_format: 'Type a Bangladeshi mobile number, like 01786 120356.',
+    shop_address_too_short: 'Write the house, the road and the area, so the courier can find you.',
+    shop_terms_required: 'Tick the box to agree with the terms.',
+    shop_code_format: 'Type the 6 digits from the SMS.',
+    shop_cart_empty: 'Your cart is empty. Add a product first.',
+    shop_zone_unknown: 'Pick a delivery location.',
+    shop_payment_unavailable: 'This payment method is not offered now. Pick another one.',
+    shop_order_below_minimum: 'Orders start at {{minimum}}. Add more items to order.',
+    shop_order_changed: 'A price or the stock changed. Check the new total, then confirm again.',
+    shop_code_wrong: 'That code is wrong. Check the SMS and type it again.',
+    shop_code_too_many: 'Too many wrong codes. Place the order again to get a new code.',
+    shop_code_resend_wait: 'Wait a little, then ask for a new code.',
+    shop_code_no_order: 'No order is waiting for a code. Place the order again.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

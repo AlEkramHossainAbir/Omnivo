@@ -1,0 +1,136 @@
+---
+import { Cancel01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+
+import type { ShopLocale } from '../lib/locale';
+
+// Step 26c: "Order Confirmed" (Figma confirmation_status 41:4066; CLAUDE.md → Order confirmed
+// dialog). It opens over the page that confirmed the order: the checkout (Mobile Banking) or the
+// verify page (a right code). Neither page opens it: they send the shop:order-confirmed event, and
+// this listens on the document (decision 24). Only those two pages draw it.
+// A native <dialog> in a custom element, like the cart drawer: showModal() gives the focus trap,
+// Escape, the inert page and the backdrop, with a few lines of script and no React.
+interface Props {
+  locale: ShopLocale;
+}
+
+const { locale } = Astro.props;
+const { t } = locale;
+
+const button =
+  'flex h-11 items-center justify-center rounded-sm font-medium transition-colors duration-150';
+---
+
+<order-confirmed>
+  {/* 440px, the screen minus 32px on a phone. A modal <dialog> is centered by the browser
+      (position fixed, margin auto); max-w-none drops the browser's own 2em limit */}
+  <dialog
+    aria-labelledby="order-confirmed-title"
+    aria-describedby="order-confirmed-text"
+    class="m-auto w-[calc(100%-32px)] max-w-[440px] rounded-2xl border-0 bg-card px-12 pt-16 pb-12 text-center text-brand backdrop:bg-overlay"
+  >
+    {/* A fixed <dialog> is the containing block, so `absolute` is measured from its corner */}
+    <button
+      type="button"
+      data-close
+      aria-label={t('shop.confirmed.close')}
+      class="absolute top-4 right-4 grid size-8 place-items-center rounded-lg text-muted transition-colors duration-150 hover:bg-canvas hover:text-brand"
+    >
+      <HugeiconsIcon icon={Cancel01Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+    </button>
+
+    {/* Figma's two-tone tick-double-03, as Figma drew it (CLAUDE.md: a two-tone drawing is not a
+        Stroke Rounded icon). Decorative: the title says the same */}
+    <img src="/shapes/order-confirmed.svg" width="100" height="100" alt="" class="mx-auto" />
+
+    {/* The title and the line are trimmed (trim-text), as Figma measures them: the dialog is
+        500px tall at 1440px, not 526px */}
+    <h2 id="order-confirmed-title" class="trim-text mt-12 text-sf-title font-semibold">
+      {t('shop.confirmed.title')}
+    </h2>
+    {/* Two words around the phone, so Bangla can put it in the middle of its sentence. The
+        script writes the sentence when it knows the phone: written here, the line breaks of the
+        markup would put a space before the full stop */}
+    <p
+      id="order-confirmed-text"
+      data-text
+      data-before={t('shop.confirmed.textBefore')}
+      data-after={t('shop.confirmed.textAfter')}
+      class="trim-text mx-auto mt-6 max-w-[307px] leading-6 text-muted"
+    ></p>
+
+    <div class="mt-16 flex flex-col gap-3">
+      {/* The script sets the order's address before the dialog opens */}
+      <a data-details href="/" class={`${button} bg-cream hover:bg-accent`}>
+        {t('shop.confirmed.details')}
+      </a>
+      <a data-continue href="/" class={`${button} bg-accent hover:bg-brand hover:text-accent`}>
+        {t('shop.confirmed.continueShopping')}
+      </a>
+    </div>
+  </dialog>
+</order-confirmed>
+
+<script>
+  import type { ShopOrderConfirmed } from '@omnivo/contracts';
+
+  import { ORDER_CONFIRMED_EVENT, type OrderConfirmedEvent } from '../lib/order-events';
+  import { spacedPhone } from '../lib/phone';
+
+  function part<T extends Element>(root: ParentNode, selector: string): T {
+    const element = root.querySelector<T>(selector);
+    // The markup is in the same file: a missing part is a bug to see at once
+    if (!element) throw new Error(`order confirmed dialog: ${selector} is missing`);
+    return element;
+  }
+
+  class OrderConfirmed extends HTMLElement {
+    private readonly onConfirmed = (event: OrderConfirmedEvent): void => {
+      this.open(event.detail);
+    };
+
+    connectedCallback(): void {
+      document.addEventListener(ORDER_CONFIRMED_EVENT, this.onConfirmed);
+      const dialog = part<HTMLDialogElement>(this, 'dialog');
+
+      part(this, '[data-close]').addEventListener('click', () => {
+        dialog.close();
+      });
+      // A click on the dim backdrop lands on the <dialog> itself (see the cart drawer)
+      dialog.addEventListener('click', (event) => {
+        if (event.target === dialog) dialog.close();
+      });
+      // CLAUDE.md: closing it any way is "Continue shopping". The cart is already empty and the
+      // page behind is an order that is done, so there is nothing to go back to. "View Order
+      // Details" is a link: it leaves the page without closing the dialog, so it never gets here
+      dialog.addEventListener('close', () => {
+        window.location.assign('/');
+      });
+    }
+
+    disconnectedCallback(): void {
+      document.removeEventListener(ORDER_CONFIRMED_EVENT, this.onConfirmed);
+    }
+
+    private open(order: ShopOrderConfirmed): void {
+      const dialog = part<HTMLDialogElement>(this, 'dialog');
+      if (dialog.open) return;
+      const text = part<HTMLElement>(this, '[data-text]');
+      const phone = document.createElement('span');
+      // CLAUDE.md: the number at 500 in `body`. nowrap: "01786 120356" stays on one line
+      phone.className = 'font-medium whitespace-nowrap text-body tabular-nums';
+      phone.textContent = spacedPhone(order.phone);
+      // Text nodes, never innerHTML: the words and the phone are text, whatever they hold
+      text.replaceChildren(text.dataset.before ?? '', phone, text.dataset.after ?? '');
+      // encodeURIComponent: the number comes from the server, but a link is built from it
+      part<HTMLAnchorElement>(this, '[data-details]').href =
+        `/order/${encodeURIComponent(order.orderNo)}`;
+      dialog.showModal();
+      // CLAUDE.md: "Continue shopping" has the focus. showModal() would give it to the first
+      // button (the close X), so it is moved here
+      part<HTMLAnchorElement>(this, '[data-continue]').focus();
+    }
+  }
+
+  customElements.define('order-confirmed', OrderConfirmed);
+</script>
