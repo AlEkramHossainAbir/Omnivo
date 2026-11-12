@@ -1,5 +1,9 @@
 # Demo go-live checklist
 
+> **Done differently (12 Nov 2026):** the demo now runs on a home VPS behind Cloudflare Tunnel at
+> `app.omnivosoft.com`, not on Hetzner. See [vps-deploy.en.md](vps-deploy.en.md). This checklist is
+> kept for a later move to a data-center server.
+
 This puts Omnivo on a demo server, so the first customer can see the admin panel. It is a demo
 (staging) copy, not production.
 

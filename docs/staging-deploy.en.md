@@ -1,5 +1,10 @@
 # Staging deploy guide
 
+> **Update (12 Nov 2026):** the real staging server is a home VPS behind Cloudflare Tunnel, not a
+> server with open ports. Caddy no longer gets Let's Encrypt certificates, and `.env` holds host
+> names (`APP_HOST`, …) instead of full URLs. What changed, and how to run that server, is in
+> [vps-deploy.en.md](vps-deploy.en.md). The rest of this guide still explains every file.
+
 This guide puts Omnivo on a staging server, so that several people can test it from their own
 computers and phones at the same time. It has two parts:
 
