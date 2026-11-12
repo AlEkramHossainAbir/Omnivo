@@ -21,12 +21,21 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // pos.shift_variance: params { id, number, register, difference } — a shift's closing count was
 // more than its register's limit over or short (difference: counted less expected, signed); sent
 // to the owners and the people with pos.shift.manage, and the bell opens the shift
+// report.schedule_skipped: params { report, count } — a scheduled report was not sent to count
+// people, because they can no longer read it; sent to the person who made the schedule
+// report.schedule_paused: params { report } — nobody on the schedule can read the report any more,
+// so it stopped; sent to the person who made the schedule
+// report.schedule_failed: params { report, format } — one person's file or email could not be made
+// or sent; sent to the person who made the schedule
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
   'invitation.failed',
   'report.ready',
   'report.failed',
+  'report.schedule_skipped',
+  'report.schedule_paused',
+  'report.schedule_failed',
   'import.done',
   'import.failed',
   'stock.low',

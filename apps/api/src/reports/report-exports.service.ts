@@ -35,8 +35,9 @@ function toReportExport(row: ExportRow): ReportExport {
   };
 }
 
-// The query's set values only: an optional field the page left out is not stored as null
-function storedQuery(query: Record<string, string | undefined>): Record<string, string> {
+// The query's set values only: an optional field the page left out is not stored as null. Since
+// step 21c a scheduled run stores its query the same way (report-schedule-run.handler.ts).
+export function storedQuery(query: Record<string, string | undefined>): Record<string, string> {
   return Object.fromEntries(
     Object.entries(query).flatMap(([key, value]) => (value === undefined ? [] : [[key, value]])),
   );

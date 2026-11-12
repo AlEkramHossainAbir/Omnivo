@@ -10,7 +10,9 @@ import { periodOf } from './numbering.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
 import { shiftIsoDate } from './journal.js';
 import type { PermissionKey } from './permissions.js';
+import { stockMovementFilterSchema } from './stock-movement-report.js';
 import { purchaseReportFilterSchema, salesReportFilterSchema } from './trade-reports.js';
+import { vatReportFilterSchema } from './vat-report.js';
 
 // ---------------------------------------------------------------------------------------------
 // Fiscal years. The workspace's settings say in which month a year starts (July in Bangladesh).
@@ -38,8 +40,9 @@ export function fiscalYearLabel(start: string, startMonth: number): string {
 
 // ---------------------------------------------------------------------------------------------
 // The reports a file can be made of: the three statements here, and since step 21b the sales and
-// purchase reports (trade-reports.ts) and the two agings (aging.ts). Every amount is a decimal
-// string with 4 places, like the ledger.
+// purchase reports (trade-reports.ts) and the two agings (aging.ts), since step 21c the VAT report
+// (vat-report.ts) and the stock movement report (stock-movement-report.ts). Every amount is a
+// decimal string with 4 places, like the ledger.
 
 export const REPORT_KINDS = [
   'trial_balance',
@@ -49,6 +52,8 @@ export const REPORT_KINDS = [
   'purchase_report',
   'ar_aging',
   'ap_aging',
+  'vat_report',
+  'stock_movement',
 ] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
@@ -67,6 +72,8 @@ export const REPORT_KIND_PERMISSIONS = {
   purchase_report: 'purchase.report.read',
   ar_aging: 'sales.report.read',
   ap_aging: 'purchase.report.read',
+  vat_report: 'accounting.report.read',
+  stock_movement: 'inventory.report.read',
 } as const satisfies Record<ReportKind, PermissionKey>;
 
 // The kinds a person may export, in REPORT_KINDS' order. Plain strings, like dashboardCardsFor():
@@ -454,6 +461,16 @@ export const reportExportInputSchema = z.discriminatedUnion('report', [
     report: z.literal('ap_aging'),
     format: z.enum(EXPORT_FORMATS),
     query: apAgingFilterSchema,
+  }),
+  z.object({
+    report: z.literal('vat_report'),
+    format: z.enum(EXPORT_FORMATS),
+    query: vatReportFilterSchema,
+  }),
+  z.object({
+    report: z.literal('stock_movement'),
+    format: z.enum(EXPORT_FORMATS),
+    query: stockMovementFilterSchema,
   }),
 ]);
 export type ReportExportInput = z.infer<typeof reportExportInputSchema>;

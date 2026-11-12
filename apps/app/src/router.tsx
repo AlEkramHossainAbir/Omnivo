@@ -254,6 +254,29 @@ const reportExportsRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/report-exports'), 'ReportExportsPage'),
 });
 
+// Step 21c: the VAT report, the stock movement report and the scheduled emails, each its own lazy
+// chunk
+const vatReportRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/vat',
+  component: lazyRouteComponent(() => import('./routes/vat-report'), 'VatReportPage'),
+});
+
+const stockMovementReportRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/stock-movement',
+  component: lazyRouteComponent(
+    () => import('./routes/stock-movement-report'),
+    'StockMovementReportPage',
+  ),
+});
+
+const reportSchedulesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/reports/schedules',
+  component: lazyRouteComponent(() => import('./routes/report-schedules'), 'ReportSchedulesPage'),
+});
+
 // Products (step 12). '/products/new', '/products/categories', '/products/units' and
 // '/products/imports' beat '/products/$productId': a fixed segment ranks above a parameter.
 const productsRoute = createRoute({
@@ -1044,6 +1067,9 @@ const routeTree = rootRoute.addChildren([
     apAgingRoute,
     apAgingPartyRoute,
     reportExportsRoute,
+    vatReportRoute,
+    stockMovementReportRoute,
+    reportSchedulesRoute,
     productsRoute,
     newProductRoute,
     productRoute,

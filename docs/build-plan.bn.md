@@ -395,6 +395,12 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
   date থেকে পাঁচ ভাগে, অগ্রিম আলাদা, পাশে বইয়ের ব্যালান্স; সারিতে ক্লিক করলে সেই পার্টির খোলা ডকুমেন্ট। চার allocation
   টেবিলে নতুন `applied_on` তারিখ (migration 0059, 0060)। তালিকা সার্ভারে sort ও page হয়, যোগফল সার্ভার থেকে; Excel/PDF worker-এ।
   permission: `sales.report.read`, `purchase.report.read`। অনলাইনে ছাড়া চলে না।
+- **VAT, স্টক মুভমেন্ট আর ইমেইলে রিপোর্ট (২১c):** Reports-এ তিনটা নতুন পেজ। VAT রিপোর্ট রেট ধরে (output, input, net; পয়সা
+  পর্যন্ত; পাশে বইয়ের সংখ্যা; Mushak 6.3 ছাড়া বিলের VAT আলাদা; পেছনের ডকুমেন্টের তালিকা)। স্টক মুভমেন্ট প্রতিটা variant-এর
+  opening থেকে closing (`stock_movements`-এ নতুন তারিখের index; মূল্য শুধু `inventory.stock.value` থাকলে)। যেকোনো রিপোর্টের
+  Export মেনু থেকে "Email on a schedule": নতুন টেবিল `report_schedules` ও `report_schedule_recipients` (migration 0061,
+  0062), worker-এর ৫ মিনিটের sweep, প্রতি প্রাপকের নিজের `report_exports` সারি। নতুন permission `core.report.schedule`।
+  অনলাইনে ছাড়া চলে না।
 
 **দেখবেন:** হোম পেজে আসল সংখ্যা সহ ড্যাশবোর্ড।
 
@@ -562,7 +568,7 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [x] **ধাপ ১৫–১৭** — Sales + Purchase
 - [x] **ধাপ ১৮–১৯** — সিঙ্ক ইঞ্জিন + PWA শেল (অফলাইন, এনক্রিপশন, PIN)
 - [x] **ধাপ ২০** — POS স্ক্রিন
-- [ ] **ধাপ ২১** — Reports 🏁 MVP
+- [x] **ধাপ ২১** — Reports 🏁 MVP
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
 - [ ] **ধাপ ২৬–২৮** — Storefront + কুরিয়ার

@@ -1,0 +1,96 @@
+---
+import type { ShopProduct } from '@omnivo/contracts';
+
+import type { ShopLocale } from '../lib/locale';
+import ListingMarks from './ListingMarks.astro';
+
+// CLAUDE.md → Product page, top: the gallery card (Figma 37:3556) and its thumbnails (37:3563 to
+// 37:3569). Sizes are aspect ratios of Figma's 524×440 card and 119×92 thumbnails, so the column
+// can be narrower than 524px (between lg and xl, and on a phone) and keep the design's shape.
+interface Props {
+  product: ShopProduct;
+  locale: ShopLocale;
+}
+
+const { product, locale } = Astro.props;
+const { t } = locale;
+const { images } = product;
+const first = images[0];
+---
+
+{/* Stacked (below lg) the gallery keeps Figma's 524px at most, centered: at full width a tablet
+    would show a 700px-tall photo before the price */}
+<product-gallery class="mx-auto block w-full max-w-[524px] lg:max-w-none">
+  <div class="relative aspect-[524/440] overflow-hidden rounded-2xl bg-card">
+    {first && (
+      // The page's main picture: loaded first, never lazily. p-2.5: Figma's photo is 421px tall
+      // in the 440px card
+      <img
+        data-main
+        src={first.url}
+        alt={first.alt}
+        fetchpriority="high"
+        class="size-full object-contain p-2.5 mix-blend-multiply"
+      />
+    )}
+    <ListingMarks listing={product} locale={locale} />
+  </div>
+
+  {
+    // One photo needs no row of one thumbnail: it would be a button that changes nothing
+    images.length > 1 && (
+      <ul
+        aria-label={t('shop.product.gallery', { name: product.name })}
+        class="mt-4 grid grid-cols-4 gap-4"
+      >
+        {images.map((image, index) => (
+          <li>
+            <button
+              type="button"
+              data-thumb
+              aria-label={t('shop.product.showPhoto', { index: index + 1, count: images.length })}
+              aria-pressed={index === 0 ? 'true' : 'false'}
+              // Figma draws every thumbnail alike, with no selected look: the big photo shows which
+              // one is open, aria-pressed tells a screen reader, and the global focus ring the keyboard
+              class="block aspect-[119/92] w-full overflow-hidden rounded-2xl border-2 border-card bg-card"
+            >
+              {/* The button's label names it; the photo's own words are said once, on the big one */}
+              <img
+                src={image.url}
+                alt=""
+                data-alt={image.alt}
+                class="size-full object-contain mix-blend-multiply"
+              />
+            </button>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</product-gallery>
+
+<script>
+  // A thumbnail shows its photo in the big card. The photo is already in the thumbnail (same
+  // file), so the switch needs no request and no list of URLs in the script
+  class ProductGallery extends HTMLElement {
+    connectedCallback(): void {
+      const main = this.querySelector<HTMLImageElement>('[data-main]');
+      const thumbs = [...this.querySelectorAll<HTMLButtonElement>('[data-thumb]')];
+      if (!main) return;
+
+      for (const thumb of thumbs) {
+        thumb.addEventListener('click', () => {
+          const photo = thumb.querySelector('img');
+          if (!photo) return;
+          main.src = photo.src;
+          main.alt = photo.dataset.alt ?? '';
+          for (const other of thumbs) {
+            other.setAttribute('aria-pressed', other === thumb ? 'true' : 'false');
+          }
+        });
+      }
+    }
+  }
+
+  customElements.define('product-gallery', ProductGallery);
+</script>

@@ -22,7 +22,7 @@ const { t } = locale;
 <header
   data-on-brand
   data-shop-header
-  class="group relative mt-4 grid h-16 grid-cols-[1fr_auto] items-center rounded-2xl bg-brand p-3 md:mt-5 md:h-18 md:grid-cols-[1fr_auto_1fr] md:px-6 md:py-0"
+  class="group relative mt-4 grid h-16 grid-cols-[1fr_auto] items-center rounded-2xl bg-brand p-3 md:mt-5 md:h-18 md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-x-6 md:px-6 md:py-0 lg:grid-cols-[1fr_auto_1fr]"
 >
   <div class="flex items-center gap-9">
     {/* Opens the category drawer in step 26c. The phone has no menu (Figma 138:774) */}
@@ -38,12 +38,17 @@ const { t } = locale;
     </a>
   </div>
 
-  {/* On the phone the form is hidden until the search button opens it; then it covers the bar */}
+  {/* On the phone the form is hidden until the search button opens it; then it covers the bar.
+      z-10: the cart and account buttons come later in the markup, so without it they would paint
+      over the search box and hide its submit button.
+      From md to lg the bar has no room for Figma's centered 420px box beside the menu and the logo
+      (at 768px the logo ran under it), so the middle column takes what is left, up to 420px. From
+      lg the 1fr side columns center the box in the bar, as Figma draws it */}
   <form
     action="/search"
     method="get"
     role="search"
-    class="absolute inset-0 hidden items-center gap-2 rounded-2xl bg-brand p-3 group-data-[search-open]:flex md:static md:flex md:w-80 md:p-0 lg:w-[420px]"
+    class="absolute inset-0 z-10 hidden items-center gap-2 rounded-2xl bg-brand p-3 group-data-[search-open]:flex md:static md:z-auto md:flex md:w-full md:max-w-[420px] md:justify-self-center md:p-0 lg:w-[420px]"
   >
     <label class="relative block h-10 flex-1">
       <span class="sr-only">{t('shop.header.searchLabel')}</span>

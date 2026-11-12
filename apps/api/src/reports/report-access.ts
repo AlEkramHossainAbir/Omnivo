@@ -1,8 +1,14 @@
-import { isCostSort, type PermissionKey, type SalesReportSort } from '@omnivo/contracts';
+import {
+  isCostSort,
+  isStockValueSort,
+  type PermissionKey,
+  type SalesReportSort,
+  type StockMovementSort,
+} from '@omnivo/contracts';
 
 import { AppError } from '../common/http/app-error.js';
 
-// Who may read what in the step 21b reports, past the route's own permission
+// Who may read what in the step 21b and 21c reports, past the route's own permission
 
 // The same answer the PermissionGuard gives (403 permission_missing, with the key), for a check the
 // route cannot make: the guard knows one permission per route
@@ -17,4 +23,9 @@ export function missingPermission(permission: PermissionKey): AppError {
 // says. The page never offers it; a hand-made URL or an export query does.
 export function checkCostSort(sort: SalesReportSort, withCost: boolean): void {
   if (!withCost && isCostSort(sort)) throw missingPermission('inventory.stock.value');
+}
+
+// Step 21c: the same rule for the stock movement report's value columns (decision 24)
+export function checkValueSort(sort: StockMovementSort, withValue: boolean): void {
+  if (!withValue && isStockValueSort(sort)) throw missingPermission('inventory.stock.value');
 }

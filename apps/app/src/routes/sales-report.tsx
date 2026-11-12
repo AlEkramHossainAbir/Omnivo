@@ -20,7 +20,7 @@ import {
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 
-import { ExportMenu, PeriodFields, usePeriod } from '../components/report-parts';
+import { branchName, ExportMenu, PeriodFields, usePeriod } from '../components/report-parts';
 import {
   BooksLine,
   Footnotes,
@@ -243,7 +243,14 @@ export function SalesReportPage() {
         actions={
           online &&
           period.valid && (
-            <ExportMenu request={(format) => ({ report: 'sales_report', format, query: filter })} />
+            <ExportMenu
+              request={(format) => ({ report: 'sales_report', format, query: filter })}
+              names={{
+                branch: branchName(branches, branchId),
+                group: groups?.find((group) => group.id === customerGroupId)?.name,
+                category: categories?.find((category) => category.id === categoryId)?.name,
+              }}
+            />
           )
         }
       />

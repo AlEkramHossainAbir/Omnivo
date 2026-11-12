@@ -5,6 +5,7 @@ import { test as base, expect, type Locator, type Page, type Response } from '@p
 import {
   HEAD_OFFICES,
   MOCK_NO_HISTORY_KEY,
+  MOCK_NO_VAT_MONTH_KEY,
   MOCK_ROLE_KEY,
   type MockRole,
   OWNER,
@@ -56,18 +57,26 @@ export const test = base.extend<{
   seedDevice: boolean;
   answerPinDialog: boolean;
   tradeHistory: boolean;
+  vatMonth: boolean;
 }>({
   seedDevice: [true, { option: true }],
   answerPinDialog: [true, { option: true }],
   // Step 21b: the year of invoices and bills the reports read (fixtures.ts → MOCK_NO_HISTORY_KEY)
   tradeHistory: [false, { option: true }],
+  // Step 21c: last month's documents with VAT (fixtures.ts → MOCK_NO_VAT_MONTH_KEY)
+  vatMonth: [false, { option: true }],
   // `provide`, not Playwright's usual `use`: the React hooks lint rule reads `use(…)` as a hook
-  page: async ({ page, seedDevice, answerPinDialog, tradeHistory }, provide) => {
+  page: async ({ page, seedDevice, answerPinDialog, tradeHistory, vatMonth }, provide) => {
     copies.set(page, copyOf(page));
     if (!tradeHistory) {
       await page.addInitScript((key) => {
         localStorage.setItem(key, '1');
       }, MOCK_NO_HISTORY_KEY);
+    }
+    if (!vatMonth) {
+      await page.addInitScript((key) => {
+        localStorage.setItem(key, '1');
+      }, MOCK_NO_VAT_MONTH_KEY);
     }
     if (answerPinDialog) {
       // A new seeded device always asks once; without the seed the branch dialog comes first

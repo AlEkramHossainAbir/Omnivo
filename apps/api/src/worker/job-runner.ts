@@ -17,6 +17,7 @@ import { runWithRequest } from '../common/request/request-context.js';
 import { runWithTenant } from '../common/tenant/tenant-context.js';
 import type { WorkerConfig } from '../config.js';
 import { CONFIG } from '../infra/tokens.js';
+import { ReportScheduleSweep } from '../reports/report-schedule-sweep.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { OutboxRelay } from './outbox-relay.js';
@@ -27,6 +28,7 @@ import {
   OUTBOX_CLEANUP,
   QUEUE_NAMES,
   Queues,
+  REPORT_SCHEDULE_SWEEP,
 } from './queues.js';
 
 // How many jobs of one queue run at the same time in one worker process. Jobs spend most of their
@@ -45,6 +47,7 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     private readonly queues: Queues,
     private readonly relay: OutboxRelay,
     private readonly syncLog: SyncLogCleanup,
+    private readonly reportSweep: ReportScheduleSweep,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -61,6 +64,7 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
       return worker;
     });
     await this.queues.scheduleCleanup();
+    await this.queues.scheduleReportSweep();
   }
 
   // close() stops taking new jobs and waits for the running ones, before the database closes
@@ -78,6 +82,12 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
       // Step 18b: and the answers to pushed commands older than 30 days
       const answers = await this.syncLog.deleteOldAnswers();
       this.logger.log(`sync answers cleanup: ${String(answers)} old answers deleted`);
+      return;
+    }
+    // Step 21c: no retries of its own; a sweep that failed is the next one, 5 minutes later
+    if (job.name === REPORT_SCHEDULE_SWEEP) {
+      const handed = await this.reportSweep.run();
+      if (handed > 0) this.logger.log(`report schedules: ${String(handed)} runs handed over`);
       return;
     }
     // A job we cannot read will never become readable: no retries

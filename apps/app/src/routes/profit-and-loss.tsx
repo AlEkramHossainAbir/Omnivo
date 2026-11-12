@@ -7,6 +7,7 @@ import { useState } from 'react';
 
 import { useIsoDate } from '../components/journal-parts';
 import {
+  branchName,
   ExportMenu,
   PeriodFields,
   sectionRows,
@@ -56,7 +57,10 @@ export function ProfitAndLossPage() {
         description={t('reports.profitAndLoss.description')}
         actions={
           canRead && (
-            <ExportMenu request={(format) => ({ report: 'profit_and_loss', format, query })} />
+            <ExportMenu
+              request={(format) => ({ report: 'profit_and_loss', format, query })}
+              names={{ branch: branchName(branches, branchId) }}
+            />
           )
         }
       />

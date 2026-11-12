@@ -96,3 +96,12 @@ const MONTH = {
 export function formatMonth(month: string, language: LanguageCode): string {
   return MONTH[language].format(new Date(`${month}-01T00:00:00Z`));
 }
+
+// Step 21c: a VAT rate as the app shows it, "15" or "7.5", without the zeros a numeric(5,2) keeps
+export function formatPercent(value: string, language: LanguageCode): string {
+  if (!isDecimal(value)) return value;
+  return new Intl.NumberFormat(language === 'bn' ? 'bn-BD' : 'en-IN', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}

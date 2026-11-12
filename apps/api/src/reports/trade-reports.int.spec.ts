@@ -51,6 +51,11 @@ import {
   settingsSchema,
   setupSchema,
   shiftIsoDate,
+  type StockMovementReport,
+  stockMovementReportSchema,
+  type StockMovementRow,
+  stockRevaluationSchema,
+  stockTransferSchema,
   type Supplier,
   supplierGroupSchema,
   supplierSchema,
@@ -58,9 +63,15 @@ import {
   type SyncCommandInput,
   syncPushSchema,
   type TaxRate,
+  taxRateSchema,
   taxRateListSchema,
   todayIn,
   unitListSchema,
+  type VatDocument,
+  type VatDocumentPage,
+  vatDocumentPageSchema,
+  type VatReport,
+  vatReportSchema,
   type Warehouse,
   warehouseListSchema,
   warehouseSchema,
@@ -1479,5 +1490,582 @@ describe('The purchase report', () => {
     expect((await send('GET', `/reports/purchases?${period()}`, undefined, rafiq)).statusCode).toBe(
       403,
     );
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Step 21c. The VAT report and the stock movement report read the same shop. These tests run
+// after the 21b ones, so the documents they add in their own beforeAll change no number above.
+
+async function vatOf(query: string, as = owner): Promise<VatReport> {
+  const res = await send('GET', `/reports/vat?${query}`, undefined, as);
+  expect(res.statusCode, res.body).toBe(200);
+  return vatReportSchema.parse(res.json());
+}
+
+// Every document of one side, page by page
+async function vatDocumentsOf(query: string, limit = 50): Promise<VatDocument[]> {
+  const items: VatDocument[] = [];
+  let cursor: string | null = null;
+  do {
+    const res = await send(
+      'GET',
+      `/reports/vat/documents?${query}&limit=${String(limit)}${cursor === null ? '' : `&cursor=${cursor}`}`,
+    );
+    expect(res.statusCode, res.body).toBe(200);
+    const page: VatDocumentPage = vatDocumentPageSchema.parse(res.json());
+    expect(page.items.length).toBeLessThanOrEqual(limit);
+    items.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor !== null);
+  return items;
+}
+
+// A rate's row: its name, kind and percent, then output, input and the difference
+function vatRowOf(row: VatReport['rows'][number]) {
+  return [
+    row.name,
+    row.kind,
+    row.rate,
+    row.outputNet,
+    row.outputVat,
+    row.inputNet,
+    row.inputVat,
+    row.netVat,
+  ];
+}
+
+function vatDocumentOf(document: VatDocument) {
+  return [document.kind, document.partyName, document.net, document.vat];
+}
+
+describe('The VAT report', () => {
+  it('adds up every kind of document by rate, and agrees with the books', async () => {
+    const report = await vatOf(period());
+    expect(report.rows.map(vatRowOf)).toEqual([
+      // Out: invoices ৳4,455 less ৳271 of credit notes, the counter ৳580 less ৳60.
+      // In: the sugar ৳2,500 and the van ৳300, less ৳250 and ৳120 on debit notes.
+      [
+        'VAT 15%',
+        'standard',
+        '15.00',
+        '4704.0000',
+        '705.6000',
+        '2430.0000',
+        '364.5000',
+        '341.1000',
+      ],
+      // The rent ৳12,000, ৳1,000 of it taken off: a purchase with no VAT, still in the return
+      ['Exempt', 'exempt', '0.00', '0.0000', '0.0000', '11000.0000', '0.0000', '0.0000'],
+    ]);
+    expect(report.rows.map((row) => row.key)).toEqual([
+      `${vat.id}:standard:15.00`,
+      `${exempt.id}:exempt:0.00`,
+    ]);
+    expect(report.totals).toEqual({
+      outputNet: '4704.0000',
+      outputVat: '705.6000',
+      // Karim's bottle ৳25.65, Rahim's price cut ৳15 and the soap at the counter ৳9
+      outputVatReturned: '49.6500',
+      inputNet: '13430.0000',
+      inputVat: '364.5000',
+      // ৳37.50 for the sugar back with the bill, ৳18 for the kilo without one
+      inputVatReturned: '55.5000',
+      // The sugar bill has no Mushak 6.3 number, so all of its VAT
+      inputVatWithoutMushak: '420.0000',
+      netVat: '341.1000',
+    });
+    // The cash sale written by hand has no VAT, so the books agree to the paisa. The invoice 70
+    // days ago and the draft are in neither.
+    expect(report.books).toEqual({ output: '705.6000', input: '364.5000' });
+  });
+
+  it('lists the documents behind each side, oldest first, with the same signs', async () => {
+    const output = await vatDocumentsOf(`${period()}&side=output`);
+    expect(output.map(vatDocumentOf)).toEqual([
+      ['invoice', 'Rahim Traders', '3600.0000', '540.0000'],
+      ['invoice', 'Karim Store', '855.0000', '128.2500'],
+      ['credit_note', 'Karim Store', '-171.0000', '-25.6500'],
+      ['credit_note', 'Rahim Traders', '-100.0000', '-15.0000'],
+      // The walk-in has no name; the sale before its return, on the same day
+      ['pos_sale', null, '580.0000', '87.0000'],
+      ['pos_return', null, '-60.0000', '-9.0000'],
+    ]);
+    const input = await vatDocumentsOf(`${period()}&side=input`);
+    expect(input.map(vatDocumentOf)).toEqual([
+      // The sugar and the van hire are one bill: one row
+      ['bill', 'Meghna Agro Mills', '2800.0000', '420.0000'],
+      ['debit_note', 'Meghna Agro Mills', '-250.0000', '-37.5000'],
+      ['bill', 'Dhanmondi Properties Ltd.', '12000.0000', '0.0000'],
+      ['debit_note', 'Dhanmondi Properties Ltd.', '-1000.0000', '0.0000'],
+      ['debit_note', 'Meghna Agro Mills', '-120.0000', '-18.0000'],
+    ]);
+    expect(input.map((document) => document.mushakNumber)).toEqual([null, null, null, null, null]);
+    // In pages of four: the same documents in the same order
+    expect(await vatDocumentsOf(`${period()}&side=output`, 4)).toEqual(output);
+    expect(await vatDocumentsOf(`${period()}&side=input`, 2)).toEqual(input);
+  });
+
+  it("keeps one branch's documents, and the books of that branch", async () => {
+    const atMirpur = await vatOf(`${period()}&branchId=${mirpur.id}`);
+    // Karim's invoice ৳855 and its credit note ৳171; the shop buys nothing there
+    expect(atMirpur.rows.map(vatRowOf)).toEqual([
+      ['VAT 15%', 'standard', '15.00', '684.0000', '102.6000', '0.0000', '0.0000', '102.6000'],
+    ]);
+    expect(atMirpur.books).toEqual({ output: '102.6000', input: '0.0000' });
+    const documents = await vatDocumentsOf(`${period()}&branchId=${mirpur.id}&side=output`);
+    expect(documents.map(vatDocumentOf)).toEqual([
+      ['invoice', 'Karim Store', '855.0000', '128.2500'],
+      ['credit_note', 'Karim Store', '-171.0000', '-25.6500'],
+    ]);
+  });
+
+  it('needs the accounting reports permission, and a period the right way round', async () => {
+    // Shirin reads the sales and purchase reports, not the VAT
+    expect((await send('GET', `/reports/vat?${period()}`, undefined, shirin)).statusCode).toBe(403);
+    expect(
+      (await send('GET', `/reports/vat/documents?${period()}&side=output`, undefined, rafiq))
+        .statusCode,
+    ).toBe(403);
+    const backwards = await send('GET', `/reports/vat?from=${today}&to=${day(-1)}`);
+    expect(problemOf(backwards).fieldErrors).toEqual({ to: ['report_range_invalid'] });
+    const noSide = await send('GET', `/reports/vat/documents?${period()}`);
+    expect(noSide.statusCode).toBe(400);
+  });
+
+  describe('when the rates change', () => {
+    let fivePercent: TaxRate;
+    let zeroRated: TaxRate;
+    let exportServices: TaxRate;
+
+    // A service line at a rate: no stock moves, so the stock report below does not see these
+    const serviceLine = (amount: string, rate: TaxRate) => ({
+      ...invoiceLine(homeDelivery, '1', amount),
+      taxRateId: rate.id,
+    });
+
+    async function changeRate(rate: TaxRate, change: Partial<TaxRate>): Promise<void> {
+      const res = await send('PUT', `/tax-rates/${rate.id}`, {
+        name: rate.name,
+        kind: rate.kind,
+        rate: rate.rate,
+        isDefault: rate.isDefault,
+        version: rate.version,
+        ...change,
+      });
+      expect(res.statusCode, res.body).toBe(200);
+    }
+
+    // Two days with only these documents: day -2 and day -1
+    beforeAll(async () => {
+      const rates = taxRateListSchema.parse((await send('GET', '/tax-rates')).json()).items;
+      const named = (name: string) => {
+        const found = rates.find((rate) => rate.name === name);
+        if (!found) throw new Error(`no ${name}`);
+        return found;
+      };
+      fivePercent = named('VAT 5%');
+      zeroRated = named('Zero-rated');
+      exportServices = await created(taxRateSchema, '/tax-rates', {
+        name: 'Export services',
+        kind: 'zero_rated',
+        rate: '0',
+        isDefault: false,
+      });
+      await created(
+        invoiceSchema,
+        '/invoices',
+        invoiceForm(rahim, day(-2), [
+          serviceLine('1000', fivePercent),
+          serviceLine('300', exportServices),
+        ]),
+      );
+      // The rate renamed, and the export rate found to be exempt after all
+      await changeRate(fivePercent, { name: 'VAT 5% (reduced)' });
+      await changeRate(exportServices, { kind: 'exempt' });
+      await created(
+        invoiceSchema,
+        '/invoices',
+        invoiceForm(karim, day(-1), [
+          serviceLine('400', fivePercent),
+          serviceLine('500', exportServices),
+          serviceLine('200', zeroRated),
+        ]),
+      );
+      // A van hire with the supplier's Mushak 6.3
+      await created(billSchema, '/bills', {
+        ...billForm(meghna, day(-1), 'MAM/2026/140', {
+          lines: [billLine(vanHire, '1', '1000', { accountId: accountId('5240') })],
+        }),
+        mushakNumber: 'M63-2026-0042',
+        mushakDate: day(-1),
+      });
+      // VAT on scrap sold for cash, written by hand: the books have it, no document does
+      const vatOutput = accounts.find((account) => account.purpose === 'vat_output');
+      if (!vatOutput) throw new Error('no VAT output account');
+      const byHand = await send('POST', '/journal-entries', {
+        date: day(-1),
+        narration: 'VAT on scrap sold',
+        lines: [
+          {
+            accountId: accountId('1110'),
+            branchId: dhanmondi.id,
+            description: '',
+            debit: '50',
+            credit: '',
+          },
+          {
+            accountId: vatOutput.id,
+            branchId: dhanmondi.id,
+            description: '',
+            debit: '',
+            credit: '50',
+          },
+        ],
+        post: true,
+      });
+      expect(byHand.statusCode, byHand.body).toBe(201);
+    }, 60_000);
+
+    it('shows a renamed rate under its new name, and a changed kind as a second row', async () => {
+      const report = await vatOf(`from=${day(-2)}&to=${day(-1)}`);
+      expect(report.rows.map(vatRowOf)).toEqual([
+        // Standard, reduced, zero-rated, exempt (decision 15)
+        ['VAT 15%', 'standard', '15.00', '0.0000', '0.0000', '1000.0000', '150.0000', '-150.0000'],
+        // ৳1,000 before the new name and ৳400 after: one rate, one row, the name it has now
+        [
+          'VAT 5% (reduced)',
+          'reduced',
+          '5.00',
+          '1400.0000',
+          '70.0000',
+          '0.0000',
+          '0.0000',
+          '70.0000',
+        ],
+        // Both 0%, both zero-rated, two rates: by name
+        [
+          'Export services',
+          'zero_rated',
+          '0.00',
+          '300.0000',
+          '0.0000',
+          '0.0000',
+          '0.0000',
+          '0.0000',
+        ],
+        ['Zero-rated', 'zero_rated', '0.00', '200.0000', '0.0000', '0.0000', '0.0000', '0.0000'],
+        // The same rate as exempt: a different line of the return
+        ['Export services', 'exempt', '0.00', '500.0000', '0.0000', '0.0000', '0.0000', '0.0000'],
+      ]);
+      expect(new Set(report.rows.map((row) => row.key)).size).toBe(5);
+      expect(
+        report.rows.filter((row) => row.taxRateId === exportServices.id).map((r) => r.key),
+      ).toEqual([`${exportServices.id}:zero_rated:0.00`, `${exportServices.id}:exempt:0.00`]);
+      expect(report.totals).toMatchObject({
+        outputNet: '2400.0000',
+        outputVat: '70.0000',
+        inputVat: '150.0000',
+        // The van hire has its 6.3
+        inputVatWithoutMushak: '0.0000',
+        // More paid than charged: a negative net, carried forward
+        netVat: '-80.0000',
+      });
+      const input = await vatDocumentsOf(`from=${day(-2)}&to=${day(-1)}&side=input`);
+      expect(input.map((document) => document.mushakNumber)).toEqual(['M63-2026-0042']);
+    });
+
+    it('says how far the books are from the documents', async () => {
+      const report = await vatOf(`from=${day(-2)}&to=${day(-1)}`);
+      // ৳70 on the invoices and ৳50 by hand
+      expect(report.books).toEqual({ output: '120.0000', input: '150.0000' });
+      expect(report.totals.outputVat).toBe('70.0000');
+    });
+  });
+});
+
+async function stockMovement(query: string, as = owner): Promise<StockMovementReport> {
+  const res = await send('GET', `/reports/stock-movement?${query}`, undefined, as);
+  expect(res.statusCode, res.body).toBe(200);
+  return stockMovementReportSchema.parse(res.json());
+}
+
+// A row: the product, its options, then opening, purchased, sold, transfers, adjusted, closing
+function movementOf(row: StockMovementRow) {
+  return [
+    row.productName,
+    row.optionValues.join(', '),
+    row.opening,
+    row.purchased,
+    row.sold,
+    row.transfers,
+    row.adjusted,
+    row.closing,
+  ];
+}
+
+function valueOf(row: StockMovementRow) {
+  return [row.productName, row.optionValues.join(', '), row.openingValue, row.closingValue];
+}
+
+// The rule every row keeps: opening + purchased − sold + transfers + adjusted = closing. In
+// paisa-free whole units here, so plain numbers are exact.
+function expectBalanced(report: StockMovementReport): void {
+  for (const row of report.items) {
+    const worked =
+      Number(row.opening) +
+      Number(row.purchased) -
+      Number(row.sold) +
+      Number(row.transfers) +
+      Number(row.adjusted);
+    expect(worked, row.productName).toBe(Number(row.closing));
+  }
+}
+
+describe('The stock movement report', () => {
+  // Reads the stock reports, but not what the stock cost
+  let kamal: SignedIn;
+  const lastDays = () => `from=${day(-3)}&to=${day(-1)}`;
+
+  // Three days before yesterday: matchboxes to Mirpur (there the next day), two rose soaps still
+  // on the way, a lime soap damaged, and the sugar revalued. The counter sold more today, after
+  // the period.
+  beforeAll(async () => {
+    kamal = await memberWith(
+      { fullName: 'Kamal Hossain', email: 'kamal@shaplastore.com', password: 'Store-room-2026' },
+      ['inventory.report.read'],
+    );
+    const transferLine = (product: Product, quantity: string, at = 0) => ({
+      variantId: variantOf(product, at),
+      unitId: pcs,
+      quantity,
+      batchId: '',
+      serialNumbers: [],
+    });
+    const matchesOut = await created(stockTransferSchema, '/stock-transfers', {
+      fromWarehouseId: main.id,
+      toWarehouseId: mirpurStore.id,
+      date: day(-3),
+      note: '',
+      lines: [transferLine(matches, '10')],
+      send: true,
+    });
+    const arrived = await send('POST', `/stock-transfers/${matchesOut.id}/receive`, {
+      version: matchesOut.version,
+      date: day(-2),
+      lines: [
+        {
+          lineId: only(matchesOut.lines, 'transfer line').id,
+          receivedQuantity: '10',
+          serialNumbers: [],
+        },
+      ],
+    });
+    expect(arrived.statusCode, arrived.body).toBe(200);
+    await created(stockTransferSchema, '/stock-transfers', {
+      fromWarehouseId: main.id,
+      toWarehouseId: mirpurStore.id,
+      date: day(-2),
+      note: '',
+      lines: [transferLine(soap, '2', 0)],
+      send: true,
+    });
+    const damaged = await send('POST', '/stock-adjustments', {
+      date: day(-2),
+      warehouseId: main.id,
+      direction: 'out',
+      reason: 'damaged',
+      note: '',
+      lines: [stockLine(soap, '1', '', 1)],
+      post: true,
+    });
+    expect(damaged.statusCode, damaged.body).toBe(201);
+    // ৳120 a kilo to ৳130: the value moves, not a gram
+    await created(stockRevaluationSchema, '/stock-revaluations', {
+      date: day(-1),
+      note: '',
+      lines: [{ variantId: variantOf(sugar), unitCost: '130' }],
+    });
+  }, 60_000);
+
+  it('works out the opening from what is held now, and puts each kind of movement in its column', async () => {
+    const report = await stockMovement(`from=${day(-22)}&to=${day(-4)}`);
+    expect(report.items.map(movementOf)).toEqual([
+      // 10 on the challan, 2 back before the bill
+      ['Miniket rice 5 kg', '', '40.0000', '0.0000', '8.0000', '0.0000', '0.0000', '32.0000'],
+      // 5 on Karim's invoice, 1 back
+      ['Soybean oil 1 L', '', '10.0000', '0.0000', '4.0000', '0.0000', '0.0000', '6.0000'],
+      // Received and 2 sent back before the period; 1 back on its own inside it: purchased less
+      ['Sugar 1 kg', '', '18.0000', '-1.0000', '0.0000', '0.0000', '0.0000', '17.0000'],
+    ]);
+    expectBalanced(report);
+    expect(report.items.map(valueOf)).toEqual([
+      ['Miniket rice 5 kg', '', '15200.0000', '12160.0000'],
+      ['Soybean oil 1 L', '', '1600.0000', '960.0000'],
+      ['Sugar 1 kg', '', '2160.0000', '2040.0000'],
+    ]);
+    expect(report.totals).toEqual({
+      variants: 3,
+      openingValue: '18960.0000',
+      closingValue: '15160.0000',
+    });
+    expect(report.withValue).toBe(true);
+    expect(report.items.map((row) => row.baseUnit.code)).toEqual(['pcs', 'pcs', 'pcs']);
+  });
+
+  it('counts stock on the way, an adjustment and a revaluation, but nothing after the period', async () => {
+    const report = await stockMovement(lastDays());
+    expect(report.items.map(movementOf)).toEqual([
+      // Out of the main store and into Mirpur: nothing for the company. Today's 2 at the counter
+      // are after the period.
+      ['Matchbox', '', '50.0000', '0.0000', '0.0000', '0.0000', '0.0000', '50.0000'],
+      // A revaluation moved only the value, and still counts as moved
+      ['Sugar 1 kg', '', '17.0000', '0.0000', '0.0000', '0.0000', '0.0000', '17.0000'],
+      // On the truck: out of the main store, in nowhere yet
+      ['Toilet soap 100 g', 'Rose', '10.0000', '0.0000', '0.0000', '-2.0000', '0.0000', '8.0000'],
+      ['Toilet soap 100 g', 'Lime', '10.0000', '0.0000', '0.0000', '0.0000', '-1.0000', '9.0000'],
+    ]);
+    expectBalanced(report);
+    expect(report.items.map(valueOf)).toEqual([
+      ['Matchbox', '', '150.0000', '150.0000'],
+      ['Sugar 1 kg', '', '2040.0000', '2210.0000'],
+      ['Toilet soap 100 g', 'Rose', '450.0000', '360.0000'],
+      ['Toilet soap 100 g', 'Lime', '450.0000', '405.0000'],
+    ]);
+    // "All" adds what had stock and did not move
+    const all = await stockMovement(`${lastDays()}&show=all`);
+    expect(all.items.map((row) => row.productName)).toEqual([
+      'Matchbox',
+      'Miniket rice 5 kg',
+      'Soybean oil 1 L',
+      'Sugar 1 kg',
+      'Toilet soap 100 g',
+      'Toilet soap 100 g',
+    ]);
+    expectBalanced(all);
+    // The services never held stock: no row even with "all"
+    expect(all.items.map((row) => row.productId)).not.toContain(homeDelivery.id);
+  });
+
+  it("shows one warehouse's own stock and value", async () => {
+    const atMirpur = await stockMovement(`${lastDays()}&warehouseId=${mirpurStore.id}&show=all`);
+    expect(atMirpur.items.map(movementOf)).toEqual([
+      ['Matchbox', '', '0.0000', '0.0000', '0.0000', '10.0000', '0.0000', '10.0000'],
+      ['Soybean oil 1 L', '', '6.0000', '0.0000', '0.0000', '0.0000', '0.0000', '6.0000'],
+    ]);
+    // The value of one store is its own movements: 10 boxes at ৳3
+    expect(atMirpur.items.map(valueOf)).toEqual([
+      ['Matchbox', '', '0.0000', '30.0000'],
+      ['Soybean oil 1 L', '', '960.0000', '960.0000'],
+    ]);
+    const atMain = await stockMovement(`${lastDays()}&warehouseId=${main.id}`);
+    expect(atMain.items.map(movementOf)).toEqual([
+      ['Matchbox', '', '50.0000', '0.0000', '0.0000', '-10.0000', '0.0000', '40.0000'],
+      ['Sugar 1 kg', '', '17.0000', '0.0000', '0.0000', '0.0000', '0.0000', '17.0000'],
+      ['Toilet soap 100 g', 'Rose', '10.0000', '0.0000', '0.0000', '-2.0000', '0.0000', '8.0000'],
+      ['Toilet soap 100 g', 'Lime', '10.0000', '0.0000', '0.0000', '0.0000', '-1.0000', '9.0000'],
+    ]);
+    expectBalanced(atMain);
+    expect(atMain.items.map(valueOf)).toEqual([
+      ['Matchbox', '', '150.0000', '120.0000'],
+      ['Sugar 1 kg', '', '2040.0000', '2210.0000'],
+      ['Toilet soap 100 g', 'Rose', '450.0000', '360.0000'],
+      ['Toilet soap 100 g', 'Lime', '450.0000', '405.0000'],
+    ]);
+  });
+
+  it('filters by category, with the categories under it', async () => {
+    const inGroceries = await stockMovement(
+      `from=${day(-22)}&to=${day(-4)}&categoryId=${groceries}`,
+    );
+    // Rice is in "Rice", under Groceries
+    expect(inGroceries.items.map((row) => row.productName)).toEqual([
+      'Miniket rice 5 kg',
+      'Soybean oil 1 L',
+      'Sugar 1 kg',
+    ]);
+    const inRice = await stockMovement(`from=${day(-22)}&to=${day(-4)}&categoryId=${riceCategory}`);
+    expect(inRice.items.map((row) => row.productName)).toEqual(['Miniket rice 5 kg']);
+    expect(inRice.totals.variants).toBe(1);
+    const inPersonalCare = await stockMovement(`${lastDays()}&categoryId=${personalCare}`);
+    expect(inPersonalCare.items.map((row) => row.optionValues)).toEqual([['Rose'], ['Lime']]);
+  });
+
+  it('sorts by any column with the name after it, and pages with the same totals', async () => {
+    const byClosing = await stockMovement(`${lastDays()}&show=all&sort=-closing`);
+    expect(byClosing.items.map((row) => row.closing)).toEqual([
+      '50.0000',
+      '32.0000',
+      '17.0000',
+      '9.0000',
+      '8.0000',
+      '6.0000',
+    ]);
+    // One row with a transfer, then the zeros by name
+    const byTransfers = await stockMovement(`${lastDays()}&show=all&sort=transfers`);
+    expect(byTransfers.items.map((row) => [row.productName, row.transfers])).toEqual([
+      ['Toilet soap 100 g', '-2.0000'],
+      ['Matchbox', '0.0000'],
+      ['Miniket rice 5 kg', '0.0000'],
+      ['Soybean oil 1 L', '0.0000'],
+      ['Sugar 1 kg', '0.0000'],
+      ['Toilet soap 100 g', '0.0000'],
+    ]);
+    const byValue = await stockMovement(`${lastDays()}&show=all&sort=-closingValue`);
+    expect(byValue.items.map((row) => row.closingValue)).toEqual([
+      '12160.0000',
+      '2210.0000',
+      '960.0000',
+      '405.0000',
+      '360.0000',
+      '150.0000',
+    ]);
+
+    const all = await stockMovement(`${lastDays()}&show=all&sort=-closing`);
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: StockMovementReport = await stockMovement(
+        `${lastDays()}&show=all&sort=-closing&limit=4${cursor === null ? '' : `&cursor=${cursor}`}`,
+      );
+      expect(page.totals).toEqual(all.totals);
+      seen.push(...page.items.map((row) => row.variantId));
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+    expect(seen).toEqual(all.items.map((row) => row.variantId));
+    expect(all.totals).toEqual({
+      variants: 6,
+      openingValue: '16210.0000',
+      closingValue: '16245.0000',
+    });
+  });
+
+  it('leaves the value out without the stock value permission, and never sorts by it', async () => {
+    const report = await stockMovement(lastDays(), kamal);
+    expect(report.withValue).toBe(false);
+    expect(report.items.map(movementOf)).toEqual(
+      (await stockMovement(lastDays())).items.map(movementOf),
+    );
+    expect(
+      report.items.every((row) => row.openingValue === null && row.closingValue === null),
+    ).toBe(true);
+    expect(report.totals).toEqual({ variants: 4, openingValue: null, closingValue: null });
+    for (const sort of ['openingValue', '-closingValue']) {
+      const refused = await send(
+        'GET',
+        `/reports/stock-movement?${lastDays()}&sort=${sort}`,
+        undefined,
+        kamal,
+      );
+      expect(refused.statusCode).toBe(403);
+      expect(problemOf(refused)).toMatchObject({
+        code: 'permission_missing',
+        params: { permissions: 'inventory.stock.value' },
+      });
+    }
+    // The sales and purchase reports are not the stock reports
+    expect(
+      (await send('GET', `/reports/stock-movement?${lastDays()}`, undefined, shirin)).statusCode,
+    ).toBe(403);
   });
 });

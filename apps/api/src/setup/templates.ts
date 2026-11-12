@@ -183,6 +183,12 @@ const TAKING_BACK_AT_COUNTER = ['pos.return.create'] as const;
 const SALES_REPORTS = ['sales.report.read'] as const;
 const PURCHASE_REPORTS = ['purchase.report.read'] as const;
 const STOCK_REPORTS = ['inventory.report.read'] as const;
+// Step 21c: sending reports by email on a schedule goes to the people who read every module's
+// reports, the same people who would forward them by hand today. A depot manager reads only the
+// stock reports, so a schedule they made would be about one module; an owner adds it to their role
+// in Settings → Roles if they want that. Each person on a schedule still gets only the reports
+// their own role may read.
+const SCHEDULING_REPORTS = ['core.report.schedule'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -221,6 +227,8 @@ const ACCOUNTANT: RoleTemplate = {
     ...SALES_REPORTS,
     ...PURCHASE_REPORTS,
     ...STOCK_REPORTS,
+    // Step 21c: and sending them by email on a schedule
+    ...SCHEDULING_REPORTS,
   ],
 };
 
@@ -747,6 +755,7 @@ export const INDUSTRY_TEMPLATES = {
           ...SALES_REPORTS,
           ...PURCHASE_REPORTS,
           ...STOCK_REPORTS,
+          ...SCHEDULING_REPORTS,
         ],
       },
       {
@@ -824,6 +833,7 @@ export const INDUSTRY_TEMPLATES = {
           ...SALES_REPORTS,
           ...PURCHASE_REPORTS,
           ...STOCK_REPORTS,
+          ...SCHEDULING_REPORTS,
         ],
       },
     ],

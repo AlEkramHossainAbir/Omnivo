@@ -26,7 +26,7 @@ import {
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 
-import { ExportMenu, PeriodFields, usePeriod } from '../components/report-parts';
+import { branchName, ExportMenu, PeriodFields, usePeriod } from '../components/report-parts';
 import { LoadFailed, NameTile, NeedsConnection } from '../components/trade-report-parts';
 import { useCan } from '../lib/permissions';
 import { categoryOptions } from '../lib/products';
@@ -201,6 +201,11 @@ export function PurchaseReportPage() {
           period.valid && (
             <ExportMenu
               request={(format) => ({ report: 'purchase_report', format, query: filter })}
+              names={{
+                branch: branchName(branches, branchId),
+                group: groups?.find((group) => group.id === supplierGroupId)?.name,
+                category: categories?.find((category) => category.id === categoryId)?.name,
+              }}
             />
           )
         }

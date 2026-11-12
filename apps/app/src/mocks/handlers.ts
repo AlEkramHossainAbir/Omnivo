@@ -8,6 +8,7 @@ import {
   dashboardCardsFor,
   type ErrorCode,
   isCostSort,
+  isStockValueSort,
   type Preferences,
   type ProductCategory,
   routes,
@@ -149,6 +150,15 @@ import {
   trialBalanceOf,
 } from './report-data';
 import {
+  createSchedule,
+  pauseSchedule,
+  removeSchedule,
+  resumeSchedule,
+  scheduleCandidatesOf,
+  scheduleListOf,
+  updateSchedule,
+} from './report-schedule-data';
+import {
   apAgingOf,
   apAgingPartyOf,
   arAgingOf,
@@ -156,6 +166,7 @@ import {
   purchaseReportOf,
   salesReportOf,
 } from './trade-report-data';
+import { stockMovementOf, vatDocumentsOf, vatReportOf } from './vat-stock-report-data';
 import {
   findProduct,
   IMPORT_DELAY_MS,
@@ -1536,6 +1547,107 @@ export const handlers = [
       const { supplierId } = routes.aging.payablesOf.params.parse(params);
       const { asOf } = readQuery(routes.aging.payablesOf.query, request);
       return reply(routes.aging.payablesOf, apAgingPartyOf(current(), supplierId, asOf));
+    }),
+  ),
+
+  // Step 21c: VAT belongs to the accounts (decision 11), so the route's permission is enough
+  mock(routes.vatReport.summary, ({ request }) =>
+    reply(
+      routes.vatReport.summary,
+      vatReportOf(current(), readQuery(routes.vatReport.summary.query, request)),
+    ),
+  ),
+
+  mock(routes.vatReport.documents, ({ request }) =>
+    reply(
+      routes.vatReport.documents,
+      vatDocumentsOf(current(), readQuery(routes.vatReport.documents.query, request)),
+    ),
+  ),
+
+  // Without inventory.stock.value the values are null and a value sort is refused (decision 24),
+  // like the sales report's cost
+  mock(
+    routes.stockMovementReport.report,
+    guarded(({ request }) => {
+      const query = readQuery(routes.stockMovementReport.report.query, request);
+      const withValue = me().permissions.includes('inventory.stock.value');
+      if (!withValue && isStockValueSort(query.sort)) {
+        throw new MockProblem(403, 'permission_missing');
+      }
+      return reply(routes.stockMovementReport.report, stockMovementOf(current(), query, withValue));
+    }),
+  ),
+
+  // The schedules: each one also needs the report's own permission (report-schedule-data.ts)
+  mock(routes.reportSchedules.list, () =>
+    reply(routes.reportSchedules.list, scheduleListOf(current(), me().permissions)),
+  ),
+
+  mock(
+    routes.reportSchedules.candidates,
+    guarded(({ request }) => {
+      const { report } = readQuery(routes.reportSchedules.candidates.query, request);
+      return reply(
+        routes.reportSchedules.candidates,
+        scheduleCandidatesOf(current(), report, me().permissions),
+      );
+    }),
+  ),
+
+  mock(
+    routes.reportSchedules.create,
+    guarded(async ({ request }) => {
+      const body = await readBody(routes.reportSchedules.create.body, request);
+      return reply(
+        routes.reportSchedules.create,
+        createSchedule(current(), body, me().permissions),
+      );
+    }),
+  ),
+
+  mock(
+    routes.reportSchedules.update,
+    guarded(async ({ params, request }) => {
+      const { id } = routes.reportSchedules.update.params.parse(params);
+      const body = await readBody(routes.reportSchedules.update.body, request);
+      return reply(
+        routes.reportSchedules.update,
+        updateSchedule(current(), id, body, me().permissions),
+      );
+    }),
+  ),
+
+  mock(
+    routes.reportSchedules.pause,
+    guarded(async ({ params, request }) => {
+      const { id } = routes.reportSchedules.pause.params.parse(params);
+      const { version } = await readBody(routes.reportSchedules.pause.body, request);
+      return reply(
+        routes.reportSchedules.pause,
+        pauseSchedule(current(), id, version, me().permissions),
+      );
+    }),
+  ),
+
+  mock(
+    routes.reportSchedules.resume,
+    guarded(async ({ params, request }) => {
+      const { id } = routes.reportSchedules.resume.params.parse(params);
+      const { version } = await readBody(routes.reportSchedules.resume.body, request);
+      return reply(
+        routes.reportSchedules.resume,
+        resumeSchedule(current(), id, version, me().permissions),
+      );
+    }),
+  ),
+
+  mock(
+    routes.reportSchedules.remove,
+    guarded(({ params }) => {
+      const { id } = routes.reportSchedules.remove.params.parse(params);
+      removeSchedule(current(), id, me().permissions);
+      return reply(routes.reportSchedules.remove, undefined);
     }),
   ),
 

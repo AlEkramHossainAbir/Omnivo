@@ -95,8 +95,9 @@ function sorted<R extends RowIdentity>(
   });
 }
 
-// This category and every one under it (the API's inCategory)
-function categoryAndBelow(data: WorkspaceData, categoryId: string): Set<string> {
+// This category and every one under it (the API's inCategory). Step 21c: the stock movement
+// report's mock reads it too (vat-stock-report-data.ts).
+export function categoryAndBelow(data: WorkspaceData, categoryId: string): Set<string> {
   const found = new Set([categoryId]);
   for (let grew = true; grew;) {
     grew = false;

@@ -2,6 +2,7 @@
 import CategoryFilters from '../components/CategoryFilters.astro';
 import HeroBanner from '../components/HeroBanner.astro';
 import ImageBanner from '../components/ImageBanner.astro';
+import LoadMoreLink from '../components/LoadMoreLink.astro';
 import ProductCard from '../components/ProductCard.astro';
 import ProductRow from '../components/ProductRow.astro';
 import { shopSource } from '../data/source';
@@ -60,15 +61,5 @@ const { t } = locale;
     ),
   )}
 
-  {home.hasMoreFeatured && (
-    <div class="mt-4 flex justify-center pt-2 pb-6 md:mt-12 md:p-0">
-      {/* Step 26c: the full list; the button's "Loading" state belongs to that page */}
-      <a
-        href="/c/all"
-        class="flex h-[38px] items-center rounded-lg bg-card px-4 font-medium transition-colors duration-150 hover:bg-cream"
-      >
-        {t('shop.home.loadMore')}
-      </a>
-    </div>
-  )}
+  {home.hasMoreFeatured && <LoadMoreLink href="/c/all" label={t('shop.home.loadMore')} />}
 </ShopLayout>

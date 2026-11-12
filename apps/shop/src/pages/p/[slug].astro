@@ -1,0 +1,84 @@
+---
+import LoadMoreLink from '../../components/LoadMoreLink.astro';
+import ProductDescription from '../../components/ProductDescription.astro';
+import ProductGallery from '../../components/ProductGallery.astro';
+import ProductInfo from '../../components/ProductInfo.astro';
+import ProductRow from '../../components/ProductRow.astro';
+import { shopSource } from '../../data/source';
+import ShopLayout from '../../layouts/ShopLayout.astro';
+import { shopLocale } from '../../lib/locale';
+
+// Step 26b: one product's page (Figma product_details 37:3521, 1440px). Figma has no phone frame
+// for it, so below md it follows the storefront rules: the cards stack, 16px apart.
+const slug = Astro.params.slug ?? '';
+const [shop, page, categories] = await Promise.all([
+  shopSource.shop(),
+  shopSource.product(slug),
+  shopSource.categories(),
+]);
+
+// An old link or a typo: Astro's own 404 page, with the 404 status, so a search engine drops the
+// URL. 26d draws the shop's "page not found"
+if (!page) return Astro.rewrite('/404');
+
+const locale = await shopLocale(shop.language);
+const { t } = locale;
+const { product, related } = page;
+
+// The countdown shows only for a sale still running. Worked out once here, so the info card and
+// the countdown agree on "now"
+const saleEnd = product.saleUntil === null ? null : new Date(product.saleUntil);
+const saleUntil = saleEnd !== null && saleEnd.getTime() > Date.now() ? saleEnd : null;
+
+const category = categories.find((candidate) => candidate.id === product.categoryId);
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.product.title', { name: product.name, shop: shop.name })}
+>
+  {/* Figma: 524px gallery + 16px + 740px info card. fr, not px, so the two keep their share
+      between lg and xl; below lg they stack */}
+  <div class="mt-4 grid items-start gap-4 lg:grid-cols-[minmax(0,524fr)_minmax(0,740fr)]">
+    <ProductGallery product={product} locale={locale} />
+    <ProductInfo product={product} shop={shop} locale={locale} saleUntil={saleUntil} />
+  </div>
+
+  {product.descriptionHtml !== '' && (
+    <div class="mt-4 md:mt-[72px]">
+      <ProductDescription html={product.descriptionHtml} locale={locale} />
+    </div>
+  )}
+
+  {related.length > 0 && (
+    <ProductRow
+      collection={{
+        id: 'related',
+        title: t('shop.product.related'),
+        icon: null,
+        listings: related,
+      }}
+      locale={locale}
+    />
+  )}
+
+  {/* Figma's Load More under the row: the rest of the category, on its own page (26d) */}
+  {related.length > 0 && category && (
+    <LoadMoreLink href={`/c/${category.slug}`} label={t('shop.home.loadMore')} />
+  )}
+</ShopLayout>
+
+<script>
+  import { ensureInCart } from '../../lib/cart';
+
+  // "Place Order": the product goes into the cart (once), then checkout (26c) opens with the cart
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const button = event.target.closest<HTMLButtonElement>('[data-place-order]');
+    const listingId = button?.dataset.placeOrder;
+    if (!listingId) return;
+    ensureInCart(listingId);
+    window.location.assign('/checkout');
+  });
+</script>

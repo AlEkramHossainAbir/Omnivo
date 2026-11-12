@@ -1,0 +1,26 @@
+---
+import type { ShopLocale } from '../lib/locale';
+
+// CLAUDE.md → Product page, description (Figma 37:3612): a card with a tab bar holding one tab,
+// "Overview", then the description's sections. Reviews is not drawn: there are no reviews in the
+// data model. With one tab there is nothing to switch, so "Overview" is a label, not a role="tab"
+// (a tab list of one would tell a screen reader there is a choice when there is none).
+interface Props {
+  // shopProductSchema.descriptionHtml: <section>s with an <h2> each, cleaned by the ERP on save
+  html: string;
+  locale: ShopLocale;
+}
+
+const { html, locale } = Astro.props;
+const { t } = locale;
+---
+
+<section aria-label={t('shop.product.details')} class="rounded-2xl bg-card-glass p-2">
+  <div class="rounded-lg bg-cream p-2">
+    <p class="flex h-12 w-40 items-center justify-center rounded-sm bg-brand font-semibold text-accent">
+      <span class="trim-text">{t('shop.product.overview')}</span>
+    </p>
+  </div>
+  {/* set:html: the text is the ERP's own cleaned HTML (decision 15), never the shopper's */}
+  <div class="shop-prose mt-2" set:html={html} />
+</section>

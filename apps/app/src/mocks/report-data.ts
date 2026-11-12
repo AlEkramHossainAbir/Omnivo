@@ -380,6 +380,9 @@ const STEMS = {
   purchase_report: 'purchases',
   ar_aging: 'receivables-aging',
   ap_aging: 'payables-aging',
+  // Step 21c
+  vat_report: 'vat',
+  stock_movement: 'stock-movement',
 } satisfies Record<ReportKind, string>;
 
 export function createExport(data: WorkspaceData, input: ReportExportInput): ReportExport {

@@ -78,6 +78,20 @@ export function seedsTradeHistory(): boolean {
   }
 }
 
+// Step 21c: a month of documents with VAT, dated last month, for the VAT report
+// (vat-month-data.ts). Its own key, not the year of trade's: in July "last month" is the last
+// fiscal year, whose numbers the 21b tests read. A test asks for it with
+// test.use({ vatMonth: true }); `pnpm dev:mock` has no key and gets it.
+export const MOCK_NO_VAT_MONTH_KEY = 'omnivo.mock.noVatMonth';
+
+export function seedsVatMonth(): boolean {
+  try {
+    return localStorage.getItem(MOCK_NO_VAT_MONTH_KEY) === null;
+  } catch {
+    return true;
+  }
+}
+
 export function meIn(
   workspace: Workspace,
   companyName: string,

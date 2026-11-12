@@ -139,6 +139,7 @@ describe('starting the setup', () => {
           'accounting.period.close',
           'accounting.report.read',
           'core.audit.read',
+          'core.report.schedule',
           'core.user.read',
           'inventory.report.read',
           'inventory.stock.revalue',

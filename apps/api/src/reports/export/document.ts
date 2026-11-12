@@ -21,12 +21,24 @@ import {
   type SalesReport,
   type SalesReportFilter,
   type SalesReportRow,
+  type StockMovementFilter,
+  type StockMovementReport,
+  type StockMovementRow,
   type TrialBalance,
   type TrialBalanceQuery,
+  type VatReport,
+  type VatReportFilter,
 } from '@omnivo/contracts';
 
 import { COPY, type Copy } from './copy.js';
-import { formatAmount, formatIsoDate, formatMoment, formatMonth, formatNumber } from './format.js';
+import {
+  formatAmount,
+  formatIsoDate,
+  formatMoment,
+  formatMonth,
+  formatNumber,
+  formatPercent,
+} from './format.js';
 
 // One report as a plain table: the Excel and the PDF writer both draw this, so the two files
 // always hold the same rows in the same order. Amounts stay decimal strings here; each writer
@@ -78,7 +90,9 @@ export type ReportData =
   | { report: 'sales_report'; query: SalesReportFilter; data: SalesReport }
   | { report: 'purchase_report'; query: PurchaseReportFilter; data: PurchaseReport }
   | { report: 'ar_aging'; query: ArAgingFilter; data: AgingReport }
-  | { report: 'ap_aging'; query: ApAgingFilter; data: AgingReport };
+  | { report: 'ap_aging'; query: ApAgingFilter; data: AgingReport }
+  | { report: 'vat_report'; query: VatReportFilter; data: VatReport }
+  | { report: 'stock_movement'; query: StockMovementFilter; data: StockMovementReport };
 
 // The names of what the query filters by, read by the handler: a file says "Branch: Sylhet depot",
 // never an id
@@ -91,6 +105,8 @@ export interface DocumentContext {
   // Step 21b: the customer or supplier group, and the product category
   groupName: string | null;
   categoryName: string | null;
+  // Step 21c: the stock movement report's warehouse
+  warehouseName: string | null;
   madeAt: Date;
 }
 
@@ -504,6 +520,146 @@ function agingDocument(
   };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Step 21c: the VAT report (its summary by rate: the documents are on the page) and the stock
+// movement report
+
+function vatDocument(
+  query: VatReportFilter,
+  data: VatReport,
+  copy: Copy,
+  context: DocumentContext,
+): Body {
+  const { language } = context;
+  const date = (iso: string) => formatIsoDate(iso, language);
+  const amount = (value: string) => formatAmount(value, language);
+  const amounts = (row: VatReport['totals'] | VatReport['rows'][number]): DocCell[] => [
+    money(row.outputNet),
+    money(row.outputVat),
+    money(row.inputNet),
+    money(row.inputVat),
+    money(row.netVat),
+  ];
+  return {
+    landscape: true,
+    lines: [
+      copy.range(date(query.from), date(query.to)),
+      ...(context.branchName === null ? [] : [copy.branch(context.branchName)]),
+      copy.vatInBooks(amount(data.books.output), amount(data.books.input)),
+      // Only when something was taken off: a month without returns needs no line of zeros
+      ...(isZeroMoney(data.totals.outputVatReturned) && isZeroMoney(data.totals.inputVatReturned)
+        ? []
+        : [
+            copy.vatReturned(
+              amount(data.totals.outputVatReturned),
+              amount(data.totals.inputVatReturned),
+            ),
+          ]),
+      ...(isZeroMoney(data.totals.inputVatWithoutMushak)
+        ? []
+        : [copy.withoutMushak(amount(data.totals.inputVatWithoutMushak))]),
+    ],
+    columns: [
+      { header: copy.vat.rate, kind: 'text', width: 30 },
+      { header: copy.vat.outputNet, kind: 'money', width: 18 },
+      { header: copy.vat.outputVat, kind: 'money', width: 16 },
+      { header: copy.vat.inputNet, kind: 'money', width: 18 },
+      { header: copy.vat.inputVat, kind: 'money', width: 16 },
+      { header: copy.vat.netVat, kind: 'money', width: 16 },
+    ],
+    rows: [
+      ...data.rows.map((row): DocRow => ({
+        style: 'normal',
+        indent: 0,
+        // "VAT 15% · 15%": the name and the percent, as the app shows a rate
+        cells: [text(`${row.name} · ${formatPercent(row.rate, language)}%`), ...amounts(row)],
+      })),
+      { style: 'grand', indent: 0, cells: [text(copy.total), ...amounts(data.totals)] },
+    ],
+  };
+}
+
+// "Napa 500mg (Strip)": the variant's options after the product's name
+function variantName(row: StockMovementRow): string {
+  return row.optionValues.length === 0
+    ? row.productName
+    : `${row.productName} (${row.optionValues.join(', ')})`;
+}
+
+function stockMovementDocument(
+  query: StockMovementFilter,
+  data: StockMovementReport,
+  copy: Copy,
+  context: DocumentContext,
+): Body {
+  const { language } = context;
+  // "72 pcs" with the unit's decimals; a quantity of another product's unit is never added to it
+  const quantity = (row: StockMovementRow, value: string): DocCell => ({
+    kind: 'number',
+    text: `${formatNumber(value, row.baseUnit.decimals, language)} ${row.baseUnit.code}`,
+  });
+  const valueColumns: DocColumn[] = data.withValue
+    ? [
+        { header: copy.stock.openingValue, kind: 'money', width: 16 },
+        { header: copy.stock.closingValue, kind: 'money', width: 16 },
+      ]
+    : [];
+  return {
+    landscape: true,
+    lines: [
+      copy.range(formatIsoDate(query.from, language), formatIsoDate(query.to, language)),
+      ...(context.warehouseName === null ? [] : [copy.warehouse(context.warehouseName)]),
+      ...(context.categoryName === null ? [] : [copy.category(context.categoryName)]),
+      ...(query.show === 'all' ? [copy.withStockOnly] : []),
+    ],
+    columns: [
+      { header: copy.stock.product, kind: 'text', width: 34 },
+      { header: copy.stock.sku, kind: 'text', width: 14 },
+      { header: copy.stock.opening, kind: 'number', width: 13 },
+      { header: copy.stock.purchased, kind: 'number', width: 13 },
+      { header: copy.stock.sold, kind: 'number', width: 13 },
+      { header: copy.stock.transfers, kind: 'number', width: 13 },
+      { header: copy.stock.adjusted, kind: 'number', width: 13 },
+      { header: copy.stock.closing, kind: 'number', width: 13 },
+      ...valueColumns,
+    ],
+    rows: [
+      ...data.items.map((row): DocRow => ({
+        style: 'normal',
+        indent: 0,
+        cells: [
+          text(variantName(row)),
+          text(row.sku),
+          quantity(row, row.opening),
+          quantity(row, row.purchased),
+          quantity(row, row.sold),
+          quantity(row, row.transfers),
+          quantity(row, row.adjusted),
+          quantity(row, row.closing),
+          ...(data.withValue
+            ? [money(row.openingValue ?? '0'), money(row.closingValue ?? '0')]
+            : []),
+        ],
+      })),
+      // Quantities never add up (decision 23): a total row only for the values
+      ...(data.withValue
+        ? [
+            {
+              style: 'grand' as const,
+              indent: 0,
+              cells: [
+                text(copy.total),
+                ...Array.from({ length: 7 }, () => empty),
+                money(data.totals.openingValue ?? '0'),
+                money(data.totals.closingValue ?? '0'),
+              ],
+            },
+          ]
+        : []),
+    ],
+  };
+}
+
 function bodyOf(report: ReportData, copy: Copy, context: DocumentContext): Body {
   switch (report.report) {
     case 'trial_balance':
@@ -526,6 +682,10 @@ function bodyOf(report: ReportData, copy: Copy, context: DocumentContext): Body 
       return agingDocument(report.query, report.data, 'customer', copy, context);
     case 'ap_aging':
       return agingDocument(report.query, report.data, 'supplier', copy, context);
+    case 'vat_report':
+      return vatDocument(report.query, report.data, copy, context);
+    case 'stock_movement':
+      return stockMovementDocument(report.query, report.data, copy, context);
   }
 }
 
@@ -558,6 +718,8 @@ export function fileStem(report: ReportData): string {
     purchase_report: 'purchases',
     ar_aging: 'receivables-aging',
     ap_aging: 'payables-aging',
+    vat_report: 'vat',
+    stock_movement: 'stock-movement',
   };
   // A picture of one day has its date, a period its two
   const dates =

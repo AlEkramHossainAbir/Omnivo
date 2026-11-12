@@ -8,6 +8,7 @@ export const mockShop = {
   language: 'en',
   theme: { brand: '#005859', accent: '#b8ef69' },
   hotline: '+880 1786 120356',
+  timeZone: 'Asia/Dhaka',
   address: 'Amigo 14 Square, House No :59/C-61/C Suite No : B-2, Level-2, Asad Ave, Dhaka 1207.',
   social: {
     facebook: 'https://facebook.com/',

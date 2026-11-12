@@ -14,6 +14,8 @@ const DESCRIPTIONS = {
   'core.settings.manage': 'Edit the company profile, regional settings and numbering',
   'core.branch.manage': 'Add, edit and archive branches',
   'core.audit.read': 'View the audit log',
+  'core.report.schedule':
+    'Send reports by email on a schedule, to members who may read them, and change or stop those emails',
   'accounting.account.manage':
     'Add, edit, move, archive and delete accounts in the chart of accounts',
   'accounting.journal.read': 'View journal entries, ledgers and opening balances',

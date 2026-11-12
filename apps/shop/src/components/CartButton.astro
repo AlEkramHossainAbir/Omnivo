@@ -9,7 +9,7 @@ import type { ShopLocale } from '../lib/locale';
 // browser, so the server draws an empty cart and the script below fills it in. A script, not a
 // React island: an island would ship React and the app's translations (about 150 KB gz) for one
 // number. The words it needs are worked out here and handed over in data attributes.
-// Step 26b makes the button open the cart drawer.
+// Step 26b: data-open-cart opens the cart drawer (CartDrawer.astro listens for it).
 interface Props {
   locale: ShopLocale;
 }
@@ -28,6 +28,8 @@ const { t } = locale;
 >
   <button
     type="button"
+    data-open-cart
+    aria-haspopup="dialog"
     aria-label={t('shop.header.cartEmpty')}
     class="relative grid size-10 place-items-center rounded-xl bg-card text-brand transition-colors duration-150 md:size-[42px] md:border md:border-on-brand-line md:bg-transparent md:text-white md:hover:bg-white/10"
   >

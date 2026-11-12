@@ -109,7 +109,10 @@ export function seedPeople(workspace: Workspace): People {
       };
     }),
   ];
-  if (workspace.slug === 'rahman-garments') addPurchaseDesk(roles, members);
+  if (workspace.slug === 'rahman-garments') {
+    addPurchaseDesk(roles, members);
+    addFinanceDesk(roles, members);
+  }
   return { roles, members, invitations: [] };
 }
 
@@ -246,4 +249,38 @@ export function demoPreview(token: string, workspace: Workspace): InvitationPrev
     accountExists,
     expiresAt: expiry(),
   };
+}
+
+// Step 21c: the people the scheduled report emails go to (report-schedule-data.ts). Two, so the
+// dialog's "Send to" list is short and real; the Accountant role of the generated members has no
+// report permission, and giving it one would offer 60 people. After the purchase desk, so every
+// earlier member and role keeps its place.
+function addFinanceDesk(roles: MockRole[], members: Member[]): void {
+  const finance = role(
+    'Finance desk',
+    [
+      'accounting.report.read',
+      'sales.report.read',
+      'purchase.report.read',
+      'inventory.report.read',
+      'inventory.stock.value',
+      'core.report.schedule',
+    ],
+    'Monthly VAT, sales and stock reports for the directors',
+  );
+  roles.push(finance);
+  for (const [fullName, email] of [
+    ['Nusrat Jahan', 'nusrat.jahan@rahman-garments.com'],
+    ['Rafiq Ahmed', 'rafiq.ahmed@rahman-garments.com'],
+  ] as const) {
+    members.push({
+      membershipId: crypto.randomUUID(),
+      userId: crypto.randomUUID(),
+      fullName,
+      email,
+      roles: [{ id: finance.id, name: finance.name }],
+      version: 1,
+      joinedAt: new Date(Date.now() - 300 * DAY_MS).toISOString(),
+    });
+  }
 }

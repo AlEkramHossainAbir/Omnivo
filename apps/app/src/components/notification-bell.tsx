@@ -46,6 +46,10 @@ const TARGET = {
   'invitation.failed': '/team',
   'report.ready': '/reports/exports',
   'report.failed': '/reports/exports',
+  // Step 21c: the schedule's bells go to the creator (decision 12), who fixes it on that page
+  'report.schedule_skipped': '/reports/schedules',
+  'report.schedule_paused': '/reports/schedules',
+  'report.schedule_failed': '/reports/schedules',
   'import.done': '/products/imports',
   'import.failed': '/products/imports',
   'stock.low': '/stock/reorder',

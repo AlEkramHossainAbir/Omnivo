@@ -144,6 +144,73 @@
   }
 }
 
+/* Step 26b: the product description (CLAUDE.md → Product page, description; Figma 37:3620). The
+   HTML comes from the ERP, so it is styled by tag here, never with classes inside it. Each
+   <section> is one block: 8px apart, radius 8, padding 36px (20px on a phone), the backgrounds
+   alternating canvas and cream as Figma draws them. Headings and text are trimmed like every other
+   Figma text, so the 24px under a heading is Figma's gap between the two trimmed boxes. */
+@layer components {
+  .shop-prose {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    & > section {
+      border-radius: 8px;
+      padding: 20px;
+      background: var(--color-canvas);
+      @variant md {
+        padding: 36px;
+      }
+    }
+    & > section:nth-child(even) {
+      background: var(--color-cream);
+    }
+
+    & h2 {
+      font-size: var(--text-sf-subtitle);
+      line-height: 30px;
+      font-weight: 600;
+      color: var(--color-brand);
+      text-box: trim-both cap alphabetic;
+    }
+    & p,
+    & ul,
+    & ol {
+      font-size: var(--text-sf-small);
+      line-height: var(--text-sf-small--line-height);
+      color: var(--color-body);
+      text-box: trim-both cap alphabetic;
+    }
+    /* Figma: 24px under a heading; two blocks of text one after the other get 16px */
+    & section > * + * {
+      margin-top: 16px;
+    }
+    & section > h2 + * {
+      margin-top: 24px;
+    }
+    /* Preflight removes list markers; a description's lists keep Figma's discs and numbers,
+       indented 21px */
+    & ul {
+      list-style: disc;
+    }
+    & ol {
+      list-style: decimal;
+    }
+    & li {
+      margin-inline-start: 21px;
+    }
+    /* Figma's bullet is a small "•", not the browser's disc at the text's 14px. Bullets only: an
+       <ol>'s numbers stay the text's size */
+    & ul > li::marker {
+      font-size: 10px;
+    }
+    & strong {
+      font-weight: 600;
+    }
+  }
+}
+
 @layer base {
   body {
     background: var(--color-canvas);
@@ -160,6 +227,14 @@
   h2,
   h3 {
     text-wrap: balance;
+  }
+
+  /* Step 26b: the page behind the open cart drawer does not scroll; a modal <dialog> blocks clicks
+     on it, not the scroll wheel. The gutter keeps the page from shifting sideways when a classic
+     scrollbar (Windows) goes away */
+  html:has(dialog[data-cart-drawer][open]) {
+    overflow: hidden;
+    scrollbar-gutter: stable;
   }
 
   /* Every clickable thing shows the hand (CLAUDE.md → Interaction) */

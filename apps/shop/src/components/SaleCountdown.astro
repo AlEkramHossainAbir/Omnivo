@@ -1,0 +1,72 @@
+---
+import { Clock01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { formatDateTime, numberLocale } from '@omnivo/i18n';
+
+import { countdownText } from '../lib/countdown';
+import type { ShopLocale } from '../lib/locale';
+
+// CLAUDE.md → Product page, top: the countdown row (Figma 37:3574), a 20px clock and
+// "01 : 12 : 10 : 32" in `promo`, 12px apart. The server writes the first value, so the row is
+// right before any script runs; the script below makes it tick.
+interface Props {
+  // When the sale ends. The page draws this only for a sale that has not ended yet
+  until: Date;
+  timeZone: string;
+  locale: ShopLocale;
+}
+
+const { until, timeZone, locale } = Astro.props;
+const { t } = locale;
+const number = numberLocale(locale.language);
+---
+
+<sale-countdown
+  class="flex items-center gap-3 text-promo"
+  data-until={until.toISOString()}
+  data-locale={number}
+>
+  <HugeiconsIcon icon={Clock01Icon} size={20} strokeWidth={1.5} aria-hidden="true" />
+  {/* Hidden from a screen reader: it would read the clock again every second (decision 8) */}
+  <span data-clock aria-hidden="true" class="trim-text font-semibold tabular-nums">
+    {countdownText(until.getTime() - Date.now(), number)}
+  </span>
+  <span class="sr-only">
+    {t('shop.product.saleEnds', { date: formatDateTime(until, locale.language, timeZone) })}
+  </span>
+</sale-countdown>
+
+<script>
+  import { countdownText } from '../lib/countdown';
+
+  class SaleCountdown extends HTMLElement {
+    private timer: number | undefined;
+
+    connectedCallback(): void {
+      const clock = this.querySelector<HTMLElement>('[data-clock]');
+      const until = Date.parse(this.dataset.until ?? '');
+      const locale = this.dataset.locale ?? 'en-IN';
+      if (!clock || Number.isNaN(until)) return;
+
+      const tick = (): void => {
+        const left = until - Date.now();
+        clock.textContent = countdownText(left, locale);
+        if (left > 0) return;
+        // The sale is over: the row goes, and the price on the page is the sale's until a reload.
+        // The cart and checkout ask the server, so nobody pays the old sale price by mistake
+        window.clearInterval(this.timer);
+        this.hidden = true;
+      };
+      tick();
+      // Every second, as the design shows seconds. Not paused under reduced motion: changing text
+      // is not motion
+      this.timer = window.setInterval(tick, 1000);
+    }
+
+    disconnectedCallback(): void {
+      window.clearInterval(this.timer);
+    }
+  }
+
+  customElements.define('sale-countdown', SaleCountdown);
+</script>

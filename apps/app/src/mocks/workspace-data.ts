@@ -36,7 +36,7 @@ import {
   type MockDocumentOutput,
   seedDocumentOutput,
 } from './document-output-data';
-import { HEAD_OFFICES, OWNER, seedsTradeHistory, type Workspace } from './fixtures';
+import { HEAD_OFFICES, OWNER, seedsTradeHistory, seedsVatMonth, type Workspace } from './fixtures';
 import { emptyBilling, type MockBilling } from './invoice-data';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
@@ -46,6 +46,8 @@ import { seedPosShifts } from './pos-shift-data';
 import { emptyCatalog, garmentsCatalog, type MockCatalog, pharmaCatalog } from './product-data';
 import { seedPurchaseOrders } from './purchase-order-data';
 import type { MockExport } from './report-data';
+import type { MockReportSchedule } from './report-schedule-data';
+import { seedReportSchedules } from './report-schedule-seed';
 import { emptyPurchase, type MockPurchase, seedPurchase } from './requisition-data';
 import { emptyReturns, type MockReturns } from './return-data';
 import { emptySales, type MockSales, seedSales } from './sales-data';
@@ -58,6 +60,7 @@ import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
 import { emptySuppliers, type MockSuppliers, seedSuppliers } from './supplier-data';
 import { emptySync, type MockSync, seedDevices } from './sync-data';
 import { seedTradeHistory } from './trade-history-data';
+import { seedVatMonth } from './vat-month-data';
 
 // mock সার্ভারের এক workspace-এর ডেটা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে।
 // নিয়মগুলো আসল API-র মতো (version, অনন্য কোড, শেষ চালু ব্রাঞ্চ) — UI-র error-পথ mock দিয়েও দেখা যায়
@@ -105,6 +108,8 @@ export interface WorkspaceData {
   sync: MockSync;
   // POS registers and the sales their devices pushed (step 20a)
   pos: MockPos;
+  // Step 21c: the scheduled report emails, in the order they were made (report-schedule-data.ts)
+  reportSchedules: MockReportSchedule[];
 }
 
 function now(): string {
@@ -196,6 +201,7 @@ function seed(workspace: Workspace): WorkspaceData {
     purchase: emptyPurchase(),
     sync: emptySync(),
     pos: emptyPos(),
+    reportSchedules: [],
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   data.salesAccounts = seedSalesAccounts(data.accounts);
@@ -223,6 +229,10 @@ function seed(workspace: Workspace): WorkspaceData {
   seedPosShifts(data, garments);
   // Step 21b: last, because it uses the stock, the accounts and a counter
   if (garments && seedsTradeHistory()) seedTradeHistory(data);
+  // Step 21c: a month of documents with VAT, last month (vat-month-data.ts), and the four
+  // scheduled emails of the mockup, after the team and the warehouses they name
+  if (garments && seedsVatMonth()) seedVatMonth(data);
+  if (garments) seedReportSchedules(data);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });

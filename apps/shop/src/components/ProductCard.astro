@@ -4,11 +4,13 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import type { ShopListing } from '@omnivo/contracts';
 
 import type { ShopLocale } from '../lib/locale';
+import ListingMarks from './ListingMarks.astro';
 
 // CLAUDE.md → Storefront → Product card. Desktop (Figma 37:3174): 243×458, centered, the ribbon on
 // the card's top edge, the picture 54px down. Phone (Figma 138:815): full width, left-aligned, the
 // picture in a 160px box with the ribbon and badge inside it. One "media" box carries the ribbon
-// and badge in both, so they are placed relative to it.
+// and badge in both, so they are placed relative to it (ListingMarks, shared with the product page
+// since step 26b).
 interface Props {
   listing: ShopListing;
   locale: ShopLocale;
@@ -17,61 +19,41 @@ interface Props {
 const { listing, locale } = Astro.props;
 const { t } = locale;
 
-const discount = listing.discount;
-const discountText =
-  discount === null
-    ? null
-    : discount.kind === 'amount'
-      ? locale.money(discount.value)
-      : `${String(discount.value)}%`;
-
-// NEW sits at the left when the left is free (no ribbon); the first other badge sits at the right
-const newOnLeft = discountText === null && listing.badges.includes('new');
-const rightBadge = listing.badges.find((badge) => !(newOnLeft && badge === 'new'));
 const image = listing.images[0];
 ---
 
 <article class="flex h-full flex-col gap-3 rounded-xl bg-card p-3 md:gap-0 md:overflow-hidden md:rounded-lg md:p-0 md:text-center">
   <div class="relative h-40 overflow-hidden rounded-lg bg-canvas md:h-auto md:rounded-none md:bg-card md:px-2.5 md:pt-13.5">
+    {/* The picture opens the product page too, as people tap it first. The name is the card's one
+        link for the keyboard and screen readers, so this copy is left out of both */}
     {image && (
-      <img
-        src={image.url}
-        alt={image.alt}
-        loading="lazy"
-        class="size-full object-contain mix-blend-multiply md:h-50"
-      />
-    )}
-    {discountText !== null && (
-      <p class="ribbon-shape absolute top-0 left-2 flex h-10 w-[30px] flex-col items-center bg-price pt-2.5 text-sf-tag font-bold text-white md:left-4">
-        <span aria-hidden="true">{discountText}</span>
-        <span aria-hidden="true">{t('shop.card.off')}</span>
-        <span class="sr-only">{t('shop.card.discount', { amount: discountText })}</span>
-      </p>
-    )}
-    {newOnLeft && (
-      <p class="trim-text absolute top-2 left-2 rounded-full bg-brand p-[7px] text-sf-tag font-bold text-accent md:top-2.5 md:left-2.5">
-        {t('shop.card.badge.new')}
-      </p>
-    )}
-    {rightBadge && (
-      <p
-        class:list={[
-          'trim-text absolute top-2 right-2 rounded-full p-[7px] text-sf-tag font-bold md:top-2.5 md:right-2.5',
-          rightBadge === 'new' ? 'bg-brand text-accent' : 'bg-promo text-white',
-        ]}
+      <a
+        href={`/p/${listing.slug}`}
+        tabindex="-1"
+        aria-hidden="true"
+        class="block size-full md:h-50"
       >
-        {t(`shop.card.badge.${rightBadge}`)}
-      </p>
+        <img
+          src={image.url}
+          alt=""
+          loading="lazy"
+          class="size-full object-contain mix-blend-multiply"
+        />
+      </a>
     )}
+    <ListingMarks listing={listing} locale={locale} />
   </div>
 
   <div class="flex flex-col gap-1 md:mt-4 md:gap-[23px] md:px-2.5">
     <div class="flex flex-col gap-1 md:gap-4">
-      {/* Desktop only: Figma trims the desktop text boxes, not the phone ones. line-clamp makes the
-          block a -webkit-box, which keeps the top trim but drops the bottom one (5px at 16/20); the
-          margin gives it back, and min-h keeps two lines' room for a one-line name, so the size and
-          the price sit where Figma has them on every card */}
-      <h3 class="line-clamp-2 text-sf-body leading-[19px] font-semibold md:-mb-[5px] md:min-h-9 md:trim-text md:leading-5">
+      {/* Desktop only: Figma trims the desktop text boxes, not the phone ones. The name is clamped
+          to two lines, so it is not trimmed with text-box: a trimmed, clamped box is 36px tall and
+          the top of a third line shows through under the second. Instead the box is exactly two
+          lines (h-10, also the room a one-line name keeps), and the margins take off what the trim
+          would (4px over the cap height, 5px under the baseline at 16/20), so the size and the
+          price sit where Figma has them on every card. text-wrap: wrap, not the headings'
+          balance: Figma fills the first line and breaks where it runs out ("… Lemon / Face Wash") */}
+      <h3 class="line-clamp-2 text-sf-body leading-[19px] font-semibold text-wrap md:-mt-1 md:-mb-[5px] md:h-10 md:leading-5">
         <a href={`/p/${listing.slug}`} class="hover:underline">
           {listing.name}
         </a>

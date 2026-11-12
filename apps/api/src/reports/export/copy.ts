@@ -60,6 +60,33 @@ export interface Copy {
   overdueOnly: string;
   // The books' figure under the heading, for the reader to compare with the total
   inBooks: (amount: string) => string;
+  // Step 21c. The VAT report's columns and the lines under its title
+  vat: {
+    rate: string;
+    outputNet: string;
+    outputVat: string;
+    inputNet: string;
+    inputVat: string;
+    netVat: string;
+  };
+  vatInBooks: (output: string, input: string) => string;
+  vatReturned: (output: string, input: string) => string;
+  withoutMushak: (amount: string) => string;
+  // The stock movement report's columns and lines
+  stock: {
+    product: string;
+    sku: string;
+    opening: string;
+    purchased: string;
+    sold: string;
+    transfers: string;
+    adjusted: string;
+    closing: string;
+    openingValue: string;
+    closingValue: string;
+  };
+  warehouse: (name: string) => string;
+  withStockOnly: string;
 }
 
 export const COPY = {
@@ -72,6 +99,8 @@ export const COPY = {
       purchase_report: 'Purchase report',
       ar_aging: 'Receivables aging',
       ap_aging: 'Payables aging',
+      vat_report: 'VAT report',
+      stock_movement: 'Stock movement',
     },
     sections: {
       asset: 'Assets',
@@ -147,6 +176,32 @@ export const COPY = {
     category: (name) => `Category: ${name}`,
     overdueOnly: 'Overdue only',
     inBooks: (amount) => `In the books: ${amount}`,
+    vat: {
+      rate: 'VAT rate',
+      outputNet: 'Sales before VAT',
+      outputVat: 'Output VAT',
+      inputNet: 'Purchases before VAT',
+      inputVat: 'Input VAT',
+      netVat: 'Net VAT',
+    },
+    vatInBooks: (output, input) => `In the books: output VAT ${output}, input VAT ${input}`,
+    vatReturned: (output, input) =>
+      `Taken off: ${output} output VAT (credit notes and POS returns), ${input} input VAT (debit notes)`,
+    withoutMushak: (amount) => `Input VAT on bills with no Mushak 6.3: ${amount}`,
+    stock: {
+      product: 'Product',
+      sku: 'SKU',
+      opening: 'Opening',
+      purchased: 'Purchased',
+      sold: 'Sold',
+      transfers: 'Transfers',
+      adjusted: 'Adjusted',
+      closing: 'Closing',
+      openingValue: 'Opening value',
+      closingValue: 'Closing value',
+    },
+    warehouse: (name) => `Warehouse: ${name}`,
+    withStockOnly: 'Also the products that did not move',
   },
   bn: {
     titles: {
@@ -157,6 +212,8 @@ export const COPY = {
       purchase_report: 'কেনাকাটার রিপোর্ট',
       ar_aging: 'পাওনার এজিং',
       ap_aging: 'দেনার এজিং',
+      vat_report: 'VAT রিপোর্ট',
+      stock_movement: 'স্টকের আসা-যাওয়া',
     },
     sections: {
       asset: 'সম্পদ',
@@ -232,5 +289,31 @@ export const COPY = {
     category: (name) => `ক্যাটাগরি: ${name}`,
     overdueOnly: 'শুধু সময় পার',
     inBooks: (amount) => `হিসাবের খাতায়: ${amount}`,
+    vat: {
+      rate: 'VAT-এর হার',
+      outputNet: 'VAT-এর আগে বিক্রি',
+      outputVat: 'আউটপুট VAT',
+      inputNet: 'VAT-এর আগে কেনাকাটা',
+      inputVat: 'ইনপুট VAT',
+      netVat: 'নিট VAT',
+    },
+    vatInBooks: (output, input) => `হিসাবের খাতায়: আউটপুট VAT ${output}, ইনপুট VAT ${input}`,
+    vatReturned: (output, input) =>
+      `বাদ গেছে: আউটপুট VAT ${output} (ক্রেডিট নোট আর POS ফেরত), ইনপুট VAT ${input} (ডেবিট নোট)`,
+    withoutMushak: (amount) => `মূসক ৬.৩ ছাড়া বিলের ইনপুট VAT: ${amount}`,
+    stock: {
+      product: 'প্রোডাক্ট',
+      sku: 'SKU',
+      opening: 'শুরুতে',
+      purchased: 'কেনা',
+      sold: 'বিক্রি',
+      transfers: 'ট্রান্সফার',
+      adjusted: 'অ্যাডজাস্টমেন্ট',
+      closing: 'শেষে',
+      openingValue: 'শুরুর মূল্য',
+      closingValue: 'শেষের মূল্য',
+    },
+    warehouse: (name) => `গুদাম: ${name}`,
+    withStockOnly: 'যে প্রোডাক্ট নড়েনি সেগুলোও',
   },
 } satisfies Record<LanguageCode, Copy>;

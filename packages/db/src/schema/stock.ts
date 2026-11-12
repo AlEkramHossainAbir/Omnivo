@@ -65,6 +65,11 @@ export const stockMovements = pgTable(
     index('stock_movements_product_idx').on(table.tenantId, table.productId, table.variantId),
     index('stock_movements_warehouse_idx').on(table.tenantId, table.warehouseId),
     index('stock_movements_document_idx').on(table.tenantId, table.documentId),
+    // Step 21c: the stock movement report. The opening stock is the balance now less the
+    // movements dated from the report's first day on (decision 5), and the columns add up the
+    // movements of the period: both read a range of dates across every variant, which the
+    // stock card's index (variant first) cannot serve.
+    index('stock_movements_date_idx').on(table.tenantId, table.date),
     // No ON DELETE: a variant with movements cannot be deleted, so neither can its product (the
     // API turns this FK's error into product_in_use / product_variant_in_use)
     foreignKey({
