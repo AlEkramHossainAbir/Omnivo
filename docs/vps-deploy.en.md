@@ -16,6 +16,7 @@ here. They are in the VPS access sheet and in the `myvps` entry of `~/.ssh/confi
 | `https://api.omnivosoft.com` | The API (`/health` answers `{"status":"ok"}`) |
 | `https://files.omnivosoft.com` | File storage (MinIO). The browser uploads and downloads here with signed links |
 | `https://mail.omnivosoft.com` | Mailpit: every email the server sends lands here. User `tester`, password below |
+| `https://shop.omnivosoft.com` | The online shop as a demo (the `shop` service). It shows the mock shop, so nothing in it is real, and a deploy forgets its orders |
 
 `omnivosoft.com` itself is not used yet. It stays free for the marketing website.
 
@@ -127,6 +128,15 @@ rm /home/deploy/.cloudflared/cert.pem   # delete the login again
 ```
 
 Then add the site to the Caddyfile. The link works for about 10 minutes.
+
+There is a shorter way that needs no login on the server. `route dns` only makes one DNS record,
+so you can make the same record by hand: in the Cloudflare dashboard → `omnivosoft.com` → **DNS**
+→ **Add record**, type `CNAME`, name `shop`, target `<tunnel id>.cfargotunnel.com`, **Proxied** on.
+The tunnel id is the name of the `.json` file in `/home/deploy/.cloudflared/` on the server. The
+tunnel sends every name to Caddy, so nothing changes in the tunnel itself.
+
+A new site in the Caddyfile that reads a new `.env` name (like `SHOP_HOST`) needs that line in
+`/srv/omnivo/.env` **before** the deploy. `compose.yml` refuses to start without it.
 
 ## Mailpit
 

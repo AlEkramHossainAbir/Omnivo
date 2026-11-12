@@ -204,10 +204,30 @@ services:
       API_HOST: ${API_HOST}
       FILES_HOST: ${FILES_HOST}
       MAIL_HOST: ${MAIL_HOST:?set MAIL_HOST in .env}
+      SHOP_HOST: ${SHOP_HOST:?set SHOP_HOST in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+
+  # The online shop (apps/shop). Until step 26's public API exists it shows the mock shop: its
+  # products, prices and orders are made up, and an order lives in this container's memory only,
+  # so a restart forgets it. It needs nothing else in the stack. `web` does not wait for it either:
+  # if the shop fails, the ERP app keeps working and only the shop's address answers 502.
+  shop:
+    image: ${REGISTRY}/omnivo-shop:${IMAGE_TAG}
+    restart: unless-stopped
+    logging: *logging
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4321/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   # The way in from the internet. It opens an outgoing connection to Cloudflare, so the server needs
   # no open port and no fixed IP: when the home connection gets a new IP, it just connects again.

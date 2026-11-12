@@ -17,7 +17,7 @@ set +a
 export IMAGE_TAG="$TAG"
 
 echo "==> Pulling images for $TAG"
-docker compose --profile tools pull --quiet migrate api worker web
+docker compose --profile tools pull --quiet migrate api worker web shop
 
 echo "==> Applying migrations"
 # The old API keeps running meanwhile, so every migration must work with the old code too
@@ -36,6 +36,7 @@ docker compose up -d --remove-orphans --wait
 echo "==> Checking it answers"
 curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "https://$API_HOST/health" >/dev/null
 curl -fsS --retry 5 --retry-delay 2 --retry-all-errors "https://$APP_HOST/" | grep -q '<div id="root">'
+curl -fsS --retry 5 --retry-delay 2 --retry-all-errors "https://$SHOP_HOST/" >/dev/null
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $TAG" >>deploys.log
 

@@ -47,7 +47,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The three images share their first stages. One builder builds them one after the other, so
+      # The four images share their first stages. One builder builds them one after the other, so
       # the shared stages are built once. The gha cache keeps every stage for the next run.
       - name: Build and push api
         uses: docker/build-push-action@v6
@@ -81,6 +81,17 @@ jobs:
           # API_HOST in the server's .env.
           build-args: VITE_API_URL=${{ vars.STAGING_API_URL }}
           tags: ${{ steps.meta.outputs.registry }}/omnivo-web:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=staging
+
+      # The shop needs no build argument: it is a server, so its settings are read when it starts
+      - name: Build and push shop
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: shop
+          push: true
+          tags: ${{ steps.meta.outputs.registry }}/omnivo-shop:${{ steps.meta.outputs.tag }}
           cache-from: type=gha,scope=staging
 
   deploy:

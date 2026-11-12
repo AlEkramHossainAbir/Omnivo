@@ -1,9 +1,11 @@
 # syntax=docker/dockerfile:1.7
 
-# One Dockerfile, three images (build each with --target):
+# One Dockerfile, four images (build each with --target):
 #   api      the API and the worker (same code, a different command)
 #   migrate  runs the database migrations once per deploy, then exits
 #   web      Caddy: HTTPS in front of everything, and the app's static files
+#   shop     the online shop (apps/shop), an Astro Node server. Until step 26's public API exists
+#            it shows the mock shop, so on staging it is a demo only
 # Build from the repo root: docker build -f infra/docker/Dockerfile --target api .
 
 ARG NODE_IMAGE=node:24.22.2-alpine3.24
@@ -52,6 +54,14 @@ ENV VITE_API_URL=${VITE_API_URL}
 RUN pnpm turbo run build --filter=@omnivo/app
 
 # ---------------------------------------------------------------------------------------------
+# shop-build: the shop's server and its files. `astro build` bundles the workspace packages
+# (contracts, i18n) into dist/server, but it leaves npm packages (react, zod, the icons) as
+# imports, so `deploy --prod` copies the shop with the node_modules those imports need.
+FROM source AS shop-build
+RUN pnpm turbo run build --filter=@omnivo/shop
+RUN pnpm --filter @omnivo/shop deploy --prod /out/shop
+
+# ---------------------------------------------------------------------------------------------
 # api: the runtime image for the API and the worker
 FROM ${NODE_IMAGE} AS api
 ENV NODE_ENV=production
@@ -70,6 +80,20 @@ WORKDIR /app
 COPY --from=migrate-build --chown=node:node /out/db ./
 USER node
 CMD ["node_modules/.bin/tsx", "src/migrate.ts"]
+
+# ---------------------------------------------------------------------------------------------
+# shop: the shop's Node server. The standalone adapter is the whole server (no Express): it reads
+# HOST and PORT from the environment. HOST must be 0.0.0.0, or only the container itself could
+# reach it and Caddy would get "connection refused".
+FROM ${NODE_IMAGE} AS shop
+ENV NODE_ENV=production \
+    HOST=0.0.0.0 \
+    PORT=4321
+WORKDIR /app
+COPY --from=shop-build --chown=node:node /out/shop ./
+USER node
+EXPOSE 4321
+CMD ["node", "dist/server/entry.mjs"]
 
 # ---------------------------------------------------------------------------------------------
 # web: Caddy with the app's files baked in. The Caddyfile comes from the server (a volume), so a

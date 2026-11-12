@@ -82,6 +82,26 @@ http://{$FILES_HOST} {
 	reverse_proxy storage:9000
 }
 
+# The online shop: an Astro server that makes each page per request, so Caddy passes every request
+# on. The common block's noindex keeps the demo shop out of search engines, like the rest of
+# staging.
+http://{$SHOP_HOST} {
+	import common
+
+	# Built CSS and JS have a hash in their name, like the app's /assets/. The Astro server sends
+	# them with "max-age=0", so every page view would ask for them again; header_down replaces that
+	# with a year. Pages and the mock photos (no hash in the name) keep the server's header.
+	handle /_astro/* {
+		reverse_proxy shop:4321 {
+			header_down Cache-Control "public, max-age=31536000, immutable"
+		}
+	}
+
+	handle {
+		reverse_proxy shop:4321
+	}
+}
+
 # Mailpit: every email staging sends. Mailpit asks for the password itself (MP_UI_AUTH).
 http://{$MAIL_HOST} {
 	import common
