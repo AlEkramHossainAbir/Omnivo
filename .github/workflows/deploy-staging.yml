@@ -77,8 +77,8 @@ jobs:
           file: infra/docker/Dockerfile
           target: web
           push: true
-          # Vite writes the API's address into the app's JavaScript. It must equal API_BASE_URL in the
-          # server's .env.
+          # Vite writes the API's address into the app's JavaScript. It must be https:// plus
+          # API_HOST in the server's .env.
           build-args: VITE_API_URL=${{ vars.STAGING_API_URL }}
           tags: ${{ steps.meta.outputs.registry }}/omnivo-web:${{ steps.meta.outputs.tag }}
           cache-from: type=gha,scope=staging
@@ -98,37 +98,42 @@ jobs:
         with:
           ref: ${{ needs.build.outputs.tag }}
 
-      # Secrets go through env, never straight into the script, so a value is never read as shell code
+      # Secrets go through env, never straight into the script, so a value is never read as shell code.
+      # The server's address, user and port go into one "staging" entry of ~/.ssh/config, so scp and
+      # ssh below need no flags. This server listens on port 2222, not 22.
       - name: Set up SSH
         env:
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
           KNOWN_HOSTS: ${{ secrets.STAGING_KNOWN_HOSTS }}
+          SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          SSH_USER: ${{ secrets.STAGING_SSH_USER }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/staging
           chmod 600 ~/.ssh/staging
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host staging\n  HostName %s\n  Port %s\n  User %s\n  IdentityFile ~/.ssh/staging\n  IdentitiesOnly yes\n' \
+            "$SSH_HOST" "${SSH_PORT:-22}" "$SSH_USER" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       # The stack's files come from the commit being deployed. The server's .env is never touched.
       - name: Copy the stack files
-        env:
-          TARGET: ${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }}
         run: |
-          scp -i ~/.ssh/staging -r \
+          scp -r \
             infra/staging/compose.yml infra/staging/Caddyfile \
             infra/staging/deploy.sh infra/staging/backup.sh infra/staging/restore.sh \
             infra/staging/postgres-init \
-            "$TARGET:/srv/omnivo/"
+            staging:/srv/omnivo/
 
       # The job's own token logs the server in to GHCR for this pull only. No lasting registry
       # password is kept on the server.
       - name: Deploy
         env:
-          TARGET: ${{ secrets.STAGING_SSH_USER }}@${{ secrets.STAGING_SSH_HOST }}
           TAG: ${{ needs.build.outputs.tag }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          printf '%s' "$GHCR_TOKEN" | ssh -i ~/.ssh/staging "$TARGET" \
+          printf '%s' "$GHCR_TOKEN" | ssh staging \
             "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
-          ssh -i ~/.ssh/staging "$TARGET" "cd /srv/omnivo && ./deploy.sh '$TAG'; status=\$?; docker logout ghcr.io >/dev/null; exit \$status"
+          ssh staging "cd /srv/omnivo && ./deploy.sh '$TAG'; status=\$?; docker logout ghcr.io >/dev/null; exit \$status"

@@ -1,5 +1,6 @@
 # The staging stack. It runs on one server from /srv/omnivo, next to the .env made from
-# .env.example. Only Caddy (web) opens ports; everything else talks on the stack's own network.
+# .env.example. No container opens a port on the server: cloudflared connects out to Cloudflare
+# and hands each request to Caddy (web), and everything talks on the stack's own network.
 #
 #   docker compose up -d             start or update everything
 #   docker compose run --rm migrate  apply new migrations (deploy.sh does this first)
@@ -14,9 +15,14 @@ x-logging: &logging
     max-size: 10m
     max-file: '5'
 
+# The public addresses. .env holds only the host names; every https:// address is built here, so
+# the API, the S3 client and the Caddyfile always agree.
+x-origins: &origins
+  APP_ORIGIN: https://${APP_HOST:?set APP_HOST in .env}
+
 # What the API and the worker both need from file storage
 x-storage-env: &storage-env
-  S3_ENDPOINT: ${S3_ENDPOINT:?set S3_ENDPOINT in .env}
+  S3_ENDPOINT: https://${FILES_HOST:?set FILES_HOST in .env}
   S3_BUCKET: omnivo
   S3_ACCESS_KEY_ID: omnivo-app
   S3_SECRET_ACCESS_KEY: ${S3_APP_SECRET:?set S3_APP_SECRET in .env}
@@ -47,8 +53,18 @@ services:
     image: valkey/valkey:8-alpine
     restart: unless-stopped
     logging: *logging
-    # BullMQ's jobs live here: never drop keys when memory is full
-    command: ['valkey-server', '--maxmemory-policy', 'noeviction', '--save', '60', '1000']
+    # BullMQ's jobs live here: never drop keys when memory is full (noeviction). 256 MB holds a lot
+    # of jobs and keeps Valkey from taking the small server's memory; when it is full, new jobs
+    # fail loudly instead of old ones being dropped.
+    command:
+      - valkey-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+      - --save
+      - '60'
+      - '1000'
     volumes:
       - cache-data:/data
     healthcheck:
@@ -66,7 +82,7 @@ services:
       MINIO_ROOT_USER: omnivo-root
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
       # Browser uploads come from the app's origin only
-      MINIO_API_CORS_ALLOW_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN in .env}
+      MINIO_API_CORS_ALLOW_ORIGIN: https://${APP_HOST}
     volumes:
       - storage-data:/data
     healthcheck:
@@ -130,15 +146,15 @@ services:
       storage-init:
         condition: service_completed_successfully
     environment:
-      <<: *storage-env
+      <<: [*storage-env, *origins]
       NODE_ENV: production
       DATABASE_URL: postgres://omnivo_app:${APP_DB_PASSWORD}@db:5432/omnivo
       REDIS_URL: redis://cache:6379
-      API_BASE_URL: ${API_BASE_URL:?set API_BASE_URL in .env}
-      APP_ORIGIN: ${APP_ORIGIN}
+      API_BASE_URL: https://${API_HOST:?set API_HOST in .env}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      # Only Caddy can reach this container, so its X-Forwarded-For is the client's address
+      # Only Caddy can reach this container, and Caddy writes the visitor's address (from
+      # Cloudflare's CF-Connecting-IP) into X-Forwarded-For
       TRUST_PROXY: 'true'
     healthcheck:
       test:
@@ -165,12 +181,11 @@ services:
       storage-init:
         condition: service_completed_successfully
     environment:
-      <<: *storage-env
+      <<: [*storage-env, *origins]
       NODE_ENV: production
       DATABASE_URL: postgres://omnivo_app:${APP_DB_PASSWORD}@db:5432/omnivo
       WORKER_DATABASE_URL: postgres://omnivo_worker:${WORKER_DB_PASSWORD}@db:5432/omnivo
       REDIS_URL: redis://cache:6379
-      APP_ORIGIN: ${APP_ORIGIN}
       SMTP_URL: smtp://mail:1025
       MAIL_FROM: Omnivo Staging <no-reply@${MAIL_FROM_DOMAIN:?set MAIL_FROM_DOMAIN in .env}>
     # A deploy waits for the running jobs (a PDF, an export) to finish
@@ -183,21 +198,29 @@ services:
     depends_on:
       api:
         condition: service_healthy
-    ports:
-      - '80:80'
-      - '443:443'
-      - '443:443/udp'
+    # No ports: only cloudflared talks to Caddy, on the stack's network
     environment:
-      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
-      APP_ORIGIN: ${APP_ORIGIN}
-      API_BASE_URL: ${API_BASE_URL}
-      S3_ENDPOINT: ${S3_ENDPOINT}
-      MAIL_URL: ${MAIL_URL:?set MAIL_URL in .env}
+      APP_HOST: ${APP_HOST}
+      API_HOST: ${API_HOST}
+      FILES_HOST: ${FILES_HOST}
+      MAIL_HOST: ${MAIL_HOST:?set MAIL_HOST in .env}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # The certificates. Losing this volume means asking Let's Encrypt again, which has limits
       - caddy-data:/data
       - caddy-config:/config
+
+  # The way in from the internet. It opens an outgoing connection to Cloudflare, so the server needs
+  # no open port and no fixed IP: when the home connection gets a new IP, it just connects again.
+  # Every host name of the tunnel goes to Caddy, which picks the site by the Host header.
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.6
+    restart: unless-stopped
+    logging: *logging
+    command: ['tunnel', '--no-autoupdate', 'run', '--url', 'http://web:80']
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      - web
 
 volumes:
   db-data:

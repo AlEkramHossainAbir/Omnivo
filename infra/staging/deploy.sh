@@ -7,8 +7,9 @@ cd "$(dirname "$0")"
 
 TAG="${1:?usage: ./deploy.sh <image-tag>}"
 
-# The addresses, for the checks at the end. Read before IMAGE_TAG is set below: .env holds the
-# tag of the last deploy, and it must not win over the new one.
+# The host names, for the checks at the end (they go through Cloudflare, like a visitor). Read
+# before IMAGE_TAG is set below: .env holds the tag of the last deploy, and it must not win over
+# the new one.
 set -a
 # shellcheck source=/dev/null
 . ./.env
@@ -33,8 +34,8 @@ echo "==> Starting the new build"
 docker compose up -d --remove-orphans --wait
 
 echo "==> Checking it answers"
-curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "$API_BASE_URL/health" >/dev/null
-curl -fsS --retry 5 --retry-delay 2 --retry-all-errors "$APP_ORIGIN/" | grep -q '<div id="root">'
+curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "https://$API_HOST/health" >/dev/null
+curl -fsS --retry 5 --retry-delay 2 --retry-all-errors "https://$APP_HOST/" | grep -q '<div id="root">'
 
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $TAG" >>deploys.log
 
