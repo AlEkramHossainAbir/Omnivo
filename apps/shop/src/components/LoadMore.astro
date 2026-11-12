@@ -1,0 +1,146 @@
+---
+import { Loading03Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { numberLocale } from '@omnivo/i18n';
+
+import type { ShopLocale } from '../lib/locale';
+
+// CLAUDE.md → Storefront → Load More, on the category and search pages (decision 3). It is a link
+// to the next page, so it works without JavaScript. With JavaScript the script below asks the
+// partial (`more`) for the next cards and adds them to the grid in place. The home page and the
+// product page keep LoadMoreLink.astro: their Load More opens another page on purpose
+interface Props {
+  // The next page, for a shopper without JavaScript and for the script when the partial fails
+  href: string;
+  // The same cards from the partial (/c/<slug>/more): only the grid, no header or footer
+  more: string;
+  locale: ShopLocale;
+}
+
+const { href, more, locale } = Astro.props;
+const { t } = locale;
+// The words with a count go to the script with the count left as {{count}}, as in the cart drawer
+const loaded = (count: number) =>
+  t('shop.listing.loaded', { count, replace: { count: '{{count}}' } });
+---
+
+<div data-load-more-box class="mt-4 flex justify-center pt-2 pb-6 md:mt-12 md:p-0">
+  {/* The two labels are both in the markup; the link's data-loading attribute shows one. So the
+      script changes one attribute, and the words and the icon stay in this file */}
+  <a
+    href={href}
+    data-load-more={more}
+    data-number-locale={numberLocale(locale.language)}
+    data-loaded-one={loaded(1)}
+    data-loaded-other={loaded(2)}
+    class="group/more flex h-[38px] items-center rounded-lg bg-card px-4 font-medium transition-colors duration-150 not-aria-disabled:hover:bg-cream"
+  >
+    <span class="group-data-loading/more:hidden">{t('shop.home.loadMore')}</span>
+    <span class="hidden items-center gap-2.5 group-data-loading/more:flex">
+      {t('shop.listing.loading')}
+      <HugeiconsIcon
+        icon={Loading03Icon}
+        size={24}
+        strokeWidth={1.5}
+        className="animate-spin"
+        aria-hidden="true"
+      />
+    </span>
+  </a>
+</div>
+
+<script>
+  // Load More (decision 3): ask the partial for the next cards and add them to the grid. Whatever
+  // goes wrong (offline, a server error, a list that changed and a partial that says so), the
+  // script follows the link instead, so the shopper still gets the next cards, on a new page
+
+  // How long the live region stays empty before the words go in. A screen reader says a status
+  // when its text changes, so two loads of "20 more products" need a change in between
+  const ANNOUNCE_DELAY = 100;
+
+  function announce(link: HTMLAnchorElement, count: number): void {
+    const status = document.querySelector<HTMLElement>('[data-listing-status]');
+    if (!status) return;
+    const { loadedOne = '', loadedOther = '', numberLocale = 'en-IN' } = link.dataset;
+    const one = new Intl.PluralRules(numberLocale).select(count) === 'one';
+    const text = (one ? loadedOne : loadedOther).replace(
+      '{{count}}',
+      new Intl.NumberFormat(numberLocale).format(count),
+    );
+    status.textContent = '';
+    window.setTimeout(() => {
+      status.textContent = text;
+    }, ANNOUNCE_DELAY);
+  }
+
+  function setLoading(link: HTMLAnchorElement, loading: boolean): void {
+    link.toggleAttribute('data-loading', loading);
+    // A link cannot be disabled; aria-disabled says it, and the click handler ignores it
+    if (loading) link.setAttribute('aria-disabled', 'true');
+    else link.removeAttribute('aria-disabled');
+  }
+
+  async function loadMore(link: HTMLAnchorElement, partial: string): Promise<void> {
+    const grid = document.querySelector<HTMLUListElement>('[data-listing-grid]');
+    if (!grid) {
+      window.location.assign(link.href);
+      return;
+    }
+
+    setLoading(link, true);
+    let html: string;
+    try {
+      const response = await fetch(partial, { headers: { accept: 'text/html' } });
+      if (!response.ok) throw new Error(`load more: ${String(response.status)}`);
+      html = await response.text();
+    } catch {
+      // The page itself knows what to do: the next cards, or the first page of a changed list
+      window.location.assign(link.href);
+      return;
+    }
+
+    // A <template> parses the HTML without running it or loading its pictures: the cards' images
+    // start loading when they join the page, lazily like the others
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    const cards = template.content.querySelector('[data-listing-grid]');
+    if (!cards) {
+      window.location.assign(link.href);
+      return;
+    }
+    const items = [...cards.children];
+    grid.append(...items);
+
+    // The partial's own Load More: the page after these cards. getAttribute, not .href: a link in
+    // a template belongs to a document with no address, so .href would not be this site's
+    const next = template.content.querySelector<HTMLAnchorElement>('a[data-load-more]');
+    const nextHref = next?.getAttribute('href');
+    const nextPartial = next?.dataset.loadMore;
+    if (nextHref && nextPartial) {
+      link.setAttribute('href', nextHref);
+      link.dataset.loadMore = nextPartial;
+      setLoading(link, false);
+    } else {
+      // The last page. The focus was on the link that goes away, so it moves to the first new
+      // card's name, where the shopper would read on
+      link.closest('[data-load-more-box]')?.remove();
+      items[0]?.querySelector<HTMLAnchorElement>('h3 a')?.focus();
+    }
+    announce(link, items.length);
+  }
+
+  document.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) return;
+    const link = event.target.closest<HTMLAnchorElement>('a[data-load-more]');
+    const partial = link?.dataset.loadMore;
+    if (!link || !partial) return;
+    // Ctrl, ⌘ or Shift opens the next page in a new tab or window: the browser's job, not ours
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    event.preventDefault();
+    // A second click while the cards are on their way would add them twice
+    if (link.hasAttribute('data-loading')) return;
+    void loadMore(link, partial);
+  });
+</script>

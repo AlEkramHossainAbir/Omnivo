@@ -1,0 +1,251 @@
+# The staging stack. It runs on one server from /srv/omnivo, next to the .env made from
+# .env.example. No container opens a port on the server: cloudflared connects out to Cloudflare
+# and hands each request to Caddy (web), and everything talks on the stack's own network.
+#
+#   docker compose up -d             start or update everything
+#   docker compose run --rm migrate  apply new migrations (deploy.sh does this first)
+#   docker compose logs -f api       follow one service's log
+
+name: omnivo-staging
+
+# Each container's log is cut at 10 MB and only 5 files are kept, so the disk never fills up
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '5'
+
+# The public addresses. .env holds only the host names; every https:// address is built here, so
+# the API, the S3 client and the Caddyfile always agree.
+x-origins: &origins
+  APP_ORIGIN: https://${APP_HOST:?set APP_HOST in .env}
+
+# What the API and the worker both need from file storage
+x-storage-env: &storage-env
+  S3_ENDPOINT: https://${FILES_HOST:?set FILES_HOST in .env}
+  S3_BUCKET: omnivo
+  S3_ACCESS_KEY_ID: omnivo-app
+  S3_SECRET_ACCESS_KEY: ${S3_APP_SECRET:?set S3_APP_SECRET in .env}
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: omnivo
+      # Read only by postgres-init/01-roles.sh, on the first start
+      MIGRATOR_DB_PASSWORD: ${MIGRATOR_DB_PASSWORD:?set MIGRATOR_DB_PASSWORD in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?set APP_DB_PASSWORD in .env}
+      WORKER_DB_PASSWORD: ${WORKER_DB_PASSWORD:?set WORKER_DB_PASSWORD in .env}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d omnivo']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  cache:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    logging: *logging
+    # BullMQ's jobs live here: never drop keys when memory is full (noeviction). 256 MB holds a lot
+    # of jobs and keeps Valkey from taking the small server's memory; when it is full, new jobs
+    # fail loudly instead of old ones being dropped.
+    command:
+      - valkey-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - noeviction
+      - --save
+      - '60'
+      - '1000'
+    volumes:
+      - cache-data:/data
+    healthcheck:
+      test: ['CMD', 'valkey-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  storage:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    restart: unless-stopped
+    logging: *logging
+    command: ['server', '/data']
+    environment:
+      MINIO_ROOT_USER: omnivo-root
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set MINIO_ROOT_PASSWORD in .env}
+      # Browser uploads come from the app's origin only
+      MINIO_API_CORS_ALLOW_ORIGIN: https://${APP_HOST}
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://localhost:9000/minio/health/live']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Runs on every `up` and exits: makes the bucket and the app's own key (not the root one).
+  # Safe to run again: each command skips what already exists.
+  storage-init:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    logging: *logging
+    depends_on:
+      storage:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_APP_SECRET: ${S3_APP_SECRET}
+    entrypoint: ['/bin/sh', '-c']
+    # $$ is a $ for the shell inside the container, not for compose
+    command:
+      - |
+        set -e
+        mc alias set local http://storage:9000 omnivo-root "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/omnivo
+        mc admin user add local omnivo-app "$$S3_APP_SECRET"
+        mc admin policy attach local readwrite --user omnivo-app || true
+
+  mail:
+    image: axllent/mailpit:v1.31.2
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      MP_UI_AUTH: ${MAIL_UI_USER:?set MAIL_UI_USER in .env}:${MAIL_UI_PASSWORD:?set MAIL_UI_PASSWORD in .env}
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: 5000
+    volumes:
+      - mail-data:/data
+
+  # One-off: `docker compose run --rm migrate`. The profile keeps `up` from starting it.
+  migrate:
+    image: ${REGISTRY:?set REGISTRY in .env}/omnivo-migrate:${IMAGE_TAG:?IMAGE_TAG is written by deploy.sh. Run ./deploy.sh <tag> first}
+    profiles: ['tools']
+    logging: *logging
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MIGRATOR_DATABASE_URL: postgres://omnivo_migrator:${MIGRATOR_DB_PASSWORD}@db:5432/omnivo
+
+  api:
+    image: ${REGISTRY}/omnivo-api:${IMAGE_TAG}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    environment:
+      <<: [*storage-env, *origins]
+      NODE_ENV: production
+      DATABASE_URL: postgres://omnivo_app:${APP_DB_PASSWORD}@db:5432/omnivo
+      REDIS_URL: redis://cache:6379
+      API_BASE_URL: https://${API_HOST:?set API_HOST in .env}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?set BETTER_AUTH_SECRET in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Only Caddy can reach this container, and Caddy writes the visitor's address (from
+      # Cloudflare's CF-Connecting-IP) into X-Forwarded-For
+      TRUST_PROXY: 'true'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    stop_grace_period: 30s
+
+  worker:
+    image: ${REGISTRY}/omnivo-api:${IMAGE_TAG}
+    command: ['node', 'dist/worker.js']
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      db:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      storage-init:
+        condition: service_completed_successfully
+    environment:
+      <<: [*storage-env, *origins]
+      NODE_ENV: production
+      DATABASE_URL: postgres://omnivo_app:${APP_DB_PASSWORD}@db:5432/omnivo
+      WORKER_DATABASE_URL: postgres://omnivo_worker:${WORKER_DB_PASSWORD}@db:5432/omnivo
+      REDIS_URL: redis://cache:6379
+      SMTP_URL: smtp://mail:1025
+      MAIL_FROM: Omnivo Staging <no-reply@${MAIL_FROM_DOMAIN:?set MAIL_FROM_DOMAIN in .env}>
+    # A deploy waits for the running jobs (a PDF, an export) to finish
+    stop_grace_period: 60s
+
+  web:
+    image: ${REGISTRY}/omnivo-web:${IMAGE_TAG}
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      api:
+        condition: service_healthy
+    # No ports: only cloudflared talks to Caddy, on the stack's network
+    environment:
+      APP_HOST: ${APP_HOST}
+      API_HOST: ${API_HOST}
+      FILES_HOST: ${FILES_HOST}
+      MAIL_HOST: ${MAIL_HOST:?set MAIL_HOST in .env}
+      SHOP_HOST: ${SHOP_HOST:?set SHOP_HOST in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  # The online shop (apps/shop). Until step 26's public API exists it shows the mock shop: its
+  # products, prices and orders are made up, and an order lives in this container's memory only,
+  # so a restart forgets it. It needs nothing else in the stack. `web` does not wait for it either:
+  # if the shop fails, the ERP app keeps working and only the shop's address answers 502.
+  shop:
+    image: ${REGISTRY}/omnivo-shop:${IMAGE_TAG}
+    restart: unless-stopped
+    logging: *logging
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:4321/').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # The way in from the internet. It opens an outgoing connection to Cloudflare, so the server needs
+  # no open port and no fixed IP: when the home connection gets a new IP, it just connects again.
+  # Every host name of the tunnel goes to Caddy, which picks the site by the Host header.
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.6
+    restart: unless-stopped
+    logging: *logging
+    command: ['tunnel', '--no-autoupdate', 'run', '--url', 'http://web:80']
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    depends_on:
+      - web
+
+volumes:
+  db-data:
+  cache-data:
+  storage-data:
+  mail-data:
+  caddy-data:
+  caddy-config:

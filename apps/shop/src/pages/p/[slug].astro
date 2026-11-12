@@ -37,6 +37,7 @@ const category = categories.find((candidate) => candidate.id === product.categor
   shop={shop}
   locale={locale}
   title={t('shop.product.title', { name: product.name, shop: shop.name })}
+  categories={categories}
 >
   {/* Figma: 524px gallery + 16px + 740px info card. fr, not px, so the two keep their share
       between lg and xl; below lg they stack */}

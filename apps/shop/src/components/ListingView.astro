@@ -1,0 +1,78 @@
+---
+import { FilterRemoveIcon, Search01Icon, ShoppingBasket01Icon } from '@hugeicons/core-free-icons';
+import type { ShopCategory, ShopListingPage, ShopListingQuery } from '@omnivo/contracts';
+
+import { ALL_SLUG, hasPanelFilters, listingHref } from '../lib/listing-query';
+import type { ShopLocale } from '../lib/locale';
+import CategoryFilters from './CategoryFilters.astro';
+import EmptyState from './EmptyState.astro';
+import ListingGrid from './ListingGrid.astro';
+
+// CLAUDE.md → Storefront screens not in Figma → Category and search: the home page's "All
+// Category" block alone. The title, the filter row, the grid and Load More, or an empty state.
+// Shared by /c/<slug> and /search, which differ only in the title
+interface Props {
+  title: string;
+  query: ShopListingQuery;
+  page: ShopListingPage;
+  categories: ShopCategory[];
+  locale: ShopLocale;
+}
+
+const { title, query, page, categories, locale } = Astro.props;
+const { t } = locale;
+
+// Why the list is empty decides what the empty state says, and the way out it offers. Filters
+// first: with a filter on, clearing it is the likeliest fix, even on a search
+function emptyState() {
+  if (hasPanelFilters(query) || query.offer) {
+    return {
+      icon: FilterRemoveIcon,
+      title: t('shop.listing.noMatchTitle'),
+      text: t('shop.listing.noMatchText'),
+      action: {
+        href: listingHref(query, { minPrice: null, maxPrice: null, inStock: false, offer: false }),
+        label: t('shop.listing.clearFilters'),
+      },
+    };
+  }
+  if (query.q !== null) {
+    return {
+      icon: Search01Icon,
+      title: t('shop.listing.noResultsTitle', { q: query.q }),
+      text: t('shop.listing.noResultsText'),
+      action: { href: `/c/${ALL_SLUG}`, label: t('shop.listing.seeAll') },
+    };
+  }
+  // A category with nothing in it yet. On /c/all there is nowhere else to send the shopper
+  return {
+    icon: ShoppingBasket01Icon,
+    title: t('shop.listing.emptyTitle'),
+    text: t('shop.listing.emptyText'),
+    ...(query.category === null
+      ? {}
+      : { action: { href: `/c/${ALL_SLUG}`, label: t('shop.listing.seeAll') } }),
+  };
+}
+---
+
+{/* The same sizes as the home page's block: 36px from the header on desktop (the checkout card's
+    gap), 16px on a phone; the title, then the row and the grid 36px apart (12px and 16px) */}
+<div class="mt-4 md:mt-9">
+  <h1 class="text-sf-subtitle leading-[23px] font-bold md:trim-text md:text-sf-display md:font-semibold">
+    {title}
+  </h1>
+  <div class="mt-3 md:mt-9">
+    <CategoryFilters categories={categories} query={query} locale={locale} />
+  </div>
+  <div class="mt-4 md:mt-9">
+    {page.items.length === 0 ? (
+      <EmptyState {...emptyState()} />
+    ) : (
+      <ListingGrid query={query} page={page} locale={locale} />
+    )}
+  </div>
+  {/* Load More's script says here how many cards it added. Outside the Load More box, which goes
+      away with the last page, and with it anything said inside it */}
+  <p data-listing-status role="status" class="sr-only"></p>
+</div>

@@ -61,3 +61,13 @@ jobs:
 
       - name: Module boundaries
         run: pnpm boundaries
+
+  # Every push to dev that passes the gate goes to staging. Pull requests and main never deploy here.
+  deploy-staging:
+    needs: gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    uses: ./.github/workflows/deploy-staging.yml
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit

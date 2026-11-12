@@ -1,0 +1,48 @@
+---
+import { numberLocale } from '@omnivo/i18n';
+
+import OrderConfirmedDialog from '../components/OrderConfirmedDialog.astro';
+import { shopSource } from '../data/source';
+import CheckoutForm from '../islands/checkout/CheckoutForm';
+import { checkoutChoices, checkoutWords } from '../islands/checkout/words';
+import ShopLayout from '../layouts/ShopLayout.astro';
+import { shopLocale } from '../lib/locale';
+
+// Step 26c: the checkout (Figma checkout_process 37:3765, 1440px). The page draws the frame and
+// the words; the form is a React island (decision 1). The cart is in the shopper's browser, so the
+// server cannot know it: the island is drawn here with "Getting today's prices…" and takes over
+// in the browser (client:load: a checkout is useless until it can price the cart).
+// Step 26d.4: the categories for the header's drawer, asked with the rest
+const [shop, settings, categories] = await Promise.all([
+  shopSource.shop(),
+  shopSource.checkoutSettings(),
+  shopSource.categories(),
+]);
+const locale = await shopLocale(shop.language);
+const { t } = locale;
+const choices = checkoutChoices(locale, settings);
+
+// The page answers per shopper (their cookie may hold an order), so no cache may keep it
+Astro.response.headers.set('Cache-Control', 'no-store');
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.checkout.pageTitle', { shop: shop.name })}
+  categories={categories}
+>
+  {/* Only what is serializable goes to an island: Astro writes these props into the HTML as
+      JSON for the browser. Words, labels, amounts as strings; never a function like t() */}
+  <CheckoutForm
+    client:load
+    words={checkoutWords(locale, settings)}
+    zones={choices.zones}
+    payments={choices.payments}
+    minimumOrder={settings.minimumOrder}
+    language={locale.language}
+    numberLocale={numberLocale(locale.language)}
+  />
+  {/* Step 26c.5: opens when the island announces a confirmed order (Mobile Banking) */}
+  <OrderConfirmedDialog locale={locale} />
+</ShopLayout>

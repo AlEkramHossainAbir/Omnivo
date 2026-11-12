@@ -600,6 +600,32 @@ export const ERROR_CODES = [
   'pin_format',
   'pin_too_easy',
   'pin_mismatch',
+  // Step 26c: the shop's checkout. The form's own rules (a coupon with other characters, a phone
+  // that is not a Bangladeshi mobile, an address too short for a courier, the terms not ticked, a
+  // code that is not six digits) and what a coupon can answer in the quote
+  'shop_coupon_format',
+  'shop_coupon_unknown',
+  'shop_coupon_expired',
+  'shop_coupon_minimum',
+  'shop_phone_format',
+  'shop_address_too_short',
+  'shop_terms_required',
+  'shop_code_format',
+  // Confirm Order refused: the cart is empty, the zone or the payment method is not offered (any
+  // more), the order is under the shop's minimum, or its total is not the one the shopper saw
+  // (a price, the stock or the coupon changed: the checkout prices the cart again)
+  'shop_cart_empty',
+  'shop_zone_unknown',
+  'shop_payment_unavailable',
+  'shop_order_below_minimum',
+  'shop_order_changed',
+  // The phone code: wrong (the problem says how many tries are left), too many wrong ones (the
+  // order is dropped and the shopper starts again), asked again too soon, or no order waits for a
+  // code in this browser (the cookie is gone, or it was confirmed already)
+  'shop_code_wrong',
+  'shop_code_too_many',
+  'shop_code_resend_wait',
+  'shop_code_no_order',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

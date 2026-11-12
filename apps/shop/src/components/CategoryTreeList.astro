@@ -1,0 +1,96 @@
+---
+import { ArrowDown01Icon, ArrowRight01Icon, Tick02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+
+import type { CategoryNode } from '../lib/category-tree';
+import { listingPath } from '../lib/listing-query';
+import type { ShopLocale } from '../lib/locale';
+
+// Step 26d.4: one level of the category drawer's tree, as <li> rows; the caller gives the <ul>. A
+// category with children draws the next level inside its own <li> by calling this component again
+// (Astro.self), so the tree can be as deep as the shop's.
+// Each row is a link to the category's list and, when it has children, a separate button that
+// shows or hides them. Two controls, not one: a tap on "Cosmetics" should open the Cosmetics list,
+// and the shopper still needs a way to reach "Skin care" without leaving the page.
+interface Props {
+  nodes: CategoryNode[];
+  locale: ShopLocale;
+  // The slug of the list on screen, or null. Its row is marked
+  current: string | null;
+  // The ids of the groups that start open: the list on screen and the ones above it
+  open: string[];
+  // 0 for the top categories. Sets the weight: top categories are 600, the rest 400
+  depth: number;
+  // Makes the ids of the child lists unique on the page ("category-drawer-1-0")
+  idPrefix: string;
+}
+
+const { nodes, locale, current, open, depth, idPrefix } = Astro.props;
+const { t } = locale;
+
+const row =
+  'flex min-h-12 flex-1 items-center justify-between gap-3 rounded-lg px-3 py-3 transition-colors duration-150 hover:bg-cream aria-[current]:bg-cream';
+---
+
+{nodes.map(({ category, children }, index) => {
+  const id = `${idPrefix}-${String(index)}`;
+  const isCurrent = category.slug === current;
+  const isOpen = open.includes(category.id);
+  return (
+    <li>
+      <div class="flex items-center gap-1">
+        <a
+          href={listingPath(category.slug, null)}
+          aria-current={isCurrent ? 'page' : undefined}
+          class:list={[row, depth === 0 ? 'font-semibold' : 'aria-[current]:font-semibold']}
+        >
+          {category.name}
+          {isCurrent && (
+            <HugeiconsIcon icon={Tick02Icon} size={16} strokeWidth={1.5} aria-hidden="true" />
+          )}
+        </a>
+        {children.length > 0 && (
+          // The label stays the same open or shut: aria-expanded says which, and a screen
+          // reader reads both ("Show the categories in Cosmetics, expanded")
+          <button
+            type="button"
+            data-toggle
+            aria-expanded={isOpen ? 'true' : 'false'}
+            aria-controls={id}
+            aria-label={t('shop.drawer.toggle', { category: category.name })}
+            class="group/toggle grid size-12 shrink-0 place-items-center rounded-lg transition-colors duration-150 hover:bg-cream"
+          >
+            {/* Two icons, one shown: the storefront moves colors only, never turns a shape */}
+            <HugeiconsIcon
+              icon={ArrowRight01Icon}
+              size={20}
+              strokeWidth={1.5}
+              className="group-aria-expanded/toggle:hidden"
+              aria-hidden="true"
+            />
+            <HugeiconsIcon
+              icon={ArrowDown01Icon}
+              size={20}
+              strokeWidth={1.5}
+              className="hidden group-aria-expanded/toggle:block"
+              aria-hidden="true"
+            />
+          </button>
+        )}
+      </div>
+      {children.length > 0 && (
+        // 16px in per level, under the parent's text. `hidden` is the state the script flips
+        <ul id={id} hidden={!isOpen} class="pb-2 pl-4">
+          <Astro.self
+            nodes={children}
+            locale={locale}
+            current={current}
+            open={open}
+            depth={depth + 1}
+            idPrefix={id}
+          />
+        </ul>
+      )}
+    </li>
+  );
+})}

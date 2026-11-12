@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 // Step 26a: the shop's import rules. They live here and not in .dependency-cruiser.cjs, because
 // dependency-cruiser cannot read .astro files, and the pages are .astro files: a rule there would
 // pass while a page broke it. Vite's import.meta.glob reads every source file as text.
-const files = import.meta.glob<string>(['./**/*.{ts,astro}', '!./**/*.spec.ts'], {
+// Step 26c: .tsx too, for the checkout's React island
+const files = import.meta.glob<string>(['./**/*.{ts,tsx,astro}', '!./**/*.spec.ts'], {
   query: '?raw',
   import: 'default',
   eager: true,
@@ -49,12 +50,21 @@ describe('shop imports', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('reaches src/server only from the API routes', () => {
+  it('reaches src/server only from the API routes, and the cookies from the pages', () => {
     // Step 26b: server/ is request handling (Response objects, the contracts, Zod). A component
-    // that imported it could pull it into a <script> and ship Zod to every shopper's browser
+    // that imported it could pull it into a <script> and ship Zod to every shopper's browser.
+    // Step 26c: a page's frontmatter runs only on the server, and /checkout/verify and
+    // /order/<no> read the order cookies. They may import server/cookies.ts, which imports
+    // nothing, and only that
     const offenders = Object.entries(files)
       .filter(([path]) => !path.startsWith('./pages/api/') && !path.startsWith('./server/'))
-      .filter(([, source]) => importsOf(source).some((name) => /(^|\/)server\//.test(name)))
+      .filter(([path, source]) =>
+        importsOf(source).some(
+          (name) =>
+            /(^|\/)server\//.test(name) &&
+            !(path.startsWith('./pages/') && name.endsWith('/server/cookies')),
+        ),
+      )
       .map(([path]) => path);
     expect(offenders).toEqual([]);
   });
@@ -86,13 +96,56 @@ describe('shop imports', () => {
     // A broken pattern would find nothing to check; cart, quote and money at least
     expect(libs.size).toBeGreaterThanOrEqual(3);
 
-    const heavy = /^(zod|react|react-dom|@omnivo\/contracts|@omnivo\/i18n)$/;
+    // Step 26d: '@omnivo/i18n/shop' as well, which imports the main entry and adds the shop's words
+    const heavy = /^(zod|react|react-dom|@omnivo\/contracts|@omnivo\/i18n(\/shop)?)$/;
     const offenders = [
       ...scripts,
       ...[...libs].map((path) => ({ path, source: files[path] ?? '' })),
     ]
       .filter(({ source }) => importsOf(source, VALUE_IMPORT).some((name) => heavy.test(name)))
       .map(({ path }) => path);
+    expect(offenders).toEqual([]);
+  });
+
+  // Step 26c (decision 1): React, Zod and the form library reach the browser only in an island,
+  // and only /checkout loads one. The rest of the shop stays plain HTML with small scripts
+  const browserHeavy = /^(react|react-dom|zod|react-hook-form|@hookform\/resolvers(\/.*)?)$/;
+
+  it('imports React, Zod and react-hook-form only in src/islands', () => {
+    // '@hugeicons/react' is not on the list: an Astro component draws its icons on the server,
+    // and nothing of it reaches the browser
+    const offenders = Object.entries(files)
+      .filter(([path]) => !path.startsWith('./islands/'))
+      .filter(([, source]) =>
+        importsOf(source, VALUE_IMPORT).some((name) => browserHeavy.test(name)),
+      )
+      .map(([path]) => path);
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the translations out of the islands', () => {
+    // The page translates the words and passes them as props. `import type` is free; a value
+    // import of '@omnivo/i18n' (or lib/locale.ts, which starts it) would put i18next and every
+    // English word into the checkout's chunk
+    const islands = Object.entries(files).filter(([path]) => path.startsWith('./islands/'));
+    expect(islands.length).toBeGreaterThan(0);
+    const offenders = islands
+      .filter(([, source]) =>
+        importsOf(source, VALUE_IMPORT).some(
+          (name) => /^@omnivo\/i18n(\/shop)?$/.test(name) || name.endsWith('/lib/locale'),
+        ),
+      )
+      .map(([path]) => path);
+    expect(offenders).toEqual([]);
+  });
+
+  it('hydrates islands only on the checkout pages', () => {
+    // client:load and the other client:* directives are what send an island's JavaScript to the
+    // browser. A product card with one would load React on every page of the shop
+    const offenders = Object.entries(files)
+      .filter(([path]) => path.endsWith('.astro') && !path.startsWith('./pages/checkout'))
+      .filter(([, source]) => /\sclient:(load|idle|visible|media|only)\b/.test(source))
+      .map(([path]) => path);
     expect(offenders).toEqual([]);
   });
 });

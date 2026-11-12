@@ -1,0 +1,109 @@
+# Caddy on staging: one server in front of everything, behind Cloudflare Tunnel.
+#
+# The server opens no web port. cloudflared (a container in this stack) keeps an outgoing
+# connection to Cloudflare, and Cloudflare sends each visitor's request down it to Caddy. HTTPS ends
+# at Cloudflare, so Caddy only gets plain HTTP from cloudflared, inside Docker's own network.
+# Each host name comes from the server's .env, so the names live in one place.
+
+{
+	# No certificates here: Cloudflare has them. Without this, Caddy would try Let's Encrypt for
+	# each host and fail, because no port is open to the internet.
+	auto_https off
+
+	servers {
+		# cloudflared reaches Caddy from Docker's private network, so trust only private addresses.
+		# Then Caddy keeps cloudflared's X-Forwarded-Proto (https) and takes the visitor's address
+		# from CF-Connecting-IP, which Cloudflare always sets itself (a client cannot fake it).
+		trusted_proxies static private_ranges
+		client_ip_headers CF-Connecting-IP
+	}
+}
+
+(common) {
+	encode zstd gzip
+	header {
+		# Staging must never show up in a search engine
+		X-Robots-Tag "noindex, nofollow"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+	log {
+		output stdout
+		format json
+	}
+}
+
+# The app: static files from the image
+http://{$APP_HOST} {
+	import common
+	root * /srv/app
+
+	# Built files have a hash in their name, so a new build never reuses a name. They can be kept
+	# for a year (Cloudflare keeps them too). A missing one is a plain 404: never index.html, or an
+	# old tab would run HTML as JS.
+	handle /assets/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# Everything else (index.html, sw.js, the manifest, the icons, and every app route like /login or
+	# /d/<token>) must be checked again on each load. The service worker finds a new version only
+	# when sw.js is not cached. "no-cache" also stops Cloudflare from keeping sw.js at its edge.
+	handle {
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# The API
+http://{$API_HOST} {
+	import common
+	reverse_proxy api:3000 {
+		# The API (TRUST_PROXY) reads the first address in X-Forwarded-For. Cloudflare adds the
+		# visitor's address after any value the visitor sent, so the first one could be made up.
+		# Replace the header with the one address Cloudflare vouches for.
+		header_up X-Forwarded-For {client_ip}
+	}
+}
+
+# File storage (MinIO). The browser uploads and downloads here with presigned URLs. Caddy keeps
+# the Host header as it is, which matters: it is part of the URL's signature.
+http://{$FILES_HOST} {
+	header X-Robots-Tag "noindex, nofollow"
+	# The files are private. Cloudflare keeps .png, .pdf and similar files at its edge by default;
+	# "private" tells it not to, so a file is served only while its signed URL is valid. "defer"
+	# sets it after MinIO answers, so MinIO's own Cache-Control cannot win.
+	header {
+		Cache-Control "private, no-cache"
+		defer
+	}
+	reverse_proxy storage:9000
+}
+
+# The online shop: an Astro server that makes each page per request, so Caddy passes every request
+# on. The common block's noindex keeps the demo shop out of search engines, like the rest of
+# staging.
+http://{$SHOP_HOST} {
+	import common
+
+	# Built CSS and JS have a hash in their name, like the app's /assets/. The Astro server sends
+	# them with "max-age=0", so every page view would ask for them again; header_down replaces that
+	# with a year. Pages and the mock photos (no hash in the name) keep the server's header.
+	handle /_astro/* {
+		reverse_proxy shop:4321 {
+			header_down Cache-Control "public, max-age=31536000, immutable"
+		}
+	}
+
+	handle {
+		reverse_proxy shop:4321
+	}
+}
+
+# Mailpit: every email staging sends. Mailpit asks for the password itself (MP_UI_AUTH).
+http://{$MAIL_HOST} {
+	import common
+	reverse_proxy mail:8025
+}

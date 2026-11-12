@@ -1,7 +1,7 @@
 ---
 import { Cancel01Icon, Menu01Icon, Search01Icon, User02Icon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import type { PublicShop } from '@omnivo/contracts';
+import { SHOP_SEARCH_MAX_LENGTH, type PublicShop } from '@omnivo/contracts';
 
 import type { ShopLocale } from '../lib/locale';
 import CartButton from './CartButton.astro';
@@ -13,9 +13,12 @@ import Logo from './Logo.astro';
 interface Props {
   shop: PublicShop;
   locale: ShopLocale;
+  // Step 26d.3: the search on screen (/search?q=neem), so the shopper can change a word instead
+  // of typing it all again. null on every other page
+  search: string | null;
 }
 
-const { shop, locale } = Astro.props;
+const { shop, locale, search } = Astro.props;
 const { t } = locale;
 ---
 
@@ -24,16 +27,28 @@ const { t } = locale;
   data-shop-header
   class="group relative mt-4 grid h-16 grid-cols-[1fr_auto] items-center rounded-2xl bg-brand p-3 md:mt-5 md:h-18 md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-x-6 md:px-6 md:py-0 lg:grid-cols-[1fr_auto_1fr]"
 >
-  <div class="flex items-center gap-9">
-    {/* Opens the category drawer in step 26c. The phone has no menu (Figma 138:774) */}
+  {/* min-w-0: a long shop name gives way (the wordmark is cut with an ellipsis) instead of
+      pushing the buttons on the right out of the bar */}
+  <div class="flex min-w-0 items-center gap-2 md:gap-9">
+    {/* Step 26d.4: opens the category drawer (CategoryDrawer.astro listens for
+        data-open-categories). On the phone too, as a 40px white button like the ones on the
+        right: Figma's phone header has no menu, but a header button reaches the drawer from every
+        page (decision 31) */}
     <button
       type="button"
+      data-open-categories
+      aria-haspopup="dialog"
       aria-label={t('shop.header.categories')}
-      class="hidden text-white md:block"
+      class="grid size-10 shrink-0 place-items-center rounded-xl bg-card text-brand md:block md:size-auto md:rounded-none md:bg-transparent md:text-white"
     >
-      <HugeiconsIcon icon={Menu01Icon} size={30} strokeWidth={1.5} aria-hidden="true" />
+      <HugeiconsIcon
+        icon={Menu01Icon}
+        strokeWidth={1.5}
+        className="size-5 md:size-[30px]"
+        aria-hidden="true"
+      />
     </button>
-    <a href="/" aria-label={t('shop.header.home', { shop: shop.name })}>
+    <a href="/" aria-label={t('shop.header.home', { shop: shop.name })} class="min-w-0">
       <Logo shop={shop} place="header" />
     </a>
   </div>
@@ -56,6 +71,8 @@ const { t } = locale;
         type="search"
         name="q"
         required
+        maxlength={SHOP_SEARCH_MAX_LENGTH}
+        value={search}
         placeholder={t('shop.header.searchPlaceholder')}
         class="h-full w-full rounded-full bg-card pr-14 pl-5 text-sf-body font-medium text-brand placeholder:text-muted focus-visible:outline-accent"
       />

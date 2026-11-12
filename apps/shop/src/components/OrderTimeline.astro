@@ -1,0 +1,65 @@
+---
+import { Tick02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { ShopOrder } from '@omnivo/contracts';
+import { formatDateTime } from '@omnivo/i18n';
+
+import type { ShopLocale } from '../lib/locale';
+import { orderTimeline } from '../lib/order-timeline';
+
+// Step 26c: an order's status as a vertical timeline (CLAUDE.md → Track order). /order/<no> draws
+// it now; 26d's /track draws the same one. Drawn on the server, with no script: it changes only
+// when the shop moves the order, and a reload shows that.
+interface Props {
+  order: Pick<ShopOrder, 'status' | 'history'>;
+  locale: ShopLocale;
+  // The shop's, so "11 Nov 2026, 10:02" is the time in Dhaka on any server
+  timeZone: string;
+  // The id of the heading that names the list
+  labelledBy: string;
+}
+
+const { order, locale, timeZone, labelledBy } = Astro.props;
+const { t } = locale;
+const steps = orderTimeline(order);
+
+// The three dots of CLAUDE.md: done (brand, an accent tick), current (brand inside a 2px accent
+// ring), later (an empty 1px rule ring)
+const DOT = {
+  done: 'bg-brand text-accent',
+  current: 'border-2 border-accent bg-brand',
+  later: 'border border-rule bg-card',
+} as const;
+---
+
+<ol aria-labelledby={labelledBy} class="flex flex-col">
+  {steps.map((step, index) => {
+    const last = index === steps.length - 1;
+    // The line to the next dot is brand while the next step is reached, rule after that
+    const next = steps[index + 1];
+    const line = next !== undefined && next.state !== 'later' ? 'bg-brand' : 'bg-rule';
+    return (
+      <li
+        class:list={['relative flex gap-4', !last && 'pb-6']}
+        aria-current={step.state === 'current' ? 'step' : undefined}
+      >
+        {/* The 2px line runs from under this dot to the next one, through the 24px gap. 11px
+              from the left centers it under the 24px dot */}
+        {!last && <span class={`absolute top-6 bottom-0 left-[11px] w-0.5 ${line}`} />}
+        <span class={`grid size-6 shrink-0 place-items-center rounded-full ${DOT[step.state]}`}>
+          {step.state === 'done' && (
+            <HugeiconsIcon icon={Tick02Icon} size={14} strokeWidth={1.5} aria-hidden="true" />
+          )}
+        </span>
+        <span class="flex flex-col">
+          <span class="leading-6 font-semibold">{t(`shop.order.statuses.${step.status}`)}</span>
+          {step.at !== null && (
+            <time datetime={step.at} class="text-sf-small text-muted tabular-nums">
+              {formatDateTime(new Date(step.at), locale.language, timeZone)}
+            </time>
+          )}
+        </span>
+      </li>
+    );
+  })}
+</ol>

@@ -7,6 +7,7 @@ import ProductCard from '../components/ProductCard.astro';
 import ProductRow from '../components/ProductRow.astro';
 import { shopSource } from '../data/source';
 import ShopLayout from '../layouts/ShopLayout.astro';
+import { readListingQuery } from '../lib/listing-query';
 import { shopLocale } from '../lib/locale';
 
 // Step 26a: the home page (Figma 37:3083 on desktop, 138:234 on the phone)
@@ -17,9 +18,16 @@ const [locale, categories, home] = await Promise.all([
   shopSource.home(),
 ]);
 const { t } = locale;
+// Step 26d.3: the filter row works from the defaults here, so every chip leads to /c/all
+const query = readListingQuery(null, new URLSearchParams());
 ---
 
-<ShopLayout shop={shop} locale={locale} title={t('shop.home.title', { shop: shop.name })}>
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.home.title', { shop: shop.name })}
+  categories={categories}
+>
   <h1 class="sr-only">{shop.name}</h1>
 
   <HeroBanner hero={home.hero} />
@@ -34,7 +42,7 @@ const { t } = locale;
       <span class="hidden md:inline">{t('shop.home.allCategory')}</span>
     </h2>
     <div class="mt-3 md:mt-9">
-      <CategoryFilters categories={categories} locale={locale} />
+      <CategoryFilters categories={categories} query={query} locale={locale} />
     </div>
 
     <div class="mt-4 flex items-center justify-between md:hidden">

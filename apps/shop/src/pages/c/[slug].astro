@@ -1,0 +1,43 @@
+---
+import ListingView from '../../components/ListingView.astro';
+import { shopSource } from '../../data/source';
+import ShopLayout from '../../layouts/ShopLayout.astro';
+import { loadListing } from '../../lib/listing-page';
+import { ALL_SLUG } from '../../lib/listing-query';
+import { shopLocale } from '../../lib/locale';
+
+// Step 26d.3: a category's products, with those of the categories under it (/c/cosmetics), or
+// every product (/c/all). The address holds the search, the filters, the sort and the page
+// (decision 2); lib/listing-page.ts reads it
+const [shop, load] = await Promise.all([
+  shopSource.shop(),
+  loadListing(Astro.params.slug ?? '', Astro.url.searchParams),
+]);
+
+// No category has this slug: Astro's 404 page, with the 404 status, like an unknown product
+if (load.kind === 'missing') return Astro.rewrite('/404');
+// The same list from its first page (decision 17)
+if (load.kind === 'restart') return Astro.redirect(load.href);
+
+const locale = await shopLocale(shop.language);
+const { t } = locale;
+const { query, page, category, categories } = load;
+
+// A search inside a category (/c/skin-care?q=neem, after a chip on the search page) is still a
+// search, so it says so
+const title =
+  query.q !== null
+    ? t('shop.listing.searchTitle', { q: query.q })
+    : (category?.name ?? t('shop.listing.all'));
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.listing.pageTitle', { title, shop: shop.name })}
+  search={query.q}
+  categories={categories}
+  currentList={query.category ?? ALL_SLUG}
+>
+  <ListingView title={title} query={query} page={page} categories={categories} locale={locale} />
+</ShopLayout>

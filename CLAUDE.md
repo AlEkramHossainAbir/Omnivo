@@ -855,7 +855,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   and `সেপ্টেম্বর ২০২৬`. The fiscal year defaults to July – June.
 - **Language:** every user-facing string goes through `t()` from `@omnivo/i18n`, and
   money, numbers and dates through its `useLocale().format`. New keys go into `en.ts`
-  first, then `bn.ts` (the type check fails if `bn.ts` is missing a key). Keep common
+  first, then `bn.ts` (the type check fails if `bn.ts` is missing a key). The storefront's
+  words (`shop.*`) live apart, in `packages/i18n/src/locales/shop/en.ts` and `bn.ts`, behind
+  the `@omnivo/i18n/shop` entry that only `apps/shop` imports: the ERP app never loads them,
+  and `t('shop.…')` does not type-check there. `errors.shop_*` stay in `en.ts` and `bn.ts`
+  with the other error codes. Keep common
   office terms such as PO, LC, workspace and role in English inside Bangla text.
   Error messages are never written in code: the API and the Zod schemas send an
   error code (`slug_taken`, see `ERROR_CODES` in `@omnivo/contracts`), and the text
@@ -985,14 +989,15 @@ and `home_page_mobile` (138:234) at 393px. The frames on the `draft` page are ol
 (33:2748, "britflow") is a reference from another site, not our design. Every screen must match Figma: sizes,
 spacing, radius, colors, icons and copy, at 1440px and (for what the mobile frame shows) at 393px. The only
 intended differences are the ones written below: the font, the contrast fixes, the cart icon, the logo, the
-payment section, the removed Reviews tab, no emoji, one badge style on every screen size, banners as images, and
+menu button on the phone, the "All Categories" and "Offer" chips without a chevron, the payment section, the removed Reviews tab, no emoji, one badge style on every screen size, banners as images, and
 the confirmation's SMS wording.
 
 What still applies from the rest of this file: HugeIcons Stroke Rounded only, no `any`, every string through
-`t()` (keys under `shop.*`), money as decimal strings (formatted in browser scripts with `@omnivo/i18n/format`: the
+`t()` (keys under `shop.*`, from `@omnivo/i18n/shop`), money as decimal strings (formatted in browser scripts with `@omnivo/i18n/format`: the
 package's main entry starts i18next with every word, so a browser script never imports it), `cursor: pointer` on
 everything clickable, a visible focus state, 150ms color-only transitions and `prefers-reduced-motion`. Light theme only for now
-(`color-scheme: light`); Figma has no dark design.
+(`color-scheme: light`); Figma has no dark design. Pages are Astro with small scripts; the checkout form is the only
+React island, and it gets its words from the server as props (no i18next in the browser).
 
 ### Storefront color tokens
 
@@ -1034,7 +1039,7 @@ the tokens, never raw hex.
 - **Family:** the app's stack (`"Geist Variable", "Noto Sans Bengali", "Segoe UI", system-ui, sans-serif`),
   self-hosted, in place of Figma's Roboto and Helvetica. Sizes, weights and line heights stay as in Figma. Every
   text uses `letter-spacing: -0.02em` (Figma's tracking). Prices, quantities and the countdown use
-  `tabular-nums`.
+  `tabular-nums`. Order numbers use `Geist Mono` (self-hosted, `--font-mono`), as in the app.
 - Scale (desktop; the phone values from `home_page_mobile` in brackets):
 
 | Token | Size / line-height | Weight | Where |
@@ -1079,7 +1084,9 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   border, 4px padding, radius 999, 12px/600 white, "99+" above 99, hidden from screen readers (the button's
   label says "Cart, 3 items"). The account button has `User02` and the name in 16px/600 white (padding 8px 10px
   8px 8px, gap 4px); without a name it says "Account". Below `md` (Figma `mobile-header`): a 64px `brand` bar,
-  radius 16, padding 12px, no menu button. Left the logo (24px mark, wordmark 20px/700 white, 8px apart); right
+  radius 16, padding 12px. Left a 40px `card` menu button (radius 12, 20px `brand` `Menu01`; not in Figma, it
+  reaches the category drawer from every page), 8px later the logo (24px mark, wordmark 20px/700 white, 8px apart;
+  a long shop name ends in "…"); right
   three 40px `card` buttons 8px apart, radius 12, with 20px `brand` icons: search (`Search01`, opens a search box
   that covers the bar), cart (`ShoppingCart01`, with the same count badge) and account (`User02`).
 - **Logo:** the Omnivo mark (two offset rounded squares, see the app's Logo) in place of Figma's bag icon. In the
@@ -1102,8 +1109,17 @@ phone hero headline is 28px/700 and its line under it 14px/400.
 - **Filter row:** chips 38px high, padding 12px, radius 8, 16px apart, each with a 14px icon 8px after the label
   (`ArrowDown01`, or `FilterHorizontal` for "All Filter"). Selected: `brand` fill, `accent` 16px/500 text and
   icon. Others: `card` fill, `brand` 16px/400; hover `cream`. "Sort By" sits at the far right: 1px `brand`
-  border, `brand` 16px/500, `FilterHorizontal`. The chips are the shop's top categories (a chevron opens their
-  sub-categories), "Offer" (listings on sale) and "All Filter" (price and in stock); Figma's "Review" chip is
+  border, `brand` 16px/500, `FilterHorizontal`. The first chip, "All Categories", is a link to `/c/all` with no
+  chevron (Figma draws one). Then the shop's top categories: one with sub-categories has a chevron and opens a menu
+  ("All of Cosmetics", then its sub-categories, 16px more indent per level); one without is a link with no chevron.
+  "Offer" (listings on sale) is a switch with no chevron (Figma draws one). "All Filter" opens a 320px panel (20px
+  padding): "Price (৳)" with From and To side by side (48px inputs, whole taka), "In stock only", then Clear
+  (`cream`) and Apply (`accent`), 44px, radius 4. "Sort By" opens a menu: Newest (the default), Price: low to high,
+  Price: high to low, Name: A to Z. A chip whose filter is on is filled like the selected chip, and its name says
+  "on" to a screen reader. The menus and the panel are native popovers under their chip (CSS anchor positioning;
+  without it the browser centers them): `card`, 1px `rule`, radius 8, 8px padding, no shadow; a line is 16px
+  `brand`, radius 4, hover `cream`, and the current one is 600 with a 16px `Tick02`. Every choice is in the address
+  (`?sort=price_asc&min=100&max=500&stock=1&offer=1`), so a link keeps it; Figma's "Review" chip is
   removed with the reviews. Below `md` (Figma `categories`): the title "All Categories" (20px/700 `brand`), 12px
   down the categories as pills that wrap, 8px apart: padding 10px 16px, radius 999, 14px; selected `brand` fill
   with `accent` 600 text (Figma draws white; `accent` keeps it the same as desktop), others `card` with a 1px
@@ -1140,7 +1156,10 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   (full width); the arrows and a swipe move it by one card.
 - **Load More:** under the last list of a page. `card`, 38px high, padding 12px 16px, radius 8, "Load More"
   16px/500 `brand`. While loading: "Loading" plus a 24px `Loading03` icon that spins (static under reduced
-  motion), 10px apart, and the button is disabled.
+  motion), 10px apart, and the button is disabled. 20 cards a page. Without JavaScript it is a link to the next
+  page (`?cursor=…`). With it, a script fetches the next cards from the list's partial (`/c/<slug>/more`,
+  `/search/more`) and adds them under the others; the focus stays on the button and a live region says "20 more
+  products". On the last page the button goes and the focus moves to the first new card.
 - **Footer:** `card`, radius 16, clipped, 64px top padding, content 440px wide and centered with 48px between the
   logo and the rest. Social links: 40px circles, `cream` fill, 15px `brand` icons (`Facebook01`, `Instagram`,
   `NewTwitter`, `Linkedin01`), 14.6px apart; hover fills `accent`. 24px below: the address, 16px/24px `muted`,
@@ -1177,26 +1196,32 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   class (`shop-prose`), never per-section markup. No description: no card.
 - **Checkout card:** max 848px, centered, 36px below the header (128px from the page top), `card-glass`, radius
   16, 4px inset. Header: `cream`, top radius 12, padding 24px, "Shipping & Contact Details" `sf-title` `brand`
-  centered. Body: 36px padding, 32px between blocks. Field: label 16px/600 `brand`, 12px gap, input 48px high,
+  centered. Body: 36px from the card's edge (36px under the header, and 32px inside the 4px inset at the sides and
+  the bottom), 32px between blocks, except 36px before the lines and 48px around the promo box and the payment
+  cards. Every gap is measured between trimmed text boxes (`trim-text`). The card ends 160px above the footer. Field: label 16px/600 `brand`, 12px gap, input 48px high,
   `card`, 1px `field` border, radius 8; focus uses a `brand` border plus a 2px `brand` outline. Full Name and
   Mobile Number side by side (16px apart), Delivery Address full width. Radio card: `cream`, radius 8, padding
   20px 30px, a 24px radio (`brand` ring, `brand` dot when checked) plus 16px/600 `brand`, 4px apart; the whole
   card is the label. Groups: "Delivery Location" (Inside Dhaka — ৳80, Outside Dhaka — ৳120; the zones come
-  from the shop's settings) and "Payment Method" (Cash on Delivery, Mobile Banking), each two cards side by
+  from the shop's settings; no location is picked at first: until one is, the Delivery Charge row says "Pick a
+  location" in `muted`) and "Payment Method" (Cash on Delivery, Mobile Banking), each two cards side by
   side, 16px apart. Free delivery is not a choice: when the order reaches the shop's threshold, the Delivery
   Charge row says "Free", and a 14px `muted` line under Delivery Location says "Free delivery on orders over
   ৳1,000".
 - **Checkout lines:** per line, a 155×130 `canvas` image box (radius 8), 20px gap, then the name (`sf-subtitle`,
-  `brand`, max 288px) and 20px below it the stepper: minus and plus 40px `cream` buttons (radius 5,
+  `brand`, max 288px) and 20px below it the stepper (the name and the stepper centered beside the image): minus and plus 40px `cream` buttons (radius 5,
   `MinusSign` / `Add01` 14px `brand`), a 60×40 quantity box between them (`card`, 1.5px `cream` border, radius 5,
   20px), 6px apart, then 16px later the delete button (40px, `promo-soft`, radius 5, `Delete02` 24px `promo`).
   The line total is at the right, `sf-subtitle` `price`. Quantity never goes below 1; delete removes the line.
-  1px `rule` lines above and below the Delivery Charge row (16px/600 `brand`, amount right). "Total" row 20px/700:
+  1px `rule` lines above and below the Delivery Charge row (16px/600 `brand`, amount right), the first 30px under
+  the lines. While a coupon is applied, a Discount row ("Discount (WELCOME10)", the amount after a minus sign) sits
+  above it inside the same rules, 24px apart. "Total" row 20px/700:
   label `brand`, amount `price`. Promo box: 60px `canvas` pill, "Add Promo" placeholder 16px/600 `muted` at
   36px in, and an "Apply Coupon" button inside it (156×52, 4px inset, `brand`, `accent` 16px/600, radius 999).
   Terms: a 20px checkbox (`CheckmarkSquare02` `brand` when checked) and "I agree with the Terms and Conditions"
-  18px `body`, the link underlined, 12px apart. Confirm Order: full width, 64px, `accent`, radius 4, 18px/600
-  `brand`; disabled until the terms are ticked. Below `md` the card fills the width, its body padding is 20px,
+  18px `body`, the link underlined (it opens in a new tab), 12px apart. Confirm Order: full width, 64px, `accent`,
+  radius 4, 18px/600 `brand`; disabled until the terms are ticked, while newer prices load, with an out-of-stock
+  line, and under the shop's minimum order (a `promo` line under Total says how much more to add). Below `md` the card fills the width, its body padding is 20px,
   and every two-card row is one column.
 - **Order confirmed dialog (Figma `confirmation_status`):** after the order is placed (after the phone code for
   Cash on Delivery), over the checkout page with `overlay` behind it. 440px wide (the screen minus 32px on a
@@ -1213,12 +1238,18 @@ phone hero headline is 28px/700 and its line under it 14px/400.
 
 These follow the same tokens and components. Use them exactly as written here until Figma has them.
 
-- **Category and search (`/c/[slug]`, `/search`):** the home page's "All Category" block alone: the title (the
-  category name, or `Results for "neem"`), the filter row, the 5-column grid, Load More.
+- **Category and search (`/c/[slug]`, `/search`):** the home page's "All Category" block alone, 36px under the
+  header (16px on a phone): the title as the page's `h1` in the section title's style (the category's name, "All
+  Products" on `/c/all`, or `Results for "neem"`), 36px down the filter row, 36px down the grid (3, 4 and 5
+  columns; one card a row on a phone), Load More. A category shows the listings of its sub-categories too. Search
+  looks in the name, the SKU and the category names, in English or Bangla, in any case; an empty search goes to
+  `/c/all`. An empty list shows the empty state for its reason: a filter is on (`FilterRemove`, "Clear the
+  filters"), a search found nothing (`Search01`, "See all products"), or the category has nothing yet
+  (`ShoppingBasket01`).
 - **Empty state:** a `card` (radius 16, padding 48px) with a 64px round `cream` tile holding a 28px `brand`
   icon, a `sf-title` `brand` title, a 16px `muted` line that says what to do, and an optional `accent` button
-  (44px, radius 4). Used for empty cart (`ShoppingCart01`), no results (`Search01`), page not found, and a shop
-  that is closed.
+  (44px, radius 4). Used for empty cart (`ShoppingCart01`), no results (`Search01`), no listing for the filters
+  (`FilterRemove`), an empty category (`ShoppingBasket01`), page not found, and a shop that is closed.
 - **Cart drawer:** opens from the cart button, from the right, 420px wide (full width on phones), `card`, with
   `overlay` behind it and no blur. A native `<dialog>` (`showModal()`), so the focus stays inside, Escape and a
   click on the backdrop close it, and the focus goes back to the cart button. It does not slide in. The header:
@@ -1233,14 +1264,26 @@ These follow the same tokens and components. Use them exactly as written here un
   after the last change; until the answer, the amounts are `muted`. A quantity changes at once. A failed quote
   shows no prices: a `promo-soft` tile, "The prices did not load…" and "Try again" (`cream`). Empty: the empty
   state (`ShoppingCart01`, "Continue shopping" closes the drawer).
+- **Category drawer:** opens from the header's menu button, from the left, 420px wide (full width on phones),
+  `card`, with `overlay` behind it and no blur. A native `<dialog>` like the cart drawer: the focus stays inside,
+  Escape and a click on the backdrop close it, the focus goes back to the menu button, and it closes when the page
+  is left. The header: "Categories" `sf-title` `brand` and a close icon button, a 1px `rule` line under it. Then
+  "All Products" and the top categories as rows at least 48px high (16px/600 `brand`, radius 8, hover `cream`, 1px
+  `rule` lines between the top rows); a category with sub-categories has a 48px show/hide button (`ArrowRight01`
+  shut, `ArrowDown01` open, `aria-expanded`), and its list is indented 16px. The name is a link, the button only
+  shows and hides. The list on screen is marked (`cream` row, `Tick02`, `aria-current`), and its group starts open.
 - **Phone verification (`/checkout/verify`):** the checkout card at 560px: header "Verify Your Phone", a 16px
   `body` line "We sent a 6-digit code to +880 17•• ••• 356", one 48px input (`tabular-nums`, centered, Bangla
   digits become ASCII), "Confirm Order" (the checkout's button), and "Resend code" as a `brand` text link (with
-  "in 0:45" while it waits). A wrong code shows an `Alert02` line in `promo` under the input.
+  "in 0:45" while it waits). A wrong code shows an `Alert02` line in `promo` under the input, with the tries left.
+  After 5 wrong codes the order is dropped: the box goes and "Back to checkout" takes its place (the cart is kept).
+  The page finds its order by an httpOnly cookie, never by the number, and with no order waiting it goes to
+  `/checkout`. The mock shows its test code in a line under the sentence.
 - **Order details (`/order/[no]`, from "View Order Details"):** the checkout card at 848px: header "Order
   Details", the order number in `Geist Mono` `sf-title` `brand`, the status timeline of the track page, the
   delivery details (name, phone, address, area) in 16px `body`, and the lines and totals as in checkout,
-  read-only (no stepper, no delete).
+  read-only (no stepper, no delete; "150ml · 2 × ৳229" under the name), with a Subtotal row above Delivery Charge.
+  Only the browser that placed the order sees it (a cookie); anyone else gets page not found.
 - **Track order (`/track`):** the checkout card: Mobile Number and Order Number fields, "Track Order" (`accent`),
   then a vertical timeline: 24px dots (done: `brand` fill with an `accent` tick; current: 2px `accent` ring on
   `brand`; later: 1px `rule` ring), 2px connecting line, 16px/600 `brand` status and a 14px `muted` date.

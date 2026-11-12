@@ -18,4 +18,16 @@ export default [
       ],
     },
   },
+  {
+    // Step 26d: `interface Translation extends Messages {}` is empty on purpose: it is the place
+    // '@omnivo/i18n/shop' adds the shop's words by declaration merging, which a type alias cannot
+    // take. The option allows exactly that shape (one `extends`), in this one file.
+    files: ['packages/i18n/src/types.ts'],
+    rules: {
+      '@typescript-eslint/no-empty-object-type': [
+        'error',
+        { allowInterfaces: 'with-single-extends' },
+      ],
+    },
+  },
 ];

@@ -15,9 +15,10 @@ const CORS_METHODS = ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'] satisfies
 
 // প্রতিটা request-এর আলাদা id (UUID) — error response-এর requestId আর লগের লাইন এটা দিয়েই মেলে।
 // Fastify-র ডিফল্ট "req-1, req-2" প্রতিটা process-এ আবার ১ থেকে শুরু হয়, একাধিক pod-এ মেলে না।
-// ক্লায়েন্টের পাঠানো x-request-id নেওয়া হয় না (Fastify 5-এর ডিফল্ট) — বাইরের মান বিশ্বাস করা হয় না
-export function createAdapter(): FastifyAdapter {
-  return new FastifyAdapter({ genReqId: () => randomUUID() });
+// ক্লায়েন্টের পাঠানো x-request-id নেওয়া হয় না (Fastify 5-এর ডিফল্ট) — বাইরের মান বিশ্বাস করা হয় না।
+// trustProxy: config.trustProxy (TRUST_PROXY). Tests leave it off, as the API runs with no proxy there.
+export function createAdapter(trustProxy = false): FastifyAdapter {
+  return new FastifyAdapter({ genReqId: () => randomUUID(), trustProxy });
 }
 
 // main.ts আর integration test দুজনেই এটা ডাকে — টেস্টে ঠিক production-এর setup চলে

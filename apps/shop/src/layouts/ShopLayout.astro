@@ -1,9 +1,10 @@
 ---
 import '../styles/shop.css';
 
-import type { PublicShop } from '@omnivo/contracts';
+import type { PublicShop, ShopCategory } from '@omnivo/contracts';
 
 import CartDrawer from '../components/CartDrawer.astro';
+import CategoryDrawer from '../components/CategoryDrawer.astro';
 import Footer from '../components/Footer.astro';
 import Header from '../components/Header.astro';
 import type { ShopLocale } from '../lib/locale';
@@ -14,9 +15,18 @@ interface Props {
   shop: PublicShop;
   locale: ShopLocale;
   title: string;
+  // Step 26d.3: the words of the search on screen, which the header's box shows again
+  search?: string | null;
+  // Step 26d.4: every category, for the category drawer. Required, not fetched here: the layout
+  // stays free of the data source, and most pages have the list already (the filter row, the
+  // product's trail). A page that forgets it fails the type check instead of drawing an empty drawer
+  categories: ShopCategory[];
+  // The slug of the list on screen ('all' on /c/all), so the drawer marks it and opens its group.
+  // Left out on a page that is not a category's list
+  currentList?: string | null;
 }
 
-const { shop, locale, title } = Astro.props;
+const { shop, locale, title, search = null, categories, currentList = null } = Astro.props;
 const { t } = locale;
 
 // The tenant's two theme colors win over the stylesheet's defaults. They are #rrggbb (the contract
@@ -40,7 +50,7 @@ const theme = `--brand: ${shop.theme.brand}; --accent: ${shop.theme.accent}`;
       {t('shop.skipToContent')}
     </a>
     <div class="shop-container">
-      <Header shop={shop} locale={locale} />
+      <Header shop={shop} locale={locale} search={search} />
       <main id="main">
         <slot />
       </main>
@@ -49,6 +59,8 @@ const theme = `--brand: ${shop.theme.brand}; --accent: ${shop.theme.accent}`;
     {/* Step 26b: one drawer for the whole page, outside the layout's box: as a modal dialog it is
         drawn above everything anyway, and the header's cart button opens it */}
     <CartDrawer locale={locale} />
+    {/* Step 26d.4: the same for the category drawer and the header's menu button */}
+    <CategoryDrawer categories={categories} locale={locale} current={currentList} />
 
     <script>
       import { addToCart } from '../lib/cart';

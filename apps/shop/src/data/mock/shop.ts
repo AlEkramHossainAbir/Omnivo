@@ -25,4 +25,8 @@ export const mockCategories = [
   { id: 'cat-household', slug: 'household', name: 'Household', parentId: null },
   { id: 'cat-tea', slug: 'tea', name: 'Tea', parentId: 'cat-beverages' },
   { id: 'cat-diabetic', slug: 'diabetic-care', name: 'Diabetic care', parentId: 'cat-food' },
+  // Step 26d: two more under Cosmetics, so /c/cosmetics shows the listings of a category it holds
+  // and the category drawer has a top category with more than one child
+  { id: 'cat-skin-care', slug: 'skin-care', name: 'Skin care', parentId: 'cat-cosmetics' },
+  { id: 'cat-hair-care', slug: 'hair-care', name: 'Hair care', parentId: 'cat-cosmetics' },
 ] satisfies ShopCategory[];

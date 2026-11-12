@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import { mockQuoteContext } from '../data/mock/mock-source';
 import { mockCatalog } from '../data/mock/products';
 import { quoteCart } from '../data/mock/quote';
 import { isCartQuote } from './quote';
 
 describe('isCartQuote', () => {
+  const context = mockQuoteContext(new Date('2026-11-11T10:00:00+06:00'));
+
   // The guard is hand-written, so it is tested against what the server really sends: every kind
   // of line the mock source can answer
   it('takes the answers the quote route sends', () => {
@@ -20,7 +23,7 @@ describe('isCartQuote', () => {
           { listingId: 'lst-gone', quantity: 2 },
         ],
       },
-      mockCatalog,
+      context,
     );
     expect(quote.lines.map((line) => line.status)).toEqual([
       'available',
@@ -28,7 +31,7 @@ describe('isCartQuote', () => {
       'unavailable',
     ]);
     expect(isCartQuote(quote)).toBe(true);
-    expect(isCartQuote(quoteCart({ lines: [] }, mockCatalog))).toBe(true);
+    expect(isCartQuote(quoteCart({ lines: [] }, context))).toBe(true);
   });
 
   it('refuses a body it could not draw', () => {

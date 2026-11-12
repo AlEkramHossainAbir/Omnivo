@@ -1,0 +1,148 @@
+---
+import { Cancel01Icon, Tick02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { ShopCategory } from '@omnivo/contracts';
+
+import { categoryPath, categoryTree } from '../lib/category-tree';
+import { ALL_SLUG, listingPath } from '../lib/listing-query';
+import type { ShopLocale } from '../lib/locale';
+import CategoryTreeList from './CategoryTreeList.astro';
+
+// Step 26d.4 (decision 9): the category drawer, opened by the header's menu button. Not in Figma:
+// it is the cart drawer's frame from the left (CLAUDE.md → Storefront screens not in Figma → Cart
+// drawer): 420px wide, the whole width on a phone, `overlay` behind it, no slide.
+// A native <dialog> in a small custom element, like the cart drawer: showModal() gives the focus
+// trap, Escape, the inert page behind and the backdrop. The whole tree is drawn on the server; the
+// script only opens, closes and shows or hides a group. One per page, in ShopLayout.
+interface Props {
+  categories: ShopCategory[];
+  locale: ShopLocale;
+  // The slug of the list on screen ('all' on /c/all), or null on a page that is not a list
+  current: string | null;
+}
+
+const { categories, locale, current } = Astro.props;
+const { t } = locale;
+
+const tree = categoryTree(categories);
+// The list on screen is in view when the drawer opens: its group and every one above it start open
+const open = categoryPath(categories, current);
+const allCurrent = current === ALL_SLUG;
+---
+
+<category-drawer>
+  {/* The cart drawer's classes with the side swapped: `mr-auto` pins it to the left edge.
+      `max-w-none max-h-none`: the browser's own style keeps a modal 2em off every edge */}
+  <dialog
+    aria-labelledby="category-drawer-title"
+    class="m-0 mr-auto h-dvh max-h-none w-full max-w-none border-0 bg-card p-0 text-brand backdrop:bg-overlay md:w-[420px]"
+  >
+    <div class="flex h-full flex-col">
+      <div class="flex items-center justify-between gap-4 border-b border-rule px-5 py-4 md:px-6 md:py-5">
+        <h2 id="category-drawer-title" class="text-sf-title font-semibold">
+          {t('shop.drawer.title')}
+        </h2>
+        <button
+          type="button"
+          data-close
+          aria-label={t('shop.drawer.close')}
+          class="-mr-2 grid size-10 place-items-center rounded-lg text-muted transition-colors duration-150 hover:bg-canvas hover:text-brand"
+        >
+          <HugeiconsIcon icon={Cancel01Icon} size={24} strokeWidth={1.5} aria-hidden="true" />
+        </button>
+      </div>
+
+      {/* A <nav> named by the title: a screen reader's list of landmarks says "Categories".
+          Only this part scrolls; the title and the close button stay */}
+      <nav
+        aria-labelledby="category-drawer-title"
+        class="min-h-0 flex-1 overflow-y-auto px-3 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] md:px-4"
+      >
+        {/* A rule between top categories only: the open group's children belong to the row
+            above them, so no line cuts them off */}
+        <ul class="divide-y divide-rule">
+          <li>
+            <a
+              href={listingPath(null, null)}
+              aria-current={allCurrent ? 'page' : undefined}
+              class="flex min-h-12 items-center justify-between gap-3 rounded-lg px-3 py-3 font-semibold transition-colors duration-150 hover:bg-cream aria-[current]:bg-cream"
+            >
+              {t('shop.drawer.all')}
+              {allCurrent && (
+                <HugeiconsIcon icon={Tick02Icon} size={16} strokeWidth={1.5} aria-hidden="true" />
+              )}
+            </a>
+          </li>
+          <CategoryTreeList
+            nodes={tree}
+            locale={locale}
+            current={current}
+            open={open}
+            depth={0}
+            idPrefix="category-drawer"
+          />
+        </ul>
+      </nav>
+    </div>
+  </dialog>
+</category-drawer>
+
+<script>
+  class CategoryDrawer extends HTMLElement {
+    // Any [data-open-categories] on the page opens the drawer: the header's menu button. One
+    // listener on the document, like the cart drawer's
+    private readonly onDocumentClick = (event: MouseEvent): void => {
+      if (event.target instanceof Element && event.target.closest('[data-open-categories]')) {
+        this.dialog?.showModal();
+      }
+    };
+
+    // Leaving the page by one of its links: the browser may keep this page in its back/forward
+    // cache with the drawer open, and Back would then land on an open drawer the shopper is done
+    // with. Closing it as the page goes puts Back on the page itself
+    private readonly onPageHide = (): void => {
+      this.dialog?.close();
+    };
+
+    private get dialog(): HTMLDialogElement | null {
+      return this.querySelector('dialog');
+    }
+
+    connectedCallback(): void {
+      const dialog = this.dialog;
+      if (!dialog) return;
+
+      document.addEventListener('click', this.onDocumentClick);
+      window.addEventListener('pagehide', this.onPageHide);
+      for (const button of this.querySelectorAll('[data-close]')) {
+        button.addEventListener('click', () => {
+          dialog.close();
+        });
+      }
+      dialog.addEventListener('click', (event) => {
+        // A click on the dim backdrop lands on the <dialog> itself; a click inside lands on its
+        // content, which fills the whole dialog. Escape closes it without a script
+        if (event.target === dialog) {
+          dialog.close();
+          return;
+        }
+        // A group's show/hide button. The button's aria-expanded and the list's `hidden` change
+        // together, so what a screen reader hears is what is on screen
+        if (!(event.target instanceof Element)) return;
+        const toggle = event.target.closest<HTMLButtonElement>('[data-toggle]');
+        const list = document.getElementById(toggle?.getAttribute('aria-controls') ?? '');
+        if (!toggle || !list) return;
+        const expanded = toggle.getAttribute('aria-expanded') === 'true';
+        toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+        list.hidden = expanded;
+      });
+    }
+
+    disconnectedCallback(): void {
+      document.removeEventListener('click', this.onDocumentClick);
+      window.removeEventListener('pagehide', this.onPageHide);
+    }
+  }
+
+  customElements.define('category-drawer', CategoryDrawer);
+</script>
