@@ -1,0 +1,36 @@
+---
+import { FileNotFoundIcon } from '@hugeicons/core-free-icons';
+
+import EmptyState from '../components/EmptyState.astro';
+import { shopSource } from '../data/source';
+import ShopLayout from '../layouts/ShopLayout.astro';
+import { shopLocale } from '../lib/locale';
+
+// Step 26e: every address the shop has no page for (decision 6). Astro draws this page for an
+// address no route matches, and for every page that answers Astro.rewrite('/404') (an unknown
+// product, category, order or text page). It is the shop's own page, with the header, so a shopper
+// who followed an old link can search or open a category from here. Made per request like every
+// page (astro.config.ts), because it needs the shop of the request's domain. Astro answers it
+// with the 404 status in both cases, so a search engine drops the old address.
+const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
+const locale = await shopLocale(shop.language);
+const { t } = locale;
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.notFound.pageTitle', { shop: shop.name })}
+  categories={categories}
+>
+  {/* The checkout card's distance from the header and to the footer */}
+  <div class="mt-4 md:mt-9 md:mb-40">
+    <EmptyState
+      icon={FileNotFoundIcon}
+      level="h1"
+      title={t('shop.notFound.title')}
+      text={t('shop.notFound.text')}
+      action={{ href: '/', label: t('shop.notFound.action') }}
+    />
+  </div>
+</ShopLayout>

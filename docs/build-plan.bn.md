@@ -444,7 +444,7 @@ ERP অ্যাপে Storefront মেনু: Catalog, Appearance, Delivery zo
 
 #### ধাপ ২৭: চেকআউট ও অর্ডার · ~২.৫ সপ্তাহ
 
-কার্ট → চেকআউট (**দাম, ডিসকাউন্ট, ডেলিভারি চার্জ সব সার্ভারে হিসাব — ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে**), **স্টক রিজার্ভেশন TTL সহ**, COD + **ফোন OTP বাধ্যতামূলক**, অনলাইন পেমেন্ট (টেন্যান্টের নিজের গেটওয়ে, এনক্রিপ্টেড credentials), `storefront_orders`, অর্ডার বোর্ড UI, confirm হলে outbox → worker → Sales Order + স্টক মুভমেন্ট + জার্নাল।
+কার্ট → চেকআউট (**দাম, ডিসকাউন্ট, ডেলিভারি চার্জ সব সার্ভারে হিসাব — ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে**), **স্টক রিজার্ভেশন TTL সহ**, COD + **ফোন OTP বাধ্যতামূলক**, অনলাইন পেমেন্ট (টেন্যান্টের নিজের গেটওয়ে, এনক্রিপ্টেড credentials), `storefront_orders`, অর্ডারের সাথে ট্র্যাকিং লিংকের token (শুধু hash রাখা) আর ক্রেতাকে SMS-এ লিংক (`/t/<token>`, পেজটা ধাপ ২৬e-তে তৈরি), অর্ডার বোর্ড UI, confirm হলে outbox → worker → Sales Order + স্টক মুভমেন্ট + জার্নাল।
 
 #### ধাপ ২৮: কুরিয়ার অটোমেশন · ~৩.৫ সপ্তাহ
 
@@ -453,7 +453,7 @@ ERP অ্যাপে Storefront মেনু: Catalog, Appearance, Delivery zo
 - কনসাইনমেন্ট **সবসময় worker-এ**, কখনো HTTP রিকোয়েস্টের ভেতরে নয়
 - **idempotency key = `order_id`** + DB-তে `UNIQUE (tenant_id, order_id, courier_account_id)` — দুটোই লাগবে, একটা যথেষ্ট না
 - Retry: exponential backoff ৫ বার → তারপর `needs_attention` + নোটিফিকেশন + Retry বাটন (**কখনো নীরবে ব্যর্থ নয়**)
-- স্ট্যাটাস: webhook (signature + timestamp যাচাই) + polling fallback, `shipment_events` append-only
+- স্ট্যাটাস: webhook (signature + timestamp যাচাই) + polling fallback, `shipment_events` append-only; ERP-র অ্যাডমিনে কুরিয়ারের API key, আর কুরিয়ারের ইভেন্টগুলো ট্র্যাকিং পেজে (ধাপ ২৬e-র মক ইভেন্টের জায়গায়)
 - **কুরিয়ারপ্রতি COD Receivable control account**, remittance CSV/API auto-matching, return ও partial delivery
 
 **দেখবেন:** শপে অর্ডার → OTP → কনফার্ম → Sales Order + ইনভয়েস + কনসাইনমেন্ট অটো তৈরি → ট্র্যাকিং SMS → রেমিট্যান্স এলে ব্যাংকে টাকা বসল। 🎉 **এটাই বাংলাদেশের বাজারে Omnivo-র সবচেয়ে বড় অস্ত্র।**

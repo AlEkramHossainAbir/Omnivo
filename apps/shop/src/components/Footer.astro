@@ -31,7 +31,7 @@ const social = [
   { url: shop.social.linkedin, icon: Linkedin01Icon, label: t('shop.footer.linkedin') },
 ].flatMap((network) => (network.url === null ? [] : [{ ...network, url: network.url }]));
 
-// Step 26c builds these pages
+// Step 26e builds these pages (pages/pages/[slug].astro)
 const pages = [
   { href: '/pages/privacy', label: t('shop.footer.privacy') },
   { href: '/pages/terms', label: t('shop.footer.terms') },

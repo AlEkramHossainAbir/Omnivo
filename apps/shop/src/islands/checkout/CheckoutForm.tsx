@@ -239,6 +239,13 @@ export default function CheckoutForm({
       {/* noValidate: the browser's own bubbles would show English on a Bangla shop */}
       <form
         noValidate
+        // Step 26e: nothing in the form can take the focus, a tap or a key until this script runs.
+        // The server draws the form, so on a slow phone a shopper could type into it before the
+        // island starts, and react-hook-form then writes its empty defaults into the boxes as it
+        // takes them over: the name they typed would be gone, with nothing to say so (26e.4's
+        // Playwright test found it). The cart is null only in the server's HTML (hooks.ts →
+        // useCart), so this is exactly "not running yet"
+        inert={cart === null}
         onSubmit={(event) => {
           void submit(event);
         }}

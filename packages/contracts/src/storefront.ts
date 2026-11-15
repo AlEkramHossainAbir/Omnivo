@@ -563,3 +563,139 @@ export const shopListingPageSchema = pageOf(shopListingSchema).extend({
 export type ShopSort = (typeof SHOP_SORTS)[number];
 export type ShopListingQuery = z.infer<typeof shopListingQuerySchema>;
 export type ShopListingPage = z.infer<typeof shopListingPageSchema>;
+
+// ---------------------------------------------------------------------------------------------
+// Step 26e: tracking an order, and the shop's own text pages.
+
+// An order number as the shopper types it from the SMS. Bangla digits become ASCII ones, spaces go,
+// and the letters are upper-cased, so "w-000123", "W 000123" and "W-০০০১২৩" are one number. A
+// shopper who leaves out the dash ("W000123") or the letter ("000123") gets it added: the SMS says
+// "W-000123", and a phone keyboard makes the dash the hardest part to type. "W-" goes in front of
+// anything; what follows it that is not digits ("W-SO-2026") is then refused by the check. Six to
+// nine digits: the mock counts from W-000001 (26c's decision 3), and a shop with a billion orders
+// is not a worry
+export const shopOrderNoSchema = z
+  .string()
+  .transform((value) => {
+    const plain = asciiDigits(value).replace(/\s/g, '').toUpperCase();
+    return plain.replace(/^(?:W-?)?/, 'W-');
+  })
+  .refine((value) => /^W-\d{6,9}$/.test(value), errorCode('shop_order_no_format'));
+
+// What the /track form sends: the phone the order was placed with and its number. Both must match
+// the same order; any mismatch gets the same "not found" (shop_track_not_found), so the form never
+// says that a number exists with another phone
+export const shopTrackRequestSchema = z.object({
+  phone: shopPhoneSchema,
+  orderNo: shopOrderNoSchema,
+});
+
+// The form's limit: this many tries from one connection in this many minutes. A wrong pair is the
+// only answer a guesser gets, so the limit is what keeps someone from walking the order numbers
+// with a phone they know
+export const SHOP_TRACK_TRIES = 10;
+export const SHOP_TRACK_WINDOW_MINUTES = 15;
+
+// The token in a tracking link (/t/<token>): 16 random bytes in base64url, 22 characters, the same
+// rule as the ERP's share links (document-output.ts). 128 bits cannot be guessed, so the link alone
+// is the key, and the page checks the shape before it asks the source for anything
+export const shopTrackingTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
+
+// The couriers the system design's adapters cover (§14.6). Their own names are brand names and the
+// same in every language; the shop still writes them through t() (shop.track.couriers)
+export const SHOP_COURIERS = ['pathao', 'steadfast', 'redx', 'ecourier', 'paperfly'] as const;
+
+// Where a parcel is, in our own words. Each courier has its own statuses (Steadfast's
+// "in_review" and "hold", Pathao's "At the Sorting HUB" and "Assigned for Delivery"); the courier's
+// adapter maps them to this one set (step 28), so the page has words for every one, whichever
+// courier the shop uses:
+// - booked: the shop has handed the parcel's details to the courier, nobody has picked it up yet
+// - picked_up, in_transit (between the courier's hubs), out_for_delivery (a rider has it)
+// - delivered, partly_delivered (the shopper kept some items and sent the rest back)
+// - on_hold: the rider could not deliver it (nobody at home, the phone did not answer) and will try
+//   again; the courier's note says why
+// - returning, returned: the parcel goes back to the shop, and is back
+// - cancelled: the booking was cancelled before the courier picked it up
+export const SHOP_SHIPMENT_STATUSES = [
+  'booked',
+  'picked_up',
+  'in_transit',
+  'out_for_delivery',
+  'delivered',
+  'partly_delivered',
+  'on_hold',
+  'returning',
+  'returned',
+  'cancelled',
+] as const;
+
+// One step the courier reported. `note` is the courier's own words ("Customer not reachable",
+// "Received at Sylhet hub"), shown as they came: they are in the courier's language, not the
+// shop's, and they are often the most useful line on the page. null: the courier sent none
+export const shopShipmentEventSchema = z.object({
+  status: z.enum(SHOP_SHIPMENT_STATUSES),
+  at: z.iso.datetime({ offset: true }),
+  note: z.string().trim().min(1).max(300).nullable(),
+});
+
+// One parcel with a courier. An order has one, or a second one when the first courier gave it back
+// and the shop booked it again with another (the system design allows one per courier account)
+export const shopShipmentSchema = z.object({
+  courier: z.enum(SHOP_COURIERS),
+  // The courier's code for the parcel ("SFR2611150042"), which its own call centre asks for
+  trackingCode: z.string().trim().min(1).max(64),
+  // The courier's own tracking page, when it has one. https only: it goes into an <a href>, and it
+  // comes from the courier's answer, not from us
+  trackingUrl: z
+    .string()
+    .regex(/^https:\/\//)
+    .nullable(),
+  // Oldest first, as they happened, like the order's history. A parcel exists from the moment it
+  // was booked, so there is at least that event; the newest one is where the parcel is now
+  events: z.array(shopShipmentEventSchema).min(1).max(100),
+});
+
+// What a tracking link and the /track form show. Less than the order page on purpose: a link in an
+// SMS gets forwarded (to a family member, to a delivery group), so there is no address, no phone,
+// no name and no line of what was bought. The number, the timeline, how many items, what to pay,
+// and the parcel's way are what the person at the door needs
+export const shopTrackingSchema = z.object({
+  orderNo: z.string().min(1),
+  placedAt: z.iso.datetime({ offset: true }),
+  status: z.enum(SHOP_ORDER_STATUSES),
+  // The same history as the order page, so 26c's timeline draws it
+  history: shopOrderSchema.shape.history,
+  // The pieces, not the lines: two face washes and a tea are 3 items
+  itemCount: z.number().int().min(1),
+  total: shopMoneySchema,
+  // Cash on Delivery: the page says how much cash to keep ready for the rider
+  paymentMethod: z.enum(SHOP_PAYMENT_METHODS),
+  // Oldest first. Empty until the shop books the parcel with a courier
+  shipments: z.array(shopShipmentSchema).max(5),
+});
+
+// The footer's four pages, at /pages/<slug>. Fixed slugs: the footer links to exactly these, and
+// each has its title in the shop's words (shop.footer.*), so a link and the page it opens always
+// say the same
+export const SHOP_TEXT_PAGES = ['privacy', 'terms', 'about', 'contact'] as const;
+
+// One text page. The HTML is the description's kind (step 26b): <section>s with an <h2>, then <p>,
+// <ul>, <ol>, <strong> and <a>, cleaned by the ERP when the tenant saves it (step 26's API), drawn
+// as it is with the description's prose style. A page the tenant has not written does not come at
+// all (the source answers null and the shop shows "page not found"), so html is never empty
+export const shopTextPageSchema = z.object({
+  slug: z.enum(SHOP_TEXT_PAGES),
+  html: z.string().min(1),
+  // When the tenant last changed it, for "Last updated 1 Nov 2026" under the title. Terms and a
+  // privacy policy are read with their date. null: the date is not known (an imported page)
+  updatedAt: z.iso.datetime({ offset: true }).nullable(),
+});
+
+export type ShopTrackRequest = z.infer<typeof shopTrackRequestSchema>;
+export type ShopCourier = (typeof SHOP_COURIERS)[number];
+export type ShopShipmentStatus = (typeof SHOP_SHIPMENT_STATUSES)[number];
+export type ShopShipmentEvent = z.infer<typeof shopShipmentEventSchema>;
+export type ShopShipment = z.infer<typeof shopShipmentSchema>;
+export type ShopTracking = z.infer<typeof shopTrackingSchema>;
+export type ShopTextPage = z.infer<typeof shopTextPageSchema>;
+export type ShopTextPageSlug = (typeof SHOP_TEXT_PAGES)[number];

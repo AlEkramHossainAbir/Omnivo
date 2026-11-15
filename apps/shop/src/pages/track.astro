@@ -1,0 +1,219 @@
+---
+import { Alert02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+
+import PageCard from '../components/PageCard.astro';
+import TrackingView from '../components/TrackingView.astro';
+import { shopSource } from '../data/source';
+import ShopLayout from '../layouts/ShopLayout.astro';
+import { shopLocale } from '../lib/locale';
+import { spacedPhone } from '../lib/phone';
+import {
+  answerTrackForm,
+  trackLimiter,
+  type TrackFieldErrors,
+  type TrackFormAnswer,
+  type TrackFormValues,
+} from '../server/track';
+
+// Step 26e: the way back for a shopper who lost the SMS (decision 3; CLAUDE.md → Track order). A
+// GET draws the form. The form POSTs to this same page, so the phone stays in the request's body,
+// and the answer is drawn in place: the tracking view, or the form again with what to fix.
+let answer: TrackFormAnswer | null = null;
+if (Astro.request.method === 'POST') {
+  answer = await answerTrackForm(Astro.request, {
+    source: shopSource,
+    limiter: trackLimiter,
+    // The visitor's address, which astro.config.ts → security says to read from the proxy's
+    // X-Forwarded-For (26e.2)
+    address: Astro.clientAddress,
+  });
+  // A browser draws the page whatever the status; the status is for scripts and logs, which can
+  // then tell "slow down" from a form that worked (the text too, or the line reads "429 OK")
+  if (answer.kind === 'refused' && answer.code === 'shop_track_too_many') {
+    Astro.response.status = 429;
+    Astro.response.statusText = 'Too Many Requests';
+  }
+}
+
+const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
+const locale = await shopLocale(shop.language);
+const { t } = locale;
+
+// The answer has an order (or, refused, the phone the shopper typed): no cache may keep it. The
+// GET form is the same for everyone, but a cache that kept it would also need to tell it apart
+// from the POST's answer, and the page is small
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+const empty: TrackFormValues = { phone: '', orderNo: '' };
+const values = answer === null || answer.kind === 'found' ? empty : answer.values;
+const fieldErrors: TrackFieldErrors = answer?.kind === 'invalid' ? answer.fieldErrors : {};
+const refusal =
+  answer?.kind === 'refused'
+    ? answer.code === 'shop_track_too_many'
+      ? // params.minutes is there for this code (server/track.ts); 15 is the whole window, a
+        // safe thing to say if it ever were not
+        t('errors.shop_track_too_many', { minutes: answer.params?.minutes ?? 15 })
+      : t(`errors.${answer.code}`)
+    : null;
+
+// The two boxes. The first code of a box is its message: one thing to fix at a time, like the
+// checkout's fields. `as const` keeps each name a key of TrackFormValues, so values[field.name]
+// and fieldErrors[field.name] below are checked
+const fields = [
+  {
+    name: 'phone',
+    label: t('shop.track.phone'),
+    placeholder: t('shop.track.phonePlaceholder'),
+    // tel: the phone keyboard, and the browser offers the shopper's own number
+    attributes: { type: 'tel', inputmode: 'tel', autocomplete: 'tel' },
+  },
+  {
+    name: 'orderNo',
+    label: t('shop.track.orderNo'),
+    placeholder: t('shop.track.orderNoPlaceholder'),
+    // A code, not a word: no spell check, no autofill from other forms, and capitals on a phone
+    // keyboard (the schema upper-cases it anyway, 26e.1)
+    attributes: {
+      type: 'text',
+      autocomplete: 'off',
+      autocapitalize: 'characters',
+      spellcheck: 'false',
+    },
+  },
+] as const;
+
+const firstError = fields.find((field) => fieldErrors[field.name] !== undefined)?.name;
+const errorText = (name: keyof TrackFormValues): string | null => {
+  const code = fieldErrors[name]?.[0];
+  return code === undefined ? null : t(`errors.${code}`);
+};
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={
+    answer?.kind === 'found'
+      ? t('shop.track.linkPageTitle', { orderNo: answer.tracking.orderNo, shop: shop.name })
+      : t('shop.track.pageTitle', { shop: shop.name })
+  }
+  categories={categories}
+>
+  <PageCard title={t('shop.track.title')} width={answer?.kind === 'found' ? 'wide' : 'narrow'}>
+    {answer?.kind === 'found' ? (
+      <TrackingView tracking={answer.tracking} locale={locale} timeZone={shop.timeZone}>
+        {/* A GET of this page: the empty form again */}
+        <a
+          href="/track"
+          class="flex h-11 items-center justify-center rounded-sm bg-cream font-semibold transition-colors duration-150 hover:bg-accent"
+        >
+          {t('shop.track.another')}
+        </a>
+      </TrackingView>
+    ) : (
+      /* noValidate: the browser's own bubbles would be in the browser's language. The server
+         checks the boxes and draws its own errors, so the form works without a script */
+      <form method="post" action="/track" novalidate class="flex flex-col gap-8 p-5 md:p-9">
+        <div class="flex flex-col gap-3">
+          <p class="text-body">{t('shop.track.intro')}</p>
+          {/* Only a test shop has orders to offer (ShopSource.testTracking): the mock sends no
+              SMS, so this is where a tester gets a number, its phone and its link (decision 18) */}
+          {shopSource.testTracking !== null && (
+            <div class="flex flex-col gap-2 rounded-lg bg-canvas px-4 py-3 text-sf-small font-medium text-body">
+              <p>{t('shop.track.mockOrders')}</p>
+              <ul class="flex flex-col gap-1">
+                {shopSource.testTracking.map((demo) => (
+                  <li class="flex flex-wrap gap-x-2 tabular-nums">
+                    <span>
+                      {t('shop.track.mockOrder', {
+                        orderNo: demo.orderNo,
+                        phone: spacedPhone(demo.phone),
+                      })}
+                    </span>
+                    <a href={`/t/${demo.token}`} class="font-semibold underline underline-offset-3">
+                      {t('shop.track.mockLink', { orderNo: demo.orderNo })}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* "No order has this number and mobile number", "Too many tries…": about both boxes, so
+            above them. It takes the focus when the page opens (autofocus on a tabindex="-1"
+            element), so a screen reader reads it first; role="alert" does not speak for text
+            that was already in the page when it loaded */}
+        {refusal !== null && (
+          <p
+            role="alert"
+            tabindex="-1"
+            autofocus
+            class="flex items-start gap-1.5 font-medium text-promo focus:outline-none"
+          >
+            <HugeiconsIcon
+              icon={Alert02Icon}
+              size={16}
+              strokeWidth={1.5}
+              className="mt-0.5 shrink-0"
+              aria-hidden="true"
+            />
+            <span>{refusal}</span>
+          </p>
+        )}
+
+        {/* Two columns from md, like the checkout's Full Name and Mobile Number. In the 560px
+            card each box is still 230px wide, enough for "01786 120356" */}
+        <div class="grid gap-6 md:grid-cols-2 md:gap-4">
+          {fields.map((field) => {
+            const id = `track-${field.name}`;
+            const error = errorText(field.name);
+            return (
+              <div class="flex flex-col gap-3">
+                <label for={id} class="trim-text font-semibold">
+                  {field.label}
+                </label>
+                {/* The checkout's input (CLAUDE.md → Checkout card). The value is what the
+                    shopper typed, put back as it was (server/track.ts), never the schema's */}
+                <input
+                  id={id}
+                  name={field.name}
+                  value={values[field.name]}
+                  placeholder={field.placeholder}
+                  {...field.attributes}
+                  autofocus={field.name === firstError}
+                  aria-invalid={error === null ? undefined : 'true'}
+                  aria-describedby={error === null ? undefined : `${id}-error`}
+                  class="h-12 w-full min-w-0 rounded-lg border border-field bg-card px-4 transition-colors duration-150 placeholder:text-muted hover:border-muted-line focus:border-brand focus:outline-2 focus:outline-offset-0 focus:outline-brand aria-invalid:border-promo"
+                />
+                {error !== null && (
+                  <p
+                    id={`${id}-error`}
+                    class="flex items-start gap-1.5 text-sf-small font-medium text-promo"
+                  >
+                    <HugeiconsIcon
+                      icon={Alert02Icon}
+                      size={16}
+                      strokeWidth={1.5}
+                      className="mt-1 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>{error}</span>
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="submit"
+          class="h-16 w-full rounded-sm bg-accent text-[18px] font-semibold transition-colors duration-150 hover:bg-brand hover:text-accent"
+        >
+          {t('shop.track.submit')}
+        </button>
+      </form>
+    )}
+  </PageCard>
+</ShopLayout>

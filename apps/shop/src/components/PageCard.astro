@@ -1,0 +1,30 @@
+---
+// Step 26e: the checkout card as a page's frame (CLAUDE.md → Checkout card, and the screens "not in
+// Figma" that use it: Track order and the text pages). A 4px glass frame, a cream header with the
+// page's title, and the page's own body in the slot. 26c's checkout, verify and order pages draw
+// the same card inline; this step's three pages share it instead of a fourth and fifth copy.
+interface Props {
+  // The page's h1, centered in the header
+  title: string;
+  // A line under the title ("Last updated 1 Nov 2026"), or nothing
+  note?: string | null;
+  // The checkout's 848px, or the verify page's 560px
+  width?: 'wide' | 'narrow';
+}
+
+const { title, note = null, width = 'wide' } = Astro.props;
+---
+
+{/* 36px under the header from md (16px on a phone), and the checkout's 160px to the footer */}
+<div
+  class:list={[
+    'mx-auto mt-4 rounded-2xl bg-card-glass p-1 md:mt-9 md:mb-40',
+    width === 'wide' ? 'max-w-[848px]' : 'max-w-[560px]',
+  ]}
+>
+  <div class="flex flex-col items-center gap-4 rounded-t-xl bg-cream p-6 text-center">
+    <h1 class="trim-text text-sf-title font-semibold">{title}</h1>
+    {note !== null && <p class="trim-text text-sf-small text-muted">{note}</p>}
+  </div>
+  <slot />
+</div>

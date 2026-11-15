@@ -7179,6 +7179,9 @@ export const en = {
     shop_code_too_many: 'Too many wrong codes. Place the order again to get a new code.',
     shop_code_resend_wait: 'Wait a little, then ask for a new code.',
     shop_code_no_order: 'No order is waiting for a code. Place the order again.',
+    shop_order_no_format: 'Type the order number from the SMS, like W-000123.',
+    shop_track_not_found: 'No order has this number and mobile number. Check both, then try again.',
+    shop_track_too_many: 'Too many tries. Wait {{minutes}} minutes, then try again.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

@@ -50,20 +50,22 @@ describe('shop imports', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('reaches src/server only from the API routes, and the cookies from the pages', () => {
+  it('reaches src/server only from the API routes, the cookies and the track form from pages', () => {
     // Step 26b: server/ is request handling (Response objects, the contracts, Zod). A component
     // that imported it could pull it into a <script> and ship Zod to every shopper's browser.
     // Step 26c: a page's frontmatter runs only on the server, and /checkout/verify and
     // /order/<no> read the order cookies. They may import server/cookies.ts, which imports
-    // nothing, and only that
+    // nothing, and only that.
+    // Step 26e: /track answers its own form's POST (26e.2's server/track.ts), so that one page
+    // may import that one module, like an API route. Named page by page, not "any page": a page
+    // has <script>s too, and the rule should stay as narrow as what needs it
+    const pageMay = (path: string, name: string) =>
+      (path.startsWith('./pages/') && name.endsWith('/server/cookies')) ||
+      (path === './pages/track.astro' && name.endsWith('/server/track'));
     const offenders = Object.entries(files)
       .filter(([path]) => !path.startsWith('./pages/api/') && !path.startsWith('./server/'))
       .filter(([path, source]) =>
-        importsOf(source).some(
-          (name) =>
-            /(^|\/)server\//.test(name) &&
-            !(path.startsWith('./pages/') && name.endsWith('/server/cookies')),
-        ),
+        importsOf(source).some((name) => /(^|\/)server\//.test(name) && !pageMay(path, name)),
       )
       .map(([path]) => path);
     expect(offenders).toEqual([]);

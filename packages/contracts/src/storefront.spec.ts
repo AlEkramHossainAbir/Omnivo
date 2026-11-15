@@ -15,7 +15,12 @@ import {
   shopOrderRequestSchema,
   shopOrderSchema,
   shopPhoneSchema,
+  shopOrderNoSchema,
   shopProductSchema,
+  shopTextPageSchema,
+  shopTrackingSchema,
+  shopTrackingTokenSchema,
+  shopTrackRequestSchema,
   shopVerifyCodeRequestSchema,
 } from './storefront.js';
 
@@ -481,5 +486,148 @@ describe('listing page', () => {
       nextCursor: null,
     };
     expect(shopListingPageSchema.safeParse(page).success).toBe(false);
+  });
+});
+
+// Step 26e
+describe('order number', () => {
+  it.each([
+    ['W-000123', 'W-000123'],
+    ['w-000123', 'W-000123'],
+    [' W 000123 ', 'W-000123'],
+    ['W000123', 'W-000123'],
+    ['000123', 'W-000123'],
+    ['W-০০০১২৩', 'W-000123'],
+  ])('reads %s as %s', (typed, plain) => {
+    expect(shopOrderNoSchema.parse(typed)).toBe(plain);
+  });
+
+  it.each(['W-123', 'W-0001234567', 'X-000123', 'W--000123', 'SO-2026-27-0001', ''])(
+    'refuses %s',
+    (typed) => {
+      const result = shopOrderNoSchema.safeParse(typed);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe('shop_order_no_format');
+    },
+  );
+});
+
+describe('track request', () => {
+  it('takes the phone and the number the way a shopper types them', () => {
+    expect(shopTrackRequestSchema.parse({ phone: '+880 1786-120356', orderNo: 'w000123' })).toEqual(
+      { phone: '01786120356', orderNo: 'W-000123' },
+    );
+  });
+
+  it('says which box is wrong', () => {
+    const result = shopTrackRequestSchema.safeParse({ phone: '02-9123456', orderNo: '12' });
+    expect(result.error?.issues.map((issue) => [issue.path[0], issue.message])).toEqual([
+      ['phone', 'shop_phone_format'],
+      ['orderNo', 'shop_order_no_format'],
+    ]);
+  });
+});
+
+describe('tracking token', () => {
+  it('takes 16 random bytes in base64url', () => {
+    expect(shopTrackingTokenSchema.safeParse('kq3Xb9-T_2mVd8LwZpR4aQ').success).toBe(true);
+  });
+
+  it.each(['kq3Xb9-T_2mVd8LwZpR4a', 'kq3Xb9-T_2mVd8LwZpR4aQx', 'kq3Xb9+T/2mVd8LwZpR4aQ'])(
+    'refuses %s before the source is asked',
+    (token) => {
+      expect(shopTrackingTokenSchema.safeParse(token).success).toBe(false);
+    },
+  );
+});
+
+describe('tracking', () => {
+  // The Sylhet order of 26c, two days later: Steadfast has it, and the rider could not reach her
+  const TRACKING = {
+    orderNo: 'W-000123',
+    placedAt: '2026-11-11T15:20:00+06:00',
+    status: 'shipped',
+    history: [
+      { status: 'pending', at: '2026-11-11T15:20:00+06:00' },
+      { status: 'confirmed', at: '2026-11-11T15:21:30+06:00' },
+      { status: 'packed', at: '2026-11-12T10:05:00+06:00' },
+      { status: 'shipped', at: '2026-11-12T16:40:00+06:00' },
+    ],
+    itemCount: 3,
+    total: '578.0000',
+    paymentMethod: 'cod',
+    shipments: [
+      {
+        courier: 'steadfast',
+        trackingCode: 'SFR2611120042',
+        trackingUrl: 'https://steadfast.com.bd/t/SFR2611120042',
+        events: [
+          { status: 'booked', at: '2026-11-12T10:06:00+06:00', note: null },
+          { status: 'picked_up', at: '2026-11-12T16:40:00+06:00', note: 'Picked up from the shop' },
+          { status: 'on_hold', at: '2026-11-13T13:15:00+06:00', note: 'Customer not reachable' },
+        ],
+      },
+    ],
+  };
+
+  it('reads an order on its way with the courier', () => {
+    expect(shopTrackingSchema.parse(TRACKING)).toEqual(TRACKING);
+  });
+
+  it('reads an order the shop has not given to a courier yet', () => {
+    const waiting = { ...TRACKING, status: 'confirmed', history: TRACKING.history.slice(0, 2) };
+    expect(shopTrackingSchema.parse({ ...waiting, shipments: [] }).shipments).toEqual([]);
+  });
+
+  it('never carries the address, the phone or the name', () => {
+    const parsed = shopTrackingSchema.parse({
+      ...TRACKING,
+      name: 'Shamim Ahmed',
+      phone: '01786120356',
+      address: 'House 12, Road 5, Zindabazar, Sylhet',
+    });
+    expect(parsed).not.toHaveProperty('name');
+    expect(parsed).not.toHaveProperty('phone');
+    expect(parsed).not.toHaveProperty('address');
+  });
+
+  it('refuses a courier link that is not https', () => {
+    const [shipment] = TRACKING.shipments;
+    const result = shopTrackingSchema.safeParse({
+      ...TRACKING,
+      shipments: [{ ...shipment, trackingUrl: 'javascript:alert(1)' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('refuses a parcel with no event and a status the page has no words for', () => {
+    const [shipment] = TRACKING.shipments;
+    for (const events of [[], [{ status: 'in_review', at: TRACKING.placedAt, note: null }]]) {
+      const result = shopTrackingSchema.safeParse({
+        ...TRACKING,
+        shipments: [{ ...shipment, events }],
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+});
+
+describe('text page', () => {
+  it('reads one of the four pages', () => {
+    const page = {
+      slug: 'terms',
+      html: '<section><h2>Delivery</h2><p>Inside Dhaka in 2 days.</p></section>',
+      updatedAt: '2026-11-01T10:00:00+06:00',
+    };
+    expect(shopTextPageSchema.parse(page)).toEqual(page);
+  });
+
+  it('refuses a page the footer has no link to, and an empty one', () => {
+    expect(
+      shopTextPageSchema.safeParse({ slug: 'refunds', html: '<p>x</p>', updatedAt: null }).success,
+    ).toBe(false);
+    expect(shopTextPageSchema.safeParse({ slug: 'about', html: '', updatedAt: null }).success).toBe(
+      false,
+    );
   });
 });

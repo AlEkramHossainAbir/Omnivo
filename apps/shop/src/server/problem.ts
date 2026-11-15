@@ -51,9 +51,11 @@ interface ParseError {
   issues: readonly { path: readonly PropertyKey[]; message: string }[];
 }
 
-// A failed parse → 400 invalid_input with each field's codes, keyed like the ERP's API does
-// ("lines.2.quantity"), so the same client code can point at the line
-export function invalidInput(error: ParseError): Response {
+// Each field's codes from a failed parse, keyed like the ERP's API does ("lines.2.quantity"), so
+// the same client code can point at the line.
+// Step 26e: its own function, out of invalidInput, because the /track form (server/track.ts) draws
+// the same codes under its boxes instead of answering JSON
+export function fieldErrorsOf(error: ParseError): Record<string, ErrorCode[]> {
   const fieldErrors: Record<string, ErrorCode[]> = {};
   for (const issue of error.issues) {
     const field = issue.path.map(String).join('.') || 'body';
@@ -62,8 +64,13 @@ export function invalidInput(error: ParseError): Response {
     const code = isErrorCode(issue.message) ? issue.message : 'invalid_value';
     (fieldErrors[field] ??= []).push(code);
   }
+  return fieldErrors;
+}
+
+// A failed parse → 400 invalid_input with each field's codes
+export function invalidInput(error: ParseError): Response {
   return problemResponse(400, 'invalid_input', 'Check the request and try again.', {
-    fieldErrors,
+    fieldErrors: fieldErrorsOf(error),
   });
 }
 

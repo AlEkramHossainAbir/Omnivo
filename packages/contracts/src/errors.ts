@@ -626,6 +626,12 @@ export const ERROR_CODES = [
   'shop_code_too_many',
   'shop_code_resend_wait',
   'shop_code_no_order',
+  // Step 26e: the /track form. An order number in another shape, no order with this number and
+  // phone (one code for both: the form never says which of the two is wrong), and too many tries
+  // from one connection (the problem's params.minutes says how long to wait)
+  'shop_order_no_format',
+  'shop_track_not_found',
+  'shop_track_too_many',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

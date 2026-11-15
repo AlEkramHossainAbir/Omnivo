@@ -1078,6 +1078,7 @@ storefront_orders
   subtotal, delivery_charge, discount, total     ← সবই সার্ভারে হিসাব করা
   sales_order_id (FK)                            ← confirm হলে ERP Sales Order তৈরি
   source (web | facebook | manual), coupon_code
+  tracking_token_hash                            ← ট্র্যাকিং লিংকের token-এর hash (ধাপ ২৭), token নিজে কোথাও রাখা হয় না
   UNIQUE (tenant_id, order_no)
 
 courier_accounts                   ← টেন্যান্টের নিজের কুরিয়ার অ্যাকাউন্ট
@@ -1131,7 +1132,7 @@ sequenceDiagram
   W->>CR: কনসাইনমেন্ট তৈরি (idempotency key = order_id)
   CR-->>W: consignment_id + tracking_code + label_url
   W->>PG: shipments রো + order → packed/shipped
-  W-->>C: SMS/ইমেইল: ট্র্যাকিং নম্বর
+  W-->>C: SMS: ট্র্যাকিং লিংক
 ```
 
 - ⚠️ **ব্রাউজার থেকে আসা কোনো দাম, ডিসকাউন্ট বা ডেলিভারি চার্জ বিশ্বাস করবেন না।** ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে; টাকার অঙ্ক সার্ভার হিসাব করবে (§১৩.৩-এর একই সতর্কতা)।
@@ -1189,7 +1190,9 @@ export interface CourierAdapter {
 **স্ট্যাটাস আপডেট (দুই পথ):**
 - **Webhook** (যারা দেয়): `POST /public/v1/couriers/:code/webhook` → signature ও timestamp যাচাই → `shipment_events`-এ append → shipment ও order স্ট্যাটাস আপডেট। একই ইভেন্ট দুইবার এলে কিছুই বদলাবে না (idempotent)।
 - **Polling fallback:** যেসব কুরিয়ারে webhook নেই, তাদের জন্য শিডিউলড জব (যেমন ১৫ মিনিট পরপর, শুধু চলমান শিপমেন্টের জন্য)। কুরিয়ারের rate limit মাথায় রেখে টেন্যান্টপ্রতি ব্যাচে।
-- ক্রেতা ট্র্যাকিং দেখবে `acme.omnivo.shop/track/:code`-এ, আর গুরুত্বপূর্ণ ধাপে SMS পাবে।
+- ক্রেতা ট্র্যাকিং দেখবে SMS-এ পাওয়া লিংকে, `acme.omnivo.shop/t/<token>` (১২৮-bit token, শুধু hash রাখা হয়;
+  পেজে নাম, ঠিকানা বা পুরো ফোন নম্বর নেই, কারণ লিংক অন্যকে পাঠানো যায়), আর গুরুত্বপূর্ণ ধাপে SMS পাবে। SMS
+  হারালে `/track`-এ ফোন + অর্ডার নম্বর দিয়ে একই পেজ দেখা যায় (এক IP থেকে ১৫ মিনিটে ১০ বার ভুল হলে থামে)।
 
 **COD-র টাকা: সবচেয়ে বেশি অবহেলিত অংশ।** কুরিয়ার ক্রেতার কাছ থেকে টাকা তোলে, কিন্তু আপনাকে দেয় ৩–৭ দিন পরে, চার্জ কেটে। তাই হিসাব হবে এভাবে:
 

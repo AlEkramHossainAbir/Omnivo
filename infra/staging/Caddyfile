@@ -97,8 +97,13 @@ http://{$SHOP_HOST} {
 		}
 	}
 
+	# Step 26e: the shop trusts X-Forwarded-For (astro.config.ts → security), and the /track form's
+	# limit counts misses by that address. As for the API, the header is replaced with the one
+	# address Cloudflare vouches for, so a visitor cannot get new tries by sending a made-up one.
 	handle {
-		reverse_proxy shop:4321
+		reverse_proxy shop:4321 {
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
 }
 

@@ -23,5 +23,17 @@ export default defineConfig({
   },
   // The shop is one site per tenant on its own domain (shop.acme.com), always at the root
   trailingSlash: 'never',
+  // Step 26e: the shop runs behind a proxy (Caddy on staging), which is the only thing that can
+  // reach it. Without this, Astro trusts none of the proxy's headers, and two things go wrong:
+  // - Astro.clientAddress is the proxy's address for every visitor, so the /track form's limit
+  //   (server/track.ts) would stop everyone at once after one guesser's ten misses
+  // - Astro.url is http://localhost:4321, so a browser that sends Origin but not Sec-Fetch-Site
+  //   (Safari before 16.4, still on many older iPhones) gets 403 for every form it posts: Astro's
+  //   origin check compares the two
+  // `[{}]` trusts Host, X-Forwarded-Host, -Proto and -For from any request, because a tenant's shop
+  // can be on any domain. That is safe only while nothing but the proxy can reach the server, and
+  // the proxy writes X-Forwarded-For itself (infra/staging/Caddyfile → the shop), never passing on
+  // one the visitor sent
+  security: { allowedDomains: [{}] },
   build: { format: 'file' },
 });

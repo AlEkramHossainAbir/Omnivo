@@ -1083,7 +1083,8 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   Figma's bell); its count badge sits over the top-left corner (10px left, 8px up): `brand` fill, 1px `accent`
   border, 4px padding, radius 999, 12px/600 white, "99+" above 99, hidden from screen readers (the button's
   label says "Cart, 3 items"). The account button has `User02` and the name in 16px/600 white (padding 8px 10px
-  8px 8px, gap 4px); without a name it says "Account". Below `md` (Figma `mobile-header`): a 64px `brand` bar,
+  8px 8px, gap 4px); without a name it says "Account". Both account buttons open `/track` until the shop
+  has a customer sign-in. Below `md` (Figma `mobile-header`): a 64px `brand` bar,
   radius 16, padding 12px. Left a 40px `card` menu button (radius 12, 20px `brand` `Menu01`; not in Figma, it
   reaches the category drawer from every page), 8px later the logo (24px mark, wordmark 20px/700 white, 8px apart;
   a long shop name ends in "…"); right
@@ -1207,7 +1208,7 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   location" in `muted`) and "Payment Method" (Cash on Delivery, Mobile Banking), each two cards side by
   side, 16px apart. Free delivery is not a choice: when the order reaches the shop's threshold, the Delivery
   Charge row says "Free", and a 14px `muted` line under Delivery Location says "Free delivery on orders over
-  ৳1,000".
+  ৳1,000". The form is `inert` until its island has run, so nothing a shopper types before then is lost.
 - **Checkout lines:** per line, a 155×130 `canvas` image box (radius 8), 20px gap, then the name (`sf-subtitle`,
   `brand`, max 288px) and 20px below it the stepper (the name and the stepper centered beside the image): minus and plus 40px `cream` buttons (radius 5,
   `MinusSign` / `Add01` 14px `brand`), a 60×40 quantity box between them (`card`, 1.5px `cream` border, radius 5,
@@ -1249,7 +1250,9 @@ These follow the same tokens and components. Use them exactly as written here un
 - **Empty state:** a `card` (radius 16, padding 48px) with a 64px round `cream` tile holding a 28px `brand`
   icon, a `sf-title` `brand` title, a 16px `muted` line that says what to do, and an optional `accent` button
   (44px, radius 4). Used for empty cart (`ShoppingCart01`), no results (`Search01`), no listing for the filters
-  (`FilterRemove`), an empty category (`ShoppingBasket01`), page not found, and a shop that is closed.
+  (`FilterRemove`), an empty category (`ShoppingBasket01`), page not found (`FileNotFound`, "Go to the home page")
+  and a tracking link that does not work (`Unlink04`, "Track with the number"). There is no closed shop: a shop is
+  always open.
 - **Cart drawer:** opens from the cart button, from the right, 420px wide (full width on phones), `card`, with
   `overlay` behind it and no blur. A native `<dialog>` (`showModal()`), so the focus stays inside, Escape and a
   click on the backdrop close it, and the focus goes back to the cart button. It does not slide in. The header:
@@ -1284,13 +1287,52 @@ These follow the same tokens and components. Use them exactly as written here un
   delivery details (name, phone, address, area) in 16px `body`, and the lines and totals as in checkout,
   read-only (no stepper, no delete; "150ml · 2 × ৳229" under the name), with a Subtotal row above Delivery Charge.
   Only the browser that placed the order sees it (a cookie); anyone else gets page not found.
-- **Track order (`/track`):** the checkout card: Mobile Number and Order Number fields, "Track Order" (`accent`),
-  then a vertical timeline: 24px dots (done: `brand` fill with an `accent` tick; current: 2px `accent` ring on
-  `brand`; later: 1px `rule` ring), 2px connecting line, 16px/600 `brand` status and a 14px `muted` date.
-- **Text pages (Privacy, Terms, About, Contact):** the checkout card at 848px with the page title in the
-  header and the body in the description prose style.
+- **Tracking link (`/t/<token>`):** the link the shop sends the buyer (by SMS from step 27). The token is 128 bits
+  (22 base64url characters) and only its hash is stored, like a share link. The checkout card at 848px, header
+  "Track Order", body padding 36px (20px on phones), 32px between blocks: the order number (`Geist Mono`
+  `sf-title`, never broken) with "Placed on …" under it; a `canvas` box (radius 8, padding 20px) with "3 items"
+  and the total in `price`, and "Keep ৳578 ready in cash for the rider." (Cash on Delivery, until delivered) or
+  "Paid with Mobile Banking."; the order's timeline: 24px dots (done: `brand` fill with an `accent` tick; current:
+  2px `accent` ring on `brand`; later: 1px `rule` ring), 2px connecting line, 16px/600 `brand` status and a 14px
+  `muted` date; then one section per parcel (at most 5), newest first: "Parcel" (an older one "Earlier parcel"),
+  "Steadfast · SFR2611120042" in 14px `muted` `tabular-nums`, an optional "See it on the Steadfast site" link
+  (`LinkSquare02`, https only, `rel="noopener noreferrer"`), and the courier's events newest first in the same
+  dots and line (status, time, and the courier's own note in 14px `body`). Each courier's statuses map to the
+  shop's ten. Before a courier is booked, the parcel section says so. It ends with "Anyone with this link can
+  see this page. It shows no address and no phone number." in 14px `muted`: the page names no person, because a
+  link can be forwarded. Headers `Cache-Control: no-store`, `X-Robots-Tag: noindex` and
+  `Referrer-Policy: no-referrer`. A broken or unknown link answers 404 with its own empty state.
+- **Track order (`/track`):** the way back for a lost SMS. The checkout card at 560px: header "Track Order", a
+  16px `body` line, Mobile Number and Order Number side by side from `md` (the checkout's fields; the number
+  takes "w000123" or Bangla digits too), and "Track Order" (the Confirm Order button's look). The form POSTs to
+  the same page and works with no script, so the phone never goes into the address. A match draws the tracking
+  link's view in place at 848px, ending with "Track another order" (`cream`, 44px, radius 4). A wrong number or
+  phone, of any kind, gets one answer above the boxes ("No order has this number and mobile number…", `Alert02`,
+  `promo`, it takes the focus); a box with an error says so under it, and the first one takes the focus. After
+  10 misses in 15 minutes from one address (IPv6: its /64) the page answers 429, "Too many tries. Wait 15
+  minutes…". It cannot send the shopper to `/t/<token>`: only the token's hash is stored. The mock shop lists
+  its demo orders, their phones and their links in a `canvas` box under the line.
+- **Text pages (`/pages/privacy`, `terms`, `about`, `contact`):** the
+  checkout card at 848px with the footer's own word as the title in the header ("Terms & Condition"), "Last
+  updated 1 Nov 2026" under it in 14px `muted` (the day in the shop's time zone) when the page has a date, and the
+  tenant's HTML in the description's prose style (`shop-prose`), its sections 8px apart in the card's 4px frame.
+  Only these four; any other slug, or a page the tenant has not written, is page not found. Contact is text only,
+  with no form.
+- **Page not found (`404`):** the full layout (header and footer) with the
+  empty state 36px under the header (16px on a phone): `FileNotFound`, "Page not found", "The link may have a
+  typo, or the page has moved…", and "Go to the home page". Status 404. It answers every address with no page,
+  and every page that rewrites to `/404` (an unknown product, category, order or text page).
 - **Toast:** bottom center, `brand` fill, `accent` 16px/600 text, radius 8, padding 12px 16px, about 3s, e.g.
   "Added to cart".
+
+### Storefront tests
+
+Unit tests (Vitest) sit next to the code. Browser tests are Playwright, in `apps/shop/e2e/`, against the built
+server (`astro build`, then `node dist/server/entry.mjs` on 127.0.0.1:4331), in Chromium at 1440×900 and at
+390px (Pixel 7). There are no screenshot diffs: a test checks what a shopper sees and does, and that the page
+never scrolls sideways. CI runs them in their own step, `pnpm --filter @omnivo/shop test:e2e`, and
+`pnpm --filter @omnivo/shop typecheck` checks `e2e/` too. A test that uses up `/track`'s tries sends its own
+`X-Forwarded-For`, so it does not stop the other tests.
 
 ## Website / Landing page
 

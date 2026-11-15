@@ -1,0 +1,47 @@
+---
+import { formatDate } from '@omnivo/i18n';
+
+import PageCard from '../../components/PageCard.astro';
+import { shopSource } from '../../data/source';
+import ShopLayout from '../../layouts/ShopLayout.astro';
+import { shopLocale } from '../../lib/locale';
+import { dayInShop, isTextPageSlug } from '../../lib/text-page';
+
+// Step 26e: the footer's four pages (decision 5; CLAUDE.md → Text pages): the checkout card at
+// 848px, the title in its header, the tenant's HTML in the description's prose style.
+const slug = Astro.params.slug;
+// Any other slug, or a page the tenant has not written: "page not found" with the 404 status, so a
+// search engine drops an old link (decision 15). The guard also narrows the slug to the four
+const page = isTextPageSlug(slug) ? await shopSource.textPage(slug) : null;
+if (page === null) return Astro.rewrite('/404');
+
+const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
+const locale = await shopLocale(shop.language);
+const { t } = locale;
+
+// The title is the footer's own word for the page (decision 15), so the link and the page it
+// opens always say the same. The footer's keys are the four slugs, so a fifth slug added to
+// SHOP_TEXT_PAGES without its footer word fails the type check here
+const title = t(`shop.footer.${page.slug}`);
+
+const updated =
+  page.updatedAt === null
+    ? null
+    : t('shop.pages.updatedOn', {
+        date: formatDate(dayInShop(page.updatedAt, shop.timeZone), locale.language),
+      });
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.pages.pageTitle', { title, shop: shop.name })}
+  categories={categories}
+>
+  <PageCard title={title} note={updated}>
+    {/* set:html: the tenant's HTML, cleaned by the ERP when it was saved (26e.1), never a
+        shopper's. Its sections sit in the card's 4px frame, 8px apart, like the product page's
+        description sections in their card */}
+    <div class="shop-prose mt-1" set:html={page.html} />
+  </PageCard>
+</ShopLayout>
