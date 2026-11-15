@@ -1,6 +1,5 @@
 import type { ShopCategory, ShopListingPage, ShopListingQuery } from '@omnivo/contracts';
 
-import { shopSource } from '../data/source';
 import type { ShopSource } from '../data/types';
 import { ALL_SLUG, listingHref, readListingQuery } from './listing-query';
 
@@ -23,12 +22,13 @@ export type ListingLoad =
       categories: ShopCategory[];
     };
 
-// `slug` is the path's: a category's slug, 'all' for every listing, or null on /search. The
-// source is a parameter for the tests, which use a mock source of their own
+// `slug` is the path's: a category's slug, 'all' for every listing, or null on /search.
+// Step 26f.5: the source is the request's (Astro.locals.source), so it has no default any more;
+// the tests pass a mock source of their own
 export async function loadListing(
   slug: string | null,
   params: URLSearchParams,
-  source: ShopSource = shopSource,
+  source: ShopSource,
 ): Promise<ListingLoad> {
   const categories = await source.categories();
   let category: ShopCategory | null = null;

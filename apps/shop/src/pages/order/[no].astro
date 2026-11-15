@@ -3,25 +3,27 @@ import { compareMoney } from '@omnivo/contracts';
 import { formatDateTime, formatNumber } from '@omnivo/i18n';
 
 import OrderTimeline from '../../components/OrderTimeline.astro';
-import { shopSource } from '../../data/source';
 import ShopLayout from '../../layouts/ShopLayout.astro';
 import { shopLocale } from '../../lib/locale';
 import { spacedPhone } from '../../lib/phone';
 import { orderTokens } from '../../server/cookies';
+
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
 
 // Step 26c: one order, from "View Order Details" (CLAUDE.md → Order details, not in Figma). Only
 // the browser that placed it may see it (decision 5): the number must be one of the orders cookie's,
 // and the source checks that its token belongs to it.
 const orderNo = Astro.params.no ?? '';
 const token = orderTokens(Astro.request).get(orderNo);
-const order = token === undefined ? null : await shopSource.order(orderNo, token);
+const order = token === undefined ? null : await source.order(orderNo, token);
 
 // Not this browser's order, a number that does not exist, or one still waiting for its code: the
 // same "page not found" for each, so the page never tells a stranger that an order exists
 if (order === null) return Astro.rewrite('/404');
 
 // Step 26d.4: the categories for the header's drawer
-const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
+const [shop, categories] = await Promise.all([source.shop(), source.categories()]);
 const locale = await shopLocale(shop.language);
 const { t, money } = locale;
 const when = (iso: string) => formatDateTime(new Date(iso), locale.language, shop.timeZone);

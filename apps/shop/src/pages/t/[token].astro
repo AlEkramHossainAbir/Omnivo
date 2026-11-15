@@ -5,9 +5,11 @@ import { shopTrackingTokenSchema } from '@omnivo/contracts';
 import EmptyState from '../../components/EmptyState.astro';
 import PageCard from '../../components/PageCard.astro';
 import TrackingView from '../../components/TrackingView.astro';
-import { shopSource } from '../../data/source';
 import ShopLayout from '../../layouts/ShopLayout.astro';
 import { shopLocale } from '../../lib/locale';
+
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
 
 // Step 26e: a tracking link, as the SMS sends it (decision 1). The token is the key: anyone who has
 // the link sees the page, and the page names no person (decision 12).
@@ -15,9 +17,9 @@ const raw = Astro.params.token ?? '';
 // The shape first (26e.1): a link an SMS app cut in two, or one typed by hand, is answered without
 // asking the source, so the real API never sees a token that cannot be one
 const token = shopTrackingTokenSchema.safeParse(raw);
-const tracking = token.success ? await shopSource.tracking(token.data) : null;
+const tracking = token.success ? await source.tracking(token.data) : null;
 
-const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
+const [shop, categories] = await Promise.all([source.shop(), source.categories()]);
 const locale = await shopLocale(shop.language);
 const { t } = locale;
 

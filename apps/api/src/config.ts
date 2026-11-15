@@ -30,6 +30,18 @@ const envSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
   // Fastify then takes the client's address from X-Forwarded-For, so the audit log records the
   // person's IP, not the proxy's. Left off, a client could write any IP into that header.
   TRUST_PROXY: z.stringbool().default(false),
+  // Step 26f: the domain every shop's address ends with. A shop's subdomain is put before it:
+  // "acme" + "localhost" = acme.localhost (dev), "acme" + "omnivo.shop" = acme.omnivo.shop. One
+  // DNS name, lower case, no port and no dot at either end
+  SHOP_BASE_DOMAIN: z
+    .string()
+    .regex(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/)
+    .default('localhost'),
+  // Step 26f: the public address of the storage's storefront/ folder's parent, as a shopper's
+  // browser reaches it. Left out: the storage's own address and bucket (S3_ENDPOINT/S3_BUCKET),
+  // which is right for MinIO in dev and on staging. Cloudflare R2 serves public files from another
+  // address than its API, so production sets it
+  STOREFRONT_MEDIA_URL: z.url().optional(),
 });
 
 const workerEnvSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
@@ -69,6 +81,21 @@ function parseEnv<S extends z.ZodType>(schema: S, env: Record<string, string | u
   return parsed.data;
 }
 
+// Step 26f: where the shop's photos are, without a "/" at the end (media.ts adds the path). The
+// contract allows http only on this computer (dev MinIO), so a production API with an http address
+// would answer every page with a broken contract; it refuses to start instead, with the reason
+function storefrontMediaUrl(e: z.output<typeof envSchema>): string {
+  const url = (
+    e.STOREFRONT_MEDIA_URL ?? `${e.S3_ENDPOINT.replace(/\/+$/, '')}/${e.S3_BUCKET}`
+  ).replace(/\/+$/, '');
+  if (e.NODE_ENV === 'production' && !url.startsWith('https://')) {
+    throw new Error(
+      `Invalid environment — the shop's photos need an https address. Set STOREFRONT_MEDIA_URL (now ${url}).`,
+    );
+  }
+  return url;
+}
+
 export function loadConfig(env: Record<string, string | undefined>) {
   const e = parseEnv(envSchema, env);
   return {
@@ -83,6 +110,11 @@ export function loadConfig(env: Record<string, string | undefined>) {
     // localhost-এ http, তাই dev-এ Secure cookie বন্ধ; production-এ বাধ্যতামূলক
     secureCookies: e.NODE_ENV === 'production',
     storage: storageConfig(e),
+    // Step 26f: the public shop API (storefront/)
+    storefront: {
+      baseDomain: e.SHOP_BASE_DOMAIN,
+      mediaUrl: storefrontMediaUrl(e),
+    },
     auth: {
       betterAuthSecret: e.BETTER_AUTH_SECRET,
       baseURL: e.API_BASE_URL,

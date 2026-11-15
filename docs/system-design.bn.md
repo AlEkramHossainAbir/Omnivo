@@ -1041,34 +1041,50 @@ apps/api/src/modules/
 
 - **একটাই Astro অ্যাপ সব টেন্যান্টের শপ সার্ভ করবে**, টেন্যান্ট চেনা যাবে `Host` হেডার থেকে (§৪.৩-এর একই নিয়ম, শুধু আলাদা ডোমেইন টেবিল)। প্রতি টেন্যান্টের জন্য আলাদা সাইট বিল্ড **কখনো করবেন না**, ১,০০০ টেন্যান্ট হলে CI-ই মরে যাবে।
 - **কাস্টম ডোমেইন:** `shop.acme.com` → CNAME → **Cloudflare for SaaS**, SSL অটো (§৪.৩-এর মতোই)।
-- **পাবলিক API আলাদা:** `/public/v1/*`, JWT নেই। টেন্যান্ট আসবে **শুধু যাচাই করা ডোমেইন থেকে**, কখনো query param থেকে না। এই এন্ডপয়েন্টগুলো একটা **read-mostly DB role** দিয়ে চলবে, যার RLS বাইপাস করার ক্ষমতা নেই, আর যে শুধু `published = true` লিস্টিং দেখতে পায়।
-- **রেন্ডারিং:** প্রোডাক্ট ও ক্যাটাগরি পেজ সার্ভারে রেন্ডার + CDN ক্যাশ (`s-maxage` ~৫ মিনিট), প্রোডাক্ট পাবলিশ/দাম বদলালে outbox ইভেন্ট → worker → **CDN purge**। §১৩.৩-এর ক্যাটালগ পাবলিশের ঠিক একই প্যাটার্ন, তাই কোড রিইউজ হবে।
+- **পাবলিক API আলাদা:** `/public/v1/*`, JWT নেই। শপের সার্ভার API-কে ভেতর থেকে ডাকে আর ক্রেতার ব্রাউজারের
+  host পাঠায় `X-Shop-Host` হেডারে। টেন্যান্ট আসে শুধু সেই host থেকে (subdomain label →
+  `storefront_tenant_for_subdomain()`), কখনো query param থেকে না। প্রতিটা রিকোয়েস্ট একটা `READ ONLY`
+  transaction, শুরু হয় `SET LOCAL ROLE omnivo_public` দিয়ে: NOLOGIN role, RLS বাইপাস করতে পারে না, শুধু শপের
+  দরকারি কলামে `SELECT` আছে, আর restrictive policy-তে শুধু চালু (`launched_at`) শপের প্রকাশিত লিস্টিং দেখে।
+  Rate limit আপাতত edge-এ (Cloudflare); API-তে আসল limit আসবে ধাপ ২৭-এর অর্ডার আর OTP-র সাথে।
+- **রেন্ডারিং:** পেজ শপের সার্ভারে রেন্ডার হয়। API-র উত্তর `Cache-Control: no-store`, কারণ CDN উত্তর চেনে
+  address দিয়ে, `X-Shop-Host` দিয়ে না, তাই এক শপের পেজ অন্য শপে চলে যেতে পারত। শপের সার্ভার নিজের মেমরিতে
+  host + path ধরে ৩০ সেকেন্ড রাখে (শুধু GET, ব্যর্থ উত্তর রাখে না, quote কখনো না)। শপের পেজ যখন CDN-এ cache
+  হবে, তখন পাবলিশ/দাম বদলালে outbox ইভেন্ট → worker → **CDN purge** (§১৩.৩-এর ক্যাটালগ পাবলিশের প্যাটার্ন)।
 - **স্টক আর দাম ক্যাশে না রেখে** চেকআউটের সময় সার্ভারে আবার যাচাই হবে (পেজে "৫টা বাকি" পুরনো হতে পারে, কিন্তু অর্ডার নেওয়ার সময় ভুল হওয়া চলবে না)।
-- **ছবি:** R2-তে, Cloudflare Images/Resizing দিয়ে WebP/AVIF। শপের LCP টার্গেট < ২.৫ সেকেন্ড 3G-তে।
-- **কার্ট:** ব্রাউজারে `cart_token` (cookie) + সার্ভারে `storefront_carts` রো, যাতে abandoned cart রিপোর্ট ও রিমাইন্ডার SMS পাঠানো যায়।
+- **ছবি:** স্টোরেজের পাবলিক `storefront/` ফোল্ডারে, নাম কখনো বদলায় না (`storefront/<image id>/<size>.webp`:
+  small 480px, large 1200px, wide 2560px), তাই CDN রেখে দিতে পারে; signed link না। WebP বানায় worker-এর
+  sharp জব (ধাপ ২৬g)। শপের LCP টার্গেট < ২.৫ সেকেন্ড 3G-তে।
+- **কার্ট:** ব্রাউজারে (localStorage), দাম প্রতিবার সার্ভারের quote থেকে। Abandoned cart রিপোর্ট আর
+  রিমাইন্ডার SMS-এর জন্য সার্ভারে `storefront_carts` পরে আসবে।
 
 ### ১৪.৩ ডেটা মডেল
 
 ```
-storefront_settings                ← টেন্যান্টপ্রতি একটা রো
-  tenant_id (PK), enabled, domain, theme (JSONB), logo_url, contact_phone
-  cod_enabled, online_payment_enabled, gateway_credentials (encrypted)
-  min_order_amount, delivery_zones (JSONB: ঢাকার ভিতরে ৬০, বাইরে ১২০)
-  default_warehouse_id, default_courier_account_id
-  auto_consign (off | on_confirm | on_payment)    ← অটো কনসাইনমেন্ট নীতি
-  require_phone_otp (bool)
+storefront_settings                ← টেন্যান্টপ্রতি একটা রো (ধাপ ২৬f)
+  tenant_id (PK), subdomain (UNIQUE, শুধু label: acme), launched_at (NULL = শপ বন্ধ, 404)
+  name, language, logo_image_id, brand_color, accent_color, hotline, address, সোশ্যাল লিংক
+  default_warehouse_id, delivery_zones (JSONB: ঢাকার ভিতরে ৮০, বাইরে ১২০)
+  free_delivery_from, minimum_order, payment_methods
+  (পরে: gateway_credentials, default_courier_account_id, auto_consign, require_phone_otp)
 
-storefront_domains                 ← Host → tenant রেজলিউশন
+storefront_domains                 ← পরের ধাপে: টেন্যান্টের নিজের কেনা ডোমেইন
   domain (UNIQUE), tenant_id, verified, ssl_status
 
-storefront_listings                ← Inventory-র product-কে শপে "প্রকাশ" করা
-  tenant_id, product_id (FK → products), variant_id
-  published, slug, seo_title, seo_description, description_html, images (JSONB)
-  price_override (NULL হলে price list থেকে), sale_price, sale_until
-  category_id, sort_order, badge
+storefront_categories              ← শপের নিজের ক্যাটাগরি ট্রি (প্রোডাক্টের ক্যাটাগরি না)
+  tenant_id, parent_id, slug (UNIQUE per tenant), name, position
+
+storefront_listings                ← Inventory-র variant-কে শপে "প্রকাশ" করা
+  tenant_id, product_id, variant_id (FK → product_variants), category_id
+  slug, name, pack_size, published_at (NULL = draft)
+  price_override (NULL হলে variant-এর sale_price)
+  sale_kind (percent | amount | price), sale_value, sale_starts_at, sale_ends_at
+  badges, images (JSONB, সর্বোচ্চ ৪টা {id, alt}), description_sections (JSONB, HTML না)
+  seo_title, seo_description
   UNIQUE (tenant_id, slug)
 
-storefront_categories, storefront_banners, storefront_carts, storefront_cart_items
+storefront_banners (hero | image), storefront_collections + storefront_collection_items,
+storefront_home_blocks (হোমপেজের ক্রম), storefront_pages (privacy | terms | about | contact)
 
 storefront_orders
   tenant_id, order_no, status (pending | confirmed | packed | shipped | delivered
@@ -1101,6 +1117,10 @@ courier_remittances                ← কুরিয়ার কবে কত
 
 **মূল নিয়ম:**
 - **প্রোডাক্ট ডুপ্লিকেট করবেন না।** `storefront_listings` শুধু Inventory-র প্রোডাক্টকে "প্রকাশ" করে, নতুন প্রোডাক্ট টেবিল না। দাম ও স্টকের সত্য একটাই জায়গায়।
+- **বর্ণনায় টেন্যান্টের HTML নেই।** বর্ণনা আর টেক্সট পেজ section হিসেবে রাখা হয় (heading আর লেখা, `- `
+  তালিকা, `**bold**`, লিংক); API সেখান থেকে HTML বানায় আর টেন্যান্টের লেখা প্রতিটা অক্ষর escape করে।
+- **দাম সার্ভার ঠিক করে।** অফার রাখা হয় টেন্যান্ট যেভাবে লিখেছে (৳ বা % ছাড়, বা ছাড়ের পরের দাম); শপের
+  দাম, কাটা দাম আর ribbon API বানায়। যে অফারে কিছু কমে না, সেটা দেখানো হয় না।
 - **স্টক রিজার্ভেশন:** অর্ডার `pending` হলে স্টক "reserved" হবে (TTL সহ, যেমন ৬০ মিনিট বা কনফার্ম পর্যন্ত), `confirmed` হলে আসল মুভমেন্ট লিখবে। সরাসরি quantity আপডেট **কখনো না** (§১৭-এর ৬ নম্বর ভুল)।
 - **`storefront_orders` ≠ `sales_orders`।** শপের অর্ডার হলো "গ্রাহকের অনুরোধ", যেটা বাতিল বা স্প্যাম হতে পারে। কনফার্ম হলেই সেটা ERP-র Sales Order-এ পরিণত হবে। এতে ভুয়া অর্ডার দিয়ে হিসাব নষ্ট হবে না।
 - **সব টেবিলে `tenant_id` + RLS**, শপের কাস্টমার ডেটা (ফোন, ঠিকানা) সবচেয়ে সংবেদনশীল PII।

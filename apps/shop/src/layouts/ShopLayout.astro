@@ -15,6 +15,10 @@ interface Props {
   shop: PublicShop;
   locale: ShopLocale;
   title: string;
+  // Step 26f.5: the page's line for search engines and link previews (product.seo.description).
+  // An empty one is left out: it would say nothing, and without the tag a search engine writes its
+  // own line from the page's text
+  description?: string;
   // Step 26d.3: the words of the search on screen, which the header's box shows again
   search?: string | null;
   // Step 26d.4: every category, for the category drawer. Required, not fetched here: the layout
@@ -26,7 +30,15 @@ interface Props {
   currentList?: string | null;
 }
 
-const { shop, locale, title, search = null, categories, currentList = null } = Astro.props;
+const {
+  shop,
+  locale,
+  title,
+  description = '',
+  search = null,
+  categories,
+  currentList = null,
+} = Astro.props;
 const { t } = locale;
 
 // The tenant's two theme colors win over the stylesheet's defaults. They are #rrggbb (the contract
@@ -41,6 +53,7 @@ const theme = `--brand: ${shop.theme.brand}; --accent: ${shop.theme.accent}`;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content={shop.theme.brand} />
     <title>{title}</title>
+    {description !== '' && <meta name="description" content={description} />}
   </head>
   <body>
     <a

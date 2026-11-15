@@ -2,20 +2,22 @@
 import { formatDate } from '@omnivo/i18n';
 
 import PageCard from '../../components/PageCard.astro';
-import { shopSource } from '../../data/source';
 import ShopLayout from '../../layouts/ShopLayout.astro';
 import { shopLocale } from '../../lib/locale';
 import { dayInShop, isTextPageSlug } from '../../lib/text-page';
+
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
 
 // Step 26e: the footer's four pages (decision 5; CLAUDE.md → Text pages): the checkout card at
 // 848px, the title in its header, the tenant's HTML in the description's prose style.
 const slug = Astro.params.slug;
 // Any other slug, or a page the tenant has not written: "page not found" with the 404 status, so a
 // search engine drops an old link (decision 15). The guard also narrows the slug to the four
-const page = isTextPageSlug(slug) ? await shopSource.textPage(slug) : null;
+const page = isTextPageSlug(slug) ? await source.textPage(slug) : null;
 if (page === null) return Astro.rewrite('/404');
 
-const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
+const [shop, categories] = await Promise.all([source.shop(), source.categories()]);
 const locale = await shopLocale(shop.language);
 const { t } = locale;
 

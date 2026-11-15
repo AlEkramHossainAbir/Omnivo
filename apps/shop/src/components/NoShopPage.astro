@@ -1,0 +1,37 @@
+---
+import '../styles/shop.css';
+
+import { StoreRemove01Icon } from '@hugeicons/core-free-icons';
+
+import { shopLocale } from '../lib/locale';
+import EmptyState from './EmptyState.astro';
+
+// Step 26f.5 (decision c): the whole page for a host that is no launched shop. A document of its
+// own, not ShopLayout: the layout draws a shop's name, colors, menu and footer, and there is no
+// shop to take them from. The stylesheet's default colors (Omnivo's teal and lime) stand in for a
+// shop's theme. English, because no shop says which language it speaks. No link either: the
+// shopper's way back is the address bar, and a link to "/" would land on this page again
+const locale = await shopLocale('en');
+const { t } = locale;
+---
+
+<!doctype html>
+<html lang={locale.language}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    {/* An address with no shop has nothing a search engine should keep */}
+    <meta name="robots" content="noindex" />
+    <title>{t('shop.noShop.pageTitle')}</title>
+  </head>
+  <body>
+    <main class="shop-container pt-4 md:pt-9">
+      <EmptyState
+        icon={StoreRemove01Icon}
+        level="h1"
+        title={t('shop.noShop.title')}
+        text={t('shop.noShop.text')}
+      />
+    </main>
+  </body>
+</html>

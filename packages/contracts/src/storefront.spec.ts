@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  listingParamsFromQuery,
+  listingQueryFromParams,
+  publicListingParamsSchema,
   publicShopSchema,
+  publicStorefrontRoutes,
   SHOP_CART_MAX_LINES,
   SHOP_CART_MAX_QUANTITY,
   shopCartQuoteLineSchema,
   shopCartQuoteRequestSchema,
   shopCartQuoteSchema,
   shopCheckoutSettingsSchema,
+  shopHomeSchema,
+  shopImageSchema,
   SHOP_PAGE_SIZE,
   shopListingPageSchema,
   shopListingQuerySchema,
@@ -44,6 +50,7 @@ const NEEM_PRODUCT = {
   sku: 'MD2346',
   unitName: 'Piece',
   descriptionHtml: '<section><h2>Key Benefits</h2><ul><li>Controls excess oil</li></ul></section>',
+  seo: { title: 'Himalaya Purifying Neem Face Wash 150ml', description: 'Controls excess oil' },
 };
 
 describe('public shop', () => {
@@ -629,5 +636,81 @@ describe('text page', () => {
     expect(shopTextPageSchema.safeParse({ slug: 'about', html: '', updatedAt: null }).success).toBe(
       false,
     );
+  });
+});
+
+describe('public API', () => {
+  const PLAIN = {
+    category: null,
+    q: null,
+    sort: 'newest',
+    minPrice: null,
+    maxPrice: null,
+    inStock: false,
+    offer: false,
+    cursor: null,
+  } as const;
+
+  it('sends only what is set, so the first page of /c/all is the plain address', () => {
+    expect(listingParamsFromQuery(PLAIN)).toEqual({});
+  });
+
+  it('reads back the query it sent', () => {
+    const query = {
+      category: 'skin-care',
+      q: 'neem',
+      sort: 'price_asc',
+      minPrice: '100',
+      maxPrice: '500',
+      inStock: true,
+      offer: true,
+      cursor: 'eyJwIjoiMjI5In0',
+    } as const;
+    const params = publicListingParamsSchema.parse(listingParamsFromQuery(query));
+    expect(params).toMatchObject({ inStock: '1', offer: '1' });
+    expect(listingQueryFromParams(params)).toEqual(query);
+  });
+
+  it('takes a search of only spaces as no search', () => {
+    expect(listingQueryFromParams(publicListingParamsSchema.parse({ q: '   ' })).q).toBeNull();
+  });
+
+  it('refuses prices the wrong way round, and flags other than 1', () => {
+    const backwards = publicListingParamsSchema.safeParse({ minPrice: '500', maxPrice: '90' });
+    expect(backwards.error?.issues[0]).toMatchObject({
+      message: 'invalid_value',
+      path: ['maxPrice'],
+    });
+    expect(publicListingParamsSchema.safeParse({ inStock: 'true' }).success).toBe(false);
+    expect(publicListingParamsSchema.safeParse({ category: '../admin' }).success).toBe(false);
+  });
+
+  it('has no login on any route, and every path under /public/v1', () => {
+    for (const route of Object.values(publicStorefrontRoutes)) {
+      expect(route.auth).toBe('public');
+      expect(route.path.startsWith('/public/v1/')).toBe(true);
+    }
+  });
+});
+
+describe('public API answers (step 26f.3)', () => {
+  it('takes a photo from storage over https, a path, or plain http on this computer only', () => {
+    const ok = (url: string) => shopImageSchema.safeParse({ url, alt: 'Neem face wash' }).success;
+    expect(ok('https://files.omnivosoft.com/omnivo/storefront/a/small.webp')).toBe(true);
+    expect(ok('/mock/products/neem.png')).toBe(true);
+    expect(ok('http://localhost:9000/omnivo/storefront/a/small.webp')).toBe(true);
+    expect(ok('http://127.0.0.1:9000/omnivo/storefront/a/small.webp')).toBe(true);
+    // Another computer over plain http, a name that only starts like localhost, and no path at all
+    expect(ok('http://files.example.com/a.webp')).toBe(false);
+    expect(ok('http://localhost.evil.com/a.webp')).toBe(false);
+    expect(ok('http://localhost:9000')).toBe(false);
+    expect(ok('//cdn.example.com/a.webp')).toBe(false);
+  });
+
+  it('lets a home page have no hero banner', () => {
+    expect(
+      shopHomeSchema.safeParse({ hero: null, featured: [], hasMoreFeatured: false, blocks: [] })
+        .success,
+    ).toBe(true);
   });
 });

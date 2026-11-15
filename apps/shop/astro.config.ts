@@ -1,7 +1,7 @@
 import node from '@astrojs/node';
 import react from '@astrojs/react';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'astro/config';
+import { defineConfig, envField } from 'astro/config';
 
 // Step 26b: every page is made per request on a Node server. The real source (step 26's public
 // API) answers for the shop the request's Host names, so a page built ahead of time would show one
@@ -36,4 +36,21 @@ export default defineConfig({
   // one the visitor sent
   security: { allowedDomains: [{}] },
   build: { format: 'file' },
+  // Step 26f.5: where the data comes from (src/data/config.ts). "secret" is Astro's word for "read
+  // when the server runs, never written into the build": a public server value would be fixed when
+  // the image is built, and staging could not switch the same image to the API. Neither is a
+  // secret in the usual sense, and neither reaches a browser (context: 'server'). A wrong value
+  // (SHOP_SOURCE=apii) fails the first request with Astro's message naming the variable: the
+  // node server loads the middleware, which reads them, only when a request comes
+  env: {
+    schema: {
+      SHOP_SOURCE: envField.enum({
+        context: 'server',
+        access: 'secret',
+        values: ['mock', 'api'],
+        default: 'mock',
+      }),
+      SHOP_API_URL: envField.string({ context: 'server', access: 'secret', optional: true }),
+    },
+  },
 });

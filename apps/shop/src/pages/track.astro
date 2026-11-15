@@ -4,7 +4,6 @@ import { HugeiconsIcon } from '@hugeicons/react';
 
 import PageCard from '../components/PageCard.astro';
 import TrackingView from '../components/TrackingView.astro';
-import { shopSource } from '../data/source';
 import ShopLayout from '../layouts/ShopLayout.astro';
 import { shopLocale } from '../lib/locale';
 import { spacedPhone } from '../lib/phone';
@@ -16,13 +15,16 @@ import {
   type TrackFormValues,
 } from '../server/track';
 
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
+
 // Step 26e: the way back for a shopper who lost the SMS (decision 3; CLAUDE.md → Track order). A
 // GET draws the form. The form POSTs to this same page, so the phone stays in the request's body,
 // and the answer is drawn in place: the tracking view, or the form again with what to fix.
 let answer: TrackFormAnswer | null = null;
 if (Astro.request.method === 'POST') {
   answer = await answerTrackForm(Astro.request, {
-    source: shopSource,
+    source,
     limiter: trackLimiter,
     // The visitor's address, which astro.config.ts → security says to read from the proxy's
     // X-Forwarded-For (26e.2)
@@ -36,7 +38,7 @@ if (Astro.request.method === 'POST') {
   }
 }
 
-const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
+const [shop, categories] = await Promise.all([source.shop(), source.categories()]);
 const locale = await shopLocale(shop.language);
 const { t } = locale;
 
@@ -119,11 +121,11 @@ const errorText = (name: keyof TrackFormValues): string | null => {
           <p class="text-body">{t('shop.track.intro')}</p>
           {/* Only a test shop has orders to offer (ShopSource.testTracking): the mock sends no
               SMS, so this is where a tester gets a number, its phone and its link (decision 18) */}
-          {shopSource.testTracking !== null && (
+          {source.testTracking !== null && (
             <div class="flex flex-col gap-2 rounded-lg bg-canvas px-4 py-3 text-sf-small font-medium text-body">
               <p>{t('shop.track.mockOrders')}</p>
               <ul class="flex flex-col gap-1">
-                {shopSource.testTracking.map((demo) => (
+                {source.testTracking.map((demo) => (
                   <li class="flex flex-wrap gap-x-2 tabular-nums">
                     <span>
                       {t('shop.track.mockOrder', {

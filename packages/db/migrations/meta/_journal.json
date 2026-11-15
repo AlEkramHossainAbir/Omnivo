@@ -442,6 +442,20 @@
       "when": 1794289438849,
       "tag": "0062_report-schedules-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1794730138512,
+      "tag": "0063_storefront",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1794730139948,
+      "tag": "0064_storefront-rules",
+      "breakpoints": true
     }
   ]
 }

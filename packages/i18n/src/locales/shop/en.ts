@@ -304,6 +304,13 @@ export const shopEn = {
     text: 'The link may have a typo, or the page has moved. Start again from the home page.',
     action: 'Go to the home page',
   },
+  // Step 26f.5: an address that is no launched shop (a typo in the subdomain, or a shop not open
+  // yet). No shop's name, colors or menu: there is no shop to take them from
+  noShop: {
+    pageTitle: 'No shop here',
+    title: 'No shop has this address',
+    text: 'Check the address for a typo. A shop that is still being set up opens here once it is launched.',
+  },
   footer: {
     pages: 'Shop pages',
     social: '{{shop}} on social media',

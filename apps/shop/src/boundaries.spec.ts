@@ -40,6 +40,17 @@ describe('shop imports', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('reaches data/source.ts only from the middleware', () => {
+    // Step 26f.5: the source is per request (the shop of the request's host). A page that imported
+    // sourceFor() could ask it with another URL than the middleware's, or keep one shop's source in
+    // a module variable for the next shop's request. Pages read Astro.locals.source instead
+    const offenders = Object.entries(files)
+      .filter(([path]) => path !== './middleware.ts')
+      .filter(([, source]) => importsOf(source).some((name) => name.endsWith('/data/source')))
+      .map(([path]) => path);
+    expect(offenders).toEqual([]);
+  });
+
   it('never imports the ERP app or the API', () => {
     // The shop is a public site: their code would bring signed-in screens and server code into it
     const offenders = Object.entries(files)
@@ -59,9 +70,12 @@ describe('shop imports', () => {
     // Step 26e: /track answers its own form's POST (26e.2's server/track.ts), so that one page
     // may import that one module, like an API route. Named page by page, not "any page": a page
     // has <script>s too, and the rule should stay as narrow as what needs it
+    // Step 26f.5: the middleware answers /api/* for a host with no shop with problem JSON, like
+    // the routes, so it may import server/problem.ts. It runs only on the server
     const pageMay = (path: string, name: string) =>
       (path.startsWith('./pages/') && name.endsWith('/server/cookies')) ||
-      (path === './pages/track.astro' && name.endsWith('/server/track'));
+      (path === './pages/track.astro' && name.endsWith('/server/track')) ||
+      (path === './middleware.ts' && name.endsWith('/server/problem'));
     const offenders = Object.entries(files)
       .filter(([path]) => !path.startsWith('./pages/api/') && !path.startsWith('./server/'))
       .filter(([path, source]) =>

@@ -997,7 +997,11 @@ What still applies from the rest of this file: HugeIcons Stroke Rounded only, no
 package's main entry starts i18next with every word, so a browser script never imports it), `cursor: pointer` on
 everything clickable, a visible focus state, 150ms color-only transitions and `prefers-reduced-motion`. Light theme only for now
 (`color-scheme: light`); Figma has no dark design. Pages are Astro with small scripts; the checkout form is the only
-React island, and it gets its words from the server as props (no i18next in the browser).
+React island, and it gets its words from the server as props (no i18next in the browser). Every page and route reads
+its data from `Astro.locals.source`, which `src/middleware.ts` sets for each request: the mock (the default,
+`SHOP_SOURCE=mock`) or the ERP's `/public/v1` for the shop the host names (`SHOP_SOURCE=api` plus `SHOP_API_URL`).
+Only the middleware imports `data/source.ts`. The API reads a shop only inside `ShopDb.read`, a read-only
+transaction as the `omnivo_public` role, so a table or column the shop needs is granted to that role in a migration.
 
 ### Storefront color tokens
 
@@ -1028,7 +1032,7 @@ the tokens, never raw hex.
   (4.95:1 on `card`, 4.61:1 on `canvas`, 4.51:1 on `cream`). White 10px text on Coral `#FF6C55` is 2.8:1, so
   `promo` is `#CC3F29` (4.87:1). Every other Figma pair passes AA (`brand` on `accent` 6.1:1, `price` on white
   7.8:1, `brand` on `cream` 7.5:1, `body` on `cream` 7.1:1).
-- **Tenant theme:** only `brand` and `accent` come from the tenant's `storefront_settings.theme`; all other
+- **Tenant theme:** only `brand` and `accent` come from the tenant's `storefront_settings` (`brand_color`, `accent_color`, `#rrggbb`); all other
   tokens are fixed. The pair must keep at least 4.5:1 between them (accent text on brand and brand text on
   accent), checked when the tenant saves it. The defaults are the Figma values.
 - Hero and promo banner colors (`#EEE0D8`, `#E7D1B2`, `#8B471F` in the Figma hero) are part of each banner's
@@ -1186,7 +1190,9 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   MD2346" (`ShoppingBag01`), 16px icons, 14px/500 `brand`, 8px gap; out of stock shows an `Alert02` with
   "Out of stock" in `promo`. A 1px `rule` line 36px below, then 26px down "Hotline:" (`price`) and the number
   (`brand`) at 16px/600 after a 24px `price` `Call02` icon, 12px apart. Below `lg` the two cards stack, the gallery stays
-  at most 524px wide and centered, and the buttons share the width.
+  at most 524px wide and centered, and the buttons share the width. The page's `<title>` and
+  `<meta name="description">` are the product's `seo`, which the API fills: the tenant's SEO words, or the name and
+  the start of the description.
 - **Product page, description:** a `card-glass` card (radius 16, 8px padding) with the tab bar (`cream`, radius
   8, 8px padding) holding one 160×48 "Overview" label in the tab's look (`brand` fill, `accent` 16px/600, radius 4).
   It is a label, not a `tablist`: Reviews is removed (there are no reviews in the data model), and a list of one
@@ -1322,6 +1328,11 @@ These follow the same tokens and components. Use them exactly as written here un
   empty state 36px under the header (16px on a phone): `FileNotFound`, "Page not found", "The link may have a
   typo, or the page has moved…", and "Go to the home page". Status 404. It answers every address with no page,
   and every page that rewrites to `/404` (an unknown product, category, order or text page).
+- **No shop (a host with no launched shop):** a page of its own, not the shop's layout, because there is no shop
+  to take a name, colors or a menu from. The empty state 16px from the top (36px from `md`) in the default colors:
+  `StoreRemove01`, "No shop has this address", "Check the address for a typo…", and no button (a link to `/` would
+  land here again). English, `noindex`, status 404. `/api/*` on such a host answers `404 storefront_not_found` as
+  problem JSON.
 - **Toast:** bottom center, `brand` fill, `accent` 16px/600 text, radius 8, padding 12px 16px, about 3s, e.g.
   "Added to cart".
 
@@ -1332,7 +1343,9 @@ server (`astro build`, then `node dist/server/entry.mjs` on 127.0.0.1:4331), in 
 390px (Pixel 7). There are no screenshot diffs: a test checks what a shopper sees and does, and that the page
 never scrolls sideways. CI runs them in their own step, `pnpm --filter @omnivo/shop test:e2e`, and
 `pnpm --filter @omnivo/shop typecheck` checks `e2e/` too. A test that uses up `/track`'s tries sends its own
-`X-Forwarded-For`, so it does not stop the other tests.
+`X-Forwarded-For`, so it does not stop the other tests. They run on the mock source. The API source is tested
+without a browser, against a fake `/public/v1` made of the mock (`src/data/api/api-source.spec.ts`), and the API's
+answers by its own integration and tenant-leak tests (`apps/api/src/storefront/`).
 
 ## Website / Landing page
 

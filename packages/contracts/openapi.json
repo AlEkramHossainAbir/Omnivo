@@ -226,6 +226,9 @@
     },
     {
       "name": "posReturns"
+    },
+    {
+      "name": "publicStorefront"
     }
   ],
   "paths": {
@@ -99997,6 +100000,1917 @@
                     "refunds",
                     "device",
                     "entry"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/shop": {
+      "get": {
+        "operationId": "publicStorefront.shop",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "The shop named by the X-Shop-Host header: name, logo, colors, contact (no login)",
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "logo": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "url": {
+                              "type": "string",
+                              "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                            },
+                            "alt": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "url",
+                            "alt"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "language": {
+                      "type": "string",
+                      "enum": [
+                        "en",
+                        "bn"
+                      ]
+                    },
+                    "theme": {
+                      "type": "object",
+                      "properties": {
+                        "brand": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        },
+                        "accent": {
+                          "type": "string",
+                          "pattern": "^#[0-9a-f]{6}$"
+                        }
+                      },
+                      "required": [
+                        "brand",
+                        "accent"
+                      ]
+                    },
+                    "hotline": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "timeZone": {
+                      "type": "string"
+                    },
+                    "address": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "social": {
+                      "type": "object",
+                      "properties": {
+                        "facebook": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^(\\/(?!\\/)|https:\\/\\/)"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "instagram": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^(\\/(?!\\/)|https:\\/\\/)"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "x": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^(\\/(?!\\/)|https:\\/\\/)"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "linkedin": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "pattern": "^(\\/(?!\\/)|https:\\/\\/)"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "facebook",
+                        "instagram",
+                        "x",
+                        "linkedin"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "logo",
+                    "language",
+                    "theme",
+                    "hotline",
+                    "timeZone",
+                    "address",
+                    "social"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/categories": {
+      "get": {
+        "operationId": "publicStorefront.categories",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "The shop's categories, every level, in their order (no login)",
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "slug": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "parentId": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "slug",
+                      "name",
+                      "parentId"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/home": {
+      "get": {
+        "operationId": "publicStorefront.home",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "The shop's home page: hero banner, featured listings, banners and collections (no login)",
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "hero": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "kind": {
+                              "type": "string",
+                              "const": "hero"
+                            },
+                            "href": {
+                              "type": "string",
+                              "pattern": "^(\\/(?!\\/)|https:\\/\\/)"
+                            },
+                            "headline": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "line": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "eyebrow": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "buttonLabel": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "desktopImage": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string",
+                                  "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                },
+                                "alt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "alt"
+                              ]
+                            },
+                            "phoneImage": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string",
+                                  "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                },
+                                "alt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "alt"
+                              ]
+                            },
+                            "colors": {
+                              "type": "object",
+                              "properties": {
+                                "background": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-f]{6}$"
+                                },
+                                "panel": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-f]{6}$"
+                                },
+                                "button": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-f]{6}$"
+                                },
+                                "buttonText": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-f]{6}$"
+                                }
+                              },
+                              "required": [
+                                "background",
+                                "panel",
+                                "button",
+                                "buttonText"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "href",
+                            "headline",
+                            "line",
+                            "eyebrow",
+                            "buttonLabel",
+                            "desktopImage",
+                            "phoneImage",
+                            "colors"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "featured": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "slug": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "packSize": {
+                            "type": "string"
+                          },
+                          "images": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string",
+                                  "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                },
+                                "alt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "alt"
+                              ]
+                            }
+                          },
+                          "price": {
+                            "type": "string"
+                          },
+                          "compareAtPrice": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "saleUntil": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "discount": {
+                            "anyOf": [
+                              {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "amount"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "percent"
+                                      },
+                                      "value": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 99
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "badges": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "most_picked",
+                                "new",
+                                "buy_one_get_one"
+                              ]
+                            }
+                          },
+                          "inStock": {
+                            "type": "boolean"
+                          },
+                          "categoryId": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "packSize",
+                          "images",
+                          "price",
+                          "compareAtPrice",
+                          "saleUntil",
+                          "discount",
+                          "badges",
+                          "inStock",
+                          "categoryId"
+                        ]
+                      }
+                    },
+                    "hasMoreFeatured": {
+                      "type": "boolean"
+                    },
+                    "blocks": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "kind": {
+                                "type": "string",
+                                "const": "image"
+                              },
+                              "href": {
+                                "type": "string",
+                                "pattern": "^(\\/(?!\\/)|https:\\/\\/)"
+                              },
+                              "desktopImage": {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string",
+                                    "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                  },
+                                  "alt": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "alt"
+                                ]
+                              },
+                              "phoneImage": {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string",
+                                    "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                  },
+                                  "alt": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "alt"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "href",
+                              "desktopImage",
+                              "phoneImage"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "const": "collection"
+                              },
+                              "collection": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "title": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  },
+                                  "icon": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "fire"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "listings": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "slug": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "name": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        },
+                                        "packSize": {
+                                          "type": "string"
+                                        },
+                                        "images": {
+                                          "minItems": 1,
+                                          "type": "array",
+                                          "items": {
+                                            "type": "object",
+                                            "properties": {
+                                              "url": {
+                                                "type": "string",
+                                                "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                              },
+                                              "alt": {
+                                                "type": "string",
+                                                "minLength": 1
+                                              }
+                                            },
+                                            "required": [
+                                              "url",
+                                              "alt"
+                                            ]
+                                          }
+                                        },
+                                        "price": {
+                                          "type": "string"
+                                        },
+                                        "compareAtPrice": {
+                                          "type": [
+                                            "string",
+                                            "null"
+                                          ]
+                                        },
+                                        "saleUntil": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "format": "date-time",
+                                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "discount": {
+                                          "anyOf": [
+                                            {
+                                              "oneOf": [
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "const": "amount"
+                                                    },
+                                                    "value": {
+                                                      "type": "string"
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "value"
+                                                  ]
+                                                },
+                                                {
+                                                  "type": "object",
+                                                  "properties": {
+                                                    "kind": {
+                                                      "type": "string",
+                                                      "const": "percent"
+                                                    },
+                                                    "value": {
+                                                      "type": "integer",
+                                                      "minimum": 1,
+                                                      "maximum": 99
+                                                    }
+                                                  },
+                                                  "required": [
+                                                    "kind",
+                                                    "value"
+                                                  ]
+                                                }
+                                              ]
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "badges": {
+                                          "type": "array",
+                                          "items": {
+                                            "type": "string",
+                                            "enum": [
+                                              "most_picked",
+                                              "new",
+                                              "buy_one_get_one"
+                                            ]
+                                          }
+                                        },
+                                        "inStock": {
+                                          "type": "boolean"
+                                        },
+                                        "categoryId": {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "slug",
+                                        "name",
+                                        "packSize",
+                                        "images",
+                                        "price",
+                                        "compareAtPrice",
+                                        "saleUntil",
+                                        "discount",
+                                        "badges",
+                                        "inStock",
+                                        "categoryId"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "title",
+                                  "icon",
+                                  "listings"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "collection"
+                            ]
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "hero",
+                    "featured",
+                    "hasMoreFeatured",
+                    "blocks"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/listings": {
+      "get": {
+        "operationId": "publicStorefront.listings",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "Published listings of a category or a search, filtered, sorted and paged (no login)",
+        "security": [],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "newest",
+                "price_asc",
+                "price_desc",
+                "name"
+              ]
+            }
+          },
+          {
+            "name": "minPrice",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9]\\d{0,8})$"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(0|[1-9]\\d{0,8})$"
+            }
+          },
+          {
+            "name": "inStock",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "const": "1"
+            }
+          },
+          {
+            "name": "offer",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "const": "1"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "maxItems": 20,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "slug": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "packSize": {
+                            "type": "string"
+                          },
+                          "images": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string",
+                                  "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                },
+                                "alt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "alt"
+                              ]
+                            }
+                          },
+                          "price": {
+                            "type": "string"
+                          },
+                          "compareAtPrice": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "saleUntil": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "discount": {
+                            "anyOf": [
+                              {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "amount"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "percent"
+                                      },
+                                      "value": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 99
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "badges": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "most_picked",
+                                "new",
+                                "buy_one_get_one"
+                              ]
+                            }
+                          },
+                          "inStock": {
+                            "type": "boolean"
+                          },
+                          "categoryId": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "packSize",
+                          "images",
+                          "price",
+                          "compareAtPrice",
+                          "saleUntil",
+                          "discount",
+                          "badges",
+                          "inStock",
+                          "categoryId"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/products/{slug}": {
+      "get": {
+        "operationId": "publicStorefront.product",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "One published listing with its gallery, description and related listings (no login)",
+        "security": [],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "product": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "slug": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "packSize": {
+                          "type": "string"
+                        },
+                        "images": {
+                          "minItems": 1,
+                          "maxItems": 4,
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string",
+                                "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                              },
+                              "alt": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": [
+                              "url",
+                              "alt"
+                            ]
+                          }
+                        },
+                        "price": {
+                          "type": "string"
+                        },
+                        "compareAtPrice": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "saleUntil": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "discount": {
+                          "anyOf": [
+                            {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "amount"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "percent"
+                                    },
+                                    "value": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 99
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ]
+                                }
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "badges": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "most_picked",
+                              "new",
+                              "buy_one_get_one"
+                            ]
+                          }
+                        },
+                        "inStock": {
+                          "type": "boolean"
+                        },
+                        "categoryId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "sku": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "unitName": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "descriptionHtml": {
+                          "type": "string"
+                        },
+                        "seo": {
+                          "type": "object",
+                          "properties": {
+                            "title": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 120
+                            },
+                            "description": {
+                              "type": "string",
+                              "maxLength": 300
+                            }
+                          },
+                          "required": [
+                            "title",
+                            "description"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "slug",
+                        "name",
+                        "packSize",
+                        "images",
+                        "price",
+                        "compareAtPrice",
+                        "saleUntil",
+                        "discount",
+                        "badges",
+                        "inStock",
+                        "categoryId",
+                        "sku",
+                        "unitName",
+                        "descriptionHtml",
+                        "seo"
+                      ]
+                    },
+                    "related": {
+                      "maxItems": 12,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "slug": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "packSize": {
+                            "type": "string"
+                          },
+                          "images": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "url": {
+                                  "type": "string",
+                                  "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                },
+                                "alt": {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              },
+                              "required": [
+                                "url",
+                                "alt"
+                              ]
+                            }
+                          },
+                          "price": {
+                            "type": "string"
+                          },
+                          "compareAtPrice": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "saleUntil": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "discount": {
+                            "anyOf": [
+                              {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "amount"
+                                      },
+                                      "value": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "const": "percent"
+                                      },
+                                      "value": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "maximum": 99
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "value"
+                                    ]
+                                  }
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "badges": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "enum": [
+                                "most_picked",
+                                "new",
+                                "buy_one_get_one"
+                              ]
+                            }
+                          },
+                          "inStock": {
+                            "type": "boolean"
+                          },
+                          "categoryId": {
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "slug",
+                          "name",
+                          "packSize",
+                          "images",
+                          "price",
+                          "compareAtPrice",
+                          "saleUntil",
+                          "discount",
+                          "badges",
+                          "inStock",
+                          "categoryId"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "product",
+                    "related"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/cart/quote": {
+      "post": {
+        "operationId": "publicStorefront.quote",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "Today's prices, stock and delivery charge for a cart of listing ids (no login)",
+        "security": [],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "listingId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 99
+                        }
+                      },
+                      "required": [
+                        "listingId",
+                        "quantity"
+                      ]
+                    }
+                  },
+                  "zoneId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
+                  "couponCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9-]{1,20}$"
+                  }
+                },
+                "required": [
+                  "lines"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lines": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "listingId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "slug": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "packSize": {
+                                "type": "string"
+                              },
+                              "image": {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string",
+                                    "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                  },
+                                  "alt": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "alt"
+                                ]
+                              },
+                              "status": {
+                                "type": "string",
+                                "const": "available"
+                              },
+                              "quantity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 99
+                              },
+                              "unitPrice": {
+                                "type": "string"
+                              },
+                              "lineTotal": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "listingId",
+                              "slug",
+                              "name",
+                              "packSize",
+                              "image",
+                              "status",
+                              "quantity",
+                              "unitPrice",
+                              "lineTotal"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "listingId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              },
+                              "slug": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1
+                              },
+                              "packSize": {
+                                "type": "string"
+                              },
+                              "image": {
+                                "type": "object",
+                                "properties": {
+                                  "url": {
+                                    "type": "string",
+                                    "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                                  },
+                                  "alt": {
+                                    "type": "string",
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "url",
+                                  "alt"
+                                ]
+                              },
+                              "status": {
+                                "type": "string",
+                                "const": "out_of_stock"
+                              },
+                              "quantity": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 99
+                              }
+                            },
+                            "required": [
+                              "listingId",
+                              "slug",
+                              "name",
+                              "packSize",
+                              "image",
+                              "status",
+                              "quantity"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "const": "unavailable"
+                              },
+                              "listingId": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 64
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "listingId"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "itemCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "subtotal": {
+                      "type": "string"
+                    },
+                    "discount": {
+                      "type": "string"
+                    },
+                    "coupon": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "const": "none"
+                            }
+                          },
+                          "required": [
+                            "status"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "const": "applied"
+                            },
+                            "code": {
+                              "type": "string",
+                              "pattern": "^[A-Z0-9-]{1,20}$"
+                            },
+                            "discount": {
+                              "oneOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "amount"
+                                    },
+                                    "value": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ]
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "type": "string",
+                                      "const": "percent"
+                                    },
+                                    "value": {
+                                      "type": "integer",
+                                      "minimum": 1,
+                                      "maximum": 99
+                                    }
+                                  },
+                                  "required": [
+                                    "kind",
+                                    "value"
+                                  ]
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "code",
+                            "discount"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "const": "refused"
+                            },
+                            "code": {
+                              "type": "string",
+                              "pattern": "^[A-Z0-9-]{1,20}$"
+                            },
+                            "reason": {
+                              "type": "string",
+                              "enum": [
+                                "shop_coupon_unknown",
+                                "shop_coupon_expired",
+                                "shop_coupon_minimum"
+                              ]
+                            },
+                            "minimum": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "status",
+                            "code",
+                            "reason",
+                            "minimum"
+                          ]
+                        }
+                      ]
+                    },
+                    "deliveryCharge": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "freeDelivery": {
+                      "type": "boolean"
+                    },
+                    "total": {
+                      "type": "string"
+                    },
+                    "belowMinimum": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "lines",
+                    "itemCount",
+                    "subtotal",
+                    "discount",
+                    "coupon",
+                    "deliveryCharge",
+                    "freeDelivery",
+                    "total",
+                    "belowMinimum"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/checkout-settings": {
+      "get": {
+        "operationId": "publicStorefront.checkoutSettings",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "Delivery zones, payment methods, free delivery and minimum order (no login)",
+        "security": [],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "zones": {
+                      "minItems": 1,
+                      "maxItems": 6,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 32
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "charge": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "charge"
+                        ]
+                      }
+                    },
+                    "paymentMethods": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "cod",
+                          "online"
+                        ]
+                      }
+                    },
+                    "freeDeliveryFrom": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "minimumOrder": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "zones",
+                    "paymentMethods",
+                    "freeDeliveryFrom",
+                    "minimumOrder"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/pages/{slug}": {
+      "get": {
+        "operationId": "publicStorefront.textPage",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "One of the footer pages (privacy, terms, about, contact) (no login)",
+        "security": [],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "privacy",
+                "terms",
+                "about",
+                "contact"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "slug": {
+                      "type": "string",
+                      "enum": [
+                        "privacy",
+                        "terms",
+                        "about",
+                        "contact"
+                      ]
+                    },
+                    "html": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "updatedAt": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "slug",
+                    "html",
+                    "updatedAt"
                   ]
                 }
               }

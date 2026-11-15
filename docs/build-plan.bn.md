@@ -436,10 +436,10 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
 
 #### ধাপ ২৬: শপের ভিত্তি · ~৩.৫ সপ্তাহ
 
-`storefront` মডিউল: `storefront_settings`, `storefront_domains` (Host → tenant), **`storefront_listings`** (Inventory-র প্রোডাক্টকে "প্রকাশ" করা — নতুন প্রোডাক্ট টেবিল **নয়**), categories, banners, carts।
+`storefront` মডিউল (ধাপ ২৬f): `storefront_settings` (subdomain + `launched_at`), `storefront_categories` (শপের নিজের ট্রি), **`storefront_listings`** (Inventory-র প্রোডাক্টকে "প্রকাশ" করা — নতুন প্রোডাক্ট টেবিল **নয়**; দাম, অফার, ছবি, বর্ণনা, SEO), banners, collections, হোমপেজের ক্রম, টেক্সট পেজ। নিজের কেনা ডোমেইনের `storefront_domains` পরের একটা ধাপে; কার্ট আপাতত ব্রাউজারে।
 `apps/shop` (Astro, on-demand render + CDN cache) — **একটাই ডিপ্লয়মেন্ট সব টেন্যান্টের শপ সার্ভ করবে**, `Host` হেডার দিয়ে টেন্যান্ট চেনা।
-পাবলিক API `/public/v1/*` — JWT নেই, তাই আলাদা **read-mostly DB role** + rate limit + WAF।
-ERP অ্যাপে Storefront মেনু: Catalog, Appearance, Delivery zones।
+পাবলিক API `/public/v1/*` — JWT নেই, তাই আলাদা **read-only DB role** (`omnivo_public`) + rate limit + WAF (ধাপ ২৬f; rate limit এখন edge-এ, API-তে ধাপ ২৭-এর অর্ডার আর OTP-র সাথে)।
+ERP অ্যাপে Storefront মেনু: Catalog, Appearance, Delivery zones, Pages (ধাপ ২৬g)।
 **দেখবেন:** `acme.localhost:4321`-এ আসল শপ, ERP-র প্রোডাক্ট দেখাচ্ছে।
 
 #### ধাপ ২৭: চেকআউট ও অর্ডার · ~২.৫ সপ্তাহ

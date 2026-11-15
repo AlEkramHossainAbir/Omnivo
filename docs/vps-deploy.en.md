@@ -192,6 +192,12 @@ If swap is in use most of the time, ask for more RAM before adding testers.
 
 ## Not on this server yet
 
-- The online shop (`apps/shop`). It needs its own image and Caddy site, and it still uses mock data.
+- A real shop. `https://shop.omnivosoft.com` shows the mock shop (`SHOP_SOURCE` is not set) until 26g lets a
+  workspace launch one. Then the `shop` service gets `SHOP_SOURCE=api` and `SHOP_API_URL=http://api:3000`
+  (inside Docker's network), the API gets `SHOP_BASE_DOMAIN=omnivosoft.com`, and the tunnel and Caddy need a
+  route for the shops' names.
+- A rate limit for the public shop API. `https://api.omnivosoft.com/public/v1/*` answers anyone, with no
+  sign-in. Before a real shop opens, add a Cloudflare rate limiting rule for that path (**Security → WAF → Rate
+  limiting rules**). The shop's server calls the API inside Docker's network, so the rule never slows the shop.
 - Real email (Amazon SES, Resend or similar). Mailpit catches everything for now.
 - Off-site backups and uptime monitoring.

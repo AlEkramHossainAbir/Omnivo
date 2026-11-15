@@ -19,6 +19,7 @@ import { meRoutes } from './preferences.js';
 import { reportScheduleRoutes } from './report-schedules.js';
 import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js';
 import { stockMovementReportRoutes } from './stock-movement-report.js';
+import { publicStorefrontRoutes } from './storefront.js';
 import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
 import { customerGroupRoutes, customerRoutes } from './customers.js';
@@ -153,4 +154,5 @@ export const routes = {
   pos: posRoutes,
   posShifts: posShiftRoutes,
   posReturns: posReturnRoutes,
+  publicStorefront: publicStorefrontRoutes,
 };

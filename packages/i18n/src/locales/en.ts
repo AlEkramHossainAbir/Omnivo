@@ -7182,6 +7182,11 @@ export const en = {
     shop_order_no_format: 'Type the order number from the SMS, like W-000123.',
     shop_track_not_found: 'No order has this number and mobile number. Check both, then try again.',
     shop_track_too_many: 'Too many tries. Wait {{minutes}} minutes, then try again.',
+    storefront_not_found:
+      'This address is not a shop. Check the address, or ask the shop for its link.',
+    storefront_sale_percent: 'Type a whole percent from 1 to 99.',
+    storefront_sale_zero: 'Type an amount above ৳0.',
+    storefront_sale_dates: 'Pick an end after the start, or leave the end empty.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

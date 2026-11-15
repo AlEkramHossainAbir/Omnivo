@@ -4,17 +4,19 @@ import ProductDescription from '../../components/ProductDescription.astro';
 import ProductGallery from '../../components/ProductGallery.astro';
 import ProductInfo from '../../components/ProductInfo.astro';
 import ProductRow from '../../components/ProductRow.astro';
-import { shopSource } from '../../data/source';
 import ShopLayout from '../../layouts/ShopLayout.astro';
 import { shopLocale } from '../../lib/locale';
+
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
 
 // Step 26b: one product's page (Figma product_details 37:3521, 1440px). Figma has no phone frame
 // for it, so below md it follows the storefront rules: the cards stack, 16px apart.
 const slug = Astro.params.slug ?? '';
 const [shop, page, categories] = await Promise.all([
-  shopSource.shop(),
-  shopSource.product(slug),
-  shopSource.categories(),
+  source.shop(),
+  source.product(slug),
+  source.categories(),
 ]);
 
 // An old link or a typo: Astro's own 404 page, with the 404 status, so a search engine drops the
@@ -36,7 +38,8 @@ const category = categories.find((candidate) => candidate.id === product.categor
 <ShopLayout
   shop={shop}
   locale={locale}
-  title={t('shop.product.title', { name: product.name, shop: shop.name })}
+  title={t('shop.product.title', { name: product.seo.title, shop: shop.name })}
+  description={product.seo.description}
   categories={categories}
 >
   {/* Figma: 524px gallery + 16px + 740px info card. fr, not px, so the two keep their share

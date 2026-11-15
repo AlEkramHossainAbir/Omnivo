@@ -210,9 +210,9 @@ services:
       - caddy-data:/data
       - caddy-config:/config
 
-  # The online shop (apps/shop). Until step 26's public API exists it shows the mock shop: its
-  # products, prices and orders are made up, and an order lives in this container's memory only,
-  # so a restart forgets it. It needs nothing else in the stack. `web` does not wait for it either:
+  # The online shop (apps/shop). It shows the mock shop (SHOP_SOURCE is not set) until 26g lets a
+  # workspace launch a shop: its products, prices and orders are made up, and an order lives in
+  # this container's memory only, so a restart forgets it. It needs nothing else in the stack. `web` does not wait for it either:
   # if the shop fails, the ERP app keeps working and only the shop's address answers 502.
   shop:
     image: ${REGISTRY}/omnivo-shop:${IMAGE_TAG}

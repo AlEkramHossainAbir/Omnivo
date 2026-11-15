@@ -632,6 +632,13 @@ export const ERROR_CODES = [
   'shop_order_no_format',
   'shop_track_not_found',
   'shop_track_too_many',
+  // Step 26f: the public API's address is not a shop (no storefront has this domain, or its
+  // workspace has turned the shop off), and a listing's sale as the ERP's form sends it: a
+  // percent that is not a whole 1 to 99, an amount of zero, an end not after its start
+  'storefront_not_found',
+  'storefront_sale_percent',
+  'storefront_sale_zero',
+  'storefront_sale_dates',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

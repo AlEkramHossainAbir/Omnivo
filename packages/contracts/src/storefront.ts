@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { errorCode } from './errors.js';
+import { defineRoute } from './http.js';
 import { isMoneyAmount } from './money.js';
 import { pageOf } from './pagination.js';
 import { LANGUAGE_CODES } from './preferences.js';
@@ -22,10 +23,18 @@ const hexColorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
 // banner links come from the tenant and end up in an <a href>
 const linkSchema = z.string().regex(/^(\/(?!\/)|https:\/\/)/);
 
+// Where a picture is. The links above, plus plain http on this computer only: step 26f's public
+// API builds photo addresses from the storage's own address (STOREFRONT_MEDIA_URL), and in dev that
+// is MinIO at http://localhost:9000. Never a tenant's typed text, so this loosening opens no way in
+// for a stranger's link; production refuses an http address when the API starts (config.ts)
+const imageUrlSchema = z
+  .string()
+  .regex(/^(\/(?!\/)|https:\/\/|http:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?\/)/);
+
 // A picture and the words a screen reader says for it. The alt text is required: a product photo
 // is the main content of a shop, and an empty alt would hide it from blind shoppers
 export const shopImageSchema = z.object({
-  url: linkSchema,
+  url: imageUrlSchema,
   alt: z.string().min(1),
 });
 
@@ -124,7 +133,9 @@ export const shopCollectionSchema = z.object({
 });
 
 export const shopHomeSchema = z.object({
-  hero: heroBannerSchema,
+  // Step 26f: null when the tenant has no hero banner (a new shop, or one deleted later). The home
+  // page then starts with the "All Category" grid, so a shop never breaks for a missing picture
+  hero: heroBannerSchema.nullable(),
   // The "All Category" grid; the phone shows its first two as "Featured Products"
   featured: z.array(shopListingSchema),
   hasMoreFeatured: z.boolean(),
@@ -168,10 +179,19 @@ export const shopProductSchema = shopListingSchema.extend({
   // nothing to a shopper
   unitName: z.string().min(1),
   // The description, as HTML: one <section> per block, each starting with an <h2>, then <p>, <ul>
-  // or <ol>, and <strong> for label words. The ERP cleans it to these tags when the tenant saves it
-  // (step 26's API), because the shop puts it on the page as it is. '' = no description, and the
-  // page leaves out the whole Overview card
+  // or <ol>, <strong> for label words, <a> and <br>. Step 26f: the tenant never writes HTML; the
+  // API writes it from the tenant's sections (renderSections in storefront-content.ts), escaping
+  // every character they typed, because the shop puts it on the page as it is. '' = no
+  // description, and the page leaves out the whole Overview card
   descriptionHtml: z.string(),
+  // Step 26f: what search engines show for the page. The API fills both in, so the shop never
+  // decides: the title is the tenant's SEO title or the listing's name, the description their SEO
+  // description or the start of the first section ('' when there is neither, and the page then
+  // has no <meta name="description">)
+  seo: z.object({
+    title: z.string().min(1).max(120),
+    description: z.string().max(300),
+  }),
 });
 
 // What /p/<slug> needs in one answer: the product and its "Related Products" row. The related
@@ -680,8 +700,8 @@ export const shopTrackingSchema = z.object({
 export const SHOP_TEXT_PAGES = ['privacy', 'terms', 'about', 'contact'] as const;
 
 // One text page. The HTML is the description's kind (step 26b): <section>s with an <h2>, then <p>,
-// <ul>, <ol>, <strong> and <a>, cleaned by the ERP when the tenant saves it (step 26's API), drawn
-// as it is with the description's prose style. A page the tenant has not written does not come at
+// <ul>, <ol>, <strong>, <a> and <br>, written by the API from the tenant's sections (step 26f),
+// drawn as it is with the description's prose style. A page the tenant has not written does not come at
 // all (the source answers null and the shop shows "page not found"), so html is never empty
 export const shopTextPageSchema = z.object({
   slug: z.enum(SHOP_TEXT_PAGES),
@@ -699,3 +719,159 @@ export type ShopShipment = z.infer<typeof shopShipmentSchema>;
 export type ShopTracking = z.infer<typeof shopTrackingSchema>;
 export type ShopTextPage = z.infer<typeof shopTextPageSchema>;
 export type ShopTextPageSlug = (typeof SHOP_TEXT_PAGES)[number];
+
+// ---------------------------------------------------------------------------------------------
+// Step 26f: the public API (/public/v1). What the shop's server asks the ERP's API for, with no
+// login. Every answer is one of the shapes above, so the shop's pages do not change when its data
+// source goes from the mock to this API.
+
+// Which shop: the address the shopper typed ("acme.omnivo.shop"), as the shop's server received it
+// in its own Host header. The shop's server calls the API from inside the network, so the API's
+// own Host header is the API's name, not the shop's; this header carries the shop's. It names a
+// shop and nothing else: anyone may send any value, and all it can get is what that shop's own
+// pages already show to anyone (published listings, never an order or a phone). The API takes the
+// subdomain from it ("acme") and looks it up with the database's storefront_tenant_for_subdomain
+// (migration 0064); an address that is not a launched shop gets 404 storefront_not_found. Never a
+// query parameter (system design §14.2): a link with ?shop=… would be a way to pass one shop off as
+// another.
+export const SHOP_HOST_HEADER = 'x-shop-host';
+
+// A slug in an address: the characters the ERP allows in one, so it is safe in a URL and in a
+// cache key
+const slugParamSchema = z
+  .string()
+  .max(100)
+  .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/);
+
+// The category and search query as a querystring. Every value arrives as text and may be left out;
+// the flags are "1" or absent, as in the shop's own addresses (?stock=1&offer=1). Turned into the
+// clean ShopListingQuery by listingQueryFromParams.
+export const publicListingParamsSchema = z
+  .object({
+    category: slugParamSchema.optional(),
+    q: z.string().trim().max(SHOP_SEARCH_MAX_LENGTH).optional(),
+    sort: z.enum(SHOP_SORTS).optional(),
+    minPrice: shopPriceFilterSchema.optional(),
+    maxPrice: shopPriceFilterSchema.optional(),
+    inStock: z.literal('1').optional(),
+    offer: z.literal('1').optional(),
+    cursor: z.string().min(1).max(512).optional(),
+  })
+  // The same rule as shopListingQuerySchema, so a wrong pair is a 400 at the door, not a ZodError
+  // deep in the service
+  .refine(
+    (params) =>
+      params.minPrice === undefined ||
+      params.maxPrice === undefined ||
+      Number(params.minPrice) <= Number(params.maxPrice),
+    { message: errorCode('invalid_value'), path: ['maxPrice'] },
+  );
+
+export type PublicListingParams = z.input<typeof publicListingParamsSchema>;
+
+// The API's side: the querystring (parsed) as the clean query the listing search takes. A search
+// of only spaces is no search, as on the shop's pages
+export function listingQueryFromParams(
+  params: z.output<typeof publicListingParamsSchema>,
+): ShopListingQuery {
+  return {
+    category: params.category ?? null,
+    q: params.q === undefined || params.q === '' ? null : params.q,
+    sort: params.sort ?? 'newest',
+    minPrice: params.minPrice ?? null,
+    maxPrice: params.maxPrice ?? null,
+    inStock: params.inStock === '1',
+    offer: params.offer === '1',
+    cursor: params.cursor ?? null,
+  };
+}
+
+// The shop's side: the clean query as the querystring it sends. Only what is set, so the default
+// first page of /c/all is the plain address, the same cache entry for every shopper
+export function listingParamsFromQuery(query: ShopListingQuery): PublicListingParams {
+  const params: PublicListingParams = {};
+  if (query.category !== null) params.category = query.category;
+  if (query.q !== null) params.q = query.q;
+  if (query.sort !== 'newest') params.sort = query.sort;
+  if (query.minPrice !== null) params.minPrice = query.minPrice;
+  if (query.maxPrice !== null) params.maxPrice = query.maxPrice;
+  if (query.inStock) params.inStock = '1';
+  if (query.offer) params.offer = '1';
+  if (query.cursor !== null) params.cursor = query.cursor;
+  return params;
+}
+
+// Orders, the phone code and tracking are not here: they stay in the shop's mock until step 27
+// stores orders (decision 1). The quote is here already: the cart drawer and the checkout need
+// today's prices and stock, and it only reads.
+export const publicStorefrontRoutes = {
+  shop: defineRoute({
+    method: 'GET',
+    path: '/public/v1/shop',
+    summary: 'The shop named by the X-Shop-Host header: name, logo, colors, contact (no login)',
+    auth: 'public',
+    status: 200,
+    response: publicShopSchema,
+  }),
+  categories: defineRoute({
+    method: 'GET',
+    path: '/public/v1/categories',
+    summary: "The shop's categories, every level, in their order (no login)",
+    auth: 'public',
+    status: 200,
+    response: z.array(shopCategorySchema),
+  }),
+  home: defineRoute({
+    method: 'GET',
+    path: '/public/v1/home',
+    summary:
+      "The shop's home page: hero banner, featured listings, banners and collections (no login)",
+    auth: 'public',
+    status: 200,
+    response: shopHomeSchema,
+  }),
+  listings: defineRoute({
+    method: 'GET',
+    path: '/public/v1/listings',
+    summary: 'Published listings of a category or a search, filtered, sorted and paged (no login)',
+    auth: 'public',
+    status: 200,
+    query: publicListingParamsSchema,
+    response: shopListingPageSchema,
+  }),
+  product: defineRoute({
+    method: 'GET',
+    path: '/public/v1/products/:slug',
+    summary: 'One published listing with its gallery, description and related listings (no login)',
+    auth: 'public',
+    status: 200,
+    params: z.object({ slug: slugParamSchema }),
+    response: shopProductPageSchema,
+  }),
+  quote: defineRoute({
+    method: 'POST',
+    path: '/public/v1/cart/quote',
+    summary: "Today's prices, stock and delivery charge for a cart of listing ids (no login)",
+    auth: 'public',
+    status: 200,
+    body: shopCartQuoteRequestSchema,
+    response: shopCartQuoteSchema,
+  }),
+  checkoutSettings: defineRoute({
+    method: 'GET',
+    path: '/public/v1/checkout-settings',
+    summary: 'Delivery zones, payment methods, free delivery and minimum order (no login)',
+    auth: 'public',
+    status: 200,
+    response: shopCheckoutSettingsSchema,
+  }),
+  textPage: defineRoute({
+    method: 'GET',
+    path: '/public/v1/pages/:slug',
+    summary: 'One of the footer pages (privacy, terms, about, contact) (no login)',
+    auth: 'public',
+    status: 200,
+    params: z.object({ slug: z.enum(SHOP_TEXT_PAGES) }),
+    response: shopTextPageSchema,
+  }),
+};

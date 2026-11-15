@@ -1,0 +1,304 @@
+import {
+  listingQueryFromParams,
+  publicListingParamsSchema,
+  SHOP_HOST_HEADER,
+  shopCartQuoteRequestSchema,
+  type ShopTextPageSlug,
+} from '@omnivo/contracts';
+import { describe, expect, it } from 'vitest';
+
+import { mockHome } from '../mock/home';
+import { createMockSource } from '../mock/mock-source';
+import { createOrderBook, MOCK_CODE, type MockOrderBook } from '../mock/orders';
+import { mockCategories, mockShop } from '../mock/shop';
+import type { ShopSource } from '../types';
+import { createAnswerCache } from './answer-cache';
+import { createApiSource } from './api-source';
+import { createShopApi, ShopApiError, ShopMissingError } from './shop-api';
+
+// The tests' ERP API: the mock shop's data behind the /public/v1 routes, for one host. The mock
+// matches the public contract (mock.spec.ts), so the answers are real ones in shape. Every request
+// is written down, so a test can see what the shop sent
+const HOST = 'nirvor.omnivo.test';
+const API = 'http://api.test';
+const STEVIA = 'lst-zero-cal-stevia-30-sachets';
+const NEEM = 'himalaya-purifying-neem-face-wash-150ml';
+
+function problem(status: number, code: string): Response {
+  return Response.json({ title: 'Refused', status, detail: code, code }, { status });
+}
+
+function fakeApi(data: ShopSource = createMockSource()) {
+  const requests: Request[] = [];
+  let failNext: Response | null = null;
+
+  async function answer(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.headers.get(SHOP_HOST_HEADER) !== HOST) return problem(404, 'storefront_not_found');
+    const path = url.pathname.replace(/^\/public\/v1/, '');
+    const slug = /^\/(?:products|pages)\/(.+)$/.exec(path)?.[1] ?? '';
+
+    if (request.method === 'POST' && path === '/cart/quote') {
+      const body = shopCartQuoteRequestSchema.parse(await request.json());
+      return Response.json(await data.quote(body));
+    }
+    if (path === '/shop') return Response.json(await data.shop());
+    if (path === '/categories') return Response.json(await data.categories());
+    if (path === '/home') return Response.json(await data.home());
+    if (path === '/checkout-settings') return Response.json(await data.checkoutSettings());
+    if (path === '/listings') {
+      const params = publicListingParamsSchema.parse(Object.fromEntries(url.searchParams));
+      const page = await data.listings(listingQueryFromParams(params));
+      return page === null ? problem(400, 'invalid_cursor') : Response.json(page);
+    }
+    if (path.startsWith('/products/')) {
+      const page = await data.product(slug);
+      return page === null ? problem(404, 'not_found') : Response.json(page);
+    }
+    if (path.startsWith('/pages/')) {
+      // The route's own schema lets only the four slugs in; the test asks for those only
+      const page = await data.textPage(slug as ShopTextPageSlug);
+      return page === null ? problem(404, 'not_found') : Response.json(page);
+    }
+    return problem(404, 'not_found');
+  }
+
+  const fetch: typeof globalThis.fetch = async (input, init) => {
+    const request = new Request(input, init);
+    requests.push(request.clone());
+    const failure = failNext;
+    failNext = null;
+    return failure ?? answer(request);
+  };
+
+  return {
+    fetch,
+    requests,
+    // The next request gets this answer in place of the real one
+    failWith(response: Response) {
+      failNext = response;
+    },
+    paths: () =>
+      requests.map((request) => new URL(request.url).pathname + new URL(request.url).search),
+  };
+}
+
+// A shop source on the fake API, with its own cache and order book, as data/source.ts makes one
+function setup({ host = HOST, api = fakeApi(), book = createOrderBook() } = {}) {
+  const cache = createAnswerCache({ ttlMs: 30_000, maxEntries: 100 });
+  const source = createApiSource(
+    createShopApi({ apiUrl: API, host, cache, fetch: api.fetch }),
+    () => book,
+  );
+  return { source, api, cache };
+}
+
+describe('the API source', () => {
+  it('reads the shop the host names, and says which one in every request', async () => {
+    const { source, api } = setup();
+    expect(await source.shop()).toEqual(mockShop);
+    expect(await source.categories()).toEqual(mockCategories);
+    expect(await source.home()).toEqual(mockHome);
+    expect(api.paths()).toEqual(['/public/v1/shop', '/public/v1/categories', '/public/v1/home']);
+    expect(api.requests.every((request) => request.headers.get(SHOP_HOST_HEADER) === HOST)).toBe(
+      true,
+    );
+  });
+
+  it('sends a listing query with only what is set', async () => {
+    const { source, api } = setup();
+    const first = await source.listings({
+      category: null,
+      q: null,
+      sort: 'newest',
+      minPrice: null,
+      maxPrice: null,
+      inStock: false,
+      offer: false,
+      cursor: null,
+    });
+    expect(first?.items).toHaveLength(20);
+    await source.listings({
+      category: 'cosmetics',
+      q: 'নিম',
+      sort: 'price_asc',
+      minPrice: '100',
+      maxPrice: null,
+      inStock: true,
+      offer: false,
+      cursor: null,
+    });
+    expect(api.paths()).toEqual([
+      // The first page of /c/all is the plain address, one cache entry for every shopper
+      '/public/v1/listings',
+      `/public/v1/listings?category=cosmetics&q=${encodeURIComponent('নিম')}&sort=price_asc&minPrice=100&inStock=1`,
+    ]);
+  });
+
+  it('starts a list again for a cursor the API did not make', async () => {
+    const { source } = setup();
+    const page = await source.listings({
+      category: null,
+      q: null,
+      sort: 'newest',
+      minPrice: null,
+      maxPrice: null,
+      inStock: false,
+      offer: false,
+      cursor: 'not-a-cursor',
+    });
+    expect(page).toBeNull();
+  });
+
+  it('answers null for a product or page the shop does not have', async () => {
+    const { source, api } = setup();
+    expect((await source.product(NEEM))?.product.slug).toBe(NEEM);
+    expect(await source.product('no-such-product')).toBeNull();
+    // An address the ERP could never have made is not even asked for
+    expect(await source.product('Neem Face Wash')).toBeNull();
+    expect(api.paths()).not.toContain('/public/v1/products/Neem%20Face%20Wash');
+    expect((await source.textPage('terms'))?.slug).toBe('terms');
+  });
+
+  it('throws ShopMissingError for a host that is no launched shop', async () => {
+    const { source } = setup({ host: 'nobody.omnivo.test' });
+    await expect(source.shop()).rejects.toBeInstanceOf(ShopMissingError);
+    // Every route, not only shop(): a product of no shop is not "no such product"
+    await expect(source.product(NEEM)).rejects.toBeInstanceOf(ShopMissingError);
+  });
+
+  it('keeps answers per host for 30 seconds, and never a quote', async () => {
+    const api = fakeApi();
+    const cache = createAnswerCache({ ttlMs: 30_000, maxEntries: 100 });
+    const sourceOf = (host: string) =>
+      createApiSource(createShopApi({ apiUrl: API, host, cache, fetch: api.fetch }), () =>
+        createOrderBook(),
+      );
+    await sourceOf(HOST).shop();
+    await sourceOf(HOST).shop();
+    // Another host is another shop: never the first one's answer
+    await expect(sourceOf('other.omnivo.test').shop()).rejects.toBeInstanceOf(ShopMissingError);
+    // "No such product" is kept as well
+    await sourceOf(HOST).product('no-such-product');
+    await sourceOf(HOST).product('no-such-product');
+    const cart = { lines: [{ listingId: STEVIA, quantity: 1 }] };
+    await sourceOf(HOST).quote(cart);
+    await sourceOf(HOST).quote(cart);
+    expect(api.paths()).toEqual([
+      '/public/v1/shop',
+      '/public/v1/shop',
+      '/public/v1/products/no-such-product',
+      '/public/v1/cart/quote',
+      '/public/v1/cart/quote',
+    ]);
+    expect(api.requests.map((request) => request.headers.get(SHOP_HOST_HEADER))).toEqual([
+      HOST,
+      'other.omnivo.test',
+      HOST,
+      HOST,
+      HOST,
+    ]);
+  });
+
+  it('fails when the API fails, and asks again next time', async () => {
+    const { source, api } = setup();
+    api.failWith(new Response('<html>Bad gateway</html>', { status: 502 }));
+    await expect(source.shop()).rejects.toBeInstanceOf(ShopApiError);
+    expect(await source.shop()).toEqual(mockShop);
+    expect(api.paths()).toEqual(['/public/v1/shop', '/public/v1/shop']);
+  });
+
+  it('fails on an answer that breaks the contract', async () => {
+    const { source, api } = setup();
+    api.failWith(Response.json({ ...mockShop, theme: { brand: 'red', accent: 'lime' } }));
+    await expect(source.shop()).rejects.toThrow(/broke its contract/);
+  });
+
+  it('fails when no answer comes, or it comes too late', async () => {
+    const down = createShopApi({
+      apiUrl: API,
+      host: HOST,
+      cache: createAnswerCache({ ttlMs: 30_000, maxEntries: 10 }),
+      fetch: () => Promise.reject(new TypeError('fetch failed')),
+    });
+    await expect(createApiSource(down, createOrderBook).shop()).rejects.toMatchObject({
+      name: 'ShopApiError',
+      status: 0,
+    });
+
+    // A fetch that answers only when it is aborted, as a hung API does
+    const hung = createShopApi({
+      apiUrl: API,
+      host: HOST,
+      cache: createAnswerCache({ ttlMs: 30_000, maxEntries: 10 }),
+      timeoutMs: 20,
+      fetch: (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(new DOMException('The operation timed out.', 'TimeoutError'));
+          });
+        }),
+    });
+    await expect(createApiSource(hung, createOrderBook).home()).rejects.toBeInstanceOf(
+      ShopApiError,
+    );
+  });
+});
+
+describe('orders on the API source', () => {
+  const order = {
+    lines: [{ listingId: STEVIA, quantity: 3 }],
+    zoneId: 'inside_dhaka',
+    name: 'Sumi Akter',
+    phone: '01786120356',
+    address: 'House 12, Road 5, Mirpur 10, Dhaka',
+    paymentMethod: 'cod' as const,
+    termsAccepted: true as const,
+  };
+
+  // What the checkout saw: the mock's total for the same cart, which is what the fake API answers
+  async function expectedTotal() {
+    return (await createMockSource().quote({ lines: order.lines, zoneId: order.zoneId })).total;
+  }
+
+  async function place(source: ShopSource) {
+    const placed = await source.placeOrder({ ...order, expectedTotal: await expectedTotal() });
+    if (!placed.ok) throw new Error(`refused: ${placed.code}`);
+    return placed.value;
+  }
+
+  it('prices the order with the API and sends it no name, phone or address', async () => {
+    const { source, api } = setup();
+    const placed = await place(source);
+    expect(placed.orderNo).toBe('W-000001');
+
+    const quote = api.requests.find((request) => request.url.endsWith('/cart/quote'));
+    expect(await quote?.json()).toEqual({ lines: order.lines, zoneId: 'inside_dhaka' });
+
+    // The code is the mock's until step 27 sends SMS, and the page shows it
+    expect(source.testCode).toBe(MOCK_CODE);
+    const confirmed = await source.verifyCode(placed.token, MOCK_CODE);
+    expect(confirmed).toMatchObject({ ok: true, value: { orderNo: 'W-000001' } });
+    expect((await source.order('W-000001', placed.token))?.total).toBe(await expectedTotal());
+  });
+
+  it('refuses an order whose price changed since the checkout saw it', async () => {
+    const { source } = setup();
+    const placed = await source.placeOrder({ ...order, expectedTotal: '1.0000' });
+    expect(placed).toEqual({ ok: false, code: 'shop_order_changed' });
+  });
+
+  it('keeps each shop’s orders in its own book', async () => {
+    // data/source.ts gives each host its own book; two books here stand for two shops
+    const first: MockOrderBook = createOrderBook();
+    const second: MockOrderBook = createOrderBook();
+    const acme = setup({ book: first }).source;
+    const nirvor = setup({ book: second }).source;
+    const fromAcme = await place(acme);
+    expect((await place(nirvor)).orderNo).toBe('W-000001');
+    // The second shop cannot open the first one's order, even with its token
+    expect(await nirvor.order(fromAcme.orderNo, fromAcme.token)).toBeNull();
+    // A real shop offers no demo orders on /track
+    expect(acme.testTracking).toBeNull();
+  });
+});

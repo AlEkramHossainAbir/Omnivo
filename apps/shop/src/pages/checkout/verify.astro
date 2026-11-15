@@ -5,24 +5,26 @@ import { numberLocale } from '@omnivo/i18n';
 import { SHOP_CODE_LENGTH } from '@omnivo/contracts';
 
 import OrderConfirmedDialog from '../../components/OrderConfirmedDialog.astro';
-import { shopSource } from '../../data/source';
 import ShopLayout from '../../layouts/ShopLayout.astro';
 import { shopLocale } from '../../lib/locale';
 import { waitText } from '../../lib/verify';
 import { checkoutToken } from '../../server/cookies';
 
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
+
 // Step 26c: the phone code for a Cash on Delivery order (decision 4; CLAUDE.md → Phone
 // verification, not in Figma). The order is found by the token in the httpOnly checkout cookie,
 // so this page can only ever show the order this browser placed.
 const token = checkoutToken(Astro.request);
-const wait = token === null ? null : await shopSource.codeWait(token);
+const wait = token === null ? null : await source.codeWait(token);
 // No order waits here: never placed, already confirmed (a reload after the dialog), dropped after
 // five wrong codes, or past its hour. The checkout is where a shopper can do something about it,
 // and their cart is still there (decision 23)
 if (wait === null) return Astro.redirect('/checkout');
 
 // Step 26d.4: the categories for the header's drawer
-const [shop, categories] = await Promise.all([shopSource.shop(), shopSource.categories()]);
+const [shop, categories] = await Promise.all([source.shop(), source.categories()]);
 const locale = await shopLocale(shop.language);
 const { t } = locale;
 const numbers = numberLocale(locale.language);
@@ -77,9 +79,9 @@ const textLink =
         <div class="flex flex-col gap-3">
           <p class="text-body">{t('shop.verify.sent', { phone: wait.maskedPhone })}</p>
           {/* Only a test shop has a code to show (ShopSource.testCode): the mock sends no SMS */}
-          {shopSource.testCode !== null && (
+          {source.testCode !== null && (
             <p class="rounded-lg bg-canvas px-4 py-3 text-sf-small font-medium text-body">
-              {t('shop.verify.mockCode', { code: shopSource.testCode })}
+              {t('shop.verify.mockCode', { code: source.testCode })}
             </p>
           )}
         </div>
