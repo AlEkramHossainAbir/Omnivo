@@ -607,7 +607,9 @@ describe('Scheduling a report', () => {
   });
 });
 
-describe('Running the schedules', () => {
+// These tests wait up to 15s for each email (`newestMail`, `eventually`), and one waits for two, so
+// the default 5s test timeout cut them short on a slow CI runner.
+describe('Running the schedules', { timeout: 40_000 }, () => {
   // The daily trial balance at 08:00, to the owner and to Mitu (in Bangla)
   let daily: ReportSchedule;
   let sweep: ReportScheduleSweep;
