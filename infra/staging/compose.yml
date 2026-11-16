@@ -111,6 +111,8 @@ services:
         mc mb --ignore-existing local/omnivo
         mc admin user add local omnivo-app "$$S3_APP_SECRET"
         mc admin policy attach local readwrite --user omnivo-app || true
+        # Step 26g: the shop's photos (storefront/) may be read without a signed URL, nothing else
+        mc anonymous set download local/omnivo/storefront
 
   mail:
     image: axllent/mailpit:v1.31.2
@@ -210,9 +212,12 @@ services:
       - caddy-data:/data
       - caddy-config:/config
 
-  # The online shop (apps/shop). It shows the mock shop (SHOP_SOURCE is not set) until 26g lets a
-  # workspace launch a shop: its products, prices and orders are made up, and an order lives in
-  # this container's memory only, so a restart forgets it. It needs nothing else in the stack. `web` does not wait for it either:
+  # The online shop (apps/shop). It shows the mock shop (SHOP_SOURCE is not set): its products,
+  # prices and orders are made up, and an order lives in this container's memory only, so a restart
+  # forgets it. Since 26g a workspace can launch a real shop, but it lives at
+  # <subdomain>.<SHOP_BASE_DOMAIN>, and staging has one fixed SHOP_HOST. Switching to the API needs a
+  # wildcard host (DNS, the tunnel and Caddy) first, then SHOP_SOURCE=api, SHOP_API_URL and the API's
+  # SHOP_BASE_DOMAIN. It needs nothing else in the stack. `web` does not wait for it either:
   # if the shop fails, the ERP app keeps working and only the shop's address answers 502.
   shop:
     image: ${REGISTRY}/omnivo-shop:${IMAGE_TAG}

@@ -168,6 +168,28 @@ import {
 } from './trade-report-data';
 import { stockMovementOf, vatDocumentsOf, vatReportOf } from './vat-stock-report-data';
 import {
+  candidatePage,
+  categoryList,
+  completeUpload,
+  createCategory,
+  createListing,
+  createShop,
+  launchShop,
+  listingOf,
+  listingPage,
+  moveCategory,
+  receivePhoto,
+  removeCategory,
+  removeListing,
+  setPublished,
+  setupOf,
+  startUpload,
+  updateCategory,
+  updateListing,
+  updateShop,
+  uploadState,
+} from './storefront-data';
+import {
   findProduct,
   IMPORT_DELAY_MS,
   listProducts,
@@ -434,6 +456,15 @@ function guarded(resolver: HttpResponseResolver): HttpResponseResolver {
       throw error;
     }
   };
+}
+
+// Step 26g: every Storefront route needs storefront.manage, like the API's guard. The owner has it;
+// a test's role (fixtures.ts → MOCK_ROLE_KEY) may not
+function shopData(): WorkspaceData {
+  if (!me().permissions.includes('storefront.manage')) {
+    throw new MockProblem(403, 'permission_missing');
+  }
+  return current();
 }
 
 // audit-এর "আগের মান" — ফর্মের ঘরগুলো
@@ -5593,6 +5624,223 @@ export const handlers = [
       const { id } = routes.posReturns.getReturn.params.parse(params);
       const data = current();
       return reply(routes.posReturns.getReturn, toPosReturn(data, findPosReturn(data, id)));
+    }),
+  ),
+
+  // --- Step 26g: the Storefront menu (storefront-data.ts) ---------------------------------------
+
+  mock(
+    routes.storefront.getSettings,
+    guarded(async () => {
+      const data = shopData();
+      await delay();
+      return reply(routes.storefront.getSettings, setupOf(data, workspace));
+    }),
+  ),
+
+  mock(
+    routes.storefront.createSettings,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefront.createSettings.body, request);
+      return reply(routes.storefront.createSettings, createShop(data, workspace.tenantId, body));
+    }),
+  ),
+
+  mock(
+    routes.storefront.updateSettings,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefront.updateSettings.body, request);
+      return reply(routes.storefront.updateSettings, updateShop(data, workspace.tenantId, body));
+    }),
+  ),
+
+  mock(
+    routes.storefront.launch,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const { version } = await readBody(routes.storefront.launch.body, request);
+      return reply(routes.storefront.launch, launchShop(data, workspace.tenantId, version));
+    }),
+  ),
+
+  mock(
+    routes.storefront.listCategories,
+    guarded(async () => {
+      const data = shopData();
+      await delay();
+      return reply(routes.storefront.listCategories, { items: categoryList(data) });
+    }),
+  ),
+
+  mock(
+    routes.storefront.createCategory,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefront.createCategory.body, request);
+      return reply(routes.storefront.createCategory, createCategory(data, body));
+    }),
+  ),
+
+  mock(
+    routes.storefront.updateCategory,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.updateCategory.params.parse(params);
+      const body = await readBody(routes.storefront.updateCategory.body, request);
+      return reply(routes.storefront.updateCategory, updateCategory(data, id, body));
+    }),
+  ),
+
+  mock(
+    routes.storefront.moveCategory,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.moveCategory.params.parse(params);
+      const { direction, version } = await readBody(routes.storefront.moveCategory.body, request);
+      return reply(routes.storefront.moveCategory, {
+        items: moveCategory(data, id, direction, version),
+      });
+    }),
+  ),
+
+  mock(
+    routes.storefront.deleteCategory,
+    guarded(({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.deleteCategory.params.parse(params);
+      const { version } = readQuery(routes.storefront.deleteCategory.query, request);
+      removeCategory(data, id, version);
+      return reply(routes.storefront.deleteCategory, undefined);
+    }),
+  ),
+
+  // A photo goes up like the logo: an upload address in the mock's storage, then "complete". The
+  // pretend job answers MOCK_PREPARE_MS later (storefront-data.ts)
+  mock(
+    routes.storefront.createUpload,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefront.createUpload.body, request);
+      const id = startUpload(data, body);
+      return reply(routes.storefront.createUpload, {
+        image: { id, status: 'uploading' },
+        upload: {
+          method: 'PUT',
+          url: `${MOCK_STORAGE}/storefront/${id}`,
+          headers: { 'content-type': body.contentType },
+          expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
+        },
+      });
+    }),
+  ),
+
+  // Storage, not a contract route (like the logo's PUT above)
+  http.put(`${MOCK_STORAGE}/storefront/:id`, async ({ request, params }) => {
+    const id = typeof params.id === 'string' ? params.id : '';
+    if (!(await receivePhoto(current(), id, await request.blob()))) {
+      return new HttpResponse(null, { status: 404 });
+    }
+    await delay(400);
+    return new HttpResponse(null, { status: 200 });
+  }),
+
+  mock(
+    routes.storefront.completeUpload,
+    guarded(({ params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.completeUpload.params.parse(params);
+      return reply(routes.storefront.completeUpload, completeUpload(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefront.getUpload,
+    guarded(({ params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.getUpload.params.parse(params);
+      return reply(routes.storefront.getUpload, uploadState(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefront.listListings,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const query = readQuery(routes.storefront.listListings.query, request);
+      await delay();
+      return reply(routes.storefront.listListings, listingPage(data, query));
+    }),
+  ),
+
+  mock(
+    routes.storefront.listCandidates,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const query = readQuery(routes.storefront.listCandidates.query, request);
+      await delay();
+      return reply(routes.storefront.listCandidates, candidatePage(data, query));
+    }),
+  ),
+
+  mock(
+    routes.storefront.createListing,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefront.createListing.body, request);
+      return reply(routes.storefront.createListing, createListing(data, body));
+    }),
+  ),
+
+  mock(
+    routes.storefront.getListing,
+    guarded(async ({ params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.getListing.params.parse(params);
+      await delay();
+      return reply(routes.storefront.getListing, listingOf(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefront.updateListing,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.updateListing.params.parse(params);
+      const body = await readBody(routes.storefront.updateListing.body, request);
+      return reply(routes.storefront.updateListing, updateListing(data, id, body));
+    }),
+  ),
+
+  mock(
+    routes.storefront.publishListing,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.publishListing.params.parse(params);
+      const { version } = await readBody(routes.storefront.publishListing.body, request);
+      return reply(routes.storefront.publishListing, setPublished(data, id, version, true));
+    }),
+  ),
+
+  mock(
+    routes.storefront.unpublishListing,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.unpublishListing.params.parse(params);
+      const { version } = await readBody(routes.storefront.unpublishListing.body, request);
+      return reply(routes.storefront.unpublishListing, setPublished(data, id, version, false));
+    }),
+  ),
+
+  mock(
+    routes.storefront.deleteListing,
+    guarded(({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefront.deleteListing.params.parse(params);
+      const { version } = readQuery(routes.storefront.deleteListing.query, request);
+      removeListing(data, id, version);
+      return reply(routes.storefront.deleteListing, undefined);
     }),
   ),
 ];

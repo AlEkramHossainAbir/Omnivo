@@ -1027,6 +1027,45 @@ const auditLogRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/audit-log'), 'AuditLogPage'),
 });
 
+// Step 26g: the Storefront menu (decision 5), behind storefront.manage: the sidebar hides it, and
+// the API refuses the reads for anyone else. '/storefront/listings' is the catalog; a listing's
+// editor sits under it
+const storefrontListingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/listings',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-catalog'),
+    'StorefrontCatalogPage',
+  ),
+});
+
+const storefrontListingRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/listings/$listingId',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-listing'),
+    'StorefrontListingPage',
+  ),
+});
+
+const storefrontCategoriesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/categories',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-categories'),
+    'StorefrontCategoriesPage',
+  ),
+});
+
+const storefrontSettingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/settings',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-settings'),
+    'StorefrontSettingsPage',
+  ),
+});
+
 // শুধু `pnpm dev`-এ। production build-এ Vite import.meta.env.DEV-কে false বসায়, minifier পুরো
 // শাখা মুছে দেয় — import() হারায়, তাই kitchen-sink-এর chunk তৈরিই হয় না
 const devRoutes = import.meta.env.DEV
@@ -1170,6 +1209,10 @@ const routeTree = rootRoute.addChildren([
     rolesRoute,
     approvalRulesRoute,
     auditLogRoute,
+    storefrontListingsRoute,
+    storefrontListingRoute,
+    storefrontCategoriesRoute,
+    storefrontSettingsRoute,
     ...devRoutes,
   ]),
 ]);

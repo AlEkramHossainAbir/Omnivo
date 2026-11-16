@@ -72,14 +72,24 @@ http://{$API_HOST} {
 # the Host header as it is, which matters: it is part of the URL's signature.
 http://{$FILES_HOST} {
 	header X-Robots-Tag "noindex, nofollow"
-	# The files are private. Cloudflare keeps .png, .pdf and similar files at its edge by default;
-	# "private" tells it not to, so a file is served only while its signed URL is valid. "defer"
-	# sets it after MinIO answers, so MinIO's own Cache-Control cannot win.
-	header {
-		Cache-Control "private, no-cache"
-		defer
+
+	# Step 26g: the shop's photos, public (storage-init's `mc anonymous`). A photo's address never
+	# gets other content (a new photo gets a new id), so MinIO's own "a year, immutable" (written
+	# by the image job) stands, and Cloudflare may keep them at its edge.
+	handle /omnivo/storefront/* {
+		reverse_proxy storage:9000
 	}
-	reverse_proxy storage:9000
+
+	# Every other file is private. Cloudflare keeps .png, .pdf and similar files at its edge by
+	# default; "private" tells it not to, so a file is served only while its signed URL is valid.
+	# "defer" sets it after MinIO answers, so MinIO's own Cache-Control cannot win.
+	handle {
+		header {
+			Cache-Control "private, no-cache"
+			defer
+		}
+		reverse_proxy storage:9000
+	}
 }
 
 # The online shop: an Astro server that makes each page per request, so Caddy passes every request

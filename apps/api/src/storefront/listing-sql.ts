@@ -79,7 +79,7 @@ function shownListings(shop: ShopScope): SQL {
 // Raw queries leave timestamps as Postgres's own text, which is not ISO (products.service.ts has
 // the same helper). Microseconds, not milliseconds: published_at is a cursor key, and a key cut to
 // the millisecond would skip a listing published in the same millisecond as the last card
-function isoText(column: SQL): SQL {
+export function isoText(column: SQL): SQL {
   return sql`to_char(${column} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`;
 }
 

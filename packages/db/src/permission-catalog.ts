@@ -68,6 +68,8 @@ const DESCRIPTIONS = {
     "See every register's shifts and cash differences, and close a stuck shift without a count",
   'pos.return.create':
     'Take goods back at a POS register and pay the money back, or use it for an exchange',
+  'storefront.manage':
+    'Run the online shop: its settings, categories, listings and photos, and open it to shoppers',
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

@@ -26,6 +26,8 @@ describe('storefront config', () => {
     expect(storefront).toEqual({
       baseDomain: 'localhost',
       mediaUrl: 'http://localhost:9000/omnivo',
+      shopScheme: 'http',
+      shopPort: 4321,
     });
   });
 
@@ -40,7 +42,24 @@ describe('storefront config', () => {
     expect(storefront).toEqual({
       baseDomain: 'omnivo.shop',
       mediaUrl: 'https://media.omnivo.shop',
+      shopScheme: 'https',
+      shopPort: null,
     });
+  });
+
+  // Step 26g: the "View shop" link's port. The shop runs on its own port in dev only
+  it('puts the shop port in the address only where one is set or in dev', () => {
+    expect(loadConfig(env({ SHOP_PUBLIC_PORT: '4331' })).storefront.shopPort).toBe(4331);
+    expect(
+      loadConfig(
+        env({
+          NODE_ENV: 'production',
+          STOREFRONT_MEDIA_URL: 'https://media.omnivo.shop',
+          SHOP_PUBLIC_PORT: '8443',
+        }),
+      ).storefront.shopPort,
+    ).toBe(8443);
+    expect(() => loadConfig(env({ SHOP_PUBLIC_PORT: '70000' }))).toThrow(/Invalid environment/);
   });
 
   // The contract takes http only on this computer, so a production API with an http address would

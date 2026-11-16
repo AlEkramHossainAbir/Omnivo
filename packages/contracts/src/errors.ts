@@ -639,6 +639,42 @@ export const ERROR_CODES = [
   'storefront_sale_percent',
   'storefront_sale_zero',
   'storefront_sale_dates',
+  // Step 26g: the Storefront screens. The shop's address and its links
+  'storefront_subdomain_format',
+  'storefront_subdomain_reserved',
+  'storefront_subdomain_taken',
+  'storefront_link_https',
+  'storefront_slug_format',
+  'storefront_slug_required',
+  'storefront_slug_taken',
+  // The settings: a zone named twice, no way to pay, a warehouse that is not this workspace's
+  // active one, saving the settings before the first save (or twice the first one), and "Open the
+  // shop" before the checklist is done (params say nothing: the page shows the checklist)
+  'storefront_zone_name_taken',
+  'storefront_payment_required',
+  'storefront_warehouse_invalid',
+  'storefront_not_set_up',
+  'storefront_set_up_already',
+  'storefront_launch_not_ready',
+  // The categories (the rest reuse the product categories' words: category_name_taken,
+  // category_parent_invalid, category_parent_loop, category_has_children)
+  'storefront_category_in_use',
+  'storefront_category_invalid',
+  // The listings: a variant listed already or archived, publishing without a photo or a price, a
+  // sale that takes nothing off the regular price
+  'storefront_variant_listed',
+  'storefront_variant_archived',
+  'storefront_listing_needs_photo',
+  'storefront_listing_no_price',
+  'storefront_sale_not_lower',
+  // The photos: one twice on a listing, one that is not ready (or not this workspace's), a file
+  // over 8 MB, and the image job's three refusals (STOREFRONT_IMAGE_FAILURES)
+  'storefront_image_twice',
+  'storefront_image_not_ready',
+  'storefront_image_file_too_large',
+  'storefront_image_unreadable',
+  'storefront_image_too_small',
+  'storefront_image_too_many_pixels',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

@@ -1055,6 +1055,16 @@ apps/api/src/modules/
 - **ছবি:** স্টোরেজের পাবলিক `storefront/` ফোল্ডারে, নাম কখনো বদলায় না (`storefront/<image id>/<size>.webp`:
   small 480px, large 1200px, wide 2560px), তাই CDN রেখে দিতে পারে; signed link না। WebP বানায় worker-এর
   sharp জব (ধাপ ২৬g)। শপের LCP টার্গেট < ২.৫ সেকেন্ড 3G-তে।
+- **ছবি আপলোড (ধাপ ২৬g):** ERP-র ব্রাউজার আসল ছবিটা presigned PUT দিয়ে workspace-এর **private** ফোল্ডারে পাঠায়
+  (attachment purpose `storefront_image`: JPEG/PNG/WebP, ৮ MB)। `complete`-এ একই transaction-এ attachment
+  ready, `storefront_images`-এ `processing` রো আর outbox ইভেন্ট `storefront.image_uploaded`। Worker-এর sharp
+  জব আগে হেডার আর বাইট দেখে ফরম্যাট যাচাই করে, EXIF দেখে ছবি সোজা করে, metadata (GPS সহ) ফেলে দেয়, ৪০
+  মেগাপিক্সেলের বেশি বা কোনো দিকে ২০০px-এর কম হলে বাতিল করে, ছোট ছবি কখনো বড় করে না, তারপর তিনটা WebP লিখে রো
+  `ready` করে (না পারলে `failed` আর কারণের কোড)। স্ক্রিন ২ সেকেন্ড পরপর জিজ্ঞেস করে ("Preparing the photo…")।
+  লিস্টিং সেভের সময় API দেখে প্রতিটা ছবি এই workspace-এর আর `ready` কিনা। ছবির id = attachment-এর id।
+- **স্টোরেজে শুধু `storefront/` পাবলিক।** বাকি সব (আসল ছবি সহ) signed link-এ। Dev/test-এ API প্রতিবার চালু হওয়ার
+  সময় bucket policy বসায়, স্টেজিং-এ `storage-init`-এর `mc anonymous`, আর প্রোডাকশনে (Cloudflare R2) এটা অ্যাপের
+  বাইরে: R2-র পাবলিক ঠিকানা আলাদা হোস্টে, তাই `STOREFRONT_MEDIA_URL` সেট করতে হবে।
 - **কার্ট:** ব্রাউজারে (localStorage), দাম প্রতিবার সার্ভারের quote থেকে। Abandoned cart রিপোর্ট আর
   রিমাইন্ডার SMS-এর জন্য সার্ভারে `storefront_carts` পরে আসবে।
 
@@ -1082,6 +1092,12 @@ storefront_listings                ← Inventory-র variant-কে শপে "�
   badges, images (JSONB, সর্বোচ্চ ৪টা {id, alt}), description_sections (JSONB, HTML না)
   seo_title, seo_description
   UNIQUE (tenant_id, slug)
+
+storefront_images                  ← একটা শপ-ছবির জবের অবস্থা (ধাপ ২৬g)
+  id (PK = attachment-এর id), tenant_id → (tenant_id, id) FK attachments-এ, ON DELETE CASCADE
+  status (processing | ready | failed), failure_code (শুধু failed হলে)
+  width, height (শুধু ready হলে), processed_at
+  ("uploading" মানে attachment এখনো pending আর রো নেই; omnivo_public-এর কোনো grant নেই)
 
 storefront_banners (hero | image), storefront_collections + storefront_collection_items,
 storefront_home_blocks (হোমপেজের ক্রম), storefront_pages (privacy | terms | about | contact)
@@ -1173,6 +1189,24 @@ sequenceDiagram
 | **Couriers** | কুরিয়ার অ্যাকাউন্ট যোগ করা, ডিফল্ট কুরিয়ার, **অটো-কনসাইনমেন্ট নীতি** (বন্ধ / কনফার্মে / পেমেন্টে) |
 | **Orders** | অর্ডার বোর্ড (pending → confirmed → packed → shipped → delivered), বাল্ক লেবেল প্রিন্ট, বাল্ক কনসাইনমেন্ট, বাতিল ও রিটার্ন |
 | **Domain** | `acme.omnivo.shop` বা নিজের ডোমেইন সংযোগ (DNS ধাপ সহ) |
+
+**ধাপ ২৬g-তে যা তৈরি হয়েছে** (বাকিটা ২৬h আর পরের ধাপে):
+
+- পারমিশন `storefront.manage` (নিজের গ্রুপ "Online shop"; retail-এর Shop manager আর সাধারণ Manager টেমপ্লেটে আছে)।
+  এটা না থাকলে সাইডবারে Storefront গ্রুপই দেখায় না, আর API প্রতিটা রুটে `403` দেয়। সব পেজ অনলাইনে চলে, প্রতিটা
+  ফর্মে version check, প্রতিটা সেভ audit log-এ।
+- **Shop settings** (`/storefront/settings`): ঠিকানা (subdomain, workspace-এর slug থেকে শুরু), নাম, ভাষা,
+  যোগাযোগ, সোশ্যাল লিংক, ডিফল্ট warehouse, সর্বোচ্চ ৬টা delivery zone, ফ্রি ডেলিভারি, ন্যূনতম অর্ডার, পেমেন্ট মেথড।
+  উপরের টেবিলের Delivery আর Payments আলাদা মেনু না, এখানেই। শপ খোলে একটা চেকলিস্ট পূরণ হলে (warehouse, অন্তত
+  একটা zone, ছবি আর দাম সহ অন্তত একটা প্রকাশিত লিস্টিং), আর খোলা শপ আর বন্ধ হয় না। খোলার পরেও subdomain বদলানো
+  যায়, একটা ডায়ালগ জানায় যে পুরনো লিংক কাজ করবে না (redirect নেই)।
+- **Shop categories** (`/storefront/categories`): শপের নিজের ট্রি, Move up/down, লিস্টিং বা ভেতরে ক্যাটাগরি
+  থাকলে মোছা যায় না।
+- **Catalog** (`/storefront/listings`, সার্ভারে paged) আর লিস্টিং এডিটর: "Add to shop" একটা variant থেকে draft
+  বানায়; এডিটরে নাম, link name, pack size, ক্যাটাগরি, badge, ছবি (সর্বোচ্চ ৪টা, alt বাধ্যতামূলক), শপের দাম ও
+  অফার (`listingPricing()` দিয়ে লাইভ প্রিভিউ), বর্ণনার section, SEO, তারপর Show in the shop। শপের সার্ভার
+  উত্তর ৩০ সেকেন্ড রাখে, তাই প্রতিটা পেজ বলে "Changes show in the shop within a minute"।
+- এখনো না: একসাথে অনেক প্রোডাক্ট যোগ, অব্যবহৃত ছবি মুছে ফেলা, নিজের ডোমেইন, `feature.storefront` entitlement।
 
 - **Omnivo Admin Panel** এখানে শুধু একটা জায়গায় আসে: Storefront কোন প্ল্যানে থাকবে, সেটা `feature.storefront` entitlement দিয়ে ঠিক হবে (§১৩.২)। অর্থাৎ Storefront বিক্রি হবে Growth প্ল্যানের ফিচার বা আলাদা অ্যাড-অন হিসেবে, আর কোডে কখনো `if (plan === 'growth')` লেখা হবে না।
 - ⚠️ থিম কাস্টমাইজেশনের চাপ আসবেই। উত্তর হলো **কনফিগারেশন ও কয়েকটা রেডিমেড থিম**, টেন্যান্ট-ভিত্তিক কাস্টম কোড না (§৪.৮)।

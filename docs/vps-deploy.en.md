@@ -14,7 +14,7 @@ here. They are in the VPS access sheet and in the `myvps` entry of `~/.ssh/confi
 | --- | --- |
 | `https://app.omnivosoft.com` | The ERP app |
 | `https://api.omnivosoft.com` | The API (`/health` answers `{"status":"ok"}`) |
-| `https://files.omnivosoft.com` | File storage (MinIO). The browser uploads and downloads here with signed links |
+| `https://files.omnivosoft.com` | File storage (MinIO). The browser uploads and downloads here with signed links. Only the shop's photos (`/omnivo/storefront/…`) are public |
 | `https://mail.omnivosoft.com` | Mailpit: every email the server sends lands here. User `tester`, password below |
 | `https://shop.omnivosoft.com` | The online shop as a demo (the `shop` service). It shows the mock shop, so nothing in it is real, and a deploy forgets its orders |
 
@@ -170,7 +170,7 @@ scp 'myvps:/srv/omnivo/backups/*.dump' ~/omnivo-backups/
 The `backups` folder must exist before the first night: cron opens `backup.log` in it before
 `backup.sh` runs. It was made by hand on 12 Nov 2026, with a first backup.
 
-Uploaded files (logos) live in the `storage-data` Docker volume and are not in the dump. On a demo
+Uploaded files (logos, the shop's photos) live in the `storage-data` Docker volume and are not in the dump. On a demo
 that is acceptable; for real customers, plan off-site backups first (see
 [home-server-requirements.en.md](home-server-requirements.en.md), Part 3.7).
 
@@ -192,10 +192,13 @@ If swap is in use most of the time, ask for more RAM before adding testers.
 
 ## Not on this server yet
 
-- A real shop. `https://shop.omnivosoft.com` shows the mock shop (`SHOP_SOURCE` is not set) until 26g lets a
-  workspace launch one. Then the `shop` service gets `SHOP_SOURCE=api` and `SHOP_API_URL=http://api:3000`
-  (inside Docker's network), the API gets `SHOP_BASE_DOMAIN=omnivosoft.com`, and the tunnel and Caddy need a
-  route for the shops' names.
+- A real shop. Since 26g a workspace can set up and open a shop in the app (Storefront menu), but
+  `https://shop.omnivosoft.com` still shows the mock shop (`SHOP_SOURCE` is not set). A real shop lives at
+  `<subdomain>.<SHOP_BASE_DOMAIN>`, and this server has one fixed `SHOP_HOST`, so the switch needs a wildcard
+  host first: a DNS record and a tunnel route for the shops' names, and a Caddy site for them. Then the `shop`
+  service gets `SHOP_SOURCE=api` and `SHOP_API_URL=http://api:3000` (inside Docker's network), and the API gets
+  `SHOP_BASE_DOMAIN` (the shops' domain). Until then, the app's "View shop" link points at an address that does
+  not answer. `SHOP_PUBLIC_PORT` stays unset here: in production a shop's address has no port.
 - A rate limit for the public shop API. `https://api.omnivosoft.com/public/v1/*` answers anyone, with no
   sign-in. Before a real shop opens, add a Cloudflare rate limiting rule for that path (**Security → WAF → Rate
   limiting rules**). The shop's server calls the API inside Docker's network, so the rule never slows the shop.

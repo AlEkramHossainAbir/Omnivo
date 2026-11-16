@@ -6,10 +6,11 @@ import { z } from 'zod';
 
 import { bearer, type SignedIn } from './http.js';
 
-// Step 26f's tests: a shop made straight in the database. The ERP's Storefront screens (and their
-// API) come in step 26g, so until then the tests write the rows as the superuser, the way 26g's
-// API will. Every row still passes the tables' checks, so a test can never set up a shop the real
-// screens could not make.
+// Step 26f's tests: a shop made straight in the database, as the superuser. Every row still passes
+// the tables' checks, so a test can never set up a shop the real screens could not make.
+// Step 26g kept this for the public API's tests (its decision 30): they test how a shop is read,
+// and step 26g's own tests (storefront-admin.int.spec.ts) test how one is written. Made through
+// the admin API, every listing would need a real photo, the storage and the image job.
 
 const idRowSchema = z.array(z.object({ id: z.uuid() })).length(1);
 
@@ -35,13 +36,15 @@ export async function tenantIdOf(sql: postgres.Sql, slug: string): Promise<strin
 }
 
 // A product with one variant, through the ERP's own API, so its rows are exactly what a real
-// workspace has (SKU, base unit, version). The SKU is the name without spaces, in capitals
+// workspace has (SKU, base unit, version). The SKU is the name without spaces, in capitals, unless
+// the test names one (step 26g: a Bangla name has no letter \W keeps, and two names can make one SKU)
 export async function createProduct(
   app: NestFastifyApplication,
   who: SignedIn,
   unitId: string,
   name: string,
   salePrice: string,
+  sku = name.replace(/\W/g, '').toUpperCase(),
 ): Promise<Product> {
   const res = await app.inject({
     method: 'POST',
@@ -63,7 +66,7 @@ export async function createProduct(
       variants: [
         {
           id: null,
-          sku: name.replace(/\W/g, '').toUpperCase(),
+          sku,
           optionValues: [],
           barcode: '',
           salePrice,

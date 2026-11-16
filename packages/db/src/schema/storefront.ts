@@ -2,6 +2,9 @@ import {
   LANGUAGE_CODES,
   SHOP_PAYMENT_METHODS,
   SHOP_TEXT_PAGES,
+  STOREFRONT_IMAGE_FAILURES,
+  STOREFRONT_IMAGE_MAX_PIXELS,
+  STOREFRONT_IMAGE_MIN_SIDE,
   STOREFRONT_SALE_KINDS,
   type ShopBadge,
   type ShopDeliveryZone,
@@ -14,6 +17,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   numeric,
   pgTable,
@@ -25,6 +29,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
+import { attachments } from './attachments.js';
 import { productVariants } from './products.js';
 import { tenants } from './tenants.js';
 import { warehouses } from './warehouses.js';
@@ -523,6 +528,65 @@ export const storefrontPages = pgTable(
     check(
       'storefront_pages_sections_check',
       sql`jsonb_typeof(${table.sections}) = 'array' AND ${arrayLength(table.sections)} BETWEEN 1 AND 12`,
+    ),
+  ],
+);
+
+// Step 26g: what the image job made of an uploaded photo. The photo itself is an attachment
+// (purpose storefront_image), uploaded and confirmed like any other; this row starts when the
+// upload is confirmed and the job is queued, in the same transaction. Before that there is no row,
+// and the screens call the photo "uploading". Its own table, not more columns on attachments: a
+// receipt's scan has no width and no job, and "ready" on attachments keeps one meaning for every
+// purpose (the file is confirmed). StorefrontImage.id is this id, and so the attachment's.
+export const storefrontImages = pgTable(
+  'storefront_images',
+  {
+    // The attachment's id, never a new one: the files are under storefront/<id>/ and the forms
+    // save this id, so one id names the photo everywhere. No default on purpose
+    id: uuid('id').primaryKey(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id),
+    status: text('status', { enum: ['processing', 'ready', 'failed'] })
+      .notNull()
+      .default('processing'),
+    // Why the job could not use it, as the error code the screen shows (errors.*)
+    failureCode: text('failure_code', { enum: STOREFRONT_IMAGE_FAILURES }),
+    // The original's size after the EXIF rotation, so a phone's portrait photo is taller than wide
+    width: integer('width'),
+    height: integer('height'),
+    createdAt: baseColumns().createdAt,
+    // When the job finished, either way
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+  },
+  (table) => [
+    // The photo is this workspace's attachment. The pair, not the id alone: another workspace's
+    // attachment id is refused here too, whatever the API checks first. CASCADE: the row only
+    // describes its attachment, so the later unused-photo cleanup deletes the attachment alone
+    foreignKey({
+      name: 'storefront_images_attachment_fk',
+      columns: [table.tenantId, table.id],
+      foreignColumns: [attachments.tenantId, attachments.id],
+    }).onDelete('cascade'),
+    // Each state has exactly its own fields, one line per state like pos_shifts_status_check, so
+    // a status or a code the list does not know is refused too: a code only when failed, a size
+    // only when ready, a finish time unless still processing. The screen's union
+    // (storefrontUploadSchema) can then be read straight from a row, with no "ready but no width"
+    // case to guess about. "failure_code IS NOT NULL" before the IN is not extra: NULL IN (…) is
+    // NULL, not false, and a CHECK passes on NULL, so without it a failed row with no code got in
+    check(
+      'storefront_images_state_check',
+      sql`(${table.status} = 'processing' AND ${table.failureCode} IS NULL AND ${table.width} IS NULL AND ${table.height} IS NULL AND ${table.processedAt} IS NULL)
+        OR (${table.status} = 'ready' AND ${table.failureCode} IS NULL AND ${table.width} IS NOT NULL AND ${table.height} IS NOT NULL AND ${table.processedAt} IS NOT NULL)
+        OR (${table.status} = 'failed' AND ${table.failureCode} IS NOT NULL AND ${table.failureCode} IN (${sql.raw(STOREFRONT_IMAGE_FAILURES.map((code) => `'${code}'`).join(', '))}) AND ${table.width} IS NULL AND ${table.height} IS NULL AND ${table.processedAt} IS NOT NULL)`,
+    ),
+    // The job's limits again, so a ready photo is always one the shop's cards can show
+    check(
+      'storefront_images_size_check',
+      sql`${table.width} IS NULL OR (
+        ${table.width} >= ${sql.raw(String(STOREFRONT_IMAGE_MIN_SIDE))}
+        AND ${table.height} >= ${sql.raw(String(STOREFRONT_IMAGE_MIN_SIDE))}
+        AND ${table.width}::bigint * ${table.height} <= ${sql.raw(String(STOREFRONT_IMAGE_MAX_PIXELS))})`,
     ),
   ],
 );

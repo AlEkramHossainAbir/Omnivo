@@ -245,7 +245,7 @@ test('pays an advance against an order, and the order shows it', async ({ page }
 });
 
 test('chooses the purchase accounts in Settings', async ({ page }) => {
-  await openFromNav(page, 'Settings');
+  await openFromNav(page, /^Settings$/);
   // The template's two accounts, chosen when the workspace was set up
   const difference = page.getByLabel('Purchase price difference', { exact: true });
   await expect(difference).toHaveValue(/.+/);

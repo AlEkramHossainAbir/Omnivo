@@ -4,8 +4,8 @@
 #   api      the API and the worker (same code, a different command)
 #   migrate  runs the database migrations once per deploy, then exits
 #   web      Caddy: HTTPS in front of everything, and the app's static files
-#   shop     the online shop (apps/shop), an Astro Node server. Until step 26's public API exists
-#            it shows the mock shop, so on staging it is a demo only
+#   shop     the online shop (apps/shop), an Astro Node server. It reads the mock or the API's
+#            /public/v1 (SHOP_SOURCE); staging still shows the mock (infra/staging/compose.yml)
 # Build from the repo root: docker build -f infra/docker/Dockerfile --target api .
 
 ARG NODE_IMAGE=node:24.22.2-alpine3.24

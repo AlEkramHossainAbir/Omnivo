@@ -42,6 +42,10 @@ const envSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
   // which is right for MinIO in dev and on staging. Cloudflare R2 serves public files from another
   // address than its API, so production sets it
   STOREFRONT_MEDIA_URL: z.url().optional(),
+  // Step 26g: the port in a shop's own address, which the Storefront screens link to ("View
+  // shop"). In dev the shop's server has its own port (apps/shop runs on 4321); behind a proxy the
+  // address has none. Left out: 4321 outside production, none in production
+  SHOP_PUBLIC_PORT: z.coerce.number().int().min(1).max(65535).optional(),
 });
 
 const workerEnvSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
@@ -114,6 +118,10 @@ export function loadConfig(env: Record<string, string | undefined>) {
     storefront: {
       baseDomain: e.SHOP_BASE_DOMAIN,
       mediaUrl: storefrontMediaUrl(e),
+      // Step 26g: how a shop's address starts and ends (storefront/shop-url.ts). https in
+      // production, where the browser would refuse a shop on plain http anyway
+      shopScheme: e.NODE_ENV === 'production' ? 'https' : 'http',
+      shopPort: e.SHOP_PUBLIC_PORT ?? (e.NODE_ENV === 'production' ? null : 4321),
     },
     auth: {
       betterAuthSecret: e.BETTER_AUTH_SECRET,

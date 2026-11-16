@@ -253,6 +253,20 @@ export const AUDIT_ACTIONS = [
   'report_schedule.paused',
   'report_schedule.resumed',
   'report_schedule.deleted',
+  // Step 26g: the shop (entity = the workspace's storefront, entityId = tenant id), its categories
+  // and its listings. A photo upload is not an event of its own: the listing's save that uses it is
+  'storefront.created',
+  'storefront.updated',
+  'storefront.launched',
+  'storefront_category.created',
+  'storefront_category.updated',
+  'storefront_category.moved',
+  'storefront_category.deleted',
+  'storefront_listing.created',
+  'storefront_listing.updated',
+  'storefront_listing.published',
+  'storefront_listing.unpublished',
+  'storefront_listing.deleted',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -311,6 +325,9 @@ export const AUDIT_ENTITY_TYPES = [
   'pos_shift',
   'pos_return',
   'report_schedule',
+  'storefront',
+  'storefront_category',
+  'storefront_listing',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

@@ -89,7 +89,7 @@ test('revalues an item, and posts the difference', async ({ page }) => {
 });
 
 test('chooses where stock documents post', async ({ page }) => {
-  await openFromNav(page, 'Settings');
+  await openFromNav(page, /^Settings$/);
   await expect(page.getByRole('heading', { name: 'Stock accounts' })).toBeVisible();
   await page
     .getByLabel('Free samples')

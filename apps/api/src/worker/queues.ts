@@ -30,6 +30,7 @@ const QUEUE_OF = {
   'pos.sold_short': 'jobs',
   'pos.shift_variance': 'jobs',
   'report.schedule_due': 'jobs',
+  'storefront.image_uploaded': 'jobs',
 } satisfies Record<OutboxEventType, QueueName>;
 
 // The hourly maintenance job. Not an outbox event: no request asks for it, a scheduler adds it.

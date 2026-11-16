@@ -613,6 +613,67 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   after the window or its day was closed in the books. A sale's page says per line "1 pcs came back", lists its
   returns, and its exchange payment links "From return POS1-R000012". A shift's page has "Cash paid back" in the
   drawer's sum, the sales' discounts and VAT, and a refunds card (count, VAT on returns, per method).
+- **Storefront menu (`storefront.manage`):** a sidebar group "Storefront", hidden without the permission: Catalog
+  (`Store04`), Shop categories (`FolderLibrary`), Shop settings (`WebDesign01`); 26h adds Appearance and Pages. The
+  links say "Shop …" because the phone's nav row has no group labels. Every page is online only: offline it is the
+  empty state "Needs a connection" (`WifiDisconnected02`). Once the shop is set up, each page header has "View
+  shop" (a real `<a>` to a new tab that looks like the secondary button, `LinkSquare02`) and, under the description,
+  a 13px `ink-3` line with a 14px `Clock01` icon: "Changes show in the shop within a minute". A long form shows a
+  sticky save bar while it has changes (a card with `shadow-md`: "Changes not saved yet", "Discard changes"
+  secondary, Save primary). A shop price shows its paisa only when it has some (`৳229`, `৳247.50`).
+- **Shop settings (`/storefront/settings`):** cards (Name and address: the shop address with `Globe02` and the
+  `.omnivo.shop` suffix in the box, the shop name, the language; Contact; Social pages; Stock and delivery: the
+  warehouse select, up to 6 delivery zones as rows of a name, a 180px money input and a remove icon button, "Add
+  zone" secondary `sm`, then free delivery from and minimum order, empty = none; Payment: a checkbox group) beside a
+  340px column, sticky from `lg`. Before the first save the form starts from the company's details under a neutral
+  document notice, and "Set up the shop" is the primary button; after it, the save bar. The column is the "Open
+  the shop" checklist: three rows with 1px `line` rules, each a 22px circle (`good-bg` with a `good` `Tick02` when
+  done, a dashed `line-strong` ring when not), the sentence and a caption "Done" (`good`) or "Not done yet"
+  (`ink-3`); then "Open the shop" (`Rocket01`, full width, primary once all three are done, else a disabled
+  secondary), disabled with "Save the settings first…" while the form has changes. It asks first and says a shop
+  can't be closed again. Once open, the card is "The shop is open": a 40px `good-bg` `StoreVerified01` tile, "Open
+  since 16 Nov 2026 at …", a `good` "Open" pill and a full-width "View shop". Changing an open shop's address asks
+  first: the old address stops working and nothing sends shoppers on.
+- **Shop categories (`/storefront/categories`):** the page header with "Add category" (primary, `PlusSign`), a
+  search box (max 384px), then a `TreeList`. A row: the name as a button that opens the edit dialog, the link
+  (`/c/skin-care`, `Geist Mono` caption `ink-3`, from `sm`), "12 listings" (caption `ink-3` `tabular-nums`), then
+  icon buttons: `FolderAdd` (add one inside it, the tree list's hover rule), `ArrowUp01` / `ArrowDown01` (Move up /
+  down, disabled at the ends and while a search is on) and a `MoreHorizontal` menu (Edit `Edit02`, Delete
+  `Delete02`). The dialog form: Inside (a select, "Top level" first), Name, Link name (empty = made from the name).
+  Delete asks first; a category with listings or categories inside is refused with the reason.
+- **Catalog (`/storefront/listings`):** "View shop" and "Add to shop" (primary, `PlusSign`) in the header; before
+  the shop is set up, the empty state "Set up the shop first" (`Store04`) with "Go to shop settings". A filter row
+  (search "Name or SKU", max 320px; a Show segmented control All / In the shop / Drafts; a category select with
+  `FolderLibrary`), then a data table sorted on the server and paged, a row click opens the editor: listing (a 40px
+  photo, radius 8px, 1px `line`, `object-contain`, or a `subtle` tile with `Image01`; the name at 500 and "SKU ·
+  150 ml" in caption `ink-3`, the SKU in `Geist Mono`), category, shop price (right, the struck old price under it,
+  or "No price"), stock (`good` "In stock" `CheckmarkCircle02`, `warn` "Out of stock" `Alert02`, or "No warehouse"
+  in `ink-3`), status (`good` "In the shop" `Store04`, neutral "Draft" `FileEdit`), and the day it changed.
+- **Add to shop dialog:** "Add a product to the shop": a `Combobox` of the products not in the shop yet (the server
+  searches; detail "SKU · ৳price"), a shop category select ("Add categories" when there are none), and "Add to shop".
+  It makes a draft and opens its editor, with the toast "Neem face wash 150 ml added as a draft".
+- **Listing editor (`/storefront/listings/$listingId`):** a "Catalog" back link (`ArrowLeft01`), then the page
+  header: the listing's name, its status pill above "Sells Neem face wash · NFW-150" and the shop line; on the right
+  a 42px `MoreHorizontal` menu button (View in the shop, Delete listing) and "Show in the shop" (primary, `Store04`)
+  or "Take out of the shop" (secondary, `FileEdit`), disabled with "Save your changes first…" while the form has
+  changes. A `warn` notice (`Alert02`) when the product is archived, a neutral one on a draft. The cards Basics,
+  Photos, Price and sale, Description and Search engines sit beside a 320px column, sticky from `lg`, with "In the
+  shop now": the first photo (56px), the name, the price at the KPI size, the struck price, a `brand` `Tag01` pill
+  ("10% OFF") and when the sale starts or ends. Sale days are whole days in the workspace's time zone, Until
+  included. Save waits until every photo is ready.
+- **Listing photos card:** up to 4 tiles, two columns from `sm` (1px `line`, radius 10px, 12px padding): "Photo 1"
+  with move earlier / later (`ArrowLeft01` / `ArrowRight01`) and remove icon buttons, a 4:3 `subtle` box with the
+  photo (`object-contain`, `mix-blend-multiply`), a `brand` "On the shop's card" pill (`Image01`) on the first one,
+  and the alt text box ("What the photo shows", required). While the image job runs the box says "Uploading…" or
+  "Preparing the photo…" (`Loading03`, spinning only without reduced motion, `role="status"`) and the page asks
+  again every 2 seconds; a failed photo says why in `crit` with an `Alert02` icon and a "Remove it" text link. The
+  Add tile: a dashed `line-strong` border, a 40px `brand-soft` `ImageAdd01` tile, "Add photo" and "1 more can be
+  added".
+- **Description card (listings):** each section in a 1px `line` box (radius 10px, 16px padding): "Section 1" with
+  move up / down and remove icon buttons, Heading, Text (a text area: `- ` lists, `1.` numbered lists, `**bold**`,
+  links) and a Preview / Hide preview button (`View` / `ViewOffSlash`). The preview is the shop's own HTML
+  (`renderSections`, which escapes everything typed) under a `subtle` caption row "As the product page shows it".
+  "Add section" (secondary `sm`, `PlusSign`), at most 12.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -1002,6 +1063,9 @@ its data from `Astro.locals.source`, which `src/middleware.ts` sets for each req
 `SHOP_SOURCE=mock`) or the ERP's `/public/v1` for the shop the host names (`SHOP_SOURCE=api` plus `SHOP_API_URL`).
 Only the middleware imports `data/source.ts`. The API reads a shop only inside `ShopDb.read`, a read-only
 transaction as the `omnivo_public` role, so a table or column the shop needs is granted to that role in a migration.
+A shop photo comes from the ERP's Storefront menu as a `storefront_image` upload; the worker's `sharp` job writes
+`storefront/<id>/small.webp`, `large.webp` and `wide.webp`, and only that `storefront/` folder of the storage is
+public. The original stays private, and the shop never links to it.
 
 ### Storefront color tokens
 

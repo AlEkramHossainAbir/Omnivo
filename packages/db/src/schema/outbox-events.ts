@@ -24,6 +24,7 @@ export const OUTBOX_EVENT_TYPES = [
   'pos.shift_variance',
   'report.schedule_due',
   'report.schedule_email',
+  'storefront.image_uploaded',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

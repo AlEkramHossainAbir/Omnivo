@@ -456,6 +456,20 @@
       "when": 1794730139948,
       "tag": "0064_storefront-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1794799221408,
+      "tag": "0065_storefront-images",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1794799222491,
+      "tag": "0066_storefront-images-rules",
+      "breakpoints": true
     }
   ]
 }

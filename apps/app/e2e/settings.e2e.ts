@@ -8,7 +8,7 @@ const PNG = Buffer.from(
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await openFromNav(page, 'Settings');
+  await openFromNav(page, /^Settings$/);
 });
 
 test('checks the BIN, then saves the company profile', async ({ page }) => {

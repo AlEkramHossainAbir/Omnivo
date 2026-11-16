@@ -223,7 +223,7 @@ test('writes a goods receipt from its own page, keeps it a draft, and posts it l
 });
 
 test('the over-receipt percent in Settings lets a little more in', async ({ page }) => {
-  await openFromNav(page, 'Settings');
+  await openFromNav(page, /^Settings$/);
   await page.getByLabel('Receive over the order').fill('5');
   await page.getByRole('button', { name: 'Save changes' }).click();
   await toastShown(page, 'Settings saved');
