@@ -147,6 +147,16 @@ export const en = {
     cashReasons: 'POS cash reasons',
     // Step 20c: what the counters took back (under Sales, next to POS sales)
     posReturns: 'POS returns',
+    // Step 26g: the Storefront group, by storefront.manage (decision 5). Its categories and
+    // settings say "Shop": on a phone the nav is one row with no group labels, next to the
+    // Inventory's Categories and the workspace's Settings
+    storefront: 'Storefront',
+    storefrontCatalog: 'Catalog',
+    storefrontCategories: 'Shop categories',
+    storefrontSettings: 'Shop settings',
+    // Step 26h: the group's last two items, "Shop" for the same reason (decision 32)
+    storefrontAppearance: 'Shop appearance',
+    storefrontPages: 'Shop pages',
   },
   auth: {
     workspace: 'Workspace',
@@ -5210,6 +5220,616 @@ export const en = {
       'Goods a counter takes back show here once its device syncs: a shirt in the wrong size, a phone case that does not fit.',
     loadFailed: "Couldn't load the POS returns. Refresh the page to try again.",
   },
+  // Step 26g: the Storefront menu (decision 5): the catalog, the shop's categories, a listing's
+  // editor and the shop's settings with its launch. Online only, all behind storefront.manage, so
+  // there is no read-only state: someone without the permission never sees the menu
+  storefront: {
+    // Decision 4: next to "View shop" on every page of the menu. The shop's server keeps an
+    // answer for 30 seconds (26f.5), so "a minute" is safe
+    changesSoon: 'Changes show in the shop within a minute',
+    viewShop: 'View shop',
+    needsConnection: 'The shop’s menu works on the server. Connect to the internet to use it.',
+    statuses: { published: 'In the shop', draft: 'Draft' },
+    badges: { most_picked: 'Most Picked', new: 'New', buy_one_get_one: 'Buy 1 Get 1' },
+    payments: { cod: 'Cash on Delivery', online: 'Mobile Banking' },
+    moveUp: 'Move up',
+    moveDown: 'Move down',
+    // Step 26g.6: the save bar under a long form, while it has changes (the mockup's bar)
+    unsaved: 'Changes not saved yet',
+    discard: 'Discard changes',
+    // Step 26h: the section editor, shared by a listing's description and the text pages (decision
+    // 33). Moved here from `listing`; each page keeps its own title, placeholders and caption
+    sections: {
+      number: 'Section {{number}}',
+      heading: 'Heading',
+      body: 'Text',
+      bodyHint:
+        'A blank line starts a new paragraph. Lines that start with - make a list, and 1. a numbered one. **Bold** and [a link](https://…) work too.',
+      add: 'Add section',
+      remove: 'Remove section {{number}}',
+      moveUp: 'Move section {{number}} up',
+      moveDown: 'Move section {{number}} down',
+      showPreview: 'Preview',
+      hidePreview: 'Hide preview',
+    },
+    // Step 26h: one picture box of the logo, the hero or a picture banner (decision 34: a banner
+    // is a picture, often with its words in it; a listing keeps its "photos")
+    picture: {
+      upload: 'Upload picture',
+      replace: 'Replace picture',
+      remove: 'Remove picture',
+      uploading: 'Uploading…',
+      preparing: 'Preparing the picture…',
+      // A picture the job could not use: the error words say why; this empties the box
+      drop: 'Remove it',
+      alt: 'What the picture shows',
+      fileHint: 'JPEG, PNG or WebP, under 8 MB, at least 200 pixels on each side.',
+      // 26h.6: under an empty box after a save was tried (the schema refuses an empty id)
+      missing: 'Upload a picture.',
+    },
+    // Step 26h: a color box and its contrast line (decisions 3 and 11)
+    color: {
+      // name = the box's label, for the palette button's accessible name
+      palette: 'Pick {{name}} on a palette',
+      // ratio = formatContrast() ("4.4:1", cut, not rounded), min = "4.5:1" or "3:1"
+      ratio: '{{ratio}}, needs {{min}}',
+      ok: 'Easy to read',
+      low: 'Too low',
+    },
+    // Step 26h: the "Links to" select of the hero and a picture banner (decision 4)
+    link: {
+      label: 'Links to',
+      kinds: {
+        category: 'A shop category',
+        listing: 'A product',
+        offers: 'Products on offer',
+        all: 'All products',
+        other: 'Another address',
+      },
+      category: 'Shop category',
+      categoryPlaceholder: 'Pick a category',
+      listing: 'Product',
+      listingPlaceholder: 'Pick a product',
+      searchLabel: 'Search the catalog',
+      noMatch: 'No listing matches.',
+      href: 'Address',
+      hrefPlaceholder: '/pages/about',
+      hrefHint: 'A page of your shop, starting with /, or a whole link starting with https://.',
+      // href = the address the choice makes, under the select: "Goes to /c/skin-care"
+      goesTo: 'Goes to {{href}}',
+      // The saved address names a category or product that is gone (renamed or deleted, decision 4)
+      gone: 'Nothing in the shop has this address now, so shoppers get “page not found”. Pick where it goes again.',
+      // A draft listing has no page in the shop yet
+      draft: 'This product is a draft, so the link shows “page not found” until it is in the shop.',
+    },
+    settings: {
+      title: 'Shop settings',
+      description: 'Your online shop’s address, contact details, delivery and payment',
+      // Before the first save: the form starts from the workspace's own details (decision 10)
+      notSetUp:
+        'The shop is not set up yet. Check these details, which come from your company, and save. The shop opens only when you choose Open the shop.',
+      statusNotOpen: 'Not open yet',
+      statusOpen: 'Open',
+      addressTitle: 'Name and address',
+      subdomain: 'Shop address',
+      subdomainHint:
+        'Lowercase English letters, numbers and single hyphens. Shoppers type it to reach your shop.',
+      // Decision 3: once the shop is open, a new address breaks the old links
+      subdomainLiveHint: 'The shop is open at this address. Changing it breaks links to it.',
+      name: 'Shop name',
+      nameHint: 'In the shop’s header and its browser tab. It can differ from your legal name.',
+      language: 'Shop language',
+      languageHint: 'The shop’s pages and messages are in this language.',
+      contactTitle: 'Contact',
+      contactHint: 'Shoppers see these on every page.',
+      hotline: 'Hotline',
+      hotlinePlaceholder: '09612-345678',
+      hotlineHint: 'On every product page, next to "Hotline:".',
+      address: 'Address',
+      addressPlaceholder: 'House 12, Road 5, Dhanmondi, Dhaka 1205',
+      addressHint: 'In the shop’s footer.',
+      socialTitle: 'Social pages',
+      socialHint: 'The whole link, starting with https://. An empty one has no icon in the footer.',
+      facebookUrl: 'Facebook',
+      instagramUrl: 'Instagram',
+      xUrl: 'X',
+      linkedinUrl: 'LinkedIn',
+      facebookPlaceholder: 'https://facebook.com/nirvorpharmacy',
+      instagramPlaceholder: 'https://instagram.com/nirvorpharmacy',
+      xPlaceholder: 'https://x.com/nirvorpharmacy',
+      linkedinPlaceholder: 'https://linkedin.com/company/nirvor',
+      deliveryTitle: 'Stock and delivery',
+      warehouse: 'Warehouse for the shop',
+      warehousePlaceholder: 'Pick a warehouse',
+      warehouseHint: 'The shop says "In stock" or "Out of stock" from this warehouse.',
+      zones: 'Delivery zones',
+      // max = STOREFRONT_ZONES_MAX in the page's language
+      zonesHint:
+        'Where you deliver and what it costs, up to {{max}}. The shopper picks one at checkout.',
+      zoneNumber: 'Zone {{number}}',
+      zoneName: 'Zone',
+      zoneNamePlaceholder: 'Inside Dhaka',
+      zoneCharge: 'Charge',
+      // Decision 13: a charge of ৳0 is allowed (a zone you deliver to for free)
+      zoneChargeHint: '৳0 means free in this zone.',
+      addZone: 'Add zone',
+      removeZone: 'Remove zone {{number}}',
+      noZones: 'No delivery zone yet. Add one, like Inside Dhaka for ৳80.',
+      freeDeliveryFrom: 'Free delivery from',
+      freeDeliveryHint:
+        'Orders of this much or more pay no delivery charge. Empty means never free.',
+      minimumOrder: 'Minimum order',
+      minimumOrderHint: 'Checkout waits until the cart reaches this. Empty means no minimum.',
+      paymentTitle: 'Payment',
+      payments: 'Ways to pay',
+      paymentsHint: 'Mobile Banking is bKash or Nagad, paid before the parcel leaves.',
+      create: 'Set up the shop',
+      created: 'Shop set up. Open it when the checklist is done.',
+      updated: 'Shop settings saved',
+      // Decision 3: the dialog when a save changes the address of an open shop
+      moveTitle: 'Change the shop’s address?',
+      moveBody:
+        '{{from}} stops working as soon as you save, and so do the links to it on Facebook or in an SMS. Nothing sends shoppers on to {{to}}.',
+      moveConfirm: 'Change the address',
+      loadFailed: "Couldn't load the shop settings. Refresh the page to try again.",
+    },
+    // The checklist card on the settings page, until the shop is open (decision 1)
+    launch: {
+      title: 'Open the shop',
+      description: 'Three things before shoppers can order',
+      warehouse: 'Pick the warehouse the shop sells from',
+      zone: 'Add at least one delivery zone',
+      listing: 'Show at least one listing in the shop, with a photo and a price',
+      goToCatalog: 'Go to the catalog',
+      done: 'Done',
+      notDone: 'Not done yet',
+      // The button waits for the first save: the checklist reads the saved settings
+      saveFirst: 'Save the settings first. The checklist reads what is saved.',
+      open: 'Open the shop',
+      confirmTitle: 'Open {{name}}?',
+      confirmBody:
+        '{{url}} starts answering, and anyone can see your listings and order from them. A shop can’t be closed again, but you can take listings out of it.',
+      opened: '{{name}} is open',
+      openTitle: 'The shop is open',
+      // date = the launch day in the workspace's time zone
+      openSince: 'Open since {{date}} at {{url}}',
+    },
+    categories: {
+      title: 'Shop categories',
+      description: 'How the shop groups its listings, in the order its menu shows them',
+      add: 'Add category',
+      addTo: 'Add a category to {{name}}',
+      newTitle: 'Add a shop category',
+      editTitle: 'Edit {{name}}',
+      parent: 'Inside',
+      topLevel: 'Top level',
+      name: 'Name',
+      namePlaceholder: 'Skin care',
+      slug: 'Link name',
+      // Decision 12: an empty link name is made from the name
+      slugHint: 'In the shop’s address: /c/{{slug}}. Leave it empty to make it from the name.',
+      slugChangeHint: 'Old links to this category stop working when the link name changes.',
+      listingCount_one: '{{formatted}} listing',
+      listingCount_other: '{{formatted}} listings',
+      moveUpLabel: 'Move {{name}} up',
+      moveDownLabel: 'Move {{name}} down',
+      edit: 'Edit',
+      delete: 'Delete',
+      created: '{{name}} added',
+      updated: '{{name}} saved',
+      confirmDelete: 'Delete {{name}}?',
+      deleteWarning: 'Only a category with no listings and no categories inside it can be deleted.',
+      // 26g.6: the row's menu (Edit, Delete) and the search above the tree
+      actions: 'Actions for {{name}}',
+      searchLabel: 'Search the shop categories',
+      searchPlaceholder: 'Name or link name',
+      noMatchTitle: 'No shop category matches',
+      noMatchBody: 'Check the spelling, or clear the search.',
+      deleted: '{{name}} deleted',
+      expand: 'Show the categories in {{name}}',
+      collapse: 'Hide the categories in {{name}}',
+      emptyTitle: 'No shop categories yet',
+      emptyBody:
+        'Add the groups shoppers look for, like Skin care, Baby care and Diabetic corner, then put listings in them.',
+      loadFailed: "Couldn't load the shop categories. Refresh the page to try again.",
+    },
+    catalog: {
+      title: 'Catalog',
+      description: 'The products your shop shows, with their shop price and photos',
+      add: 'Add to shop',
+      searchLabel: 'Search the catalog',
+      searchPlaceholder: 'Name or SKU',
+      status: 'Show',
+      statuses: { all: 'All', published: 'In the shop', draft: 'Drafts' },
+      category: 'Category',
+      allCategories: 'All categories',
+      columns: {
+        listing: 'Listing',
+        category: 'Category',
+        price: 'Shop price',
+        stock: 'Stock',
+        status: 'Status',
+        updated: 'Changed',
+      },
+      // packSize may be empty; the page then shows the SKU alone
+      subline: '{{sku}} · {{packSize}}',
+      noPhoto: 'No photo',
+      noPrice: 'No price',
+      inStock: 'In stock',
+      outOfStock: 'Out of stock',
+      // inStock = null: the shop has no warehouse yet, so stock is not known
+      noWarehouse: 'No warehouse',
+      // Listings need the shop's settings first (storefront_not_set_up)
+      notSetUpTitle: 'Set up the shop first',
+      notSetUpBody:
+        'Save the shop’s address, contact and delivery details, then add products to it.',
+      goToSettings: 'Go to shop settings',
+      emptyTitle: 'Nothing in the shop yet',
+      emptyBody:
+        'Add products like Neem face wash or Napa 500 mg tablets, give each a photo and a price, then show them in the shop.',
+      noMatchTitle: 'No listing matches',
+      noMatchBody: 'Check the spelling, or clear the filters.',
+      clearFilters: 'Clear the filters',
+      loadFailed: "Couldn't load the catalog. Refresh the page to try again.",
+    },
+    // The "Add to shop" dialog (decisions 14 and 16)
+    add: {
+      title: 'Add a product to the shop',
+      description:
+        'It starts as a draft. Add a photo and check the price, then show it in the shop.',
+      product: 'Product',
+      productPlaceholder: 'Pick a product',
+      searchLabel: 'Search products',
+      searching: 'Searching…',
+      noMatch: 'No product to add matches. Products already in the shop are not listed.',
+      // sku · the product's sale price, or sku alone when it has none
+      detail: '{{sku}} · {{price}}',
+      category: 'Shop category',
+      categoryPlaceholder: 'Pick a category',
+      noCategories: 'The shop has no categories yet.',
+      addCategories: 'Add categories',
+      submit: 'Add to shop',
+      added: '{{name}} added as a draft',
+    },
+    // A listing's editor (/storefront/listings/$id)
+    listing: {
+      back: 'Catalog',
+      // Under the title: the product in Omnivo the listing sells
+      fromProduct: 'Sells {{name}} · {{sku}}',
+      publish: 'Show in the shop',
+      unpublish: 'Take out of the shop',
+      published: '{{name}} is in the shop',
+      unpublished: '{{name}} is a draft again',
+      // The publish button waits for the form: the server publishes what is saved
+      saveFirst: 'Save your changes first, then show it in the shop.',
+      viewInShop: 'View in the shop',
+      // 26g.6: the header's menu button (View in the shop, Delete listing)
+      moreActions: 'More actions',
+      delete: 'Delete listing',
+      confirmDelete: 'Delete {{name}}?',
+      deleteBody:
+        'It leaves the shop and its photos and description are deleted. The product and its stock stay in Omnivo.',
+      deleted: '{{name}} deleted',
+      updated: 'Changes to {{name}} saved',
+      draftNotice: 'This listing is a draft, so the shop does not show it.',
+      // An archived product hides its listing in the shop (26f), whatever the listing says
+      archivedNotice:
+        '{{name}} is archived in Products, so the shop hides this listing. Restore the product to sell it again.',
+      inStock: 'In stock in {{warehouse}}',
+      outOfStock: 'Out of stock in {{warehouse}}',
+      noWarehouse: 'The shop has no warehouse yet, so it shows no stock.',
+      basicsTitle: 'Basics',
+      name: 'Name in the shop',
+      nameHint: 'The product’s name in Omnivo stays as it is.',
+      slug: 'Link name',
+      slugHint: 'In the address: /p/{{slug}}. Leave it empty to make it from the name.',
+      slugChangeHint: 'Old links to this listing stop working when the link name changes.',
+      packSize: 'Pack size',
+      packSizePlaceholder: '150 ml',
+      packSizeHint: 'Under the name on the shop’s card.',
+      category: 'Shop category',
+      badges: 'Badges',
+      badgesHint: 'On the photo’s corner in the shop.',
+      photosTitle: 'Photos',
+      // max = the most photos a listing has (storefrontImagesSchema)
+      photosHint:
+        'Up to {{max}}. The first is the one on the shop’s card. JPEG, PNG or WebP, under 8 MB, at least 200 pixels on each side.',
+      addPhoto: 'Add photo',
+      photoNumber: 'Photo {{number}}',
+      uploading: 'Uploading…',
+      // Decision 2: the job makes the shop's sizes; the screen asks again until it is done
+      preparing: 'Preparing the photo…',
+      alt: 'What the photo shows',
+      altPlaceholder: 'Neem face wash, 150 ml tube',
+      altHint: 'Read aloud to shoppers who can’t see the photo.',
+      removePhoto: 'Remove photo {{number}}',
+      movePhotoUp: 'Move photo {{number}} earlier',
+      movePhotoDown: 'Move photo {{number}} later',
+      noPhotos: 'No photo yet. The shop shows a listing only with at least one photo.',
+      // 26g.6 (mockup approved): the first photo's tag and what the Add tile says under it
+      firstPhoto: 'On the shop’s card',
+      photosLeft_one: '{{formatted}} more can be added',
+      photosLeft_other: '{{formatted}} more can be added',
+      // A photo the job could not use: the error words say why; this drops it from the form
+      dropPhoto: 'Remove it',
+      priceTitle: 'Price and sale',
+      price: 'Shop price',
+      // price = the variant's sale price in Omnivo
+      priceHint: 'Leave it empty to use the product’s sale price, {{price}}.',
+      priceHintNone: 'The product has no sale price in Omnivo, so type one here.',
+      sale: 'Sale',
+      saleKinds: {
+        none: 'No sale',
+        percent: 'Percent off',
+        amount: 'Taka off',
+        price: 'Sale price',
+      },
+      // The value box's label follows the kind
+      saleValues: {
+        percent: 'Percent off (1 to 99)',
+        amount: 'Amount off',
+        price: 'Price on sale',
+      },
+      percentPlaceholder: '10',
+      // Decision 34: whole days in the workspace's time zone, the last day included
+      saleFrom: 'From',
+      saleUntil: 'Until',
+      saleDatesHint:
+        'Whole days in your workspace’s time zone, the last day included. Empty From means now; empty Until means no end.',
+      preview: 'In the shop now',
+      previewNoPrice: 'No price yet. Type a shop price.',
+      // ribbon = the card's tag: "৳20 OFF" or "10% OFF"
+      ribbonAmount: '{{amount}} OFF',
+      ribbonPercent: '{{percent}}% OFF',
+      previewUntil: 'The sale ends after {{date}}.',
+      previewLater: 'The sale starts on {{date}}.',
+      previewEnded: 'The sale ended on {{date}}.',
+      descriptionTitle: 'Description',
+      descriptionHint:
+        'Sections under the photos on the product page, like Benefits and How to use.',
+      // Step 26h: the editor's own words moved to `sections`; these four are the listing's
+      headingPlaceholder: 'Benefits',
+      bodyPlaceholder: '- Clears pimples\n- Gentle enough for every day',
+      noSections: 'No description. The product page then shows the photos and the price only.',
+      previewCaption: 'As the product page shows it',
+      seoTitle: 'Search engines',
+      seoHint:
+        'What Google and Facebook show for this page. Empty boxes use the listing’s own words.',
+      seoPageTitle: 'Page title',
+      seoPageDescription: 'Page description',
+      // count and max in the page's language
+      seoCount: '{{count}} of {{max}} characters',
+      notFound: "This listing doesn't exist.",
+      loadFailed: "Couldn't load the listing. Refresh the page to try again.",
+    },
+    // Step 26h: /storefront/appearance (decision 2), three cards
+    appearance: {
+      title: 'Shop appearance',
+      description: 'Your shop’s logo, colors, hero banner and home page',
+      // Every route needs the shop's settings first (storefront_not_set_up)
+      notSetUpTitle: 'Set up the shop first',
+      notSetUpBody: 'Save the shop’s address, contact and delivery details, then give it its look.',
+      goToSettings: 'Go to shop settings',
+      loadFailed: "Couldn't load the shop’s appearance. Refresh the page to try again.",
+      theme: {
+        title: 'Logo and colors',
+        description: 'On every page of the shop',
+        logo: 'Logo',
+        logoHint:
+          'In the header and the footer, next to your shop’s name. A square picture with a plain background works best.',
+        noLogo: 'No logo. The shop shows the Omnivo mark.',
+        // name = the shop's name: the logo's alt text, here and in the shop
+        logoAlt: '{{name}} logo',
+        brand: 'Brand color',
+        brandHint: 'The header, titles, product names and labels.',
+        accent: 'Accent color',
+        accentHint: 'Add to cart, the search button, and words on the brand color.',
+        contrastCream: 'Brand color on light backgrounds',
+        contrastAccent: 'Brand and accent together',
+        reset: 'Use the default colors',
+        preview: 'In the shop',
+        // The preview's own words are the shop's (shop.header, shop.card), copied: the ERP app
+        // never loads the shop's words
+        previewSearch: 'Search for Cosmetics, Food',
+        previewChip: 'All Categories',
+        previewAddToCart: 'Add to cart',
+        saved: 'Logo and colors saved',
+      },
+      hero: {
+        title: 'Hero banner',
+        description: 'The big banner at the top of the home page',
+        none: 'No hero banner. The home page starts with its products.',
+        add: 'Add hero banner',
+        edit: 'Edit hero banner',
+        newTitle: 'Add the hero banner',
+        editTitle: 'Edit the hero banner',
+        headline: 'Headline',
+        headlinePlaceholder: 'Get 10% cash-back on shopping ৳150',
+        headlineHint: 'White, on the panel. About three short lines fit on a computer.',
+        line: 'Line under the headline',
+        linePlaceholder: 'Shop your favorite brands and save big this season.',
+        lineHint: 'On phones only.',
+        eyebrow: 'Tag',
+        eyebrowPlaceholder: 'Exclusive offer',
+        eyebrowHint: 'The small pill at the top, on phones only.',
+        button: 'Button',
+        buttonPlaceholder: 'Get 10% cashback',
+        buttonHint: 'On computers. On phones the whole banner is the link.',
+        desktopImage: 'Picture for computers',
+        desktopImageHint:
+          'On the right of the panel, 280 pixels high. About 1,400 × 560 pixels looks sharp.',
+        phoneImage: 'Picture for phones',
+        phoneImageHint:
+          'Fills the banner behind the words, 220 pixels high. About 1,080 × 660 pixels looks sharp.',
+        altPlaceholder: 'Make-up and skin care products',
+        colorsTitle: 'Colors',
+        // 26h.6: the hero page's other cards (approved with the mockup) and its preview card
+        wordsTitle: 'Words',
+        picturesTitle: 'Pictures',
+        previewTitle: 'In the shop',
+        // The segmented control's name: "Preview on Computer / Phone"
+        previewLabel: 'Preview on',
+        background: 'Background',
+        backgroundHint: 'Behind the picture on computers.',
+        panel: 'Panel',
+        panelHint: 'Behind the white headline on computers.',
+        buttonColor: 'Button',
+        buttonText: 'Button’s words',
+        contrastButton: 'Button’s words on the button',
+        contrastPanel: 'White headline on the panel',
+        previewDesktop: 'Computer',
+        previewPhone: 'Phone',
+        saved: 'Hero banner saved',
+        delete: 'Delete hero banner',
+        confirmDelete: 'Delete the hero banner?',
+        deleteBody: 'The home page then starts with its products. You can add a new one later.',
+        deleted: 'Hero banner deleted',
+      },
+      // The blocks under the product grid (decision 2: every banner and collection is on it)
+      home: {
+        title: 'Home page',
+        description: 'The blocks under the product grid, from the top',
+        // count and max in the page's language
+        count: '{{count}} of {{max}} blocks',
+        fixed: 'The hero banner and the product grid always come first.',
+        addBanner: 'Add picture banner',
+        addCollection: 'Add collection',
+        // Why an Add button is disabled (decision 6)
+        bannersFull: 'The home page has {{max}} picture banners, the most it can have.',
+        collectionsFull: 'The home page has {{max}} collections, the most it can have.',
+        full: 'The home page has {{max}} blocks, the most it can have. Delete one to add another.',
+        banner: 'Picture banner',
+        collection: 'Collection',
+        // A collection's line: all of it in the shop, some of it, or none (the shop hides an
+        // empty row)
+        products_one: '{{formatted}} product',
+        products_other: '{{formatted}} products',
+        partlyPublished: '{{published}} of {{total}} in the shop',
+        nonePublished: 'None in the shop now, so the row is hidden',
+        moveUpLabel: 'Move {{name}} up',
+        moveDownLabel: 'Move {{name}} down',
+        actions: 'Actions for {{name}}',
+        edit: 'Edit',
+        delete: 'Delete',
+        emptyTitle: 'Nothing under the product grid yet',
+        emptyBody:
+          'Add a picture banner for a sale, or a collection like Hot & Trending Right Now.',
+      },
+      // The picture banner's dialog
+      banner: {
+        newTitle: 'Add a picture banner',
+        editTitle: 'Edit picture banner',
+        description: 'A picture with its words in it, like a sale, across the home page.',
+        desktopImageHint: 'Shown 1,280 × 280 pixels. Upload 2,560 × 560 for sharp screens.',
+        phoneImageHint: 'Shown about 360 × 140 pixels. Upload 1,080 × 420.',
+        altHint:
+          'The banner’s words are in the picture, so type them here for shoppers who can’t see it.',
+        altPlaceholder: 'Himalaya mega sale, up to 30% off',
+        submit: 'Add banner',
+        added: 'Picture banner added at the end of the home page',
+        saved: 'Picture banner saved',
+        confirmDelete: 'Delete this picture banner?',
+        deleteBody: 'It leaves the home page, with its link and pictures.',
+        deleted: 'Picture banner deleted',
+        // A banner's name in the list and in labels: the words of its computer picture
+        name: 'Picture banner: {{alt}}',
+      },
+    },
+    // Step 26h: a collection's page (/storefront/collections/$id, and .../new)
+    collection: {
+      back: 'Shop appearance',
+      newTitle: 'New collection',
+      description: 'A row of products you pick, on the home page',
+      title: 'Title',
+      titlePlaceholder: 'Hot & Trending Right Now',
+      fire: 'Show a flame after the title',
+      products: 'Products',
+      // max = STOREFRONT_COLLECTION_ITEMS_MAX
+      productsHint: 'Up to {{max}}, in the order the row shows them.',
+      count: '{{count}} of {{max}}',
+      addLabel: 'Product to add',
+      addPlaceholder: 'Pick a product',
+      searchLabel: 'Search the catalog',
+      noMatch: 'No listing matches. Products in the collection already are not listed.',
+      full: 'The collection has {{max}} products, the most a row shows.',
+      none: 'No products yet. Add the ones this row shows, like your best sellers.',
+      remove: 'Remove {{name}}',
+      moveUpLabel: 'Move {{name}} up',
+      moveDownLabel: 'Move {{name}} down',
+      // A draft waits in the collection and shows once it is in the shop
+      draftHint: 'Drafts stay here and show in the row once they are in the shop.',
+      hiddenNotice:
+        'None of these products is in the shop now, so the home page hides this row until one is.',
+      create: 'Add collection',
+      created: '{{title}} added at the end of the home page',
+      saved: '{{title}} saved',
+      delete: 'Delete collection',
+      confirmDelete: 'Delete {{title}}?',
+      deleteBody: 'It leaves the home page. The products stay in the shop.',
+      deleted: '{{title}} deleted',
+      notFound: "This collection doesn't exist.",
+      loadFailed: "Couldn't load the collection. Refresh the page to try again.",
+    },
+    // Step 26h: the four text pages (decision 5)
+    pages: {
+      title: 'Shop pages',
+      description: 'The four pages linked from the shop’s footer',
+      notSetUpTitle: 'Set up the shop first',
+      notSetUpBody: 'Save the shop’s address, contact and delivery details, then write its pages.',
+      goToSettings: 'Go to shop settings',
+      // The footer's own words (shop.footer), copied
+      names: {
+        privacy: 'Privacy Policy',
+        terms: 'Terms & Condition',
+        about: 'About Us',
+        contact: 'Contact Us',
+      },
+      // What each page is for, under its name in the list
+      hints: {
+        privacy: 'How you use the names, phone numbers and addresses shoppers give you.',
+        terms: 'Your rules for delivery, returns, refunds and payment.',
+        about: 'Who you are and what you sell.',
+        contact: 'Your hotline, address and hours. The page has no form.',
+      },
+      // 26h.6: sections and the hidden name of the Edit / Write column
+      columns: {
+        page: 'Page',
+        status: 'Status',
+        sections: 'Sections',
+        updated: 'Changed',
+        actions: 'Actions',
+      },
+      written: 'In the footer',
+      notWritten: 'Not written',
+      sections_one: '{{formatted}} section',
+      sections_other: '{{formatted}} sections',
+      write: 'Write',
+      edit: 'Edit',
+      loadFailed: "Couldn't load the shop’s pages. Refresh the page to try again.",
+    },
+    // Step 26h: one text page's editor (/storefront/pages/$slug)
+    page: {
+      back: 'Shop pages',
+      notWrittenNotice:
+        'This page is not written yet. The footer leaves its link out, and its address shows “page not found”.',
+      sectionsTitle: 'Sections',
+      sectionsHint: 'Each with a heading and its text, like Delivery and Returns.',
+      headingPlaceholder: 'Returns',
+      bodyPlaceholder: '- Unopened items come back within 7 days\n- Keep the order number',
+      noSections: 'No sections yet. Add the first one, then save to put the page in the shop.',
+      previewCaption: 'As the shop shows it',
+      viewPage: 'View page',
+      // name = the page's name (pages.names)
+      created: '{{name}} is in the shop',
+      saved: '{{name}} saved',
+      delete: 'Delete page',
+      confirmDelete: 'Delete {{name}}?',
+      deleteBody:
+        'The footer drops its link, and its address shows “page not found”. You can write it again later.',
+      deleted: '{{name}} deleted',
+      loadFailed: "Couldn't load the page. Refresh the page to try again.",
+    },
+  },
   approvals: {
     title: 'Approvals',
     description: 'Documents waiting for your decision, oldest first',
@@ -5638,6 +6258,7 @@ export const en = {
       sales: 'Sales',
       purchase: 'Purchase',
       pos: 'POS',
+      storefront: 'Online shop',
     },
     members_one: '{{count}} person',
     members_other: '{{count}} people',
@@ -5764,6 +6385,11 @@ export const en = {
         create: 'Take goods back at a POS counter, and pay the money back or use it on a new sale',
       },
     },
+    // Step 26g
+    storefront: {
+      manage:
+        'Run the online shop: its settings, categories, listings and photos, its look and pages, and open it',
+    },
   },
   invite: {
     checking: 'Checking your invitation…',
@@ -5839,6 +6465,11 @@ export const en = {
       pos_shift: 'POS shifts',
       pos_return: 'POS returns',
       report_schedule: 'Scheduled emails',
+      storefront: 'Online shop',
+      storefront_category: 'Shop categories',
+      storefront_listing: 'Shop listings',
+      storefront_banner: 'Shop banners',
+      storefront_collection: 'Shop collections',
     },
     columns: {
       when: 'When',
@@ -6163,11 +6794,45 @@ export const en = {
         resumed: 'Resumed a scheduled report email',
         deleted: 'Deleted a scheduled report email',
       },
+      // Step 26g
+      storefront: {
+        created: 'Set up the online shop',
+        updated: 'Changed the online shop’s settings',
+        launched: 'Opened the online shop',
+        // Step 26h
+        theme_updated: 'Changed the shop’s logo or colors',
+        home_moved: 'Moved a block on the shop’s home page',
+        page_saved: 'Wrote or changed a shop page',
+        page_deleted: 'Deleted a shop page',
+      },
+      storefront_banner: {
+        created: 'Added a shop banner',
+        updated: 'Edited a shop banner',
+        deleted: 'Deleted a shop banner',
+      },
+      storefront_collection: {
+        created: 'Added a shop collection',
+        updated: 'Edited a shop collection',
+        deleted: 'Deleted a shop collection',
+      },
+      storefront_category: {
+        created: 'Added a shop category',
+        updated: 'Edited a shop category',
+        moved: 'Moved a shop category up or down',
+        deleted: 'Deleted a shop category',
+      },
+      storefront_listing: {
+        created: 'Put a product in the shop',
+        updated: 'Edited a shop listing',
+        published: 'Showed a listing in the shop',
+        unpublished: 'Took a listing out of the shop',
+        deleted: 'Deleted a shop listing',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
       name: 'Name',
-      slug: 'Workspace address',
+      slug: 'Web address',
       companyName: 'Company name',
       legalName: 'Legal name',
       bin: 'BIN',
@@ -6345,6 +7010,57 @@ export const en = {
       dayOfMonth: 'Day of the month',
       recipients: 'Sent to',
       pausedReason: 'Why it stopped',
+      // Step 26g: the shop's settings, a shop category and a listing. slug above is the
+      // workspace's address; a category's and a listing's link name show as "Web address" too
+      subdomain: 'Shop address',
+      language: 'Language',
+      hotline: 'Hotline',
+      facebookUrl: 'Facebook',
+      instagramUrl: 'Instagram',
+      xUrl: 'X',
+      linkedinUrl: 'LinkedIn',
+      defaultWarehouseId: 'Warehouse for the shop',
+      deliveryZones: 'Delivery zones',
+      freeDeliveryFrom: 'Free delivery from',
+      minimumOrder: 'Minimum order',
+      paymentMethods: 'Ways to pay',
+      launched: 'Open',
+      position: 'Place in the list',
+      packSize: 'Pack size',
+      categoryId: 'Shop category',
+      priceOverride: 'Shop price',
+      badges: 'Badges',
+      images: 'Photos',
+      sections: 'Description sections',
+      seoTitle: 'Page title',
+      seoDescription: 'Page description',
+      variant: 'Product',
+      published: 'In the shop',
+      // Step 26h: the logo and colors, a banner (the hero's words and colors too), a collection,
+      // and a text page, whose change is named by the page ("Terms & Condition: Returns → …")
+      logoImageId: 'Logo',
+      brandColor: 'Brand color',
+      accentColor: 'Accent color',
+      href: 'Links to',
+      desktopImage: 'Picture for computers',
+      desktopAlt: 'What the computer picture shows',
+      phoneImage: 'Picture for phones',
+      phoneAlt: 'What the phone picture shows',
+      headline: 'Headline',
+      line: 'Line under the headline',
+      eyebrow: 'Tag',
+      buttonLabel: 'Button',
+      backgroundColor: 'Background',
+      panelColor: 'Panel',
+      buttonColor: 'Button color',
+      buttonTextColor: 'Button’s words',
+      title: 'Title',
+      icon: 'Icon',
+      listings: 'Products',
+      privacy: 'Privacy Policy',
+      terms: 'Terms & Condition',
+      about: 'About Us',
+      contact: 'Contact Us',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -7179,6 +7895,74 @@ export const en = {
     shop_code_too_many: 'Too many wrong codes. Place the order again to get a new code.',
     shop_code_resend_wait: 'Wait a little, then ask for a new code.',
     shop_code_no_order: 'No order is waiting for a code. Place the order again.',
+    shop_order_no_format: 'Type the order number from the SMS, like W-000123.',
+    shop_track_not_found: 'No order has this number and mobile number. Check both, then try again.',
+    shop_track_too_many: 'Too many tries. Wait {{minutes}} minutes, then try again.',
+    storefront_not_found:
+      'This address is not a shop. Check the address, or ask the shop for its link.',
+    storefront_sale_percent: 'Type a whole percent from 1 to 99.',
+    storefront_sale_zero: 'Type an amount above ৳0.',
+    storefront_sale_dates: 'Pick an end after the start, or leave the end empty.',
+    // Step 26g
+    storefront_subdomain_format:
+      'Use lowercase letters, numbers and single hyphens, like nirvor-pharmacy.',
+    storefront_subdomain_reserved: 'Omnivo keeps this address. Try your shop’s name, like nirvor.',
+    storefront_subdomain_taken:
+      'Another shop has this address. Try adding your city, like nirvor-sylhet.',
+    storefront_link_https: 'Paste the whole link, starting with https://.',
+    storefront_slug_format:
+      'Use lowercase letters, numbers and single hyphens, like neem-face-wash.',
+    storefront_slug_required:
+      'Type a link name in English letters, like neem-face-wash. The name has none to make it from.',
+    storefront_slug_taken: 'Something else in the shop has this link name. Change it a little.',
+    storefront_zone_name_taken: 'Two zones have this name. Give each zone its own name.',
+    storefront_payment_required: 'Tick at least one way to pay.',
+    storefront_warehouse_invalid: 'Pick an active warehouse from the list.',
+    storefront_not_set_up: 'The shop is not set up yet. Save its settings first.',
+    storefront_set_up_already:
+      'The shop was set up in another tab or by someone else. Reload the page to see it.',
+    storefront_launch_not_ready:
+      'The shop can’t open yet. Do everything on the checklist, then open it.',
+    storefront_category_in_use:
+      'Listings are in this category. Move them to another category first.',
+    storefront_category_invalid: 'Pick a shop category from the list.',
+    storefront_variant_listed: 'This product is in the shop already. Open its listing instead.',
+    storefront_variant_archived: 'This product is archived. Restore it in Products first.',
+    storefront_listing_needs_photo: 'Add at least one photo, then show it in the shop.',
+    storefront_listing_no_price:
+      'Type a shop price, or give the product a sale price, then show it in the shop.',
+    storefront_sale_not_lower: 'The sale must take something off the regular price. Lower it.',
+    storefront_image_twice: 'This photo is on the listing twice. Remove one.',
+    storefront_image_not_ready: 'A photo is still being prepared. Wait for it, then save again.',
+    storefront_image_file_too_large: 'This photo is too large. Pick one under 8 MB.',
+    storefront_image_unreadable:
+      'This file can’t be read as a photo. Pick a JPEG, PNG or WebP photo.',
+    storefront_image_too_small:
+      'This photo is too small. Pick one at least 200 pixels on each side.',
+    storefront_image_too_many_pixels:
+      'This photo has too many pixels. Pick one under 40 megapixels, or make it smaller first.',
+    // Step 26h
+    storefront_slug_reserved:
+      'The shop uses “all” for its All Products page. Pick another link name, like all-items.',
+    storefront_color_format: 'Type a color as # and six letters or digits, like #005859.',
+    storefront_link_format:
+      'Type a page of the shop, starting with /, like /c/skin-care, or a whole link starting with https://.',
+    storefront_brand_contrast:
+      'Names and titles in this color are hard to read on the shop’s light backgrounds. Pick a darker color.',
+    storefront_accent_contrast:
+      'This color is too close to the brand color. Buttons need 4.5:1 between the two. Pick a lighter or darker one.',
+    storefront_button_contrast:
+      'The button’s words are hard to read on it. Make one of the two colors lighter or darker.',
+    storefront_panel_contrast:
+      'The white headline is hard to read on this panel. Pick a darker panel color.',
+    storefront_banners_full: 'The home page has 6 picture banners already. Remove one first.',
+    storefront_collections_full: 'The home page has 8 collections already. Remove one first.',
+    storefront_home_full: 'The home page has 12 blocks already. Remove one first.',
+    storefront_collection_empty: 'Add at least one product to the collection.',
+    storefront_listing_twice: 'This product is in the collection twice. Remove one.',
+    storefront_listing_invalid: 'Pick a product from the shop’s catalog.',
+    storefront_page_empty:
+      'Write at least one section. To take the page out of the shop, delete it.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

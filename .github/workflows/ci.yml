@@ -44,11 +44,17 @@ jobs:
       - name: Install Playwright browser
         run: pnpm --filter @omnivo/app exec playwright install --with-deps chromium
 
+      # The ERP app only: the storefront's tests have their own step below
       - name: E2E (Playwright on MSW mocks)
-        run: pnpm test:e2e
+        run: pnpm test:e2e --filter=@omnivo/app
 
       - name: E2E (service worker on a production build)
         run: pnpm test:e2e:pwa
+
+      # Step 26e: the storefront on its built server, with the mock source (apps/shop/e2e). The
+      # browser from the step above serves it too: the lockfile has one @playwright/test for both apps
+      - name: E2E (storefront on its built server)
+        run: pnpm --filter @omnivo/shop test:e2e
 
       - name: Build
         run: pnpm build

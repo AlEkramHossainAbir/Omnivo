@@ -1,15 +1,17 @@
 ---
 import ListingGrid from '../../components/ListingGrid.astro';
-import { shopSource } from '../../data/source';
 import { loadListing } from '../../lib/listing-page';
 import { shopLocale } from '../../lib/locale';
+
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
 
 // Step 26d.3: Load More's cards for the search page, like /c/<slug>/more
 export const partial = true;
 
 const [shop, load] = await Promise.all([
-  shopSource.shop(),
-  loadListing(null, Astro.url.searchParams),
+  source.shop(),
+  loadListing(null, Astro.url.searchParams, source),
 ]);
 
 if (load.kind !== 'found') return new Response(null, { status: 409 });

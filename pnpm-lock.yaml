@@ -253,6 +253,9 @@ importers:
       rxjs:
         specifier: ^7.8.2
         version: 7.8.2
+      sharp:
+        specifier: ^0.35.5
+        version: 0.35.5(@types/node@26.6.2)
       write-excel-file:
         specifier: ^4.1.1
         version: 4.1.1
@@ -445,9 +448,15 @@ importers:
       '@omnivo/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@playwright/test':
+        specifier: ^1.63.0
+        version: 1.63.0
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.6(@types/node@26.6.2)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.51.2)(tsx@4.23.15)(yaml@2.9.1))
+      '@types/node':
+        specifier: ^26.6.2
+        version: 26.6.2
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -457,6 +466,9 @@ importers:
       tailwindcss:
         specifier: ^4.3.3
         version: 4.3.3
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -9678,8 +9690,7 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
-  '@img/colour@1.1.0':
-    optional: true
+  '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.35.5':
     optionalDependencies:
@@ -14369,7 +14380,6 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 26.6.2
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:

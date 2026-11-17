@@ -5,10 +5,15 @@ import { defineRoute } from './http.js';
 
 // ফাইল কী কাজে লাগবে — প্রতিটার নিজের আকার আর ধরনের সীমা। নতুন কাজ (ইনভয়েস PDF, খরচের রসিদ)
 // = এখানে এক লাইন
-export const ATTACHMENT_PURPOSES = ['company_logo'] as const;
+export const ATTACHMENT_PURPOSES = ['company_logo', 'storefront_image'] as const;
 export type AttachmentPurpose = (typeof ATTACHMENT_PURPOSES)[number];
 
-interface AttachmentRule {
+// Step 26g: the purposes POST /attachments takes. A storefront photo has its own routes
+// (storefront-admin.ts): they need storefront.manage, not core.settings.manage, and their upload
+// starts the image job. Through this route one would be a file no job ever makes ready
+export const GENERAL_UPLOAD_PURPOSES = ['company_logo'] as const;
+
+export interface AttachmentRule {
   maxBytes: number;
   contentTypes: readonly string[];
 }
@@ -19,13 +24,19 @@ export const ATTACHMENT_RULES = {
     maxBytes: 2 * 1024 * 1024,
     contentTypes: ['image/png', 'image/jpeg', 'image/webp'],
   },
+  // Step 26g: a product or banner photo, straight from a phone camera (4–8 MB is common). The job
+  // makes small WebP files from it, so the shop never sends this size to a shopper
+  storefront_image: {
+    maxBytes: 8 * 1024 * 1024,
+    contentTypes: ['image/png', 'image/jpeg', 'image/webp'],
+  },
 } satisfies Record<AttachmentPurpose, AttachmentRule>;
 
 // ফাইল পাঠানোর আগে শুধু তার বর্ণনা — ফাইল নিজে API-তে আসে না, সরাসরি storage-এ যায়।
 // ব্রাউজারও আগে থেকে একই schema দিয়ে যাচাই করে: ৩০ MB-র ছবি বাছলে আপলোড শুরুর আগেই error
 export const createUploadInputSchema = z
   .object({
-    purpose: z.enum(ATTACHMENT_PURPOSES),
+    purpose: z.enum(GENERAL_UPLOAD_PURPOSES),
     fileName: z.string().trim().min(1).max(200),
     contentType: z.string().max(100),
     sizeBytes: z.number().int().positive(),
@@ -57,16 +68,19 @@ export const attachmentSchema = z.object({
 });
 export type Attachment = z.infer<typeof attachmentSchema>;
 
+// ব্রাউজার ঠিক এই method, ঠিকানা আর header দিয়ে ফাইল পাঠাবে — header না মিললে storage সই
+// মানবে না (Content-Type সইয়ের অংশ)। Step 26g: its own schema, so the storefront photos' ticket
+// (storefront-admin.ts) has exactly the same upload part
+export const uploadTargetSchema = z.object({
+  method: z.literal('PUT'),
+  url: z.url(),
+  headers: z.record(z.string(), z.string()),
+  expiresAt: z.iso.datetime(),
+});
+
 export const uploadTicketSchema = z.object({
   attachment: attachmentSchema,
-  // ব্রাউজার ঠিক এই method, ঠিকানা আর header দিয়ে ফাইল পাঠাবে — header না মিললে storage সই
-  // মানবে না (Content-Type সইয়ের অংশ)
-  upload: z.object({
-    method: z.literal('PUT'),
-    url: z.url(),
-    headers: z.record(z.string(), z.string()),
-    expiresAt: z.iso.datetime(),
-  }),
+  upload: uploadTargetSchema,
 });
 export type UploadTicket = z.infer<typeof uploadTicketSchema>;
 

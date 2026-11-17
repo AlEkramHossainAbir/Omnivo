@@ -1,17 +1,19 @@
 ---
 import ListingView from '../../components/ListingView.astro';
-import { shopSource } from '../../data/source';
 import ShopLayout from '../../layouts/ShopLayout.astro';
 import { loadListing } from '../../lib/listing-page';
 import { ALL_SLUG } from '../../lib/listing-query';
 import { shopLocale } from '../../lib/locale';
 
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
+
 // Step 26d.3: a category's products, with those of the categories under it (/c/cosmetics), or
 // every product (/c/all). The address holds the search, the filters, the sort and the page
 // (decision 2); lib/listing-page.ts reads it
 const [shop, load] = await Promise.all([
-  shopSource.shop(),
-  loadListing(Astro.params.slug ?? '', Astro.url.searchParams),
+  source.shop(),
+  loadListing(Astro.params.slug ?? '', Astro.url.searchParams, source),
 ]);
 
 // No category has this slug: Astro's 404 page, with the 404 status, like an unknown product

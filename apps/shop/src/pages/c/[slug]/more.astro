@@ -1,8 +1,10 @@
 ---
 import ListingGrid from '../../../components/ListingGrid.astro';
-import { shopSource } from '../../../data/source';
 import { loadListing } from '../../../lib/listing-page';
 import { shopLocale } from '../../../lib/locale';
+
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
 
 // Step 26d.3: the cards Load More's script asks for (decision 3). A partial: only this component's
 // HTML, no <html>, header or footer. The address is the page's own, so the cards are the ones the
@@ -10,8 +12,8 @@ import { shopLocale } from '../../../lib/locale';
 export const partial = true;
 
 const [shop, load] = await Promise.all([
-  shopSource.shop(),
-  loadListing(Astro.params.slug ?? '', Astro.url.searchParams),
+  source.shop(),
+  loadListing(Astro.params.slug ?? '', Astro.url.searchParams, source),
 ]);
 
 // No redirect here: fetch() would follow it to the first page and the script would add those

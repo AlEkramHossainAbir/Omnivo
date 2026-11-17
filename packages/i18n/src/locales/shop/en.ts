@@ -187,6 +187,65 @@ export const shopEn = {
     // The Delivery Charge row of an order that went out for free
     free: 'Free',
   },
+  // Step 26e: tracking. The /track form, and the view it shares with a tracking link (/t/<token>)
+  track: {
+    title: 'Track Order',
+    pageTitle: 'Track order | {{shop}}',
+    // The browser tab of a tracking link: the number, then the shop
+    linkPageTitle: 'Order {{orderNo}} | {{shop}}',
+    intro: 'Type the mobile number you ordered with and the order number from the SMS.',
+    phone: 'Mobile Number',
+    phonePlaceholder: '01786 120356',
+    orderNo: 'Order Number',
+    orderNoPlaceholder: 'W-000123',
+    submit: 'Track Order',
+    another: 'Track another order',
+    // Only in the mock shop, which sends no SMS: its demo orders, to try the form and the links
+    mockOrders: 'Test shop: no SMS is sent. Try one of these orders.',
+    // "W-000123 with 01786 120356"
+    mockOrder: '{{orderNo}} with {{phone}}',
+    mockLink: 'Tracking link of {{orderNo}}',
+    items_one: '{{count}} item',
+    items_other: '{{count}} items',
+    total: 'Total',
+    // Cash on Delivery, until it is delivered: what to keep ready for the rider
+    payOnDelivery: 'Keep {{amount}} ready in cash for the rider.',
+    paidOnline: 'Paid with Mobile Banking.',
+    parcel: 'Parcel',
+    // "Steadfast · SFR2611120042"
+    courierLine: '{{courier}} · {{code}}',
+    openCourier: 'See it on the {{courier}} site',
+    noParcel:
+      'The shop has not handed the parcel to a courier yet. Its way shows here once it has.',
+    // The second parcel, when the shop booked the order again with another courier
+    earlierParcel: 'Earlier parcel',
+    // A tracking link is a key: anyone who has it sees this page
+    linkPrivate:
+      'Anyone with this link can see this page. It shows no address and no phone number.',
+    linkGoneTitle: 'This tracking link does not work',
+    linkGoneText:
+      'Check that the whole link was copied, or track the order with its number and your phone.',
+    linkGoneAction: 'Track with the number',
+    shipmentStatuses: {
+      booked: 'Booked with the courier',
+      picked_up: 'Picked up',
+      in_transit: 'Moving between hubs',
+      out_for_delivery: 'Out for delivery',
+      delivered: 'Delivered',
+      partly_delivered: 'Partly delivered',
+      on_hold: 'Could not deliver: they will try again',
+      returning: 'Going back to the shop',
+      returned: 'Back at the shop',
+      cancelled: 'Booking cancelled',
+    },
+    couriers: {
+      pathao: 'Pathao',
+      steadfast: 'Steadfast',
+      redx: 'RedX',
+      ecourier: 'eCourier',
+      paperfly: 'Paperfly',
+    },
+  },
   // Step 26d: the category and search pages (/c/<slug>, /search)
   listing: {
     pageTitle: '{{title}} | {{shop}}',
@@ -232,6 +291,25 @@ export const shopEn = {
     all: 'All Products',
     // A top category's button that shows or hides the ones under it
     toggle: 'Show the categories in {{category}}',
+  },
+  // Step 26e: the footer's text pages (/pages/<slug>). Their titles are the footer's own words
+  pages: {
+    pageTitle: '{{title}} | {{shop}}',
+    updatedOn: 'Last updated {{date}}',
+  },
+  // Step 26e: any address the shop has no page for
+  notFound: {
+    pageTitle: 'Page not found | {{shop}}',
+    title: 'Page not found',
+    text: 'The link may have a typo, or the page has moved. Start again from the home page.',
+    action: 'Go to the home page',
+  },
+  // Step 26f.5: an address that is no launched shop (a typo in the subdomain, or a shop not open
+  // yet). No shop's name, colors or menu: there is no shop to take them from
+  noShop: {
+    pageTitle: 'No shop here',
+    title: 'No shop has this address',
+    text: 'Check the address for a typo. A shop that is still being set up opens here once it is launched.',
   },
   footer: {
     pages: 'Shop pages',

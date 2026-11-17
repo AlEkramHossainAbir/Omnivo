@@ -76,6 +76,8 @@ const VARIANT_IN_USE = [
   'bill_lines_variant_fk',
   // step 20a
   'pos_sale_lines_variant_fk',
+  // step 26f: a variant on sale in the online shop. The tenant takes it off the shop first
+  'storefront_listings_variant_fk',
 ] as const;
 
 // The list's orders. Each sorts by one key and then the id, so the order is total and a cursor

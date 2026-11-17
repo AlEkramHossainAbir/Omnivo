@@ -1,0 +1,1 @@
+ALTER TABLE "storefront_settings" ADD CONSTRAINT "storefront_settings_logo_fk" FOREIGN KEY ("tenant_id","logo_image_id") REFERENCES "public"."storefront_images"("tenant_id","id") ON DELETE no action ON UPDATE no action;

@@ -13,6 +13,10 @@ import type {
   ShopOrderPlaced,
   ShopOrderRequest,
   ShopProductPage,
+  ShopTextPage,
+  ShopTextPageSlug,
+  ShopTracking,
+  ShopTrackRequest,
 } from '@omnivo/contracts';
 
 // Step 26c: the reasons a source may refuse an order or a phone code. A closed list, not any
@@ -49,6 +53,16 @@ export interface PlacedOrder {
 // changed in another tab since Confirm Order
 export type ShopCodeWait = Extract<ShopOrderPlaced, { next: 'verify' }> & { listingIds: string[] };
 
+// Step 26e: an order a test shop starts with, and how to track it. The verify page shows a test
+// shop's code (testCode); the /track page shows these, because a test shop sends no SMS with the
+// link. Never filled for a real shop: its numbers, phones and links belong to its buyers
+export interface ShopTestTracking {
+  orderNo: string;
+  phone: string;
+  // The tracking link's token (/t/<token>)
+  token: string;
+}
+
 // What every data source answers. Its own file, so the mock can implement it without importing
 // source.ts, which imports the mock (a circle .dependency-cruiser.cjs refuses)
 export interface ShopSource {
@@ -81,4 +95,17 @@ export interface ShopSource {
   // The code a test shop takes, which the verify page shows because no SMS is sent. null for a real
   // shop: its code goes only to the phone
   readonly testCode: string | null;
+
+  // Step 26e: tracking. Both answer null for "no such order", never an error: a mistyped number and
+  // an old link are normal traffic, like an unknown slug in product().
+  // The order a tracking link names. The page checks the token's shape first
+  // (shopTrackingTokenSchema), so a source never sees a cut or edited link
+  tracking(token: string): Promise<ShopTracking | null>;
+  // The /track form: the order with this number, only when it was placed with this phone. Both come
+  // from shopTrackRequestSchema, so the phone is 01XXXXXXXXX and the number W-000123
+  track(request: ShopTrackRequest): Promise<ShopTracking | null>;
+  // A footer page. null: the shop has not written it, and the page answers 404
+  textPage(slug: ShopTextPageSlug): Promise<ShopTextPage | null>;
+  // A test shop's demo orders (ShopTestTracking); null for a real shop
+  readonly testTracking: readonly ShopTestTracking[] | null;
 }

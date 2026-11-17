@@ -613,6 +613,147 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   after the window or its day was closed in the books. A sale's page says per line "1 pcs came back", lists its
   returns, and its exchange payment links "From return POS1-R000012". A shift's page has "Cash paid back" in the
   drawer's sum, the sales' discounts and VAT, and a refunds card (count, VAT on returns, per method).
+- **Storefront menu (`storefront.manage`):** a sidebar group "Storefront", hidden without the permission: Catalog
+  (`Store04`), Shop categories (`FolderLibrary`), Shop appearance (`PaintBoard`), Shop pages (`Files01`), Shop
+  settings (`WebDesign01`). The links say "Shop …" because the phone's nav row has no group labels. A page under
+  another (a listing, the hero, a collection, a text page) keeps its item marked, because its address starts with
+  the item's link. Every page is online only: offline it is the
+  empty state "Needs a connection" (`WifiDisconnected02`). Once the shop is set up, each page header has "View
+  shop" (a real `<a>` to a new tab that looks like the secondary button, `LinkSquare02`) and, under the description,
+  a 13px `ink-3` line with a 14px `Clock01` icon: "Changes show in the shop within a minute". A long form shows a
+  sticky save bar while it has changes (a card with `shadow-md`: "Changes not saved yet", "Discard changes"
+  secondary, Save primary). A shop price shows its paisa only when it has some (`৳229`, `৳247.50`).
+- **Shop settings (`/storefront/settings`):** cards (Name and address: the shop address with `Globe02` and the
+  `.omnivo.shop` suffix in the box, the shop name, the language; Contact; Social pages; Stock and delivery: the
+  warehouse select, up to 6 delivery zones as rows of a name, a 180px money input and a remove icon button, "Add
+  zone" secondary `sm`, then free delivery from and minimum order, empty = none; Payment: a checkbox group) beside a
+  340px column, sticky from `lg`. Before the first save the form starts from the company's details under a neutral
+  document notice, and "Set up the shop" is the primary button; after it, the save bar. The column is the "Open
+  the shop" checklist: three rows with 1px `line` rules, each a 22px circle (`good-bg` with a `good` `Tick02` when
+  done, a dashed `line-strong` ring when not), the sentence and a caption "Done" (`good`) or "Not done yet"
+  (`ink-3`); then "Open the shop" (`Rocket01`, full width, primary once all three are done, else a disabled
+  secondary), disabled with "Save the settings first…" while the form has changes. It asks first and says a shop
+  can't be closed again. Once open, the card is "The shop is open": a 40px `good-bg` `StoreVerified01` tile, "Open
+  since 16 Nov 2026 at …", a `good` "Open" pill and a full-width "View shop". Changing an open shop's address asks
+  first: the old address stops working and nothing sends shoppers on.
+- **Shop categories (`/storefront/categories`):** the page header with "Add category" (primary, `PlusSign`), a
+  search box (max 384px), then a `TreeList`. A row: the name as a button that opens the edit dialog, the link
+  (`/c/skin-care`, `Geist Mono` caption `ink-3`, from `sm`), "12 listings" (caption `ink-3` `tabular-nums`), then
+  icon buttons: `FolderAdd` (add one inside it, the tree list's hover rule), `ArrowUp01` / `ArrowDown01` (Move up /
+  down, disabled at the ends and while a search is on) and a `MoreHorizontal` menu (Edit `Edit02`, Delete
+  `Delete02`). The dialog form: Inside (a select, "Top level" first), Name, Link name (empty = made from the name).
+  Delete asks first; a category with listings or categories inside is refused with the reason.
+- **Catalog (`/storefront/listings`):** "View shop" and "Add to shop" (primary, `PlusSign`) in the header; before
+  the shop is set up, the empty state "Set up the shop first" (`Store04`) with "Go to shop settings". A filter row
+  (search "Name or SKU", max 320px; a Show segmented control All / In the shop / Drafts; a category select with
+  `FolderLibrary`), then a data table sorted on the server and paged, a row click opens the editor: listing (a 40px
+  photo, radius 8px, 1px `line`, `object-contain`, or a `subtle` tile with `Image01`; the name at 500 and "SKU ·
+  150 ml" in caption `ink-3`, the SKU in `Geist Mono`), category, shop price (right, the struck old price under it,
+  or "No price"), stock (`good` "In stock" `CheckmarkCircle02`, `warn` "Out of stock" `Alert02`, or "No warehouse"
+  in `ink-3`), status (`good` "In the shop" `Store04`, neutral "Draft" `FileEdit`), and the day it changed.
+- **Add to shop dialog:** "Add a product to the shop": a `Combobox` of the products not in the shop yet (the server
+  searches; detail "SKU · ৳price"), a shop category select ("Add categories" when there are none), and "Add to shop".
+  It makes a draft and opens its editor, with the toast "Neem face wash 150 ml added as a draft".
+- **Listing editor (`/storefront/listings/$listingId`):** a "Catalog" back link (`ArrowLeft01`), then the page
+  header: the listing's name, its status pill above "Sells Neem face wash · NFW-150" and the shop line; on the right
+  a 42px `MoreHorizontal` menu button (View in the shop, Delete listing) and "Show in the shop" (primary, `Store04`)
+  or "Take out of the shop" (secondary, `FileEdit`), disabled with "Save your changes first…" while the form has
+  changes. A `warn` notice (`Alert02`) when the product is archived, a neutral one on a draft. The cards Basics,
+  Photos, Price and sale, Description and Search engines sit beside a 320px column, sticky from `lg`, with "In the
+  shop now": the first photo (56px), the name, the price at the KPI size, the struck price, a `brand` `Tag01` pill
+  ("10% OFF") and when the sale starts or ends. Sale days are whole days in the workspace's time zone, Until
+  included. Save waits until every photo is ready.
+- **Listing photos card:** up to 4 tiles, two columns from `sm` (1px `line`, radius 10px, 12px padding): "Photo 1"
+  with move earlier / later (`ArrowLeft01` / `ArrowRight01`) and remove icon buttons, a 4:3 `subtle` box with the
+  photo (`object-contain`, `mix-blend-multiply`), a `brand` "On the shop's card" pill (`Image01`) on the first one,
+  and the alt text box ("What the photo shows", required). While the image job runs the box says "Uploading…" or
+  "Preparing the photo…" (`Loading03`, spinning only without reduced motion, `role="status"`) and the page asks
+  again every 2 seconds; a failed photo says why in `crit` with an `Alert02` icon and a "Remove it" text link. The
+  Add tile: a dashed `line-strong` border, a 40px `brand-soft` `ImageAdd01` tile, "Add photo" and "1 more can be
+  added".
+- **Sections card (a listing's Description, a text page's Sections):** `SectionsCard`
+  (`apps/app/src/components/storefront-sections.tsx`), one editor for both; each page owns its `useFieldArray` and
+  passes the rows, its title, placeholders and caption. Each section in a 1px `line` box (radius 10px, 16px
+  padding): "Section 1" with move up / down and remove icon buttons, Heading, Text (a text area: `- ` lists, `1.`
+  numbered lists, `**bold**`, links) and a Preview / Hide preview button (`View` / `ViewOffSlash`). The preview is
+  the shop's own HTML (`renderSections`, which escapes everything typed) under a `subtle` caption row ("As the
+  product page shows it", "As the shop shows it"). "Add section" (secondary `sm`, `PlusSign`), at most 12.
+- **Shop appearance (`/storefront/appearance`):** the page header ("Your shop's logo, colors, hero banner and home
+  page") and three cards; before the shop is set up, the empty state "Set up the shop first" (`PaintBoard`) with
+  "Go to shop settings". **Logo and colors** is its own form with its own footer (no save bar): "Use the default
+  colors" (a text link, pushed left), "Discard changes" (secondary, only with changes) and Save; inside, the logo
+  (a 64px `subtle` box, radius 8px, `object-contain`, or the Omnivo mark with "No logo. The shop shows the Omnivo
+  mark.", then Upload / Replace / Remove picture, secondary `sm`), Brand color and Accent color side by side from
+  `sm`, the contrast list, and from `lg` a 380px "In the shop" drawing (the shop's header, a chip and two of the
+  shop's own cards in the colors typed; two grey shapes when it has no listing). **Hero banner:** with none, a
+  centered 40px `brand-soft` `Image02` tile, "No hero banner. The home page starts with its products." and "Add
+  hero banner" (secondary `sm` link, `PlusSign`); with one, "Edit hero banner" (`Edit02`) in the header, the
+  drawing (computer from `sm`, phone below), the headline and "Goes to /c/all?offer=1" in caption `ink-3`. **Home
+  page:** "4 of 12 blocks" (caption `ink-3` `tabular-nums`) on the right of the header, a caption line with
+  `InformationCircle` ("The hero banner and the product grid always come first."), then the blocks in a 1px `line`
+  box (radius 10px), one 64px row each with 1px `line` rules: a 96 × 40 thumbnail from `sm` (the banner's picture,
+  `object-cover`, or a `brand-soft` tile of three small cards for a collection), the name (a picture banner by its
+  alt text, opening its dialog; a collection a link to its page, with a 14px `ink-3` `Fire` when it has the flame)
+  and a caption line ("Picture banner · Goes to /c/all", "Collection · 8 products", "5 of 8 in the shop", or `warn`
+  with `Alert02` "None in the shop now, so the row is hidden"), then Move up / Move down icon buttons and a
+  `MoreHorizontal` menu (Edit `Edit02`, Delete `Delete02`, which asks first). Empty: "Nothing under the product grid
+  yet" (`DashboardSquareAdd`). Under the list "Add picture banner" (`ImageAdd01`) and "Add collection"
+  (`PlusSign`), secondary `sm`, each disabled at its limit (6 banners, 8 collections, 12 blocks) with a 13px
+  `ink-3` line that says why. A new banner or collection goes to the end.
+- **Color box and contrast list:** `ColorInput` (`storefront-color.tsx`), the input box with a 26px swatch on the
+  left (radius 8px, 1px `line-strong`) that opens the browser's color picker ("Pick Brand color on a palette") and
+  the code in `Geist Mono` (`#005859`). Under the boxes, `ContrastList`: a 1px `line` box (radius 10px) of one row
+  per pair ("Brand color on light backgrounds", "Brand and accent together"), the ratio in caption `ink-3`
+  `tabular-nums` ("4.4:1, needs 4.5:1", cut, never rounded up) and a `good` "Easy to read" (`CheckmarkCircle02`)
+  or `crit` "Too low" (`Alert02`) pill. The form refuses a low pair on the box itself, and the API refuses it too.
+- **Picture box:** `PictureField` (`storefront-picture.tsx`), one picture of the hero, a picture banner or (its own
+  smaller box) the logo: the label, then a 1px `line` box (radius 10px, 12px padding) with the picture in a
+  `subtle` box at the shop's own shape (at most 180px tall), Replace picture / Remove picture (secondary `sm`) and
+  the alt text box ("What the picture shows", required). Empty, the box is a button with a dashed `line-strong`
+  border, a 40px `brand-soft` `ImageAdd01` tile and "Upload picture". It uses the listing photos' upload and job
+  ("Uploading…", "Preparing the picture…", the 2-second ask, a failed one in `crit` with "Remove it"); a save tried
+  with no picture says "Upload a picture." under it. The hint gives the file rule and the size that looks sharp.
+- **Links to:** `LinkPicker` (`storefront-link.tsx`), for the hero and a picture banner. A select (`Link01`): A
+  shop category, A product, Products on offer, All products, Another address; the first two add a second box
+  beside it from `sm` (a category select with `FolderLibrary`, or a product `Combobox` with `Store04`), the last an
+  address box ("/pages/about", or a whole `https://` link). Under it, "Goes to /c/skin-care" in 13px `ink-3`. A
+  saved address that names nothing now, or a draft product, gets a `warn` line with `Alert02` that says the link
+  shows "page not found". Only the address is saved (`href`); the select keeps its own choice while typing.
+- **Hero banner page (`/storefront/appearance/hero`):** a "Shop appearance" back link (`ArrowLeft01`), "Add the hero
+  banner" or "Edit the hero banner" with a `MoreHorizontal` menu (Delete hero banner, which asks first). Cards, one
+  column: "In the shop" (a Computer / Phone segmented control and the drawing at the shop's own size, scaled to the
+  card: the computer one at 1280 × 280 so the headline wraps where the shop wraps it, the phone one 361 × 220 on
+  `subtle`; it follows every key), Words (Headline, then Button and Tag side by side from `sm`, Line under the
+  headline, Links to; each hint says where it shows), Pictures (computer and phone side by side from `md`), and
+  Colors (Background, Panel, Button, Button's words, two by two from `sm`, then the contrast list: "Button's words
+  on the button" 4.5:1 and "White headline on the panel" 3:1). The save bar shows with changes, and always on a
+  new hero ("Discard changes" then goes back).
+- **Picture banner dialog:** the dialog at 560px (two pictures do not fit 520px), "Add a picture banner" or "Edit
+  picture banner", with "A picture with its words in it, like a sale, across the home page." The picture for
+  computers (shown 1,280 × 280) and for phones (about 360 × 140), each with its alt text ("The banner's words are
+  in the picture, so type them here…"), then Links to. "Add banner" / Save (primary), Cancel, and on a saved one
+  Delete (secondary, pushed left).
+- **Collection page (`/storefront/appearance/collections/$collectionId`, `…/new`):** at most 880px wide; a "Shop
+  appearance" back link, the title (or "New collection") with a `MoreHorizontal` menu (Delete collection, which
+  asks first), and a `warn` document notice (`Alert02`) while none of its products is in the shop ("…the home page
+  hides this row until one is"). Cards: the title box and a checkbox "Show a flame after the title" (`Fire`);
+  then Products ("Up to 24, in the order the row shows them.", "5 of 24" on the right): a product `Combobox`
+  (`Store04`, max 520px; detail "SKU · ৳229 · Draft", no photos; the ones already in it are left out), then the
+  list in a 1px `line` box (radius 10px): the number from `sm` (caption `ink-3`), a 40px photo, the name, "SKU ·
+  150 ml" (SKU in `Geist Mono`), the price and the status pill from `sm`, then Move up / Move down / Remove icon
+  buttons. Empty, a neutral notice "No products yet…"; with a draft, "Drafts stay here and show in the row once
+  they are in the shop." A new one has "Add collection" (primary, right-aligned); a saved one the save bar.
+- **Shop pages (`/storefront/pages`):** the page header ("The four pages linked from the shop's footer") and a data
+  table of the four, no sort and no paging, a row click opens the editor: page (a 30px `brand-soft` tile with the
+  page's icon, `SecurityCheck` / `LegalDocument01` / `Store01` / `CallIncoming01`, the footer's name and an `ink-3`
+  sub-line of what the page is for), status (`good` "In the footer" `CheckmarkCircle02`, or neutral "Not written"
+  `MinusSignCircle`), sections ("3 sections" or a dash), changed (or a dash), and a Write / Edit text link.
+- **Text page editor (`/storefront/pages/$slug`):** at most 880px wide; a "Shop pages" back link, the status pill
+  above the page's name, "View page" (the View shop look) and a `MoreHorizontal` menu (Delete page, which asks
+  first and says the footer drops its link). A page not written yet has a neutral notice that its link is not in
+  the footer and its address shows "page not found". Then the sections card ("Sections", "Each with a heading and
+  its text, like Delivery and Returns.") and the save bar. The first save puts it in the shop ("Terms & Condition is
+  in the shop"); a page always keeps at least one section, so taking it out is Delete.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -997,7 +1138,14 @@ What still applies from the rest of this file: HugeIcons Stroke Rounded only, no
 package's main entry starts i18next with every word, so a browser script never imports it), `cursor: pointer` on
 everything clickable, a visible focus state, 150ms color-only transitions and `prefers-reduced-motion`. Light theme only for now
 (`color-scheme: light`); Figma has no dark design. Pages are Astro with small scripts; the checkout form is the only
-React island, and it gets its words from the server as props (no i18next in the browser).
+React island, and it gets its words from the server as props (no i18next in the browser). Every page and route reads
+its data from `Astro.locals.source`, which `src/middleware.ts` sets for each request: the mock (the default,
+`SHOP_SOURCE=mock`) or the ERP's `/public/v1` for the shop the host names (`SHOP_SOURCE=api` plus `SHOP_API_URL`).
+Only the middleware imports `data/source.ts`. The API reads a shop only inside `ShopDb.read`, a read-only
+transaction as the `omnivo_public` role, so a table or column the shop needs is granted to that role in a migration.
+A shop photo comes from the ERP's Storefront menu as a `storefront_image` upload; the worker's `sharp` job writes
+`storefront/<id>/small.webp`, `large.webp` and `wide.webp`, and only that `storefront/` folder of the storage is
+public. The original stays private, and the shop never links to it.
 
 ### Storefront color tokens
 
@@ -1028,11 +1176,18 @@ the tokens, never raw hex.
   (4.95:1 on `card`, 4.61:1 on `canvas`, 4.51:1 on `cream`). White 10px text on Coral `#FF6C55` is 2.8:1, so
   `promo` is `#CC3F29` (4.87:1). Every other Figma pair passes AA (`brand` on `accent` 6.1:1, `price` on white
   7.8:1, `brand` on `cream` 7.5:1, `body` on `cream` 7.1:1).
-- **Tenant theme:** only `brand` and `accent` come from the tenant's `storefront_settings.theme`; all other
+- **Tenant theme:** only `brand` and `accent` come from the tenant's `storefront_settings` (`brand_color`, `accent_color`, `#rrggbb`); all other
   tokens are fixed. The pair must keep at least 4.5:1 between them (accent text on brand and brand text on
-  accent), checked when the tenant saves it. The defaults are the Figma values.
+  accent), and `brand` at least 4.5:1 on `cream` (names and titles sit on the light fills), checked by one
+  `contrastRatio()` in `@omnivo/contracts`, in the form as the tenant types and again by the API on save. The
+  defaults are the Figma values. The logo (`logo_image_id`) is a `storefront_image` like a listing's photo.
 - Hero and promo banner colors (`#EEE0D8`, `#E7D1B2`, `#8B471F` in the Figma hero) are part of each banner's
-  data, not tokens.
+  data, not tokens. The hero's button and its words keep 4.5:1, and the white headline keeps 3:1 on the panel
+  (large text), checked the same way.
+- **What the tenant sets (ERP → Shop appearance, Shop pages):** the logo and the two colors, one hero banner, up to 6
+  picture banners and 8 collections (24 listings each) as up to 12 blocks under the product grid in their order,
+  and the four text pages. Everything else on the shop is fixed. A link on a banner is an address (`/c/skin-care`,
+  `/p/…`, `/c/all?offer=1`, or `https://…`); a slug changed later makes it "page not found".
 
 ### Storefront typography
 
@@ -1083,7 +1238,8 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   Figma's bell); its count badge sits over the top-left corner (10px left, 8px up): `brand` fill, 1px `accent`
   border, 4px padding, radius 999, 12px/600 white, "99+" above 99, hidden from screen readers (the button's
   label says "Cart, 3 items"). The account button has `User02` and the name in 16px/600 white (padding 8px 10px
-  8px 8px, gap 4px); without a name it says "Account". Below `md` (Figma `mobile-header`): a 64px `brand` bar,
+  8px 8px, gap 4px); without a name it says "Account". Both account buttons open `/track` until the shop
+  has a customer sign-in. Below `md` (Figma `mobile-header`): a 64px `brand` bar,
   radius 16, padding 12px. Left a 40px `card` menu button (radius 12, 20px `brand` `Menu01`; not in Figma, it
   reaches the category drawer from every page), 8px later the logo (24px mark, wordmark 20px/700 white, 8px apart;
   a long shop name ends in "…"); right
@@ -1163,8 +1319,9 @@ phone hero headline is 28px/700 and its line under it 14px/400.
 - **Footer:** `card`, radius 16, clipped, 64px top padding, content 440px wide and centered with 48px between the
   logo and the rest. Social links: 40px circles, `cream` fill, 15px `brand` icons (`Facebook01`, `Instagram`,
   `NewTwitter`, `Linkedin01`), 14.6px apart; hover fills `accent`. 24px below: the address, 16px/24px `muted`,
-  centered. 24px below: the links (Privacy Policy, Terms & Condition, About Us, Contact Us) 16px/24px `brand`,
-  separated by `muted` " | ". Two soft `accent` blobs sit at the bottom left and right (Figma's Vector 2 and
+  centered. 24px below: the links (Privacy Policy, Terms & Condition, About Us, Contact Us; only the pages the
+  tenant has written, from the shop's `pages`, so no link leads to "page not found") 16px/24px `brand`, separated
+  by `muted` " | ". Two soft `accent` blobs sit at the bottom left and right (Figma's Vector 2 and
   Vector 3, downloaded as SVG, decorative, `aria-hidden`). Under the footer, 35px down: "©2026 All rights
   reserved by Omnivo" 16px/24px `brand`, centered, then 34px to the page end. Below `md` (Figma `footer`): `card`
   with only the top corners round (24px), 32px top and bottom padding, 24px between its parts, everything
@@ -1185,7 +1342,9 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   MD2346" (`ShoppingBag01`), 16px icons, 14px/500 `brand`, 8px gap; out of stock shows an `Alert02` with
   "Out of stock" in `promo`. A 1px `rule` line 36px below, then 26px down "Hotline:" (`price`) and the number
   (`brand`) at 16px/600 after a 24px `price` `Call02` icon, 12px apart. Below `lg` the two cards stack, the gallery stays
-  at most 524px wide and centered, and the buttons share the width.
+  at most 524px wide and centered, and the buttons share the width. The page's `<title>` and
+  `<meta name="description">` are the product's `seo`, which the API fills: the tenant's SEO words, or the name and
+  the start of the description.
 - **Product page, description:** a `card-glass` card (radius 16, 8px padding) with the tab bar (`cream`, radius
   8, 8px padding) holding one 160×48 "Overview" label in the tab's look (`brand` fill, `accent` 16px/600, radius 4).
   It is a label, not a `tablist`: Reviews is removed (there are no reviews in the data model), and a list of one
@@ -1207,7 +1366,7 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   location" in `muted`) and "Payment Method" (Cash on Delivery, Mobile Banking), each two cards side by
   side, 16px apart. Free delivery is not a choice: when the order reaches the shop's threshold, the Delivery
   Charge row says "Free", and a 14px `muted` line under Delivery Location says "Free delivery on orders over
-  ৳1,000".
+  ৳1,000". The form is `inert` until its island has run, so nothing a shopper types before then is lost.
 - **Checkout lines:** per line, a 155×130 `canvas` image box (radius 8), 20px gap, then the name (`sf-subtitle`,
   `brand`, max 288px) and 20px below it the stepper (the name and the stepper centered beside the image): minus and plus 40px `cream` buttons (radius 5,
   `MinusSign` / `Add01` 14px `brand`), a 60×40 quantity box between them (`card`, 1.5px `cream` border, radius 5,
@@ -1249,7 +1408,9 @@ These follow the same tokens and components. Use them exactly as written here un
 - **Empty state:** a `card` (radius 16, padding 48px) with a 64px round `cream` tile holding a 28px `brand`
   icon, a `sf-title` `brand` title, a 16px `muted` line that says what to do, and an optional `accent` button
   (44px, radius 4). Used for empty cart (`ShoppingCart01`), no results (`Search01`), no listing for the filters
-  (`FilterRemove`), an empty category (`ShoppingBasket01`), page not found, and a shop that is closed.
+  (`FilterRemove`), an empty category (`ShoppingBasket01`), page not found (`FileNotFound`, "Go to the home page")
+  and a tracking link that does not work (`Unlink04`, "Track with the number"). There is no closed shop: a shop is
+  always open.
 - **Cart drawer:** opens from the cart button, from the right, 420px wide (full width on phones), `card`, with
   `overlay` behind it and no blur. A native `<dialog>` (`showModal()`), so the focus stays inside, Escape and a
   click on the backdrop close it, and the focus goes back to the cart button. It does not slide in. The header:
@@ -1284,13 +1445,59 @@ These follow the same tokens and components. Use them exactly as written here un
   delivery details (name, phone, address, area) in 16px `body`, and the lines and totals as in checkout,
   read-only (no stepper, no delete; "150ml · 2 × ৳229" under the name), with a Subtotal row above Delivery Charge.
   Only the browser that placed the order sees it (a cookie); anyone else gets page not found.
-- **Track order (`/track`):** the checkout card: Mobile Number and Order Number fields, "Track Order" (`accent`),
-  then a vertical timeline: 24px dots (done: `brand` fill with an `accent` tick; current: 2px `accent` ring on
-  `brand`; later: 1px `rule` ring), 2px connecting line, 16px/600 `brand` status and a 14px `muted` date.
-- **Text pages (Privacy, Terms, About, Contact):** the checkout card at 848px with the page title in the
-  header and the body in the description prose style.
+- **Tracking link (`/t/<token>`):** the link the shop sends the buyer (by SMS from step 27). The token is 128 bits
+  (22 base64url characters) and only its hash is stored, like a share link. The checkout card at 848px, header
+  "Track Order", body padding 36px (20px on phones), 32px between blocks: the order number (`Geist Mono`
+  `sf-title`, never broken) with "Placed on …" under it; a `canvas` box (radius 8, padding 20px) with "3 items"
+  and the total in `price`, and "Keep ৳578 ready in cash for the rider." (Cash on Delivery, until delivered) or
+  "Paid with Mobile Banking."; the order's timeline: 24px dots (done: `brand` fill with an `accent` tick; current:
+  2px `accent` ring on `brand`; later: 1px `rule` ring), 2px connecting line, 16px/600 `brand` status and a 14px
+  `muted` date; then one section per parcel (at most 5), newest first: "Parcel" (an older one "Earlier parcel"),
+  "Steadfast · SFR2611120042" in 14px `muted` `tabular-nums`, an optional "See it on the Steadfast site" link
+  (`LinkSquare02`, https only, `rel="noopener noreferrer"`), and the courier's events newest first in the same
+  dots and line (status, time, and the courier's own note in 14px `body`). Each courier's statuses map to the
+  shop's ten. Before a courier is booked, the parcel section says so. It ends with "Anyone with this link can
+  see this page. It shows no address and no phone number." in 14px `muted`: the page names no person, because a
+  link can be forwarded. Headers `Cache-Control: no-store`, `X-Robots-Tag: noindex` and
+  `Referrer-Policy: no-referrer`. A broken or unknown link answers 404 with its own empty state.
+- **Track order (`/track`):** the way back for a lost SMS. The checkout card at 560px: header "Track Order", a
+  16px `body` line, Mobile Number and Order Number side by side from `md` (the checkout's fields; the number
+  takes "w000123" or Bangla digits too), and "Track Order" (the Confirm Order button's look). The form POSTs to
+  the same page and works with no script, so the phone never goes into the address. A match draws the tracking
+  link's view in place at 848px, ending with "Track another order" (`cream`, 44px, radius 4). A wrong number or
+  phone, of any kind, gets one answer above the boxes ("No order has this number and mobile number…", `Alert02`,
+  `promo`, it takes the focus); a box with an error says so under it, and the first one takes the focus. After
+  10 misses in 15 minutes from one address (IPv6: its /64) the page answers 429, "Too many tries. Wait 15
+  minutes…". It cannot send the shopper to `/t/<token>`: only the token's hash is stored. The mock shop lists
+  its demo orders, their phones and their links in a `canvas` box under the line.
+- **Text pages (`/pages/privacy`, `terms`, `about`, `contact`):** the
+  checkout card at 848px with the footer's own word as the title in the header ("Terms & Condition"), "Last
+  updated 1 Nov 2026" under it in 14px `muted` (the day in the shop's time zone) when the page has a date, and the
+  tenant's HTML in the description's prose style (`shop-prose`), its sections 8px apart in the card's 4px frame.
+  Only these four; any other slug, or a page the tenant has not written, is page not found. Contact is text only,
+  with no form.
+- **Page not found (`404`):** the full layout (header and footer) with the
+  empty state 36px under the header (16px on a phone): `FileNotFound`, "Page not found", "The link may have a
+  typo, or the page has moved…", and "Go to the home page". Status 404. It answers every address with no page,
+  and every page that rewrites to `/404` (an unknown product, category, order or text page).
+- **No shop (a host with no launched shop):** a page of its own, not the shop's layout, because there is no shop
+  to take a name, colors or a menu from. The empty state 16px from the top (36px from `md`) in the default colors:
+  `StoreRemove01`, "No shop has this address", "Check the address for a typo…", and no button (a link to `/` would
+  land here again). English, `noindex`, status 404. `/api/*` on such a host answers `404 storefront_not_found` as
+  problem JSON.
 - **Toast:** bottom center, `brand` fill, `accent` 16px/600 text, radius 8, padding 12px 16px, about 3s, e.g.
   "Added to cart".
+
+### Storefront tests
+
+Unit tests (Vitest) sit next to the code. Browser tests are Playwright, in `apps/shop/e2e/`, against the built
+server (`astro build`, then `node dist/server/entry.mjs` on 127.0.0.1:4331), in Chromium at 1440×900 and at
+390px (Pixel 7). There are no screenshot diffs: a test checks what a shopper sees and does, and that the page
+never scrolls sideways. CI runs them in their own step, `pnpm --filter @omnivo/shop test:e2e`, and
+`pnpm --filter @omnivo/shop typecheck` checks `e2e/` too. A test that uses up `/track`'s tries sends its own
+`X-Forwarded-For`, so it does not stop the other tests. They run on the mock source. The API source is tested
+without a browser, against a fake `/public/v1` made of the mock (`src/data/api/api-source.spec.ts`), and the API's
+answers by its own integration and tenant-leak tests (`apps/api/src/storefront/`).
 
 ## Website / Landing page
 

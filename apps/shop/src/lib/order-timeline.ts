@@ -6,6 +6,15 @@ import type { ShopOrder, ShopOrderStatus } from '@omnivo/contracts';
 
 export type TimelineState = 'done' | 'current' | 'later';
 
+// The three dots of CLAUDE.md: done (brand, an accent tick), current (brand inside a 2px accent
+// ring), later (an empty 1px rule ring). Step 26e: here, not in OrderTimeline.astro, because a
+// parcel's events (TrackingView.astro) draw the same dots, and the two must never look different
+export const TIMELINE_DOT: Record<TimelineState, string> = {
+  done: 'bg-brand text-accent',
+  current: 'border-2 border-accent bg-brand',
+  later: 'border border-rule bg-card',
+};
+
 export interface TimelineStep {
   status: ShopOrderStatus;
   // When the order reached this step (ISO), or null for a step still ahead

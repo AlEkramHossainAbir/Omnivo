@@ -436,15 +436,16 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
 
 #### ধাপ ২৬: শপের ভিত্তি · ~৩.৫ সপ্তাহ
 
-`storefront` মডিউল: `storefront_settings`, `storefront_domains` (Host → tenant), **`storefront_listings`** (Inventory-র প্রোডাক্টকে "প্রকাশ" করা — নতুন প্রোডাক্ট টেবিল **নয়**), categories, banners, carts।
+`storefront` মডিউল (ধাপ ২৬f): `storefront_settings` (subdomain + `launched_at`), `storefront_categories` (শপের নিজের ট্রি), **`storefront_listings`** (Inventory-র প্রোডাক্টকে "প্রকাশ" করা — নতুন প্রোডাক্ট টেবিল **নয়**; দাম, অফার, ছবি, বর্ণনা, SEO), banners, collections, হোমপেজের ক্রম, টেক্সট পেজ। নিজের কেনা ডোমেইনের `storefront_domains` পরের একটা ধাপে; কার্ট আপাতত ব্রাউজারে।
 `apps/shop` (Astro, on-demand render + CDN cache) — **একটাই ডিপ্লয়মেন্ট সব টেন্যান্টের শপ সার্ভ করবে**, `Host` হেডার দিয়ে টেন্যান্ট চেনা।
-পাবলিক API `/public/v1/*` — JWT নেই, তাই আলাদা **read-mostly DB role** + rate limit + WAF।
-ERP অ্যাপে Storefront মেনু: Catalog, Appearance, Delivery zones।
+পাবলিক API `/public/v1/*` — JWT নেই, তাই আলাদা **read-only DB role** (`omnivo_public`) + rate limit + WAF (ধাপ ২৬f; rate limit এখন edge-এ, API-তে ধাপ ২৭-এর অর্ডার আর OTP-র সাথে)।
+ERP অ্যাপে Storefront মেনু, পারমিশন `storefront.manage` (ধাপ ২৬g): Shop settings (ঠিকানা, যোগাযোগ, warehouse, delivery zone, ফ্রি ডেলিভারি, ন্যূনতম অর্ডার, পেমেন্ট) আর চেকলিস্ট পূরণ হলে "Open the shop", Shop categories, Catalog আর লিস্টিং এডিটর (ছবি, দাম ও অফার, বর্ণনা, SEO, Show in the shop)। ছবি presigned PUT-এ private ফোল্ডারে, তারপর outbox → worker-এর sharp জব পাবলিক `storefront/`-এ তিনটা WebP বানায়।
+Shop appearance আর Shop pages (ধাপ ২৬h): লোগো আর দুটো রং (কনট্রাস্ট যাচাই ফর্মে আর API-তে), hero নিজের পেজে লাইভ প্রিভিউ সহ, সর্বোচ্চ ৬টা picture banner আর ৮টা কালেকশন (২৪টা করে লিস্টিং) হোমপেজে ১২টা ব্লক পর্যন্ত, Move up/down; চারটা টেক্সট পেজ লিস্টিং-এর section এডিটরে, আর শপের ফুটার শুধু লেখা পেজের লিংক দেয়। `pnpm seed:shop` চালু dev stack-এ API দিয়ে ছবি সহ একটা পুরো demo শপ বানায়।
 **দেখবেন:** `acme.localhost:4321`-এ আসল শপ, ERP-র প্রোডাক্ট দেখাচ্ছে।
 
 #### ধাপ ২৭: চেকআউট ও অর্ডার · ~২.৫ সপ্তাহ
 
-কার্ট → চেকআউট (**দাম, ডিসকাউন্ট, ডেলিভারি চার্জ সব সার্ভারে হিসাব — ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে**), **স্টক রিজার্ভেশন TTL সহ**, COD + **ফোন OTP বাধ্যতামূলক**, অনলাইন পেমেন্ট (টেন্যান্টের নিজের গেটওয়ে, এনক্রিপ্টেড credentials), `storefront_orders`, অর্ডার বোর্ড UI, confirm হলে outbox → worker → Sales Order + স্টক মুভমেন্ট + জার্নাল।
+কার্ট → চেকআউট (**দাম, ডিসকাউন্ট, ডেলিভারি চার্জ সব সার্ভারে হিসাব — ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে**), **স্টক রিজার্ভেশন TTL সহ**, COD + **ফোন OTP বাধ্যতামূলক**, অনলাইন পেমেন্ট (টেন্যান্টের নিজের গেটওয়ে, এনক্রিপ্টেড credentials), `storefront_orders`, অর্ডারের সাথে ট্র্যাকিং লিংকের token (শুধু hash রাখা) আর ক্রেতাকে SMS-এ লিংক (`/t/<token>`, পেজটা ধাপ ২৬e-তে তৈরি), অর্ডার বোর্ড UI, confirm হলে outbox → worker → Sales Order + স্টক মুভমেন্ট + জার্নাল।
 
 #### ধাপ ২৮: কুরিয়ার অটোমেশন · ~৩.৫ সপ্তাহ
 
@@ -453,7 +454,7 @@ ERP অ্যাপে Storefront মেনু: Catalog, Appearance, Delivery zo
 - কনসাইনমেন্ট **সবসময় worker-এ**, কখনো HTTP রিকোয়েস্টের ভেতরে নয়
 - **idempotency key = `order_id`** + DB-তে `UNIQUE (tenant_id, order_id, courier_account_id)` — দুটোই লাগবে, একটা যথেষ্ট না
 - Retry: exponential backoff ৫ বার → তারপর `needs_attention` + নোটিফিকেশন + Retry বাটন (**কখনো নীরবে ব্যর্থ নয়**)
-- স্ট্যাটাস: webhook (signature + timestamp যাচাই) + polling fallback, `shipment_events` append-only
+- স্ট্যাটাস: webhook (signature + timestamp যাচাই) + polling fallback, `shipment_events` append-only; ERP-র অ্যাডমিনে কুরিয়ারের API key, আর কুরিয়ারের ইভেন্টগুলো ট্র্যাকিং পেজে (ধাপ ২৬e-র মক ইভেন্টের জায়গায়)
 - **কুরিয়ারপ্রতি COD Receivable control account**, remittance CSV/API auto-matching, return ও partial delivery
 
 **দেখবেন:** শপে অর্ডার → OTP → কনফার্ম → Sales Order + ইনভয়েস + কনসাইনমেন্ট অটো তৈরি → ট্র্যাকিং SMS → রেমিট্যান্স এলে ব্যাংকে টাকা বসল। 🎉 **এটাই বাংলাদেশের বাজারে Omnivo-র সবচেয়ে বড় অস্ত্র।**
@@ -571,4 +572,5 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [x] **ধাপ ২১** — Reports 🏁 MVP
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
-- [ ] **ধাপ ২৬–২৮** — Storefront + কুরিয়ার
+- [x] **ধাপ ২৬** — শপের ভিত্তি (২৬a–২৬h: শপের সব স্ক্রিন, পাবলিক API, ERP-র Storefront মেনু, Appearance, Pages, seed; স্টেজিং এখনো মক শপে, wildcard হোস্ট বাকি)
+- [ ] **ধাপ ২৭–২৮** — চেকআউট ও অর্ডার, কুরিয়ার অটোমেশন

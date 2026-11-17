@@ -18,6 +18,7 @@ import {
   Factory01Icon,
   FileDownloadIcon,
   FileImportIcon,
+  FolderLibraryIcon,
   FolderTreeIcon,
   HourglassIcon,
   Invoice01Icon,
@@ -52,6 +53,7 @@ import {
   ShoppingCart01Icon,
   SquareLock02Icon,
   Store01Icon,
+  Store04Icon,
   TableIcon,
   Tag01Icon,
   TaxesIcon,
@@ -68,6 +70,9 @@ import {
   UserMultiple02Icon,
   UserTime01Icon,
   WarehouseIcon,
+  WebDesign01Icon,
+  PaintBoardIcon,
+  Files01Icon,
   Wifi01Icon,
   WifiDisconnected02Icon,
   WorkHistoryIcon,
@@ -659,6 +664,29 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
               {t('nav.warehouses')}
             </NavLink>
           </NavGroup>
+          {/* Step 26g (decision 5): the online shop, for the people who run it. After Stock, the
+              group the shop sells from */}
+          {can('storefront.manage') && (
+            <NavGroup label={t('nav.storefront')}>
+              <NavLink to="/storefront/listings" icon={Store04Icon}>
+                {t('nav.storefrontCatalog')}
+              </NavLink>
+              <NavLink to="/storefront/categories" icon={FolderLibraryIcon}>
+                {t('nav.storefrontCategories')}
+              </NavLink>
+              {/* Step 26h: the look and the text pages, before the settings (approved with the
+                  mockup: the things changed most often come first) */}
+              <NavLink to="/storefront/appearance" icon={PaintBoardIcon}>
+                {t('nav.storefrontAppearance')}
+              </NavLink>
+              <NavLink to="/storefront/pages" icon={Files01Icon}>
+                {t('nav.storefrontPages')}
+              </NavLink>
+              <NavLink to="/storefront/settings" icon={WebDesign01Icon}>
+                {t('nav.storefrontSettings')}
+              </NavLink>
+            </NavGroup>
+          )}
           <NavGroup label={t('nav.workspace')}>
             {(can('core.user.read') || can('core.user.invite')) && (
               <NavLink to="/team" icon={UserGroupIcon}>

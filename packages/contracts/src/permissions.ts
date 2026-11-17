@@ -53,6 +53,8 @@ export const PERMISSION_KEYS = [
   'pos.register.manage',
   'pos.shift.manage',
   'pos.return.create',
+  // Step 26g: everything in the Storefront menu, from the settings and the launch to the listings
+  'storefront.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -73,6 +75,7 @@ export const PERMISSION_GROUPS = [
   'sales',
   'purchase',
   'pos',
+  'storefront',
 ] as const;
 export type PermissionGroup = (typeof PERMISSION_GROUPS)[number];
 
@@ -128,4 +131,5 @@ export const PERMISSION_GROUP_OF = {
   'pos.register.manage': 'pos',
   'pos.shift.manage': 'pos',
   'pos.return.create': 'pos',
+  'storefront.manage': 'storefront',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

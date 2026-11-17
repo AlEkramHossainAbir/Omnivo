@@ -626,6 +626,77 @@ export const ERROR_CODES = [
   'shop_code_too_many',
   'shop_code_resend_wait',
   'shop_code_no_order',
+  // Step 26e: the /track form. An order number in another shape, no order with this number and
+  // phone (one code for both: the form never says which of the two is wrong), and too many tries
+  // from one connection (the problem's params.minutes says how long to wait)
+  'shop_order_no_format',
+  'shop_track_not_found',
+  'shop_track_too_many',
+  // Step 26f: the public API's address is not a shop (no storefront has this domain, or its
+  // workspace has turned the shop off), and a listing's sale as the ERP's form sends it: a
+  // percent that is not a whole 1 to 99, an amount of zero, an end not after its start
+  'storefront_not_found',
+  'storefront_sale_percent',
+  'storefront_sale_zero',
+  'storefront_sale_dates',
+  // Step 26g: the Storefront screens. The shop's address and its links
+  'storefront_subdomain_format',
+  'storefront_subdomain_reserved',
+  'storefront_subdomain_taken',
+  'storefront_link_https',
+  'storefront_slug_format',
+  'storefront_slug_required',
+  'storefront_slug_taken',
+  // The settings: a zone named twice, no way to pay, a warehouse that is not this workspace's
+  // active one, saving the settings before the first save (or twice the first one), and "Open the
+  // shop" before the checklist is done (params say nothing: the page shows the checklist)
+  'storefront_zone_name_taken',
+  'storefront_payment_required',
+  'storefront_warehouse_invalid',
+  'storefront_not_set_up',
+  'storefront_set_up_already',
+  'storefront_launch_not_ready',
+  // The categories (the rest reuse the product categories' words: category_name_taken,
+  // category_parent_invalid, category_parent_loop, category_has_children)
+  'storefront_category_in_use',
+  'storefront_category_invalid',
+  // The listings: a variant listed already or archived, publishing without a photo or a price, a
+  // sale that takes nothing off the regular price
+  'storefront_variant_listed',
+  'storefront_variant_archived',
+  'storefront_listing_needs_photo',
+  'storefront_listing_no_price',
+  'storefront_sale_not_lower',
+  // The photos: one twice on a listing, one that is not ready (or not this workspace's), a file
+  // over 8 MB, and the image job's three refusals (STOREFRONT_IMAGE_FAILURES)
+  'storefront_image_twice',
+  'storefront_image_not_ready',
+  'storefront_image_file_too_large',
+  'storefront_image_unreadable',
+  'storefront_image_too_small',
+  'storefront_image_too_many_pixels',
+  // Step 26h: Appearance and the text pages. A category slug the shop keeps for itself (/c/all), a
+  // color that is not #rrggbb, a banner link that is neither a path nor an https address
+  'storefront_slug_reserved',
+  'storefront_color_format',
+  'storefront_link_format',
+  // The contrast checks (decision 3): the brand color on cream, the accent next to the brand, the
+  // hero's button text on its button, the white headline on the hero's panel. Field errors carry
+  // no params, so the words say the minimum; the form shows the ratio itself next to the boxes
+  'storefront_brand_contrast',
+  'storefront_accent_contrast',
+  'storefront_button_contrast',
+  'storefront_panel_contrast',
+  // The limits (decision 6): six picture banners, eight collections, twelve blocks on the page
+  'storefront_banners_full',
+  'storefront_collections_full',
+  'storefront_home_full',
+  // A collection with no listing, one listing twice in it, or one that is not this workspace's
+  'storefront_collection_empty',
+  'storefront_listing_twice',
+  'storefront_listing_invalid',
+  // A text page saved with no section (Delete is the way to take a page out of the shop)
+  'storefront_page_empty',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

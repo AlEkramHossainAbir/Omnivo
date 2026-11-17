@@ -190,6 +190,11 @@ const STOCK_REPORTS = ['inventory.report.read'] as const;
 // their own role may read.
 const SCHEDULING_REPORTS = ['core.report.schedule'] as const;
 
+// Step 26g: running the online shop (its settings, categories and listings). For the people who
+// run a shop, the retail shop manager and the general manager; the distributors and makers sell
+// to businesses, and their owner can give it to a role when they open a shop
+const RUNNING_THE_SHOP = ['storefront.manage'] as const;
+
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
 const ACCOUNTANT: RoleTemplate = {
@@ -756,6 +761,7 @@ export const INDUSTRY_TEMPLATES = {
           ...PURCHASE_REPORTS,
           ...STOCK_REPORTS,
           ...SCHEDULING_REPORTS,
+          ...RUNNING_THE_SHOP,
         ],
       },
       {
@@ -834,6 +840,7 @@ export const INDUSTRY_TEMPLATES = {
           ...PURCHASE_REPORTS,
           ...STOCK_REPORTS,
           ...SCHEDULING_REPORTS,
+          ...RUNNING_THE_SHOP,
         ],
       },
     ],

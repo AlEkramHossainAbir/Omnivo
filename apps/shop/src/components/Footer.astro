@@ -6,7 +6,7 @@ import {
   NewTwitterIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
-import type { PublicShop } from '@omnivo/contracts';
+import type { PublicShop, ShopTextPageSlug } from '@omnivo/contracts';
 
 import type { ShopLocale } from '../lib/locale';
 import Logo from './Logo.astro';
@@ -31,13 +31,15 @@ const social = [
   { url: shop.social.linkedin, icon: Linkedin01Icon, label: t('shop.footer.linkedin') },
 ].flatMap((network) => (network.url === null ? [] : [{ ...network, url: network.url }]));
 
-// Step 26c builds these pages
-const pages = [
-  { href: '/pages/privacy', label: t('shop.footer.privacy') },
-  { href: '/pages/terms', label: t('shop.footer.terms') },
-  { href: '/pages/about', label: t('shop.footer.about') },
-  { href: '/pages/contact', label: t('shop.footer.contact') },
-];
+// Step 26e builds these pages (pages/pages/[slug].astro). Step 26h: only the ones the tenant has
+// written (shop.pages, already in this order), so a footer link never opens "page not found"
+const pageLabels = {
+  privacy: t('shop.footer.privacy'),
+  terms: t('shop.footer.terms'),
+  about: t('shop.footer.about'),
+  contact: t('shop.footer.contact'),
+} satisfies Record<ShopTextPageSlug, string>;
+const pages = shop.pages.map((slug) => ({ href: `/pages/${slug}`, label: pageLabels[slug] }));
 
 const copyright = t('shop.footer.copyright', { year, shop: shop.name });
 ---
@@ -94,23 +96,26 @@ const copyright = t('shop.footer.copyright', { year, shop: shop.name });
             </ul>
           )}
         </div>
-        <nav aria-label={t('shop.footer.pages')}>
-          {/* A paragraph of links, not a flex list: text-box trim works on a block of text only */}
-          <p class="text-center text-sf-small text-brand md:trim-text md:text-sf-body md:leading-6">
-            {pages.map((page, index) => (
-              <>
-                {index > 0 && (
-                  <span aria-hidden="true" class="px-1 text-muted md:px-2">
-                    |
-                  </span>
-                )}
-                <a href={page.href} class="underline-offset-3 hover:underline">
-                  {page.label}
-                </a>
-              </>
-            ))}
-          </p>
-        </nav>
+        {/* No nav at all while no page is written: an empty landmark is a dead stop for a screen reader */}
+        {pages.length > 0 && (
+          <nav aria-label={t('shop.footer.pages')}>
+            {/* A paragraph of links, not a flex list: text-box trim works on a block of text only */}
+            <p class="text-center text-sf-small text-brand md:trim-text md:text-sf-body md:leading-6">
+              {pages.map((page, index) => (
+                <>
+                  {index > 0 && (
+                    <span aria-hidden="true" class="px-1 text-muted md:px-2">
+                      |
+                    </span>
+                  )}
+                  <a href={page.href} class="underline-offset-3 hover:underline">
+                    {page.label}
+                  </a>
+                </>
+              ))}
+            </p>
+          </nav>
+        )}
         <p class="text-sf-meta font-normal text-muted md:hidden">{copyright}</p>
       </div>
     </div>

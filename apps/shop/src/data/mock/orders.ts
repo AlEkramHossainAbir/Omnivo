@@ -9,6 +9,9 @@ import {
   type ShopOrderConfirmed,
   type ShopOrderLine,
   type ShopOrderRequest,
+  type ShopShipment,
+  type ShopTracking,
+  type ShopTrackRequest,
 } from '@omnivo/contracts';
 
 import type { PlacedOrder, ShopCodeWait, SourceResult } from '../types';
@@ -26,10 +29,39 @@ const WAIT_MS = 60 * 60 * 1000;
 interface MockOrder {
   token: string;
   order: ShopOrder;
+  // Step 26e: the parcels the shop booked for it, oldest first. Nothing in the mock books a
+  // courier, so only the demo orders have any
+  shipments: ShopShipment[];
   // Only while it waits for the code
   wrongCodes: number;
   resendAt: number;
   expiresAt: number;
+}
+
+// Step 26e: an order the mock starts with (demo-orders.ts), so a tracking link and the /track form
+// have something to show right after a restart, when the book is otherwise empty
+export interface MockDemoOrder {
+  order: ShopOrder;
+  shipments: ShopShipment[];
+  // Its tracking link's token. Fixed, so the link the /track page shows works after every restart
+  trackingToken: string;
+}
+
+// Step 26e: what tracking shows of an order. Each field is picked by name, never `...order`: the
+// order has the buyer's name, phone and address, and a tracking link gets forwarded (decision 12).
+// Copies, like find(): the page must not be able to change the book
+function trackingOf({ order, shipments }: MockOrder): ShopTracking {
+  return {
+    orderNo: order.orderNo,
+    placedAt: order.placedAt,
+    status: order.status,
+    history: structuredClone(order.history),
+    // Pieces, not lines: two face washes and a tea are 3 items
+    itemCount: order.lines.reduce((count, line) => count + line.quantity, 0),
+    total: order.total,
+    paymentMethod: order.paymentMethod,
+    shipments: structuredClone(shipments),
+  };
 }
 
 // A token nobody can guess: 32 random bytes as 64 hex digits. Web Crypto, not node:crypto, so it
@@ -51,10 +83,35 @@ function orderNumber(sequence: number): string {
 }
 
 // One order book per mock source. `now` is passed in so the tests can move time; the real clock
-// otherwise
-export function createOrderBook(now: () => Date = () => new Date()) {
+// otherwise. Step 26e: `demo` are the orders it starts with; none unless the source passes them
+export function createOrderBook(
+  now: () => Date = () => new Date(),
+  demo: readonly MockDemoOrder[] = [],
+) {
   const byToken = new Map<string, MockOrder>();
-  let sequence = 0;
+  // Step 26e: a tracking link's token → the order's key in byToken. Only the demo orders have one.
+  // The real API makes a token when an order is placed, keeps only its hash, and sends the link by
+  // SMS (step 27). The mock sends no SMS, so a token for its own orders would reach nobody: they
+  // are tracked with the /track form. Nor does it hash: its tokens are printed on the /track page
+  // anyway, and nothing here outlives the process
+  const byTrackingToken = new Map<string, string>();
+  for (const { order, shipments, trackingToken } of demo) {
+    const key = newToken();
+    byToken.set(key, {
+      token: key,
+      // Copies, so a test that changes its fixture cannot change the book
+      order: structuredClone(order),
+      shipments: structuredClone(shipments),
+      // Read only while an order waits for its code, and a demo order never does
+      wrongCodes: 0,
+      resendAt: 0,
+      expiresAt: 0,
+    });
+    byTrackingToken.set(trackingToken, key);
+  }
+  // New orders count on from the last demo order, so the two never share a number. "W-000123" →
+  // 123; 0 with no demo orders, so the first order is still W-000001
+  let sequence = Math.max(0, ...demo.map(({ order }) => Number(order.orderNo.slice(2))));
 
   function secondsUntil(at: number): number {
     return Math.max(0, Math.ceil((at - now().getTime()) / 1000));
@@ -156,6 +213,8 @@ export function createOrderBook(now: () => Date = () => new Date()) {
       const entry: MockOrder = {
         token,
         order,
+        // The shop books a courier later (step 28); until then the order has no parcel
+        shipments: [],
         wrongCodes: 0,
         // The first code was "sent" just now, so a new one waits the same 45 seconds
         resendAt: placedAt.getTime() + SHOP_CODE_RESEND_SECONDS * 1000,
@@ -234,6 +293,29 @@ export function createOrderBook(now: () => Date = () => new Date()) {
       if (entry?.order.orderNo !== orderNo || entry.order.status === 'pending') return null;
       // A copy: the page that draws it must not be able to change the book
       return structuredClone(entry.order);
+    },
+
+    // Step 26e: what a tracking link shows. null for a token no order has. An order waiting for its
+    // code is not one yet (as in find()); no demo order waits, so this only keeps the rule in one
+    // place for when the real tokens come
+    trackByLink(trackingToken: string): ShopTracking | null {
+      const key = byTrackingToken.get(trackingToken);
+      const entry = key === undefined ? undefined : byToken.get(key);
+      if (!entry || entry.order.status === 'pending') return null;
+      return trackingOf(entry);
+    },
+
+    // Step 26e: the /track form. The number finds the order and the phone must be the one it was
+    // placed with. Both were made plain by shopTrackRequestSchema, as the order's phone was by
+    // shopOrderRequestSchema, so a plain === compares them
+    track({ phone, orderNo }: ShopTrackRequest): ShopTracking | null {
+      for (const entry of byToken.values()) {
+        if (entry.order.orderNo !== orderNo) continue;
+        // One number is one order, so the search ends here, matched or not
+        if (entry.order.phone !== phone || entry.order.status === 'pending') return null;
+        return trackingOf(entry);
+      }
+      return null;
     },
   };
 }

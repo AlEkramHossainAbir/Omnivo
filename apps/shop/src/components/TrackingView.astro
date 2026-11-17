@@ -1,0 +1,167 @@
+---
+import { LinkSquare02Icon, Tick02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import type { ShopTracking } from '@omnivo/contracts';
+import { formatDateTime, formatNumber } from '@omnivo/i18n';
+
+import type { ShopLocale } from '../lib/locale';
+import { TIMELINE_DOT } from '../lib/order-timeline';
+import { parcelViews, paymentLine } from '../lib/tracking-view';
+import OrderTimeline from './OrderTimeline.astro';
+
+// Step 26e: where an order and its parcel are (decision 2; CLAUDE.md → Track order). A tracking
+// link (/t/<token>) and the /track form draw this one view (decision 3), inside the checkout card
+// (PageCard). It names no person (decision 12): the number, the order's timeline, how many items,
+// what to pay, and each parcel's way. Drawn on the server with no script, like the timeline.
+interface Props {
+  tracking: ShopTracking;
+  locale: ShopLocale;
+  // The shop's, so every time on the page is the time in Dhaka on any server
+  timeZone: string;
+}
+
+const { tracking, locale, timeZone } = Astro.props;
+const { t, money } = locale;
+const when = (iso: string) => formatDateTime(new Date(iso), locale.language, timeZone);
+
+// `count` picks the plural ("1 item", "3 items"); `replace` writes it in the shop's digits, so a
+// Bangla shop says "৩টি পণ্য", not "3টি পণ্য"
+const items = t('shop.track.items', {
+  count: tracking.itemCount,
+  replace: { count: formatNumber(tracking.itemCount, locale.language) },
+});
+const payment = paymentLine(tracking);
+const parcels = parcelViews(tracking.shipments);
+const heading = 'font-semibold';
+---
+
+<div class="flex flex-col gap-8 p-5 md:p-9">
+  <div class="flex flex-col gap-1">
+    {/* CLAUDE.md: the number is never broken over two lines */}
+    <p class="font-mono text-sf-title font-semibold whitespace-nowrap">{tracking.orderNo}</p>
+    <p class="text-sf-small text-muted">
+      {t('shop.order.placedOn', { date: when(tracking.placedAt) })}
+    </p>
+  </div>
+
+  {/* What the person at the door needs: how many items come, and what to pay for them */}
+  <div class="flex flex-col gap-3 rounded-lg bg-canvas p-5">
+    <p class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 font-semibold">
+      <span>{items}</span>
+      <span>
+        {`${t('shop.track.total')} `}
+        <span class="text-price tabular-nums">{money(tracking.total)}</span>
+      </span>
+    </p>
+    {payment === 'payOnDelivery' && (
+      <p class="text-sf-small text-body">
+        {t('shop.track.payOnDelivery', { amount: money(tracking.total) })}
+      </p>
+    )}
+    {payment === 'paidOnline' && (
+      <p class="text-sf-small text-body">{t('shop.track.paidOnline')}</p>
+    )}
+  </div>
+
+  <section class="flex flex-col gap-4">
+    <h2 id="tracking-order" class={heading}>
+      {t('shop.order.timeline')}
+    </h2>
+    <OrderTimeline
+      order={tracking}
+      locale={locale}
+      timeZone={timeZone}
+      labelledBy="tracking-order"
+    />
+  </section>
+
+  {/* Before the shop books a courier, the parcel's section says so, instead of being left out:
+      a shopper who opens the link from the SMS asks "has it been sent?" either way */}
+  {parcels.length === 0 && (
+    <section class="flex flex-col gap-4">
+      <h2 class={heading}>{t('shop.track.parcel')}</h2>
+      <p class="text-sf-small text-body">{t('shop.track.noParcel')}</p>
+    </section>
+  )}
+
+  {parcels.map(({ shipment, events, current }, index) => {
+    const id = `tracking-parcel-${String(index)}`;
+    const courier = t(`shop.track.couriers.${shipment.courier}`);
+    return (
+      <section class="flex flex-col gap-4" aria-labelledby={id}>
+        <div class="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
+          <div class="flex flex-col gap-1">
+            <h2 id={id} class={heading}>
+              {current ? t('shop.track.parcel') : t('shop.track.earlierParcel')}
+            </h2>
+            {/* The code the courier's call centre asks for. tabular-nums, so it is easy to read
+                out digit by digit */}
+            <p class="text-sf-small text-muted tabular-nums">
+              {t('shop.track.courierLine', { courier, code: shipment.trackingCode })}
+            </p>
+          </div>
+          {/* noreferrer: the address of a tracking link is its key. Without it, the courier's
+              site would get /t/<token> in the Referer header and could open the page too */}
+          {shipment.trackingUrl !== null && (
+            <a
+              href={shipment.trackingUrl}
+              rel="noopener noreferrer"
+              class="flex items-center gap-1 text-sf-small font-semibold underline-offset-3 hover:underline"
+            >
+              {t('shop.track.openCourier', { courier })}
+              <HugeiconsIcon
+                icon={LinkSquare02Icon}
+                size={16}
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+            </a>
+          )}
+        </div>
+
+        {/* The order timeline's dots and line, newest event first (tracking-view.ts says why).
+            Every event has happened, so the line between the dots is always brand */}
+        <ol aria-labelledby={id} class="flex flex-col">
+          {events.map(({ event, state }, at) => {
+            const last = at === events.length - 1;
+            return (
+              <li
+                class:list={['relative flex gap-4', !last && 'pb-6']}
+                aria-current={state === 'current' ? 'step' : undefined}
+              >
+                {!last && <span class="absolute top-6 bottom-0 left-[11px] w-0.5 bg-brand" />}
+                <span
+                  class={`grid size-6 shrink-0 place-items-center rounded-full ${TIMELINE_DOT[state]}`}
+                >
+                  {state === 'done' && (
+                    <HugeiconsIcon
+                      icon={Tick02Icon}
+                      size={14}
+                      strokeWidth={1.5}
+                      aria-hidden="true"
+                    />
+                  )}
+                </span>
+                <span class="flex min-w-0 flex-col">
+                  <span class="leading-6 font-semibold">
+                    {t(`shop.track.shipmentStatuses.${event.status}`)}
+                  </span>
+                  <time datetime={event.at} class="text-sf-small text-muted tabular-nums">
+                    {when(event.at)}
+                  </time>
+                  {/* The courier's own words, as they came (26e.1): often the most useful line */}
+                  {event.note !== null && (
+                    <span class="wrap-break-word text-sf-small text-body">{event.note}</span>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+    );
+  })}
+
+  {/* The page's own end: the link's privacy line, or "Track another order" */}
+  <slot />
+</div>

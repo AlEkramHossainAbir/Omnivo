@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  listingParamsFromQuery,
+  listingQueryFromParams,
+  publicListingParamsSchema,
   publicShopSchema,
+  publicStorefrontRoutes,
   SHOP_CART_MAX_LINES,
   SHOP_CART_MAX_QUANTITY,
   shopCartQuoteLineSchema,
   shopCartQuoteRequestSchema,
   shopCartQuoteSchema,
   shopCheckoutSettingsSchema,
+  shopHomeSchema,
+  shopImageSchema,
   SHOP_PAGE_SIZE,
   shopListingPageSchema,
   shopListingQuerySchema,
@@ -15,7 +21,12 @@ import {
   shopOrderRequestSchema,
   shopOrderSchema,
   shopPhoneSchema,
+  shopOrderNoSchema,
   shopProductSchema,
+  shopTextPageSchema,
+  shopTrackingSchema,
+  shopTrackingTokenSchema,
+  shopTrackRequestSchema,
   shopVerifyCodeRequestSchema,
 } from './storefront.js';
 
@@ -39,6 +50,7 @@ const NEEM_PRODUCT = {
   sku: 'MD2346',
   unitName: 'Piece',
   descriptionHtml: '<section><h2>Key Benefits</h2><ul><li>Controls excess oil</li></ul></section>',
+  seo: { title: 'Himalaya Purifying Neem Face Wash 150ml', description: 'Controls excess oil' },
 };
 
 describe('public shop', () => {
@@ -51,6 +63,7 @@ describe('public shop', () => {
     timeZone: 'Asia/Dhaka',
     address: 'Zindabazar, Sylhet 3100',
     social: { facebook: null, instagram: null, x: null, linkedin: null },
+    pages: ['terms', 'contact'],
   };
 
   it('takes the workspace time zone', () => {
@@ -60,6 +73,11 @@ describe('public shop', () => {
   // A made-up zone would make every date on the shop throw a RangeError in Intl
   it('refuses a time zone Intl does not know', () => {
     expect(publicShopSchema.safeParse({ ...SHOP, timeZone: 'Asia/Sylhet' }).success).toBe(false);
+  });
+
+  // Step 26h: the footer links the written pages only, so a page the shop has no route for is a bug
+  it('refuses a text page the footer does not have', () => {
+    expect(publicShopSchema.safeParse({ ...SHOP, pages: ['refunds'] }).success).toBe(false);
   });
 });
 
@@ -481,5 +499,224 @@ describe('listing page', () => {
       nextCursor: null,
     };
     expect(shopListingPageSchema.safeParse(page).success).toBe(false);
+  });
+});
+
+// Step 26e
+describe('order number', () => {
+  it.each([
+    ['W-000123', 'W-000123'],
+    ['w-000123', 'W-000123'],
+    [' W 000123 ', 'W-000123'],
+    ['W000123', 'W-000123'],
+    ['000123', 'W-000123'],
+    ['W-০০০১২৩', 'W-000123'],
+  ])('reads %s as %s', (typed, plain) => {
+    expect(shopOrderNoSchema.parse(typed)).toBe(plain);
+  });
+
+  it.each(['W-123', 'W-0001234567', 'X-000123', 'W--000123', 'SO-2026-27-0001', ''])(
+    'refuses %s',
+    (typed) => {
+      const result = shopOrderNoSchema.safeParse(typed);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe('shop_order_no_format');
+    },
+  );
+});
+
+describe('track request', () => {
+  it('takes the phone and the number the way a shopper types them', () => {
+    expect(shopTrackRequestSchema.parse({ phone: '+880 1786-120356', orderNo: 'w000123' })).toEqual(
+      { phone: '01786120356', orderNo: 'W-000123' },
+    );
+  });
+
+  it('says which box is wrong', () => {
+    const result = shopTrackRequestSchema.safeParse({ phone: '02-9123456', orderNo: '12' });
+    expect(result.error?.issues.map((issue) => [issue.path[0], issue.message])).toEqual([
+      ['phone', 'shop_phone_format'],
+      ['orderNo', 'shop_order_no_format'],
+    ]);
+  });
+});
+
+describe('tracking token', () => {
+  it('takes 16 random bytes in base64url', () => {
+    expect(shopTrackingTokenSchema.safeParse('kq3Xb9-T_2mVd8LwZpR4aQ').success).toBe(true);
+  });
+
+  it.each(['kq3Xb9-T_2mVd8LwZpR4a', 'kq3Xb9-T_2mVd8LwZpR4aQx', 'kq3Xb9+T/2mVd8LwZpR4aQ'])(
+    'refuses %s before the source is asked',
+    (token) => {
+      expect(shopTrackingTokenSchema.safeParse(token).success).toBe(false);
+    },
+  );
+});
+
+describe('tracking', () => {
+  // The Sylhet order of 26c, two days later: Steadfast has it, and the rider could not reach her
+  const TRACKING = {
+    orderNo: 'W-000123',
+    placedAt: '2026-11-11T15:20:00+06:00',
+    status: 'shipped',
+    history: [
+      { status: 'pending', at: '2026-11-11T15:20:00+06:00' },
+      { status: 'confirmed', at: '2026-11-11T15:21:30+06:00' },
+      { status: 'packed', at: '2026-11-12T10:05:00+06:00' },
+      { status: 'shipped', at: '2026-11-12T16:40:00+06:00' },
+    ],
+    itemCount: 3,
+    total: '578.0000',
+    paymentMethod: 'cod',
+    shipments: [
+      {
+        courier: 'steadfast',
+        trackingCode: 'SFR2611120042',
+        trackingUrl: 'https://steadfast.com.bd/t/SFR2611120042',
+        events: [
+          { status: 'booked', at: '2026-11-12T10:06:00+06:00', note: null },
+          { status: 'picked_up', at: '2026-11-12T16:40:00+06:00', note: 'Picked up from the shop' },
+          { status: 'on_hold', at: '2026-11-13T13:15:00+06:00', note: 'Customer not reachable' },
+        ],
+      },
+    ],
+  };
+
+  it('reads an order on its way with the courier', () => {
+    expect(shopTrackingSchema.parse(TRACKING)).toEqual(TRACKING);
+  });
+
+  it('reads an order the shop has not given to a courier yet', () => {
+    const waiting = { ...TRACKING, status: 'confirmed', history: TRACKING.history.slice(0, 2) };
+    expect(shopTrackingSchema.parse({ ...waiting, shipments: [] }).shipments).toEqual([]);
+  });
+
+  it('never carries the address, the phone or the name', () => {
+    const parsed = shopTrackingSchema.parse({
+      ...TRACKING,
+      name: 'Shamim Ahmed',
+      phone: '01786120356',
+      address: 'House 12, Road 5, Zindabazar, Sylhet',
+    });
+    expect(parsed).not.toHaveProperty('name');
+    expect(parsed).not.toHaveProperty('phone');
+    expect(parsed).not.toHaveProperty('address');
+  });
+
+  it('refuses a courier link that is not https', () => {
+    const [shipment] = TRACKING.shipments;
+    const result = shopTrackingSchema.safeParse({
+      ...TRACKING,
+      shipments: [{ ...shipment, trackingUrl: 'javascript:alert(1)' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('refuses a parcel with no event and a status the page has no words for', () => {
+    const [shipment] = TRACKING.shipments;
+    for (const events of [[], [{ status: 'in_review', at: TRACKING.placedAt, note: null }]]) {
+      const result = shopTrackingSchema.safeParse({
+        ...TRACKING,
+        shipments: [{ ...shipment, events }],
+      });
+      expect(result.success).toBe(false);
+    }
+  });
+});
+
+describe('text page', () => {
+  it('reads one of the four pages', () => {
+    const page = {
+      slug: 'terms',
+      html: '<section><h2>Delivery</h2><p>Inside Dhaka in 2 days.</p></section>',
+      updatedAt: '2026-11-01T10:00:00+06:00',
+    };
+    expect(shopTextPageSchema.parse(page)).toEqual(page);
+  });
+
+  it('refuses a page the footer has no link to, and an empty one', () => {
+    expect(
+      shopTextPageSchema.safeParse({ slug: 'refunds', html: '<p>x</p>', updatedAt: null }).success,
+    ).toBe(false);
+    expect(shopTextPageSchema.safeParse({ slug: 'about', html: '', updatedAt: null }).success).toBe(
+      false,
+    );
+  });
+});
+
+describe('public API', () => {
+  const PLAIN = {
+    category: null,
+    q: null,
+    sort: 'newest',
+    minPrice: null,
+    maxPrice: null,
+    inStock: false,
+    offer: false,
+    cursor: null,
+  } as const;
+
+  it('sends only what is set, so the first page of /c/all is the plain address', () => {
+    expect(listingParamsFromQuery(PLAIN)).toEqual({});
+  });
+
+  it('reads back the query it sent', () => {
+    const query = {
+      category: 'skin-care',
+      q: 'neem',
+      sort: 'price_asc',
+      minPrice: '100',
+      maxPrice: '500',
+      inStock: true,
+      offer: true,
+      cursor: 'eyJwIjoiMjI5In0',
+    } as const;
+    const params = publicListingParamsSchema.parse(listingParamsFromQuery(query));
+    expect(params).toMatchObject({ inStock: '1', offer: '1' });
+    expect(listingQueryFromParams(params)).toEqual(query);
+  });
+
+  it('takes a search of only spaces as no search', () => {
+    expect(listingQueryFromParams(publicListingParamsSchema.parse({ q: '   ' })).q).toBeNull();
+  });
+
+  it('refuses prices the wrong way round, and flags other than 1', () => {
+    const backwards = publicListingParamsSchema.safeParse({ minPrice: '500', maxPrice: '90' });
+    expect(backwards.error?.issues[0]).toMatchObject({
+      message: 'invalid_value',
+      path: ['maxPrice'],
+    });
+    expect(publicListingParamsSchema.safeParse({ inStock: 'true' }).success).toBe(false);
+    expect(publicListingParamsSchema.safeParse({ category: '../admin' }).success).toBe(false);
+  });
+
+  it('has no login on any route, and every path under /public/v1', () => {
+    for (const route of Object.values(publicStorefrontRoutes)) {
+      expect(route.auth).toBe('public');
+      expect(route.path.startsWith('/public/v1/')).toBe(true);
+    }
+  });
+});
+
+describe('public API answers (step 26f.3)', () => {
+  it('takes a photo from storage over https, a path, or plain http on this computer only', () => {
+    const ok = (url: string) => shopImageSchema.safeParse({ url, alt: 'Neem face wash' }).success;
+    expect(ok('https://files.omnivosoft.com/omnivo/storefront/a/small.webp')).toBe(true);
+    expect(ok('/mock/products/neem.png')).toBe(true);
+    expect(ok('http://localhost:9000/omnivo/storefront/a/small.webp')).toBe(true);
+    expect(ok('http://127.0.0.1:9000/omnivo/storefront/a/small.webp')).toBe(true);
+    // Another computer over plain http, a name that only starts like localhost, and no path at all
+    expect(ok('http://files.example.com/a.webp')).toBe(false);
+    expect(ok('http://localhost.evil.com/a.webp')).toBe(false);
+    expect(ok('http://localhost:9000')).toBe(false);
+    expect(ok('//cdn.example.com/a.webp')).toBe(false);
+  });
+
+  it('lets a home page have no hero banner', () => {
+    expect(
+      shopHomeSchema.safeParse({ hero: null, featured: [], hasMoreFeatured: false, blocks: [] })
+        .success,
+    ).toBe(true);
   });
 });

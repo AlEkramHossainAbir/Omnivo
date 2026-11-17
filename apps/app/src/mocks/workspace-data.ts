@@ -57,6 +57,7 @@ import {
   seedSalesDocuments,
 } from './sales-document-data';
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
+import { emptyStorefront, type MockStorefront, seedStorefront } from './storefront-seed';
 import { emptySuppliers, type MockSuppliers, seedSuppliers } from './supplier-data';
 import { emptySync, type MockSync, seedDevices } from './sync-data';
 import { seedTradeHistory } from './trade-history-data';
@@ -110,6 +111,8 @@ export interface WorkspaceData {
   pos: MockPos;
   // Step 21c: the scheduled report emails, in the order they were made (report-schedule-data.ts)
   reportSchedules: MockReportSchedule[];
+  // Step 26g: the online shop: its settings, categories, listings and photos (storefront-data.ts)
+  storefront: MockStorefront;
 }
 
 function now(): string {
@@ -202,6 +205,7 @@ function seed(workspace: Workspace): WorkspaceData {
     sync: emptySync(),
     pos: emptyPos(),
     reportSchedules: [],
+    storefront: emptyStorefront(),
   };
   data.stockAccounts = seedStockAccounts(data.accounts, garments ? 'garments' : 'pharma');
   data.salesAccounts = seedSalesAccounts(data.accounts);
@@ -233,6 +237,8 @@ function seed(workspace: Workspace): WorkspaceData {
   // scheduled emails of the mockup, after the team and the warehouses they name
   if (garments && seedsVatMonth()) seedVatMonth(data);
   if (garments) seedReportSchedules(data);
+  // Step 26g: after the stock (the shop counts in the Main store) and the catalog it lists from
+  seedStorefront(data, garments);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });
@@ -302,6 +308,8 @@ export function startFresh(workspace: Workspace, companyName: string): void {
   data.sync = emptySync();
   // A new shop adds its counters in Settings → POS registers
   data.pos = emptyPos();
+  // Step 26g: and sets up its online shop in Shop settings
+  data.storefront = emptyStorefront();
   // Sign-up gives a new workspace its Main store, in its one branch (like auth.service.ts)
   data.stock = emptyStock();
   const [first] = data.branches;

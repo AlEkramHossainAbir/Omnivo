@@ -5,17 +5,19 @@ import ImageBanner from '../components/ImageBanner.astro';
 import LoadMoreLink from '../components/LoadMoreLink.astro';
 import ProductCard from '../components/ProductCard.astro';
 import ProductRow from '../components/ProductRow.astro';
-import { shopSource } from '../data/source';
 import ShopLayout from '../layouts/ShopLayout.astro';
 import { readListingQuery } from '../lib/listing-query';
 import { shopLocale } from '../lib/locale';
 
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
+
 // Step 26a: the home page (Figma 37:3083 on desktop, 138:234 on the phone)
-const shop = await shopSource.shop();
+const shop = await source.shop();
 const [locale, categories, home] = await Promise.all([
   shopLocale(shop.language),
-  shopSource.categories(),
-  shopSource.home(),
+  source.categories(),
+  source.home(),
 ]);
 const { t } = locale;
 // Step 26d.3: the filter row works from the defaults here, so every chip leads to /c/all
@@ -30,10 +32,11 @@ const query = readListingQuery(null, new URLSearchParams());
 >
   <h1 class="sr-only">{shop.name}</h1>
 
-  <HeroBanner hero={home.hero} />
+  {home.hero && <HeroBanner hero={home.hero} />}
 
   {/* Desktop "All Category" (Figma 37:3128); phone "All Categories" and "Featured Products" (138:797, 138:810) */}
-  <section aria-labelledby="all-category" class="mt-4 md:mt-16">
+  {/* Step 26f: with no hero, the grid sits where a category page's title does (36px under the header) */}
+  <section aria-labelledby="all-category" class:list={['mt-4', home.hero ? 'md:mt-16' : 'md:mt-9']}>
     <h2
       id="all-category"
       class="text-sf-subtitle leading-[23px] font-bold md:trim-text md:text-sf-display md:font-semibold"

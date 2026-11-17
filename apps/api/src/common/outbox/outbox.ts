@@ -51,6 +51,9 @@ export const outboxPayloadSchemas = {
   'report.schedule_due': z.object({ scheduleId: z.uuid(), runAt: z.iso.datetime() }),
   // Step 21c: a scheduled report's file is ready; email it to the person it was made for
   'report.schedule_email': z.object({ exportId: z.uuid(), scheduleId: z.uuid() }),
+  // Step 26g: a shop photo's upload was confirmed. Its storefront_images row (processing) and its
+  // attachment say everything; the worker makes the shop's WebP files from the original
+  'storefront.image_uploaded': z.object({ imageId: z.uuid() }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

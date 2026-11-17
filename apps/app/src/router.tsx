@@ -1027,6 +1027,93 @@ const auditLogRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/audit-log'), 'AuditLogPage'),
 });
 
+// Step 26g: the Storefront menu (decision 5), behind storefront.manage: the sidebar hides it, and
+// the API refuses the reads for anyone else. '/storefront/listings' is the catalog; a listing's
+// editor sits under it
+const storefrontListingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/listings',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-catalog'),
+    'StorefrontCatalogPage',
+  ),
+});
+
+const storefrontListingRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/listings/$listingId',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-listing'),
+    'StorefrontListingPage',
+  ),
+});
+
+const storefrontCategoriesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/categories',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-categories'),
+    'StorefrontCategoriesPage',
+  ),
+});
+
+const storefrontSettingsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/settings',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-settings'),
+    'StorefrontSettingsPage',
+  ),
+});
+
+// Step 26h: the menu's second half (decision 2). The hero and a collection have their own pages
+// under /storefront/appearance, so the sidebar keeps "Shop appearance" marked on them; 'new' is
+// matched before the id (TanStack Router prefers a fixed segment over a parameter)
+const storefrontAppearanceRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/appearance',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-appearance'),
+    'StorefrontAppearancePage',
+  ),
+});
+
+const storefrontHeroRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/appearance/hero',
+  component: lazyRouteComponent(() => import('./routes/storefront-hero'), 'StorefrontHeroPage'),
+});
+
+const storefrontNewCollectionRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/appearance/collections/new',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-collection'),
+    'StorefrontCollectionPage',
+  ),
+});
+
+const storefrontCollectionRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/appearance/collections/$collectionId',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-collection'),
+    'StorefrontCollectionPage',
+  ),
+});
+
+const storefrontPagesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/pages',
+  component: lazyRouteComponent(() => import('./routes/storefront-pages'), 'StorefrontPagesPage'),
+});
+
+const storefrontPageRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/pages/$slug',
+  component: lazyRouteComponent(() => import('./routes/storefront-page'), 'StorefrontPagePage'),
+});
+
 // শুধু `pnpm dev`-এ। production build-এ Vite import.meta.env.DEV-কে false বসায়, minifier পুরো
 // শাখা মুছে দেয় — import() হারায়, তাই kitchen-sink-এর chunk তৈরিই হয় না
 const devRoutes = import.meta.env.DEV
@@ -1170,6 +1257,16 @@ const routeTree = rootRoute.addChildren([
     rolesRoute,
     approvalRulesRoute,
     auditLogRoute,
+    storefrontListingsRoute,
+    storefrontListingRoute,
+    storefrontCategoriesRoute,
+    storefrontSettingsRoute,
+    storefrontAppearanceRoute,
+    storefrontHeroRoute,
+    storefrontNewCollectionRoute,
+    storefrontCollectionRoute,
+    storefrontPagesRoute,
+    storefrontPageRoute,
     ...devRoutes,
   ]),
 ]);

@@ -7,6 +7,7 @@ import {
   HeadObjectCommand,
   NoSuchKey,
   NotFound,
+  PutBucketPolicyCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -22,6 +23,24 @@ export interface SignedUrl {
 }
 
 const HOUR_MS = 60 * 60 * 1000;
+
+// Step 26g: anyone may read storefront/ (the shop's WebP files, which shoppers' browsers load
+// straight from storage), and nothing else: every other file still needs a signed URL. Set by the
+// API in dev and test only, with the bucket; staging's storage-init does it with `mc anonymous`,
+// and production's bucket is set up outside the app (step 25)
+function publicStorefrontPolicy(bucket: string): string {
+  return JSON.stringify({
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Effect: 'Allow',
+        Principal: { AWS: ['*'] },
+        Action: ['s3:GetObject'],
+        Resource: [`arn:aws:s3:::${bucket}/storefront/*`],
+      },
+    ],
+  });
+}
 
 // storage-এর সাথে কথা বলার একমাত্র জায়গা — AWS SDK এর বাইরে কেউ দেখে না। MinIO, R2 আর S3 একই
 // API বলে, তাই dev থেকে production-এ শুধু env বদলায়
@@ -67,6 +86,14 @@ export class StorageService implements OnApplicationBootstrap {
         if (!(createError instanceof BucketAlreadyOwnedByYou)) throw createError;
       }
     }
+    // Step 26g: on every start, not only with a new bucket, so a dev bucket made before this step
+    // gets it too. The same policy twice is the same policy
+    await this.client.send(
+      new PutBucketPolicyCommand({
+        Bucket: this.bucket,
+        Policy: publicStorefrontPolicy(this.bucket),
+      }),
+    );
   }
 
   // ব্রাউজার সরাসরি storage-এ PUT করে — ফাইল API সার্ভারের memory বা ব্যান্ডউইথ দিয়ে যায় না।
@@ -117,9 +144,22 @@ export class StorageService implements OnApplicationBootstrap {
 
   // A file the server made itself (a report export from the worker). The same key twice replaces
   // the file, so a job that runs again after a crash writes the same object, not a second one.
-  async put(key: string, body: Uint8Array, contentType: string): Promise<void> {
+  // cacheControl (step 26g): what the storage sends with the file. The shop's photos never change
+  // under their address, so a browser or a CDN may keep them for a year
+  async put(
+    key: string,
+    body: Uint8Array,
+    contentType: string,
+    cacheControl?: string,
+  ): Promise<void> {
     await this.client.send(
-      new PutObjectCommand({ Bucket: this.bucket, Key: key, Body: body, ContentType: contentType }),
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        CacheControl: cacheControl,
+      }),
     );
   }
 

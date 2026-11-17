@@ -109,6 +109,12 @@ const neemProduct: Omit<ShopProduct, 'saleUntil'> = {
   sku: NEEM_SKU,
   unitName: 'Piece',
   descriptionHtml: NEEM_DESCRIPTION,
+  // Step 26f: what the API sends when the tenant wrote no SEO words: the name, and the start of
+  // the first section
+  seo: {
+    title: NEEM_NAME,
+    description: `Refresh and purify your skin every day with ${NEEM_NAME}. Enriched with the natural goodness of Neem & Turmeric, this soap-free face wash…`,
+  },
 };
 
 // Every listing the mock shop sells: the home page's and the product page's. The quote looks a
@@ -166,6 +172,7 @@ export function mockProductPage(slug: string, now: Date): ShopProductPage | null
       sku: null,
       unitName: 'Piece',
       descriptionHtml: '',
+      seo: { title: found.name, description: '' },
     },
     // The same category, as the real API will choose them, without the product itself
     related: mockCatalog

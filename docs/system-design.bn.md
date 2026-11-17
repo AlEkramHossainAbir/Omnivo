@@ -1041,34 +1041,72 @@ apps/api/src/modules/
 
 - **একটাই Astro অ্যাপ সব টেন্যান্টের শপ সার্ভ করবে**, টেন্যান্ট চেনা যাবে `Host` হেডার থেকে (§৪.৩-এর একই নিয়ম, শুধু আলাদা ডোমেইন টেবিল)। প্রতি টেন্যান্টের জন্য আলাদা সাইট বিল্ড **কখনো করবেন না**, ১,০০০ টেন্যান্ট হলে CI-ই মরে যাবে।
 - **কাস্টম ডোমেইন:** `shop.acme.com` → CNAME → **Cloudflare for SaaS**, SSL অটো (§৪.৩-এর মতোই)।
-- **পাবলিক API আলাদা:** `/public/v1/*`, JWT নেই। টেন্যান্ট আসবে **শুধু যাচাই করা ডোমেইন থেকে**, কখনো query param থেকে না। এই এন্ডপয়েন্টগুলো একটা **read-mostly DB role** দিয়ে চলবে, যার RLS বাইপাস করার ক্ষমতা নেই, আর যে শুধু `published = true` লিস্টিং দেখতে পায়।
-- **রেন্ডারিং:** প্রোডাক্ট ও ক্যাটাগরি পেজ সার্ভারে রেন্ডার + CDN ক্যাশ (`s-maxage` ~৫ মিনিট), প্রোডাক্ট পাবলিশ/দাম বদলালে outbox ইভেন্ট → worker → **CDN purge**। §১৩.৩-এর ক্যাটালগ পাবলিশের ঠিক একই প্যাটার্ন, তাই কোড রিইউজ হবে।
+- **পাবলিক API আলাদা:** `/public/v1/*`, JWT নেই। শপের সার্ভার API-কে ভেতর থেকে ডাকে আর ক্রেতার ব্রাউজারের
+  host পাঠায় `X-Shop-Host` হেডারে। টেন্যান্ট আসে শুধু সেই host থেকে (subdomain label →
+  `storefront_tenant_for_subdomain()`), কখনো query param থেকে না। প্রতিটা রিকোয়েস্ট একটা `READ ONLY`
+  transaction, শুরু হয় `SET LOCAL ROLE omnivo_public` দিয়ে: NOLOGIN role, RLS বাইপাস করতে পারে না, শুধু শপের
+  দরকারি কলামে `SELECT` আছে, আর restrictive policy-তে শুধু চালু (`launched_at`) শপের প্রকাশিত লিস্টিং দেখে।
+  Rate limit আপাতত edge-এ (Cloudflare); API-তে আসল limit আসবে ধাপ ২৭-এর অর্ডার আর OTP-র সাথে।
+- **রেন্ডারিং:** পেজ শপের সার্ভারে রেন্ডার হয়। API-র উত্তর `Cache-Control: no-store`, কারণ CDN উত্তর চেনে
+  address দিয়ে, `X-Shop-Host` দিয়ে না, তাই এক শপের পেজ অন্য শপে চলে যেতে পারত। শপের সার্ভার নিজের মেমরিতে
+  host + path ধরে ৩০ সেকেন্ড রাখে (শুধু GET, ব্যর্থ উত্তর রাখে না, quote কখনো না)। শপের পেজ যখন CDN-এ cache
+  হবে, তখন পাবলিশ/দাম বদলালে outbox ইভেন্ট → worker → **CDN purge** (§১৩.৩-এর ক্যাটালগ পাবলিশের প্যাটার্ন)।
 - **স্টক আর দাম ক্যাশে না রেখে** চেকআউটের সময় সার্ভারে আবার যাচাই হবে (পেজে "৫টা বাকি" পুরনো হতে পারে, কিন্তু অর্ডার নেওয়ার সময় ভুল হওয়া চলবে না)।
-- **ছবি:** R2-তে, Cloudflare Images/Resizing দিয়ে WebP/AVIF। শপের LCP টার্গেট < ২.৫ সেকেন্ড 3G-তে।
-- **কার্ট:** ব্রাউজারে `cart_token` (cookie) + সার্ভারে `storefront_carts` রো, যাতে abandoned cart রিপোর্ট ও রিমাইন্ডার SMS পাঠানো যায়।
+- **ছবি:** স্টোরেজের পাবলিক `storefront/` ফোল্ডারে, নাম কখনো বদলায় না (`storefront/<image id>/<size>.webp`:
+  small 480px, large 1200px, wide 2560px), তাই CDN রেখে দিতে পারে; signed link না। WebP বানায় worker-এর
+  sharp জব (ধাপ ২৬g)। শপের LCP টার্গেট < ২.৫ সেকেন্ড 3G-তে।
+- **ছবি আপলোড (ধাপ ২৬g):** ERP-র ব্রাউজার আসল ছবিটা presigned PUT দিয়ে workspace-এর **private** ফোল্ডারে পাঠায়
+  (attachment purpose `storefront_image`: JPEG/PNG/WebP, ৮ MB)। `complete`-এ একই transaction-এ attachment
+  ready, `storefront_images`-এ `processing` রো আর outbox ইভেন্ট `storefront.image_uploaded`। Worker-এর sharp
+  জব আগে হেডার আর বাইট দেখে ফরম্যাট যাচাই করে, EXIF দেখে ছবি সোজা করে, metadata (GPS সহ) ফেলে দেয়, ৪০
+  মেগাপিক্সেলের বেশি বা কোনো দিকে ২০০px-এর কম হলে বাতিল করে, ছোট ছবি কখনো বড় করে না, তারপর তিনটা WebP লিখে রো
+  `ready` করে (না পারলে `failed` আর কারণের কোড)। স্ক্রিন ২ সেকেন্ড পরপর জিজ্ঞেস করে ("Preparing the photo…")।
+  লিস্টিং সেভের সময় API দেখে প্রতিটা ছবি এই workspace-এর আর `ready` কিনা। ছবির id = attachment-এর id।
+- **স্টোরেজে শুধু `storefront/` পাবলিক।** বাকি সব (আসল ছবি সহ) signed link-এ। Dev/test-এ API প্রতিবার চালু হওয়ার
+  সময় bucket policy বসায়, স্টেজিং-এ `storage-init`-এর `mc anonymous`, আর প্রোডাকশনে (Cloudflare R2) এটা অ্যাপের
+  বাইরে: R2-র পাবলিক ঠিকানা আলাদা হোস্টে, তাই `STOREFRONT_MEDIA_URL` সেট করতে হবে।
+- **কার্ট:** ব্রাউজারে (localStorage), দাম প্রতিবার সার্ভারের quote থেকে। Abandoned cart রিপোর্ট আর
+  রিমাইন্ডার SMS-এর জন্য সার্ভারে `storefront_carts` পরে আসবে।
 
 ### ১৪.৩ ডেটা মডেল
 
 ```
-storefront_settings                ← টেন্যান্টপ্রতি একটা রো
-  tenant_id (PK), enabled, domain, theme (JSONB), logo_url, contact_phone
-  cod_enabled, online_payment_enabled, gateway_credentials (encrypted)
-  min_order_amount, delivery_zones (JSONB: ঢাকার ভিতরে ৬০, বাইরে ১২০)
-  default_warehouse_id, default_courier_account_id
-  auto_consign (off | on_confirm | on_payment)    ← অটো কনসাইনমেন্ট নীতি
-  require_phone_otp (bool)
+storefront_settings                ← টেন্যান্টপ্রতি একটা রো (ধাপ ২৬f)
+  tenant_id (PK), subdomain (UNIQUE, শুধু label: acme), launched_at (NULL = শপ বন্ধ, 404)
+  name, language, logo_image_id, brand_color, accent_color, hotline, address, সোশ্যাল লিংক
+  default_warehouse_id, delivery_zones (JSONB: ঢাকার ভিতরে ৮০, বাইরে ১২০)
+  free_delivery_from, minimum_order, payment_methods
+  (পরে: gateway_credentials, default_courier_account_id, auto_consign, require_phone_otp)
 
-storefront_domains                 ← Host → tenant রেজলিউশন
+storefront_domains                 ← পরের ধাপে: টেন্যান্টের নিজের কেনা ডোমেইন
   domain (UNIQUE), tenant_id, verified, ssl_status
 
-storefront_listings                ← Inventory-র product-কে শপে "প্রকাশ" করা
-  tenant_id, product_id (FK → products), variant_id
-  published, slug, seo_title, seo_description, description_html, images (JSONB)
-  price_override (NULL হলে price list থেকে), sale_price, sale_until
-  category_id, sort_order, badge
+storefront_categories              ← শপের নিজের ক্যাটাগরি ট্রি (প্রোডাক্টের ক্যাটাগরি না)
+  tenant_id, parent_id, slug (UNIQUE per tenant), name, position
+
+storefront_listings                ← Inventory-র variant-কে শপে "প্রকাশ" করা
+  tenant_id, product_id, variant_id (FK → product_variants), category_id
+  slug, name, pack_size, published_at (NULL = draft)
+  price_override (NULL হলে variant-এর sale_price)
+  sale_kind (percent | amount | price), sale_value, sale_starts_at, sale_ends_at
+  badges, images (JSONB, সর্বোচ্চ ৪টা {id, alt}), description_sections (JSONB, HTML না)
+  seo_title, seo_description
   UNIQUE (tenant_id, slug)
 
-storefront_categories, storefront_banners, storefront_carts, storefront_cart_items
+storefront_images                  ← একটা শপ-ছবির জবের অবস্থা (ধাপ ২৬g)
+  id (PK = attachment-এর id), tenant_id → (tenant_id, id) FK attachments-এ, ON DELETE CASCADE
+  status (processing | ready | failed), failure_code (শুধু failed হলে)
+  width, height (শুধু ready হলে), processed_at
+  ("uploading" মানে attachment এখনো pending আর রো নেই; omnivo_public-এর কোনো grant নেই)
+
+storefront_banners (hero | image), storefront_collections + storefront_collection_items,
+storefront_home_blocks (হোমপেজের ক্রম), storefront_pages (privacy | terms | about | contact)
+  (টেবিলগুলো ধাপ ২৬f-এর; ধাপ ২৬h-এর CHECK: কালেকশনে position ১–২৪, হোমপেজে ১–১২, ক্যাটাগরির slug `all` না,
+   কারণ `/c/all` হলো All Products; settings.logo_image_id → (tenant_id, id) FK storefront_images-এ)
+  banners: href (ঠিকানা, id না), computer আর phone-এর আলাদা ছবি {id, alt}; শুধু hero-র headline, button
+           আর চারটা রং (image banner-এর কথা ছবির ভেতরেই), workspace-প্রতি একটাই hero
+  home_blocks: প্রতিটা রো একটা image banner বা একটা কালেকশন, ঠিক একটা; মুছলে cascade-এ পেজ থেকেও যায়
+  pages: sections (JSONB), না লেখা পেজের কোনো রো নেই
 
 storefront_orders
   tenant_id, order_no, status (pending | confirmed | packed | shipped | delivered
@@ -1078,6 +1116,7 @@ storefront_orders
   subtotal, delivery_charge, discount, total     ← সবই সার্ভারে হিসাব করা
   sales_order_id (FK)                            ← confirm হলে ERP Sales Order তৈরি
   source (web | facebook | manual), coupon_code
+  tracking_token_hash                            ← ট্র্যাকিং লিংকের token-এর hash (ধাপ ২৭), token নিজে কোথাও রাখা হয় না
   UNIQUE (tenant_id, order_no)
 
 courier_accounts                   ← টেন্যান্টের নিজের কুরিয়ার অ্যাকাউন্ট
@@ -1100,6 +1139,10 @@ courier_remittances                ← কুরিয়ার কবে কত
 
 **মূল নিয়ম:**
 - **প্রোডাক্ট ডুপ্লিকেট করবেন না।** `storefront_listings` শুধু Inventory-র প্রোডাক্টকে "প্রকাশ" করে, নতুন প্রোডাক্ট টেবিল না। দাম ও স্টকের সত্য একটাই জায়গায়।
+- **বর্ণনায় টেন্যান্টের HTML নেই।** বর্ণনা আর টেক্সট পেজ section হিসেবে রাখা হয় (heading আর লেখা, `- `
+  তালিকা, `**bold**`, লিংক); API সেখান থেকে HTML বানায় আর টেন্যান্টের লেখা প্রতিটা অক্ষর escape করে।
+- **দাম সার্ভার ঠিক করে।** অফার রাখা হয় টেন্যান্ট যেভাবে লিখেছে (৳ বা % ছাড়, বা ছাড়ের পরের দাম); শপের
+  দাম, কাটা দাম আর ribbon API বানায়। যে অফারে কিছু কমে না, সেটা দেখানো হয় না।
 - **স্টক রিজার্ভেশন:** অর্ডার `pending` হলে স্টক "reserved" হবে (TTL সহ, যেমন ৬০ মিনিট বা কনফার্ম পর্যন্ত), `confirmed` হলে আসল মুভমেন্ট লিখবে। সরাসরি quantity আপডেট **কখনো না** (§১৭-এর ৬ নম্বর ভুল)।
 - **`storefront_orders` ≠ `sales_orders`।** শপের অর্ডার হলো "গ্রাহকের অনুরোধ", যেটা বাতিল বা স্প্যাম হতে পারে। কনফার্ম হলেই সেটা ERP-র Sales Order-এ পরিণত হবে। এতে ভুয়া অর্ডার দিয়ে হিসাব নষ্ট হবে না।
 - **সব টেবিলে `tenant_id` + RLS**, শপের কাস্টমার ডেটা (ফোন, ঠিকানা) সবচেয়ে সংবেদনশীল PII।
@@ -1131,7 +1174,7 @@ sequenceDiagram
   W->>CR: কনসাইনমেন্ট তৈরি (idempotency key = order_id)
   CR-->>W: consignment_id + tracking_code + label_url
   W->>PG: shipments রো + order → packed/shipped
-  W-->>C: SMS/ইমেইল: ট্র্যাকিং নম্বর
+  W-->>C: SMS: ট্র্যাকিং লিংক
 ```
 
 - ⚠️ **ব্রাউজার থেকে আসা কোনো দাম, ডিসকাউন্ট বা ডেলিভারি চার্জ বিশ্বাস করবেন না।** ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে; টাকার অঙ্ক সার্ভার হিসাব করবে (§১৩.৩-এর একই সতর্কতা)।
@@ -1152,6 +1195,52 @@ sequenceDiagram
 | **Couriers** | কুরিয়ার অ্যাকাউন্ট যোগ করা, ডিফল্ট কুরিয়ার, **অটো-কনসাইনমেন্ট নীতি** (বন্ধ / কনফার্মে / পেমেন্টে) |
 | **Orders** | অর্ডার বোর্ড (pending → confirmed → packed → shipped → delivered), বাল্ক লেবেল প্রিন্ট, বাল্ক কনসাইনমেন্ট, বাতিল ও রিটার্ন |
 | **Domain** | `acme.omnivo.shop` বা নিজের ডোমেইন সংযোগ (DNS ধাপ সহ) |
+
+**ধাপ ২৬g-তে যা তৈরি হয়েছে:**
+
+- পারমিশন `storefront.manage` (নিজের গ্রুপ "Online shop"; retail-এর Shop manager আর সাধারণ Manager টেমপ্লেটে আছে)।
+  এটা না থাকলে সাইডবারে Storefront গ্রুপই দেখায় না, আর API প্রতিটা রুটে `403` দেয়। সব পেজ অনলাইনে চলে, প্রতিটা
+  ফর্মে version check, প্রতিটা সেভ audit log-এ।
+- **Shop settings** (`/storefront/settings`): ঠিকানা (subdomain, workspace-এর slug থেকে শুরু), নাম, ভাষা,
+  যোগাযোগ, সোশ্যাল লিংক, ডিফল্ট warehouse, সর্বোচ্চ ৬টা delivery zone, ফ্রি ডেলিভারি, ন্যূনতম অর্ডার, পেমেন্ট মেথড।
+  উপরের টেবিলের Delivery আর Payments আলাদা মেনু না, এখানেই। শপ খোলে একটা চেকলিস্ট পূরণ হলে (warehouse, অন্তত
+  একটা zone, ছবি আর দাম সহ অন্তত একটা প্রকাশিত লিস্টিং), আর খোলা শপ আর বন্ধ হয় না। খোলার পরেও subdomain বদলানো
+  যায়, একটা ডায়ালগ জানায় যে পুরনো লিংক কাজ করবে না (redirect নেই)।
+- **Shop categories** (`/storefront/categories`): শপের নিজের ট্রি, Move up/down, লিস্টিং বা ভেতরে ক্যাটাগরি
+  থাকলে মোছা যায় না।
+- **Catalog** (`/storefront/listings`, সার্ভারে paged) আর লিস্টিং এডিটর: "Add to shop" একটা variant থেকে draft
+  বানায়; এডিটরে নাম, link name, pack size, ক্যাটাগরি, badge, ছবি (সর্বোচ্চ ৪টা, alt বাধ্যতামূলক), শপের দাম ও
+  অফার (`listingPricing()` দিয়ে লাইভ প্রিভিউ), বর্ণনার section, SEO, তারপর Show in the shop। শপের সার্ভার
+  উত্তর ৩০ সেকেন্ড রাখে, তাই প্রতিটা পেজ বলে "Changes show in the shop within a minute"।
+- এখনো না: একসাথে অনেক প্রোডাক্ট যোগ, অব্যবহৃত ছবি মুছে ফেলা, নিজের ডোমেইন, `feature.storefront` entitlement।
+
+**ধাপ ২৬h-তে যা তৈরি হয়েছে** (উপরের টেবিলের Appearance; বাকি সেকশন ধাপ ২৭–২৮-এ):
+
+- একই পারমিশন `storefront.manage`, সাইডবারে আরো দুটো: Shop appearance আর Shop pages। API-র ১৬টা রুট
+  (`/storefront/appearance/*`, `/storefront/pages/*`), প্রতিটা শপ set up হওয়ার পরেই কাজ করে (আগে
+  `409 storefront_not_set_up`, আর স্ক্রিন বলে "Set up the shop first")।
+- **Shop appearance** (`/storefront/appearance`): লোগো আর দুটো রং (brand, accent) নিজের ফর্মে, version check সহ।
+  রং যাচাই: brand↔accent ৪.৫:১, brand↔cream ৪.৫:১, hero-র বাটন↔তার লেখা ৪.৫:১, সাদা headline↔panel ৩:১ (বড় লেখা)।
+  একটাই `contrastRatio()` contracts-এ, ফর্ম টাইপ করার সময় দেখায়, API সেভে আবার যাচাই করে আর error code দিয়ে ফেরায়।
+- **Hero** নিজের পেজে (`/storefront/appearance/hero`): কথা, computer আর phone-এর ছবি, "Links to", চারটা রং, আর
+  দুই সাইজে শপের মতো একটা লাইভ ড্রয়িং। **Picture banner** একটা ডায়ালগে, **কালেকশন** নিজের পেজে
+  (`/storefront/appearance/collections/$id`, সর্বোচ্চ ২৪টা লিস্টিং ক্রমে; draft থাকতে পারে, শপে প্রকাশ হলে দেখায়)।
+- **হোমপেজের ক্রম:** প্রতিটা ব্যানার আর কালেকশন হোমপেজেই থাকে, "লুকানো" অবস্থা নেই: যোগ করলে শেষে যায়, মুছলে
+  মুছে যায়। সীমা ৬টা picture banner, ৮টা কালেকশন, ১২টা ব্লক। Move up/down আর প্রতিটা যোগ-মোছা একটা শপ-প্রতি
+  advisory lock-এর ভেতরে চলে, আর position সবসময় ১..n (মুছলে আবার নম্বর দেয়)। দুটো ব্লক অদলবদল এক UPDATE-এ
+  হয় না (unique position), তাই API সব রো মুছে আবার লেখে।
+- **"Links to":** ব্যানারের লিংক ঠিকানাই থাকে (`href`, id না): শপের ক্যাটাগরি, একটা প্রোডাক্ট, অফারের প্রোডাক্ট
+  (`/c/all?offer=1`), সব প্রোডাক্ট, বা অন্য ঠিকানা। পরে slug বদলালে লিংক "page not found" দেখায়, আর ফর্ম সেটা বলে।
+- **Shop pages** (`/storefront/pages`): চারটা পেজ, লিস্টিং-এর বর্ণনার একই section এডিটরে (`SectionsCard`)।
+  কোনো template নেই, কারণ privacy আর terms টেন্যান্টের নিজের আইনি কথা। শপের `publicShopSchema`-তে `pages` (শুধু
+  লেখা পেজগুলো), তাই ফুটার শুধু সেগুলোর লিংক দেয়।
+- **ছবি** (লোগো, hero, ব্যানার) লিস্টিং-এর ছবির মতোই `storefront_image` আপলোড আর sharp জব (ধাপ ২৬g)।
+- **Dev seed** `pnpm seed:shop` (`apps/shop/scripts/`): চালু dev stack-এ HTTP API দিয়ে একটা demo workspace
+  বানায় (sign-up, warehouse, প্রোডাক্ট আর opening stock, শপের ক্যাটাগরি, মকের ২২টা ছবি সহ লিস্টিং, hero, Mega
+  Sale ব্যানার, কালেকশন, চারটা পেজ, তারপর শপ খোলে), ~৭ সেকেন্ডে। workspace আগে থেকে থাকলে বার্তা দিয়ে থামে।
+  CI-তে না; সরাসরি DB-তে না লিখে API দিয়ে, তাই প্রতিটা নিয়ম আর audit log আসল পথেই চলে।
+- এখনো না: ব্যানারের শুরু-শেষ তারিখ, hero carousel, দুটোর বেশি রং, পেজ template, অব্যবহৃত ছবি মুছে ফেলা।
+  স্টেজিং এখনো মক শপ দেখায় (wildcard শপ-হোস্ট লাগবে, `vps-deploy.en.md`)।
 
 - **Omnivo Admin Panel** এখানে শুধু একটা জায়গায় আসে: Storefront কোন প্ল্যানে থাকবে, সেটা `feature.storefront` entitlement দিয়ে ঠিক হবে (§১৩.২)। অর্থাৎ Storefront বিক্রি হবে Growth প্ল্যানের ফিচার বা আলাদা অ্যাড-অন হিসেবে, আর কোডে কখনো `if (plan === 'growth')` লেখা হবে না।
 - ⚠️ থিম কাস্টমাইজেশনের চাপ আসবেই। উত্তর হলো **কনফিগারেশন ও কয়েকটা রেডিমেড থিম**, টেন্যান্ট-ভিত্তিক কাস্টম কোড না (§৪.৮)।
@@ -1189,7 +1278,9 @@ export interface CourierAdapter {
 **স্ট্যাটাস আপডেট (দুই পথ):**
 - **Webhook** (যারা দেয়): `POST /public/v1/couriers/:code/webhook` → signature ও timestamp যাচাই → `shipment_events`-এ append → shipment ও order স্ট্যাটাস আপডেট। একই ইভেন্ট দুইবার এলে কিছুই বদলাবে না (idempotent)।
 - **Polling fallback:** যেসব কুরিয়ারে webhook নেই, তাদের জন্য শিডিউলড জব (যেমন ১৫ মিনিট পরপর, শুধু চলমান শিপমেন্টের জন্য)। কুরিয়ারের rate limit মাথায় রেখে টেন্যান্টপ্রতি ব্যাচে।
-- ক্রেতা ট্র্যাকিং দেখবে `acme.omnivo.shop/track/:code`-এ, আর গুরুত্বপূর্ণ ধাপে SMS পাবে।
+- ক্রেতা ট্র্যাকিং দেখবে SMS-এ পাওয়া লিংকে, `acme.omnivo.shop/t/<token>` (১২৮-bit token, শুধু hash রাখা হয়;
+  পেজে নাম, ঠিকানা বা পুরো ফোন নম্বর নেই, কারণ লিংক অন্যকে পাঠানো যায়), আর গুরুত্বপূর্ণ ধাপে SMS পাবে। SMS
+  হারালে `/track`-এ ফোন + অর্ডার নম্বর দিয়ে একই পেজ দেখা যায় (এক IP থেকে ১৫ মিনিটে ১০ বার ভুল হলে থামে)।
 
 **COD-র টাকা: সবচেয়ে বেশি অবহেলিত অংশ।** কুরিয়ার ক্রেতার কাছ থেকে টাকা তোলে, কিন্তু আপনাকে দেয় ৩–৭ দিন পরে, চার্জ কেটে। তাই হিসাব হবে এভাবে:
 

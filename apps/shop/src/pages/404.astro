@@ -1,0 +1,47 @@
+---
+import { FileNotFoundIcon } from '@hugeicons/core-free-icons';
+
+import EmptyState from '../components/EmptyState.astro';
+import NoShopPage from '../components/NoShopPage.astro';
+import ShopLayout from '../layouts/ShopLayout.astro';
+import { shopLocale } from '../lib/locale';
+
+// Step 26e: every address the shop has no page for (decision 6). Astro draws this page for an
+// address no route matches, and for every page that answers Astro.rewrite('/404') (an unknown
+// product, category, order or text page). It is the shop's own page, with the header, so a shopper
+// who followed an old link can search or open a category from here. Made per request like every
+// page (astro.config.ts), because it needs the shop of the request's domain. Astro answers it
+// with the 404 status in both cases, so a search engine drops the old address.
+// Step 26f.5: also the page of a host that is no launched shop (src/middleware.ts rewrites every
+// address of it here). The source is not asked then: it has no shop to answer with, so `page` is
+// null and the template draws NoShopPage. The status is still 404, as for any rewrite to this page
+async function load() {
+  const { source } = Astro.locals;
+  const [shop, categories] = await Promise.all([source.shop(), source.categories()]);
+  return { shop, categories, locale: await shopLocale(shop.language) };
+}
+
+const page = Astro.locals.shopMissing ? null : await load();
+---
+
+{page === null ? (
+  <NoShopPage />
+) : (
+  <ShopLayout
+    shop={page.shop}
+    locale={page.locale}
+    title={page.locale.t('shop.notFound.pageTitle', { shop: page.shop.name })}
+    categories={page.categories}
+  >
+    {/* The checkout card's distance from the header and to the footer */}
+    <div class="mt-4 md:mt-9 md:mb-40">
+      <EmptyState
+        icon={FileNotFoundIcon}
+        level="h1"
+        title={page.locale.t('shop.notFound.title')}
+        text={page.locale.t('shop.notFound.text')}
+        action={{ href: '/', label: page.locale.t('shop.notFound.action') }}
+      />
+    </div>
+  </ShopLayout>
+)}

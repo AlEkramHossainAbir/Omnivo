@@ -52,3 +52,4 @@ export * from './supplier-refunds.js';
 export * from './sync.js';
 export * from './pos.js';
 export * from './report-schedules.js';
+export * from './storefront.js';

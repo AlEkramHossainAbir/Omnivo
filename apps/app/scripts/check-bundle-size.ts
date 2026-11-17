@@ -16,8 +16,11 @@ import { z } from 'zod';
 // Step 21a: 230 KB (you chose this). The Overview's words and its contract took it to 225.7 KB; the
 // chart and the page are in the Overview's own lazy chunk. Step 21c: 235 KB (you chose this). 21c's
 // words (the VAT and stock movement reports, the scheduled emails) took it to 231.7 KB; the pages
-// and the schedule dialog are their own lazy chunks.
-const INITIAL_BUDGET = 235 * 1024;
+// and the schedule dialog are their own lazy chunks. Step 26g: 240 KB (you chose this). The
+// Storefront menu's words (26g.5) and its sidebar group took it to 237.2 KB; its four pages are
+// lazy chunks. Step 26h: 245 KB (you chose this). The words of Shop appearance and Shop pages
+// (26h.5) took it to 241.1 KB, with or without their two sidebar items; the six pages are lazy.
+const INITIAL_BUDGET = 245 * 1024;
 // Step 17d: a lazy chunk is 105 KB for now. Almost every page loads the contracts' whole route
 // table (about 28 KB gz) to call the API, and 17d's three documents grew it enough to push pages
 // that 17d never touched (team, units) over 100 KB. Loading each module's routes with its own
@@ -31,8 +34,11 @@ const INITIAL_BUDGET = 235 * 1024;
 // this). The screen takes goods back and pays with a return's money (/pos is 121 KB), so the return
 // dialog with it is 133 KB and the pay dialog 129.5 KB, after the refund rows moved to a file of
 // their own. Step 21b: 140 KB (you chose this). The return dialog went to 135.1 KB without changing:
-// the route table grew by the four reports' schemas, and every page loads the whole table.
-const CHUNK_BUDGET = 140 * 1024;
+// the route table grew by the four reports' schemas, and every page loads the whole table. Step
+// 26g: 150 KB (you chose this). A shop listing's editor is one form of five cards (the photo
+// uploader, the sale with its dates, the description with its preview): 145.9 KB. Loading two of
+// its cards on their own saved only 4 KB, most of the chunk being the route table and form parts.
+const CHUNK_BUDGET = 150 * 1024;
 // Step 19a: everything the service worker downloads the first time, gz (the fonts do not shrink).
 // 1.3 MB at 19a. It is downloaded once per device; a new version downloads only the files that
 // changed.

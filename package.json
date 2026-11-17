@@ -12,7 +12,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "lint": "turbo run build --filter=./packages/* && node --max-old-space-size=6144 node_modules/eslint/bin/eslint.js .",
+    "lint": "turbo run build --filter=./packages/* && pnpm --filter @omnivo/shop exec astro sync && node --max-old-space-size=6144 node_modules/eslint/bin/eslint.js .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
     "boundaries": "depcruise apps packages",
@@ -30,7 +30,8 @@
     "db:generate": "pnpm --filter @omnivo/db generate",
     "db:migrate": "pnpm --filter @omnivo/db migrate",
     "db:seed": "pnpm --filter @omnivo/db seed",
-    "db:studio": "pnpm --filter @omnivo/db studio"
+    "db:studio": "pnpm --filter @omnivo/db studio",
+    "seed:shop": "pnpm --filter @omnivo/shop seed"
   },
   "devDependencies": {
     "@omnivo/config": "workspace:*",

@@ -26,6 +26,7 @@ import { StockAccountsHandler } from '../setup/stock-accounts.handler.js';
 import { TaxRatesHandler } from '../setup/tax-rates.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 import { StorageService } from '../storage/storage.service.js';
+import { StorefrontImageHandler } from '../storefront/image.handler.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { JobRunner } from './job-runner.js';
@@ -88,6 +89,8 @@ export class WorkerModule implements OnApplicationShutdown {
         ReportScheduleSweep,
         ReportScheduleRunHandler,
         ReportScheduleEmailHandler,
+        // Step 26g: a shop photo's WebP files
+        StorefrontImageHandler,
       ],
     };
   }

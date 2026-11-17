@@ -1,4 +1,4 @@
-import type { PublicShop, ShopCategory } from '@omnivo/contracts';
+import { type PublicShop, SHOP_TEXT_PAGES, type ShopCategory } from '@omnivo/contracts';
 
 // Step 26a: a made-up shop with the words and colors of the Figma design. Its name is the tenant's
 // shop name; the Figma file shows "Omnivo" there, so the mock uses it too.
@@ -16,6 +16,8 @@ export const mockShop = {
     x: 'https://x.com/',
     linkedin: 'https://linkedin.com/',
   },
+  // Step 26h: the mock has written all four (pages.ts; tracking.spec.ts checks each is there)
+  pages: [...SHOP_TEXT_PAGES],
 } satisfies PublicShop;
 
 export const mockCategories = [
