@@ -1,7 +1,13 @@
 import {
   type ShopPaymentMethod,
+  type ShopTextPageSlug,
   slugFromName,
+  STOREFRONT_DEFAULT_THEME,
+  STOREFRONT_HERO_DEFAULT_COLORS,
+  type StorefrontBanner,
   type StorefrontCategory,
+  type StorefrontCollectionSummary,
+  type StorefrontHero,
   type StorefrontImage,
   type StorefrontListing,
   type StorefrontSale,
@@ -22,9 +28,22 @@ import type { WorkspaceData } from './workspace-data';
 // (empty) and Kids; two navy polo shirts and a T-shirt in the shop, a white polo shirt as a draft
 // with no photo, and two kids' styles with no stock in the Main store. The pharma workspace has
 // no shop, so a test can set one up from the start and open it.
+//
+// Step 26h adds the shop's look: a drawn logo and the default colors, an Eid hero, and under the
+// product grid a winter sale banner and three collections (one all in the shop, one partly, one
+// with only the draft, so the shop hides it); Terms & Condition and About Us are written.
 
 // The settings row, as the table keeps it: readiness and the shop's address are worked out on read
 export type MockShop = Omit<StorefrontSettings, 'shopUrl' | 'readiness'>;
+
+// Step 26h: the logo and the two colors. In the API they are columns of the settings row and share
+// its version (decision 12); kept beside it here, so Shop settings' answer stays as it was, and a
+// save of either one raises MockShop's version
+export interface MockTheme {
+  logoImageId: string | null;
+  brandColor: string;
+  accentColor: string;
+}
 
 export type MockCategory = Omit<StorefrontCategory, 'listingCount'>;
 
@@ -65,15 +84,65 @@ export interface MockPhoto {
   readyAt: number | null;
 }
 
+// Step 26h: a banner as storefront_banners keeps it: the pictures without their files' addresses,
+// which are worked out on read (viewOf). The hero has its words and colors too
+interface KeptPictures {
+  desktopImage: StorefrontImage;
+  phoneImage: StorefrontImage;
+}
+export type MockBanner = Omit<StorefrontBanner, 'desktopImage' | 'phoneImage'> & KeptPictures;
+export type MockHero = Omit<StorefrontHero, 'desktopImage' | 'phoneImage'> & KeptPictures;
+
+// A collection with its listings in their order (storefront_collection_items); the counts are
+// worked out on read
+export type MockCollection = Omit<
+  StorefrontCollectionSummary,
+  'listingCount' | 'publishedCount'
+> & {
+  listingIds: string[];
+};
+
+// One block of the home page, in storefront_home_blocks' order: what it shows, by id
+export interface MockHomeBlock {
+  kind: 'banner' | 'collection';
+  id: string;
+}
+
+// A written text page (storefront_pages). A page not written has no entry
+export interface MockPage {
+  sections: StorefrontSection[];
+  version: number;
+  updatedAt: string;
+}
+
 export interface MockStorefront {
   shop: MockShop | null;
   categories: MockCategory[];
   listings: MockListing[];
   photos: Map<string, MockPhoto>;
+  // Step 26h
+  theme: MockTheme;
+  hero: MockHero | null;
+  banners: MockBanner[];
+  collections: MockCollection[];
+  home: MockHomeBlock[];
+  pages: Map<ShopTextPageSlug, MockPage>;
 }
 
 export function emptyStorefront(): MockStorefront {
-  return { shop: null, categories: [], listings: [], photos: new Map() };
+  return {
+    shop: null,
+    categories: [],
+    listings: [],
+    photos: new Map(),
+    // The table's defaults: the Figma colors and no logo (the Omnivo mark)
+    theme: { logoImageId: null, ...STOREFRONT_DEFAULT_THEME },
+    hero: null,
+    banners: [],
+    collections: [],
+    home: [],
+    pages: new Map(),
+  };
 }
 
 // A drawn packshot for a seeded photo: the garment's colour behind its name. A data: address, so it
@@ -86,10 +155,11 @@ function packshot(label: string, colour: string): string {
 // What a listing without a known photo shows (a seeded listing's photo is always known)
 export const PLACEHOLDER = packshot('', '#D0D5DD');
 
-function seedPhoto(
+// A drawn picture kept like an uploaded one that the job has prepared
+function seedPicture(
   data: WorkspaceData,
-  label: string,
-  colour: string,
+  url: string,
+  size: { width: number; height: number },
   alt: string,
 ): StorefrontImage {
   const id = crypto.randomUUID();
@@ -97,11 +167,40 @@ function seedPhoto(
     id,
     contentType: 'image/svg+xml',
     sizeBytes: 0,
-    url: packshot(label, colour),
-    outcome: { kind: 'ready', width: 600, height: 600 },
+    url,
+    outcome: { kind: 'ready', ...size },
     readyAt: 0,
   });
   return { id, alt };
+}
+
+function seedPhoto(
+  data: WorkspaceData,
+  label: string,
+  colour: string,
+  alt: string,
+): StorefrontImage {
+  return seedPicture(data, packshot(label, colour), { width: 600, height: 600 }, alt);
+}
+
+// Step 26h: a drawn banner picture, its words in it like a real sale banner, so a test can see
+// which picture is where. Plain shapes, no photo: the mock needs no file
+function drawnBanner(
+  size: { width: number; height: number },
+  background: string,
+  words: string,
+  ink: string,
+): string {
+  const { width, height } = size;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${String(width)}" height="${String(height)}" viewBox="0 0 ${String(width)} ${String(height)}"><rect width="${String(width)}" height="${String(height)}" fill="${background}"/><circle cx="${String(width * 0.78)}" cy="${String(height / 2)}" r="${String(height * 0.32)}" fill="${ink}" opacity=".18"/><text x="${String(width * 0.06)}" y="${String(height * 0.58)}" font-family="sans-serif" font-weight="700" font-size="${String(Math.round(height * 0.16))}" fill="${ink}">${words}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+// The shop's own mark, drawn: two letters in the brand color on cream, so it shows on the brand
+// colored header and on the white footer alike
+function drawnLogo(): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400"><rect width="400" height="400" rx="80" fill="#F4F5EC"/><text x="200" y="250" font-family="sans-serif" font-weight="700" font-size="150" text-anchor="middle" fill="${STOREFRONT_DEFAULT_THEME.brandColor}">RF</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
 }
 
 function daysAgo(days: number): string {
@@ -123,6 +222,7 @@ export function seedStorefront(data: WorkspaceData, garments: boolean): void {
   if (!garments) return;
   const main = data.stock.warehouses.find((place) => place.code === 'MAIN');
   const payments: ShopPaymentMethod[] = ['cod', 'online'];
+  const logo = seedPicture(data, drawnLogo(), { width: 400, height: 400 }, 'Rahman Fashion logo');
   data.storefront.shop = {
     subdomain: 'rahman-fashion',
     name: 'Rahman Fashion',
@@ -145,6 +245,7 @@ export function seedStorefront(data: WorkspaceData, garments: boolean): void {
     version: 4,
     updatedAt: daysAgo(3),
   };
+  data.storefront.theme = { logoImageId: logo.id, ...STOREFRONT_DEFAULT_THEME };
 
   const category = (
     name: string,
@@ -276,4 +377,123 @@ export function seedStorefront(data: WorkspaceData, garments: boolean): void {
       minutes,
     );
   }
+
+  seedAppearance(data, { polos: polos.slug, kids: kids.id });
+}
+
+// Step 26h: the hero, the blocks under the product grid and two written pages
+function seedAppearance(data: WorkspaceData, place: { polos: string; kids: string }): void {
+  const store = data.storefront;
+  const desktop = { width: 1400, height: 560 };
+  const phone = { width: 1080, height: 660 };
+  store.hero = {
+    id: crypto.randomUUID(),
+    href: `/c/${place.polos}`,
+    headline: 'Eid collection: 20% off polo shirts',
+    line: 'Combed cotton pique, knitted in Gazipur.',
+    eyebrow: 'Eid offer',
+    buttonLabel: 'Shop polo shirts',
+    desktopImage: seedPicture(
+      data,
+      drawnBanner(desktop, '#EEE0D8', 'Polo shirts', '#54260A'),
+      desktop,
+      'Navy and white pique polo shirts on a rail',
+    ),
+    phoneImage: seedPicture(
+      data,
+      // No words: the phone hero writes its headline over the picture
+      drawnBanner(phone, '#54260A', '', '#EEE0D8'),
+      phone,
+      'A navy pique polo shirt, folded',
+    ),
+    ...STOREFRONT_HERO_DEFAULT_COLORS,
+    version: 2,
+    updatedAt: daysAgo(5),
+  };
+
+  const wide = { width: 2560, height: 560 };
+  const narrow = { width: 1080, height: 420 };
+  const sale: MockBanner = {
+    id: crypto.randomUUID(),
+    href: '/c/all?offer=1',
+    desktopImage: seedPicture(
+      data,
+      drawnBanner(wide, '#1F2A44', 'WINTER SALE · UP TO 30% OFF', '#FFFFFF'),
+      wide,
+      'Winter sale, up to 30% off',
+    ),
+    phoneImage: seedPicture(
+      data,
+      drawnBanner(narrow, '#1F2A44', 'UP TO 30% OFF', '#FFFFFF'),
+      narrow,
+      'Winter sale, up to 30% off',
+    ),
+    version: 1,
+    updatedAt: daysAgo(4),
+  };
+  store.banners.push(sale);
+
+  // The listings by their link name; a seed that lost one leaves it out
+  const ids = (...slugsWanted: string[]) =>
+    slugsWanted.flatMap((slug) => {
+      const found = store.listings.find((listing) => listing.slug === slug);
+      return found === undefined ? [] : [found.id];
+    });
+  const kids = store.listings.filter((listing) => listing.categoryId === place.kids);
+  const collection = (title: string, icon: 'fire' | null, listingIds: string[]) => {
+    const item: MockCollection = {
+      id: crypto.randomUUID(),
+      title,
+      icon,
+      listingIds,
+      version: 1,
+      updatedAt: daysAgo(4),
+    };
+    store.collections.push(item);
+    return item;
+  };
+  // All three in the shop; the kids' styles are in the shop too, out of stock; the last one holds
+  // only the draft, so the shop hides it and the Home page card says so
+  const trending = collection(
+    'Hot & Trending Right Now',
+    'fire',
+    ids('pique-polo-navy-m', 'basic-crew-neck-t-shirt', 'pique-polo-navy-l'),
+  );
+  const forKids = collection(
+    'For the kids',
+    null,
+    kids.map((listing) => listing.id),
+  );
+  const coming = collection('Coming soon', null, ids('pique-polo-white-m'));
+  store.home = [
+    { kind: 'collection', id: trending.id },
+    { kind: 'banner', id: sale.id },
+    { kind: 'collection', id: forKids.id },
+    { kind: 'collection', id: coming.id },
+  ];
+
+  store.pages.set('terms', {
+    sections: [
+      {
+        heading: 'Delivery',
+        body: '- Inside Dhaka in 2 days, ৳80\n- Outside Dhaka in 3 to 5 days, ৳120\n- Free on orders over ৳2,000',
+      },
+      {
+        heading: 'Returns',
+        body: 'Unworn items with their tags come back within **7 days**. Keep the order number.',
+      },
+    ],
+    version: 1,
+    updatedAt: daysAgo(10),
+  });
+  store.pages.set('about', {
+    sections: [
+      {
+        heading: 'Who we are',
+        body: 'Rahman Fashion knits, dyes and sews its own shirts at its Gazipur factory since 2009.',
+      },
+    ],
+    version: 1,
+    updatedAt: daysAgo(10),
+  });
 }

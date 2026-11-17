@@ -3,6 +3,11 @@ import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   problemSchema,
   setupSchema,
+  STOREFRONT_HERO_DEFAULT_COLORS,
+  storefrontAppearanceSchema,
+  storefrontBannerSchema,
+  storefrontCollectionSchema,
+  storefrontPageSchema,
   storefrontCandidatePageSchema,
   storefrontCategoryListSchema,
   storefrontCategorySchema,
@@ -389,5 +394,211 @@ describe('another workspace’s shop settings', () => {
       version: ours.settings.version,
     });
     expect(res).toMatchObject({ status: 409, code: 'storefront_warehouse_invalid' });
+  });
+});
+
+// Step 26h: the look and the pages. Acme has a hero, a picture banner, a collection of its own
+// listing and a Terms page; Nirvor a picture banner. Nirvor sends Acme's ids: a photo must not go
+// on its logo or banners, a listing not into its collections, and a banner, a collection, the hero
+// or a page must not be read, changed, moved or deleted. Pages have no id, so for them the
+// question is whether the slug reaches the other workspace's row.
+describe('another workspace’s look and pages', () => {
+  let theirBanner: string;
+  let theirCollection: string;
+  let ourBanner: string;
+
+  function heroForm(photoId: string, version: number | null) {
+    return {
+      version,
+      href: '/c/beverages',
+      headline: 'Fresh tea every morning',
+      line: '',
+      eyebrow: '',
+      buttonLabel: 'Shop now',
+      desktopImage: { id: photoId, alt: 'Green tea' },
+      phoneImage: { id: photoId, alt: 'Green tea' },
+      ...STOREFRONT_HERO_DEFAULT_COLORS,
+    };
+  }
+
+  function bannerForm(desktop: string, phone: string) {
+    return {
+      href: '/c/all',
+      desktopImage: { id: desktop, alt: 'Mega sale' },
+      phoneImage: { id: phone, alt: 'Mega sale' },
+    };
+  }
+
+  beforeAll(async () => {
+    let res = await send(
+      acme,
+      'PUT',
+      '/storefront/appearance/hero',
+      heroForm(theirs.photoId, null),
+    );
+    expect(res.statusCode, res.body).toBe(200);
+    res = await send(
+      acme,
+      'POST',
+      '/storefront/appearance/banners',
+      bannerForm(theirs.photoId, theirs.photoId),
+    );
+    expect(res.statusCode, res.body).toBe(201);
+    theirBanner = storefrontBannerSchema.parse(res.json()).id;
+    // A draft may wait in a collection: the shop shows it once it is published
+    res = await send(acme, 'POST', '/storefront/appearance/collections', {
+      title: 'Acme picks',
+      icon: null,
+      listingIds: [theirs.listing.id],
+    });
+    expect(res.statusCode, res.body).toBe(201);
+    theirCollection = storefrontCollectionSchema.parse(res.json()).id;
+    res = await send(acme, 'PUT', '/storefront/pages/terms', {
+      version: null,
+      sections: [{ heading: 'Acme terms', body: 'Wholesale only.' }],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    res = await send(
+      nirvor,
+      'POST',
+      '/storefront/appearance/banners',
+      bannerForm(ours.photoId, ours.photoId),
+    );
+    expect(res.statusCode, res.body).toBe(201);
+    ourBanner = storefrontBannerSchema.parse(res.json()).id;
+  }, 60_000);
+
+  it('cannot put their photo on our logo, hero or banner, though it is ready', async () => {
+    const theme = storefrontAppearanceSchema.parse(
+      (await send(nirvor, 'GET', '/storefront/appearance')).json(),
+    ).theme;
+    expect(
+      await answer('PUT', '/storefront/appearance/theme', {
+        version: theme.version,
+        logoImageId: theirs.photoId,
+        brandColor: theme.brandColor,
+        accentColor: theme.accentColor,
+      }),
+    ).toEqual({
+      status: 409,
+      code: 'storefront_image_not_ready',
+      fieldErrors: { logoImageId: ['storefront_image_not_ready'] },
+    });
+    expect(
+      await answer('PUT', '/storefront/appearance/hero', {
+        ...heroForm(ours.photoId, null),
+        desktopImage: { id: theirs.photoId, alt: 'Their tea' },
+      }),
+    ).toEqual({
+      status: 409,
+      code: 'storefront_image_not_ready',
+      fieldErrors: { desktopImage: ['storefront_image_not_ready'] },
+    });
+    expect(
+      await answer(
+        'POST',
+        '/storefront/appearance/banners',
+        bannerForm(ours.photoId, theirs.photoId),
+      ),
+    ).toEqual({
+      status: 409,
+      code: 'storefront_image_not_ready',
+      fieldErrors: { phoneImage: ['storefront_image_not_ready'] },
+    });
+  });
+
+  it('cannot put their listing in our collection', async () => {
+    expect(
+      await answer('POST', '/storefront/appearance/collections', {
+        title: 'Our picks',
+        icon: null,
+        listingIds: [ours.listing.id, theirs.listing.id],
+      }),
+    ).toEqual({
+      status: 409,
+      code: 'storefront_listing_invalid',
+      fieldErrors: { 'listingIds.1': ['storefront_listing_invalid'] },
+    });
+  });
+
+  it('finds their banner, collection and hero by no route', async () => {
+    for (const [method, url, payload] of [
+      [
+        'PUT',
+        `/storefront/appearance/banners/${theirBanner}`,
+        { ...bannerForm(ours.photoId, ours.photoId), version: 1 },
+      ],
+      ['DELETE', `/storefront/appearance/banners/${theirBanner}?version=1`, undefined],
+      ['GET', `/storefront/appearance/collections/${theirCollection}`, undefined],
+      [
+        'PUT',
+        `/storefront/appearance/collections/${theirCollection}`,
+        { title: 'Ours now', icon: null, listingIds: [ours.listing.id], version: 1 },
+      ],
+      ['DELETE', `/storefront/appearance/collections/${theirCollection}?version=1`, undefined],
+      [
+        'POST',
+        '/storefront/appearance/home/move',
+        { kind: 'banner', id: theirBanner, direction: 'down' },
+      ],
+      [
+        'POST',
+        '/storefront/appearance/home/move',
+        { kind: 'collection', id: theirCollection, direction: 'up' },
+      ],
+      // Nirvor has no hero; Acme's must not be the one found
+      ['DELETE', '/storefront/appearance/hero?version=1', undefined],
+    ] as const) {
+      expect(await answer(method, url, payload), `${method} ${url}`).toMatchObject({
+        status: 404,
+      });
+    }
+    const theirsNow = storefrontAppearanceSchema.parse(
+      (await send(acme, 'GET', '/storefront/appearance')).json(),
+    );
+    expect(theirsNow.hero?.version).toBe(1);
+    expect(
+      theirsNow.blocks.map((block) =>
+        block.kind === 'banner'
+          ? [block.banner.id, block.banner.version]
+          : [block.collection.id, block.collection.version],
+      ),
+    ).toEqual([
+      [theirBanner, 1],
+      [theirCollection, 1],
+    ]);
+  });
+
+  it('shows us only our own blocks, and no hero', async () => {
+    const page = storefrontAppearanceSchema.parse(
+      (await send(nirvor, 'GET', '/storefront/appearance')).json(),
+    );
+    expect(page.hero).toBeNull();
+    expect(
+      page.blocks.map((block) => (block.kind === 'banner' ? block.banner.id : block.collection.id)),
+    ).toEqual([ourBanner]);
+  });
+
+  it('keeps each workspace’s Terms page its own', async () => {
+    const ourTerms = storefrontPageSchema.parse(
+      (await send(nirvor, 'GET', '/storefront/pages/terms')).json(),
+    );
+    expect([ourTerms.version, ourTerms.sections]).toEqual([null, []]);
+    expect(await answer('DELETE', '/storefront/pages/terms?version=1')).toMatchObject({
+      status: 404,
+    });
+    // Our first save is a first save: their row does not make it a conflict
+    const res = await send(nirvor, 'PUT', '/storefront/pages/terms', {
+      version: null,
+      sections: [{ heading: 'Nirvor terms', body: 'Retail only.' }],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const theirTerms = storefrontPageSchema.parse(
+      (await send(acme, 'GET', '/storefront/pages/terms')).json(),
+    );
+    expect(theirTerms).toMatchObject({
+      version: 1,
+      sections: [{ heading: 'Acme terms', body: 'Wholesale only.' }],
+    });
   });
 });

@@ -18,8 +18,9 @@ import { z } from 'zod';
 // words (the VAT and stock movement reports, the scheduled emails) took it to 231.7 KB; the pages
 // and the schedule dialog are their own lazy chunks. Step 26g: 240 KB (you chose this). The
 // Storefront menu's words (26g.5) and its sidebar group took it to 237.2 KB; its four pages are
-// lazy chunks.
-const INITIAL_BUDGET = 240 * 1024;
+// lazy chunks. Step 26h: 245 KB (you chose this). The words of Shop appearance and Shop pages
+// (26h.5) took it to 241.1 KB, with or without their two sidebar items; the six pages are lazy.
+const INITIAL_BUDGET = 245 * 1024;
 // Step 17d: a lazy chunk is 105 KB for now. Almost every page loads the contracts' whole route
 // table (about 28 KB gz) to call the API, and 17d's three documents grew it enough to push pages
 // that 17d never touched (team, units) over 100 KB. Loading each module's routes with its own

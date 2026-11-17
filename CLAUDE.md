@@ -614,8 +614,10 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   returns, and its exchange payment links "From return POS1-R000012". A shift's page has "Cash paid back" in the
   drawer's sum, the sales' discounts and VAT, and a refunds card (count, VAT on returns, per method).
 - **Storefront menu (`storefront.manage`):** a sidebar group "Storefront", hidden without the permission: Catalog
-  (`Store04`), Shop categories (`FolderLibrary`), Shop settings (`WebDesign01`); 26h adds Appearance and Pages. The
-  links say "Shop …" because the phone's nav row has no group labels. Every page is online only: offline it is the
+  (`Store04`), Shop categories (`FolderLibrary`), Shop appearance (`PaintBoard`), Shop pages (`Files01`), Shop
+  settings (`WebDesign01`). The links say "Shop …" because the phone's nav row has no group labels. A page under
+  another (a listing, the hero, a collection, a text page) keeps its item marked, because its address starts with
+  the item's link. Every page is online only: offline it is the
   empty state "Needs a connection" (`WifiDisconnected02`). Once the shop is set up, each page header has "View
   shop" (a real `<a>` to a new tab that looks like the secondary button, `LinkSquare02`) and, under the description,
   a 13px `ink-3` line with a 14px `Clock01` icon: "Changes show in the shop within a minute". A long form shows a
@@ -669,11 +671,89 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   again every 2 seconds; a failed photo says why in `crit` with an `Alert02` icon and a "Remove it" text link. The
   Add tile: a dashed `line-strong` border, a 40px `brand-soft` `ImageAdd01` tile, "Add photo" and "1 more can be
   added".
-- **Description card (listings):** each section in a 1px `line` box (radius 10px, 16px padding): "Section 1" with
-  move up / down and remove icon buttons, Heading, Text (a text area: `- ` lists, `1.` numbered lists, `**bold**`,
-  links) and a Preview / Hide preview button (`View` / `ViewOffSlash`). The preview is the shop's own HTML
-  (`renderSections`, which escapes everything typed) under a `subtle` caption row "As the product page shows it".
-  "Add section" (secondary `sm`, `PlusSign`), at most 12.
+- **Sections card (a listing's Description, a text page's Sections):** `SectionsCard`
+  (`apps/app/src/components/storefront-sections.tsx`), one editor for both; each page owns its `useFieldArray` and
+  passes the rows, its title, placeholders and caption. Each section in a 1px `line` box (radius 10px, 16px
+  padding): "Section 1" with move up / down and remove icon buttons, Heading, Text (a text area: `- ` lists, `1.`
+  numbered lists, `**bold**`, links) and a Preview / Hide preview button (`View` / `ViewOffSlash`). The preview is
+  the shop's own HTML (`renderSections`, which escapes everything typed) under a `subtle` caption row ("As the
+  product page shows it", "As the shop shows it"). "Add section" (secondary `sm`, `PlusSign`), at most 12.
+- **Shop appearance (`/storefront/appearance`):** the page header ("Your shop's logo, colors, hero banner and home
+  page") and three cards; before the shop is set up, the empty state "Set up the shop first" (`PaintBoard`) with
+  "Go to shop settings". **Logo and colors** is its own form with its own footer (no save bar): "Use the default
+  colors" (a text link, pushed left), "Discard changes" (secondary, only with changes) and Save; inside, the logo
+  (a 64px `subtle` box, radius 8px, `object-contain`, or the Omnivo mark with "No logo. The shop shows the Omnivo
+  mark.", then Upload / Replace / Remove picture, secondary `sm`), Brand color and Accent color side by side from
+  `sm`, the contrast list, and from `lg` a 380px "In the shop" drawing (the shop's header, a chip and two of the
+  shop's own cards in the colors typed; two grey shapes when it has no listing). **Hero banner:** with none, a
+  centered 40px `brand-soft` `Image02` tile, "No hero banner. The home page starts with its products." and "Add
+  hero banner" (secondary `sm` link, `PlusSign`); with one, "Edit hero banner" (`Edit02`) in the header, the
+  drawing (computer from `sm`, phone below), the headline and "Goes to /c/all?offer=1" in caption `ink-3`. **Home
+  page:** "4 of 12 blocks" (caption `ink-3` `tabular-nums`) on the right of the header, a caption line with
+  `InformationCircle` ("The hero banner and the product grid always come first."), then the blocks in a 1px `line`
+  box (radius 10px), one 64px row each with 1px `line` rules: a 96 × 40 thumbnail from `sm` (the banner's picture,
+  `object-cover`, or a `brand-soft` tile of three small cards for a collection), the name (a picture banner by its
+  alt text, opening its dialog; a collection a link to its page, with a 14px `ink-3` `Fire` when it has the flame)
+  and a caption line ("Picture banner · Goes to /c/all", "Collection · 8 products", "5 of 8 in the shop", or `warn`
+  with `Alert02` "None in the shop now, so the row is hidden"), then Move up / Move down icon buttons and a
+  `MoreHorizontal` menu (Edit `Edit02`, Delete `Delete02`, which asks first). Empty: "Nothing under the product grid
+  yet" (`DashboardSquareAdd`). Under the list "Add picture banner" (`ImageAdd01`) and "Add collection"
+  (`PlusSign`), secondary `sm`, each disabled at its limit (6 banners, 8 collections, 12 blocks) with a 13px
+  `ink-3` line that says why. A new banner or collection goes to the end.
+- **Color box and contrast list:** `ColorInput` (`storefront-color.tsx`), the input box with a 26px swatch on the
+  left (radius 8px, 1px `line-strong`) that opens the browser's color picker ("Pick Brand color on a palette") and
+  the code in `Geist Mono` (`#005859`). Under the boxes, `ContrastList`: a 1px `line` box (radius 10px) of one row
+  per pair ("Brand color on light backgrounds", "Brand and accent together"), the ratio in caption `ink-3`
+  `tabular-nums` ("4.4:1, needs 4.5:1", cut, never rounded up) and a `good` "Easy to read" (`CheckmarkCircle02`)
+  or `crit` "Too low" (`Alert02`) pill. The form refuses a low pair on the box itself, and the API refuses it too.
+- **Picture box:** `PictureField` (`storefront-picture.tsx`), one picture of the hero, a picture banner or (its own
+  smaller box) the logo: the label, then a 1px `line` box (radius 10px, 12px padding) with the picture in a
+  `subtle` box at the shop's own shape (at most 180px tall), Replace picture / Remove picture (secondary `sm`) and
+  the alt text box ("What the picture shows", required). Empty, the box is a button with a dashed `line-strong`
+  border, a 40px `brand-soft` `ImageAdd01` tile and "Upload picture". It uses the listing photos' upload and job
+  ("Uploading…", "Preparing the picture…", the 2-second ask, a failed one in `crit` with "Remove it"); a save tried
+  with no picture says "Upload a picture." under it. The hint gives the file rule and the size that looks sharp.
+- **Links to:** `LinkPicker` (`storefront-link.tsx`), for the hero and a picture banner. A select (`Link01`): A
+  shop category, A product, Products on offer, All products, Another address; the first two add a second box
+  beside it from `sm` (a category select with `FolderLibrary`, or a product `Combobox` with `Store04`), the last an
+  address box ("/pages/about", or a whole `https://` link). Under it, "Goes to /c/skin-care" in 13px `ink-3`. A
+  saved address that names nothing now, or a draft product, gets a `warn` line with `Alert02` that says the link
+  shows "page not found". Only the address is saved (`href`); the select keeps its own choice while typing.
+- **Hero banner page (`/storefront/appearance/hero`):** a "Shop appearance" back link (`ArrowLeft01`), "Add the hero
+  banner" or "Edit the hero banner" with a `MoreHorizontal` menu (Delete hero banner, which asks first). Cards, one
+  column: "In the shop" (a Computer / Phone segmented control and the drawing at the shop's own size, scaled to the
+  card: the computer one at 1280 × 280 so the headline wraps where the shop wraps it, the phone one 361 × 220 on
+  `subtle`; it follows every key), Words (Headline, then Button and Tag side by side from `sm`, Line under the
+  headline, Links to; each hint says where it shows), Pictures (computer and phone side by side from `md`), and
+  Colors (Background, Panel, Button, Button's words, two by two from `sm`, then the contrast list: "Button's words
+  on the button" 4.5:1 and "White headline on the panel" 3:1). The save bar shows with changes, and always on a
+  new hero ("Discard changes" then goes back).
+- **Picture banner dialog:** the dialog at 560px (two pictures do not fit 520px), "Add a picture banner" or "Edit
+  picture banner", with "A picture with its words in it, like a sale, across the home page." The picture for
+  computers (shown 1,280 × 280) and for phones (about 360 × 140), each with its alt text ("The banner's words are
+  in the picture, so type them here…"), then Links to. "Add banner" / Save (primary), Cancel, and on a saved one
+  Delete (secondary, pushed left).
+- **Collection page (`/storefront/appearance/collections/$collectionId`, `…/new`):** at most 880px wide; a "Shop
+  appearance" back link, the title (or "New collection") with a `MoreHorizontal` menu (Delete collection, which
+  asks first), and a `warn` document notice (`Alert02`) while none of its products is in the shop ("…the home page
+  hides this row until one is"). Cards: the title box and a checkbox "Show a flame after the title" (`Fire`);
+  then Products ("Up to 24, in the order the row shows them.", "5 of 24" on the right): a product `Combobox`
+  (`Store04`, max 520px; detail "SKU · ৳229 · Draft", no photos; the ones already in it are left out), then the
+  list in a 1px `line` box (radius 10px): the number from `sm` (caption `ink-3`), a 40px photo, the name, "SKU ·
+  150 ml" (SKU in `Geist Mono`), the price and the status pill from `sm`, then Move up / Move down / Remove icon
+  buttons. Empty, a neutral notice "No products yet…"; with a draft, "Drafts stay here and show in the row once
+  they are in the shop." A new one has "Add collection" (primary, right-aligned); a saved one the save bar.
+- **Shop pages (`/storefront/pages`):** the page header ("The four pages linked from the shop's footer") and a data
+  table of the four, no sort and no paging, a row click opens the editor: page (a 30px `brand-soft` tile with the
+  page's icon, `SecurityCheck` / `LegalDocument01` / `Store01` / `CallIncoming01`, the footer's name and an `ink-3`
+  sub-line of what the page is for), status (`good` "In the footer" `CheckmarkCircle02`, or neutral "Not written"
+  `MinusSignCircle`), sections ("3 sections" or a dash), changed (or a dash), and a Write / Edit text link.
+- **Text page editor (`/storefront/pages/$slug`):** at most 880px wide; a "Shop pages" back link, the status pill
+  above the page's name, "View page" (the View shop look) and a `MoreHorizontal` menu (Delete page, which asks
+  first and says the footer drops its link). A page not written yet has a neutral notice that its link is not in
+  the footer and its address shows "page not found". Then the sections card ("Sections", "Each with a heading and
+  its text, like Delivery and Returns.") and the save bar. The first save puts it in the shop ("Terms & Condition is
+  in the shop"); a page always keeps at least one section, so taking it out is Delete.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -1098,9 +1178,16 @@ the tokens, never raw hex.
   7.8:1, `brand` on `cream` 7.5:1, `body` on `cream` 7.1:1).
 - **Tenant theme:** only `brand` and `accent` come from the tenant's `storefront_settings` (`brand_color`, `accent_color`, `#rrggbb`); all other
   tokens are fixed. The pair must keep at least 4.5:1 between them (accent text on brand and brand text on
-  accent), checked when the tenant saves it. The defaults are the Figma values.
+  accent), and `brand` at least 4.5:1 on `cream` (names and titles sit on the light fills), checked by one
+  `contrastRatio()` in `@omnivo/contracts`, in the form as the tenant types and again by the API on save. The
+  defaults are the Figma values. The logo (`logo_image_id`) is a `storefront_image` like a listing's photo.
 - Hero and promo banner colors (`#EEE0D8`, `#E7D1B2`, `#8B471F` in the Figma hero) are part of each banner's
-  data, not tokens.
+  data, not tokens. The hero's button and its words keep 4.5:1, and the white headline keeps 3:1 on the panel
+  (large text), checked the same way.
+- **What the tenant sets (ERP → Shop appearance, Shop pages):** the logo and the two colors, one hero banner, up to 6
+  picture banners and 8 collections (24 listings each) as up to 12 blocks under the product grid in their order,
+  and the four text pages. Everything else on the shop is fixed. A link on a banner is an address (`/c/skin-care`,
+  `/p/…`, `/c/all?offer=1`, or `https://…`); a slug changed later makes it "page not found".
 
 ### Storefront typography
 
@@ -1232,8 +1319,9 @@ phone hero headline is 28px/700 and its line under it 14px/400.
 - **Footer:** `card`, radius 16, clipped, 64px top padding, content 440px wide and centered with 48px between the
   logo and the rest. Social links: 40px circles, `cream` fill, 15px `brand` icons (`Facebook01`, `Instagram`,
   `NewTwitter`, `Linkedin01`), 14.6px apart; hover fills `accent`. 24px below: the address, 16px/24px `muted`,
-  centered. 24px below: the links (Privacy Policy, Terms & Condition, About Us, Contact Us) 16px/24px `brand`,
-  separated by `muted` " | ". Two soft `accent` blobs sit at the bottom left and right (Figma's Vector 2 and
+  centered. 24px below: the links (Privacy Policy, Terms & Condition, About Us, Contact Us; only the pages the
+  tenant has written, from the shop's `pages`, so no link leads to "page not found") 16px/24px `brand`, separated
+  by `muted` " | ". Two soft `accent` blobs sit at the bottom left and right (Figma's Vector 2 and
   Vector 3, downloaded as SVG, decorative, `aria-hidden`). Under the footer, 35px down: "©2026 All rights
   reserved by Omnivo" 16px/24px `brand`, centered, then 34px to the page end. Below `md` (Figma `footer`): `card`
   with only the top corners round (24px), 32px top and bottom padding, 24px between its parts, everything

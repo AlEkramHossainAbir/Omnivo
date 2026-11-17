@@ -46,8 +46,9 @@ import { useTenantId } from '../lib/workspace';
 type ListingControl = Control<ListingFormValues, unknown, UpdateStorefrontListingInput>;
 
 // One photo the server is still working on: asks every 2 seconds until the job has finished, then
-// hands the answer to the page. A query per slot, so a photo that is ready stops asking
-function useJobState(
+// hands the answer to the page. A query per slot, so a photo that is ready stops asking.
+// Step 26h: exported, the logo and the banners' pictures use it too (storefront-picture.tsx)
+export function useJobState(
   id: string,
   state: PhotoState,
   onState: (id: string, next: PhotoState) => void,

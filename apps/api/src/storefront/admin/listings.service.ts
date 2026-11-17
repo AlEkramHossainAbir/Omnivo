@@ -33,7 +33,7 @@ import { currentPrincipal, getTenantId } from '../../common/tenant/tenant-contex
 import type { Transaction, WithTenant } from '../../common/tenant/with-tenant.js';
 import type { Config } from '../../config.js';
 import { CONFIG, WITH_TENANT } from '../../infra/tokens.js';
-import { isoText } from '../listing-sql.js';
+import { idIn, isoText } from '../listing-sql.js';
 import { shopUrl } from '../shop-url.js';
 import { slugTaken, StorefrontCategoriesService } from './categories.service.js';
 import { StorefrontImagesService } from './images.service.js';
@@ -458,6 +458,26 @@ export class StorefrontListingsService {
       if (isUniqueViolation(error, 'storefront_listings_slug_idx')) throw slugTaken();
       throw error;
     }
+  }
+
+  // Step 26h: these listings as the catalog shows them, by id, for a collection's page and its
+  // save. An id that is not this workspace's listing is missing from the map, which is how the
+  // collection's save finds one (storefront_listing_invalid). Drafts and archived products are
+  // there too: a collection may hold them, and the shop leaves them out until they can be shown
+  async summaries(
+    tx: Transaction,
+    ids: readonly string[],
+  ): Promise<Map<string, StorefrontListingSummary>> {
+    if (ids.length === 0) return new Map();
+    const shop = await this.settings.find(tx, false);
+    const rows = await this.select(
+      tx,
+      shop?.defaultWarehouseId ?? null,
+      '-updated',
+      idIn(sql`l.id`, ids),
+      sql``,
+    );
+    return new Map(rows.map((row) => [row.id, this.toSummary(row)]));
   }
 
   publish(id: string, version: number): Promise<StorefrontListing> {

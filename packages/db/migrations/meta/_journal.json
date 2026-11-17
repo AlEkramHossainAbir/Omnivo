@@ -470,6 +470,27 @@
       "when": 1794799222491,
       "tag": "0066_storefront-images-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1794821324412,
+      "tag": "0067_storefront-slug-all",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1794821325706,
+      "tag": "0068_storefront-appearance",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1794821327148,
+      "tag": "0069_storefront-logo",
+      "breakpoints": true
     }
   ]
 }

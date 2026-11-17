@@ -219,6 +219,8 @@ describe('which shop', () => {
       timeZone: 'Asia/Dhaka',
       hotline: '09612-000000',
       logo: null,
+      // Step 26h: only the page it has written, so the footer never links to "page not found"
+      pages: ['terms'],
     });
     const tree = z.array(shopCategorySchema).parse((await get('/public/v1/categories')).json());
     // One flat list in the tenant's order (position, then name); the shop builds the tree

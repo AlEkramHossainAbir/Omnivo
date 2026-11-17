@@ -71,6 +71,8 @@ import {
   UserTime01Icon,
   WarehouseIcon,
   WebDesign01Icon,
+  PaintBoardIcon,
+  Files01Icon,
   Wifi01Icon,
   WifiDisconnected02Icon,
   WorkHistoryIcon,
@@ -671,6 +673,14 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
               </NavLink>
               <NavLink to="/storefront/categories" icon={FolderLibraryIcon}>
                 {t('nav.storefrontCategories')}
+              </NavLink>
+              {/* Step 26h: the look and the text pages, before the settings (approved with the
+                  mockup: the things changed most often come first) */}
+              <NavLink to="/storefront/appearance" icon={PaintBoardIcon}>
+                {t('nav.storefrontAppearance')}
+              </NavLink>
+              <NavLink to="/storefront/pages" icon={Files01Icon}>
+                {t('nav.storefrontPages')}
               </NavLink>
               <NavLink to="/storefront/settings" icon={WebDesign01Icon}>
                 {t('nav.storefrontSettings')}

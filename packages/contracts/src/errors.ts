@@ -675,6 +675,28 @@ export const ERROR_CODES = [
   'storefront_image_unreadable',
   'storefront_image_too_small',
   'storefront_image_too_many_pixels',
+  // Step 26h: Appearance and the text pages. A category slug the shop keeps for itself (/c/all), a
+  // color that is not #rrggbb, a banner link that is neither a path nor an https address
+  'storefront_slug_reserved',
+  'storefront_color_format',
+  'storefront_link_format',
+  // The contrast checks (decision 3): the brand color on cream, the accent next to the brand, the
+  // hero's button text on its button, the white headline on the hero's panel. Field errors carry
+  // no params, so the words say the minimum; the form shows the ratio itself next to the boxes
+  'storefront_brand_contrast',
+  'storefront_accent_contrast',
+  'storefront_button_contrast',
+  'storefront_panel_contrast',
+  // The limits (decision 6): six picture banners, eight collections, twelve blocks on the page
+  'storefront_banners_full',
+  'storefront_collections_full',
+  'storefront_home_full',
+  // A collection with no listing, one listing twice in it, or one that is not this workspace's
+  'storefront_collection_empty',
+  'storefront_listing_twice',
+  'storefront_listing_invalid',
+  // A text page saved with no section (Delete is the way to take a page out of the shop)
+  'storefront_page_empty',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

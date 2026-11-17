@@ -1101,6 +1101,12 @@ storefront_images                  ← একটা শপ-ছবির জব�
 
 storefront_banners (hero | image), storefront_collections + storefront_collection_items,
 storefront_home_blocks (হোমপেজের ক্রম), storefront_pages (privacy | terms | about | contact)
+  (টেবিলগুলো ধাপ ২৬f-এর; ধাপ ২৬h-এর CHECK: কালেকশনে position ১–২৪, হোমপেজে ১–১২, ক্যাটাগরির slug `all` না,
+   কারণ `/c/all` হলো All Products; settings.logo_image_id → (tenant_id, id) FK storefront_images-এ)
+  banners: href (ঠিকানা, id না), computer আর phone-এর আলাদা ছবি {id, alt}; শুধু hero-র headline, button
+           আর চারটা রং (image banner-এর কথা ছবির ভেতরেই), workspace-প্রতি একটাই hero
+  home_blocks: প্রতিটা রো একটা image banner বা একটা কালেকশন, ঠিক একটা; মুছলে cascade-এ পেজ থেকেও যায়
+  pages: sections (JSONB), না লেখা পেজের কোনো রো নেই
 
 storefront_orders
   tenant_id, order_no, status (pending | confirmed | packed | shipped | delivered
@@ -1190,7 +1196,7 @@ sequenceDiagram
 | **Orders** | অর্ডার বোর্ড (pending → confirmed → packed → shipped → delivered), বাল্ক লেবেল প্রিন্ট, বাল্ক কনসাইনমেন্ট, বাতিল ও রিটার্ন |
 | **Domain** | `acme.omnivo.shop` বা নিজের ডোমেইন সংযোগ (DNS ধাপ সহ) |
 
-**ধাপ ২৬g-তে যা তৈরি হয়েছে** (বাকিটা ২৬h আর পরের ধাপে):
+**ধাপ ২৬g-তে যা তৈরি হয়েছে:**
 
 - পারমিশন `storefront.manage` (নিজের গ্রুপ "Online shop"; retail-এর Shop manager আর সাধারণ Manager টেমপ্লেটে আছে)।
   এটা না থাকলে সাইডবারে Storefront গ্রুপই দেখায় না, আর API প্রতিটা রুটে `403` দেয়। সব পেজ অনলাইনে চলে, প্রতিটা
@@ -1207,6 +1213,34 @@ sequenceDiagram
   অফার (`listingPricing()` দিয়ে লাইভ প্রিভিউ), বর্ণনার section, SEO, তারপর Show in the shop। শপের সার্ভার
   উত্তর ৩০ সেকেন্ড রাখে, তাই প্রতিটা পেজ বলে "Changes show in the shop within a minute"।
 - এখনো না: একসাথে অনেক প্রোডাক্ট যোগ, অব্যবহৃত ছবি মুছে ফেলা, নিজের ডোমেইন, `feature.storefront` entitlement।
+
+**ধাপ ২৬h-তে যা তৈরি হয়েছে** (উপরের টেবিলের Appearance; বাকি সেকশন ধাপ ২৭–২৮-এ):
+
+- একই পারমিশন `storefront.manage`, সাইডবারে আরো দুটো: Shop appearance আর Shop pages। API-র ১৬টা রুট
+  (`/storefront/appearance/*`, `/storefront/pages/*`), প্রতিটা শপ set up হওয়ার পরেই কাজ করে (আগে
+  `409 storefront_not_set_up`, আর স্ক্রিন বলে "Set up the shop first")।
+- **Shop appearance** (`/storefront/appearance`): লোগো আর দুটো রং (brand, accent) নিজের ফর্মে, version check সহ।
+  রং যাচাই: brand↔accent ৪.৫:১, brand↔cream ৪.৫:১, hero-র বাটন↔তার লেখা ৪.৫:১, সাদা headline↔panel ৩:১ (বড় লেখা)।
+  একটাই `contrastRatio()` contracts-এ, ফর্ম টাইপ করার সময় দেখায়, API সেভে আবার যাচাই করে আর error code দিয়ে ফেরায়।
+- **Hero** নিজের পেজে (`/storefront/appearance/hero`): কথা, computer আর phone-এর ছবি, "Links to", চারটা রং, আর
+  দুই সাইজে শপের মতো একটা লাইভ ড্রয়িং। **Picture banner** একটা ডায়ালগে, **কালেকশন** নিজের পেজে
+  (`/storefront/appearance/collections/$id`, সর্বোচ্চ ২৪টা লিস্টিং ক্রমে; draft থাকতে পারে, শপে প্রকাশ হলে দেখায়)।
+- **হোমপেজের ক্রম:** প্রতিটা ব্যানার আর কালেকশন হোমপেজেই থাকে, "লুকানো" অবস্থা নেই: যোগ করলে শেষে যায়, মুছলে
+  মুছে যায়। সীমা ৬টা picture banner, ৮টা কালেকশন, ১২টা ব্লক। Move up/down আর প্রতিটা যোগ-মোছা একটা শপ-প্রতি
+  advisory lock-এর ভেতরে চলে, আর position সবসময় ১..n (মুছলে আবার নম্বর দেয়)। দুটো ব্লক অদলবদল এক UPDATE-এ
+  হয় না (unique position), তাই API সব রো মুছে আবার লেখে।
+- **"Links to":** ব্যানারের লিংক ঠিকানাই থাকে (`href`, id না): শপের ক্যাটাগরি, একটা প্রোডাক্ট, অফারের প্রোডাক্ট
+  (`/c/all?offer=1`), সব প্রোডাক্ট, বা অন্য ঠিকানা। পরে slug বদলালে লিংক "page not found" দেখায়, আর ফর্ম সেটা বলে।
+- **Shop pages** (`/storefront/pages`): চারটা পেজ, লিস্টিং-এর বর্ণনার একই section এডিটরে (`SectionsCard`)।
+  কোনো template নেই, কারণ privacy আর terms টেন্যান্টের নিজের আইনি কথা। শপের `publicShopSchema`-তে `pages` (শুধু
+  লেখা পেজগুলো), তাই ফুটার শুধু সেগুলোর লিংক দেয়।
+- **ছবি** (লোগো, hero, ব্যানার) লিস্টিং-এর ছবির মতোই `storefront_image` আপলোড আর sharp জব (ধাপ ২৬g)।
+- **Dev seed** `pnpm seed:shop` (`apps/shop/scripts/`): চালু dev stack-এ HTTP API দিয়ে একটা demo workspace
+  বানায় (sign-up, warehouse, প্রোডাক্ট আর opening stock, শপের ক্যাটাগরি, মকের ২২টা ছবি সহ লিস্টিং, hero, Mega
+  Sale ব্যানার, কালেকশন, চারটা পেজ, তারপর শপ খোলে), ~৭ সেকেন্ডে। workspace আগে থেকে থাকলে বার্তা দিয়ে থামে।
+  CI-তে না; সরাসরি DB-তে না লিখে API দিয়ে, তাই প্রতিটা নিয়ম আর audit log আসল পথেই চলে।
+- এখনো না: ব্যানারের শুরু-শেষ তারিখ, hero carousel, দুটোর বেশি রং, পেজ template, অব্যবহৃত ছবি মুছে ফেলা।
+  স্টেজিং এখনো মক শপ দেখায় (wildcard শপ-হোস্ট লাগবে, `vps-deploy.en.md`)।
 
 - **Omnivo Admin Panel** এখানে শুধু একটা জায়গায় আসে: Storefront কোন প্ল্যানে থাকবে, সেটা `feature.storefront` entitlement দিয়ে ঠিক হবে (§১৩.২)। অর্থাৎ Storefront বিক্রি হবে Growth প্ল্যানের ফিচার বা আলাদা অ্যাড-অন হিসেবে, আর কোডে কখনো `if (plan === 'growth')` লেখা হবে না।
 - ⚠️ থিম কাস্টমাইজেশনের চাপ আসবেই। উত্তর হলো **কনফিগারেশন ও কয়েকটা রেডিমেড থিম**, টেন্যান্ট-ভিত্তিক কাস্টম কোড না (§৪.৮)।

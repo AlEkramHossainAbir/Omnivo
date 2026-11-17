@@ -121,6 +121,29 @@ describe('a shop category', () => {
       ),
     ).toEqual({ slug: ['storefront_slug_format'] });
   });
+
+  // Step 26h: /c/all is "All Products", answered before any category, so "all" would hide this one
+  it.each([
+    ['typed', 'All', 'all'],
+    ['made from the name', 'All', ''],
+  ])('refuses the slug "all" (%s) on the slug box', (_how, name, slug) => {
+    const result = createStorefrontCategoryInputSchema.safeParse({ parentId: '', name, slug });
+    expect(errorsOf(result)).toEqual({ slug: ['storefront_slug_reserved'] });
+    const update = updateStorefrontCategoryInputSchema.safeParse({
+      parentId: '',
+      name,
+      slug,
+      version: 3,
+    });
+    expect(errorsOf(update)).toEqual({ slug: ['storefront_slug_reserved'] });
+  });
+
+  it('still takes a longer slug that starts with all', () => {
+    expect(
+      createStorefrontCategoryInputSchema.parse({ parentId: '', name: 'All Natural', slug: '' })
+        .slug,
+    ).toBe('all-natural');
+  });
 });
 
 // A settings form as the page sends it, before the tenant changes anything

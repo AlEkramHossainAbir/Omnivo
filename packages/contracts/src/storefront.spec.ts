@@ -63,6 +63,7 @@ describe('public shop', () => {
     timeZone: 'Asia/Dhaka',
     address: 'Zindabazar, Sylhet 3100',
     social: { facebook: null, instagram: null, x: null, linkedin: null },
+    pages: ['terms', 'contact'],
   };
 
   it('takes the workspace time zone', () => {
@@ -72,6 +73,11 @@ describe('public shop', () => {
   // A made-up zone would make every date on the shop throw a RangeError in Intl
   it('refuses a time zone Intl does not know', () => {
     expect(publicShopSchema.safeParse({ ...SHOP, timeZone: 'Asia/Sylhet' }).success).toBe(false);
+  });
+
+  // Step 26h: the footer links the written pages only, so a page the shop has no route for is a bug
+  it('refuses a text page the footer does not have', () => {
+    expect(publicShopSchema.safeParse({ ...SHOP, pages: ['refunds'] }).success).toBe(false);
   });
 });
 

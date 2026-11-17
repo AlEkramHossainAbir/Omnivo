@@ -4,6 +4,8 @@ import {
   SHOP_TEXT_PAGES,
   STOREFRONT_IMAGE_FAILURES,
   STOREFRONT_IMAGE_MAX_PIXELS,
+  STOREFRONT_COLLECTION_ITEMS_MAX,
+  STOREFRONT_HOME_BLOCKS_MAX,
   STOREFRONT_IMAGE_MIN_SIDE,
   STOREFRONT_SALE_KINDS,
   type ShopBadge,
@@ -86,7 +88,7 @@ export const storefrontSettings = pgTable(
     name: text('name').notNull(),
     language: text('language', { enum: LANGUAGE_CODES }).notNull().default('en'),
     // An uploaded picture (StorefrontImage's id, step 26g); its alt text is the shop's name. NULL:
-    // the Omnivo mark is drawn next to the name
+    // the Omnivo mark is drawn next to the name. Step 26h's Appearance page writes it
     logoImageId: uuid('logo_image_id'),
     // The two colours a tenant may change (CLAUDE.md → Storefront color tokens). The defaults are
     // Figma's. That they keep 4.5:1 between them is checked by step 26g's form, not here: a
@@ -160,6 +162,16 @@ export const storefrontSettings = pgTable(
       columns: [table.tenantId, table.defaultWarehouseId],
       foreignColumns: [warehouses.tenantId, warehouses.id],
     }),
+    // Step 26h: the logo is a photo of this workspace. The pair, so another workspace's photo id is
+    // refused here whatever the API checks first. No ON DELETE: a photo in use as the logo cannot
+    // be deleted (the later unused-photo cleanup must skip it anyway). NULL skips the check, as in
+    // every composite FK here. storefrontImages is defined further down; drizzle reads this list
+    // only after the whole file has run
+    foreignKey({
+      name: 'storefront_settings_logo_fk',
+      columns: [table.tenantId, table.logoImageId],
+      foreignColumns: [storefrontImages.tenantId, storefrontImages.id],
+    }),
   ],
 );
 
@@ -209,6 +221,10 @@ export const storefrontCategories = pgTable(
       'storefront_categories_slug_check',
       sql`${matches(table.slug, SLUG_PATTERN)} AND char_length(${table.slug}) <= 100`,
     ),
+    // Step 26h: /c/all is the shop's "All Products" page, so a category called "all" could never
+    // be opened, and a banner's "Links to: a category" could not tell the two apart. Its own check,
+    // not one more AND in the one above, so the API can answer storefront_slug_reserved by name
+    check('storefront_categories_slug_reserved_check', sql`${table.slug} <> 'all'`),
   ],
 );
 
@@ -458,7 +474,13 @@ export const storefrontCollectionItems = pgTable(
       columns: [table.tenantId, table.listingId],
       foreignColumns: [storefrontListings.tenantId, storefrontListings.id],
     }).onDelete('cascade'),
-    check('storefront_collection_items_position_check', sql`${table.position} >= 1`),
+    // Step 26h: at most 24 listings in a row (the public API shows no more). The positions are
+    // 1, 2, 3… with no gaps (a save writes them all) and unique, so a cap on the position is a cap on
+    // the count, which a CHECK cannot count by itself
+    check(
+      'storefront_collection_items_position_check',
+      sql`${table.position} BETWEEN 1 AND ${sql.raw(String(STOREFRONT_COLLECTION_ITEMS_MAX))}`,
+    ),
   ],
 );
 
@@ -503,7 +525,11 @@ export const storefrontHomeBlocks = pgTable(
       'storefront_home_blocks_one_check',
       sql`num_nonnulls(${table.bannerId}, ${table.collectionId}) = 1`,
     ),
-    check('storefront_home_blocks_position_check', sql`${table.position} >= 1`),
+    // Step 26h: at most 12 blocks on the home page, the same way as the collection's 24 above
+    check(
+      'storefront_home_blocks_position_check',
+      sql`${table.position} BETWEEN 1 AND ${sql.raw(String(STOREFRONT_HOME_BLOCKS_MAX))}`,
+    ),
   ],
 );
 
@@ -560,6 +586,9 @@ export const storefrontImages = pgTable(
     processedAt: timestamp('processed_at', { withTimezone: true }),
   },
   (table) => [
+    // Step 26h: the target of the logo's FK in storefront_settings. A composite FK needs a unique
+    // index on exactly its columns; the primary key on id alone is not one
+    uniqueIndex('storefront_images_tenant_id_idx').on(table.tenantId, table.id),
     // The photo is this workspace's attachment. The pair, not the id alone: another workspace's
     // attachment id is refused here too, whatever the API checks first. CASCADE: the row only
     // describes its attachment, so the later unused-photo cleanup deletes the attachment alone

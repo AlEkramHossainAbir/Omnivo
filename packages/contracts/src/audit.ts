@@ -267,6 +267,19 @@ export const AUDIT_ACTIONS = [
   'storefront_listing.published',
   'storefront_listing.unpublished',
   'storefront_listing.deleted',
+  // Step 26h. The logo and colors, the home page's order and the text pages belong to the shop
+  // itself (entity = storefront, entityId = tenant id; a page's slug is in the changes): a page
+  // has no id of its own. The hero is a banner (its changes say kind: hero)
+  'storefront.theme_updated',
+  'storefront.home_moved',
+  'storefront.page_saved',
+  'storefront.page_deleted',
+  'storefront_banner.created',
+  'storefront_banner.updated',
+  'storefront_banner.deleted',
+  'storefront_collection.created',
+  'storefront_collection.updated',
+  'storefront_collection.deleted',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -328,6 +341,8 @@ export const AUDIT_ENTITY_TYPES = [
   'storefront',
   'storefront_category',
   'storefront_listing',
+  'storefront_banner',
+  'storefront_collection',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

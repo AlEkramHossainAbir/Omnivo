@@ -1,5 +1,3 @@
-import { crc32, deflateSync } from 'node:zlib';
-
 import type { Page } from '@playwright/test';
 
 import {
@@ -9,6 +7,7 @@ import {
   listItem,
   openFromNav,
   pinAnswered,
+  png,
   test,
   toastShown,
   waitForCopy,
@@ -18,36 +17,6 @@ import {
 // an open shop, Rahman Fashion: Men (Polo shirts, T-shirts), Women (empty) and Kids, two navy polo
 // shirts and a T-shirt in the shop, a white polo shirt as a draft with no photo, and two kids'
 // styles with no stock. The pharma workspace has no shop yet.
-
-// A real PNG of one grey colour, for the photo upload. The mock decodes it in the browser like the
-// image job does with sharp, so its size decides: 200 pixels or more on each side is a photo the
-// shop can use, less is "too small". Built here so the test needs no file on disk
-function png(width: number, height: number): Buffer {
-  const chunk = (type: string, body: Buffer) => {
-    const length = Buffer.alloc(4);
-    length.writeUInt32BE(body.length);
-    const name = Buffer.from(type, 'ascii');
-    const check = Buffer.alloc(4);
-    check.writeUInt32BE(crc32(Buffer.concat([name, body])));
-    return Buffer.concat([length, name, body, check]);
-  };
-  const header = Buffer.alloc(13);
-  header.writeUInt32BE(width, 0);
-  header.writeUInt32BE(height, 4);
-  // 8 bits per channel, RGB; compression, filter and interlace stay 0
-  header[8] = 8;
-  header[9] = 2;
-  // Each row starts with its filter byte (0 = none), then 3 bytes a pixel
-  const row = Buffer.alloc(1 + width * 3, 0xd0);
-  row[0] = 0;
-  const pixels = Buffer.concat(Array.from({ length: height }, () => row));
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', header),
-    chunk('IDAT', deflateSync(pixels)),
-    chunk('IEND', Buffer.alloc(0)),
-  ]);
-}
 
 async function start(page: Page): Promise<void> {
   await page.goto('/');

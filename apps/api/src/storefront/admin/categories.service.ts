@@ -8,7 +8,11 @@ import { storefrontCategories, storefrontListings } from '@omnivo/db';
 import { and, asc, count, eq, isNull, max, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../../common/audit/audit.js';
-import { isForeignKeyViolation, isUniqueViolation } from '../../common/db/pg-errors.js';
+import {
+  isCheckViolation,
+  isForeignKeyViolation,
+  isUniqueViolation,
+} from '../../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../../common/http/app-error.js';
 import { currentPrincipal, getTenantId } from '../../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../../common/tenant/with-tenant.js';
@@ -47,10 +51,17 @@ function parentInvalid(): AppError {
   });
 }
 
-// The two unique indexes, by the box each belongs to
+// The two unique indexes, by the box each belongs to. Step 26h: and the slug the shop keeps for
+// itself. The contract refuses "all" before it gets here (storefront-admin.ts); the check
+// (26h.2) is for a request that went around it, and it says so on the box, not as a 500
 function uniqueError(error: unknown): AppError | null {
   if (isUniqueViolation(error, 'storefront_categories_slug_idx')) return slugTaken();
   if (isUniqueViolation(error, 'storefront_categories_sibling_name_idx')) return nameTaken();
+  if (isCheckViolation(error, 'storefront_categories_slug_reserved_check')) {
+    return new AppError(409, 'storefront_slug_reserved', 'The shop keeps this link for itself.', {
+      fieldErrors: { slug: ['storefront_slug_reserved'] },
+    });
+  }
   return null;
 }
 

@@ -54,7 +54,7 @@ import { checkVersion, diff, record, type WorkspaceData } from './workspace-data
 const BASE_DOMAIN = 'localhost';
 const SHOP_PORT = 4321;
 
-function shopUrl(subdomain: string, path = ''): string {
+export function shopUrl(subdomain: string, path = ''): string {
   return `http://${subdomain}.${BASE_DOMAIN}:${String(SHOP_PORT)}${path}`;
 }
 
@@ -66,7 +66,7 @@ const OTHER_SHOPS: ReadonlySet<string> = new Set(['nirvor']);
 // seconds, so its first question after the upload already finds the photo ready
 const MOCK_PREPARE_MS = 1_500;
 
-function now(): string {
+export function now(): string {
   return new Date().toISOString();
 }
 
@@ -74,15 +74,15 @@ function money(value: string): string {
   return addMoney(value, '0');
 }
 
-function fieldProblem(code: ErrorCode, field: string): MockProblem {
+export function fieldProblem(code: ErrorCode, field: string): MockProblem {
   return new MockProblem(409, code, { [field]: [code] });
 }
 
-function notSetUp(): MockProblem {
+export function notSetUp(): MockProblem {
   return new MockProblem(409, 'storefront_not_set_up');
 }
 
-function notFound(): MockProblem {
+export function notFound(): MockProblem {
   return new MockProblem(404, 'not_found');
 }
 
@@ -96,8 +96,9 @@ function activeWarehouse(data: WorkspaceData, id: string | null): boolean {
   );
 }
 
-// A published listing the shop would show: its product and variant not archived
-function showable(data: WorkspaceData, listing: MockListing): boolean {
+// A published listing the shop would show: its product and variant not archived. Step 26h: a
+// collection's "in the shop" count uses it too
+export function showable(data: WorkspaceData, listing: MockListing): boolean {
   if (listing.publishedAt === null) return false;
   const found = findVariant(data, listing.variantId);
   return found?.product.archivedAt === null && found.variant.archivedAt === null;
@@ -553,13 +554,14 @@ export function uploadState(data: WorkspaceData, id: string): StorefrontUpload {
   return stateOf(photoOf(data, id));
 }
 
-function isReady(data: WorkspaceData, id: string): boolean {
+export function isReady(data: WorkspaceData, id: string): boolean {
   const photo = data.storefront.photos.get(id);
   return photo !== undefined && stateOf(photo).status === 'ready';
 }
 
-// A saved photo as the editor shows it: the file's address. A seeded photo has a drawn one
-function viewOf(data: WorkspaceData, image: StorefrontImage): StorefrontImageView {
+// A saved photo as the editor shows it: the file's address. A seeded photo has a drawn one. Step 26h:
+// a banner's pictures and the logo too
+export function viewOf(data: WorkspaceData, image: StorefrontImage): StorefrontImageView {
   return { ...image, url: data.storefront.photos.get(image.id)?.url ?? PLACEHOLDER };
 }
 
@@ -594,7 +596,7 @@ function categoryName(data: WorkspaceData, id: string): string {
   return data.storefront.categories.find((category) => category.id === id)?.name ?? '';
 }
 
-function toSummary(data: WorkspaceData, listing: MockListing): StorefrontListingSummary {
+export function toSummary(data: WorkspaceData, listing: MockListing): StorefrontListingSummary {
   const [first] = listing.images;
   const regular = regularOf(data, listing);
   const priced = regular === null ? null : listingPricing(regular, listing.sale, new Date());
@@ -956,6 +958,11 @@ export function removeListing(data: WorkspaceData, id: string, version: number):
   const before = findListing(data, id);
   checkVersion(before.version, version);
   data.storefront.listings = data.storefront.listings.filter((listing) => listing.id !== id);
+  // Step 26h: it leaves every collection too (storefront_collection_items' FK cascades). The
+  // collection's version stays: the database changes no collection row
+  for (const collection of data.storefront.collections) {
+    collection.listingIds = collection.listingIds.filter((listingId) => listingId !== id);
+  }
   record(
     data,
     'storefront_listing.deleted',

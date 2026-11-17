@@ -5,6 +5,7 @@ import {
   renderSections,
   sectionsSummary,
   SHOP_GALLERY_MAX,
+  SHOP_TEXT_PAGES,
   shopDeliveryZoneSchema,
   type PublicListingParams,
   type PublicShop,
@@ -81,6 +82,12 @@ export class PublicStorefrontService {
         .select({ timezone: tenantSettings.timezone })
         .from(tenantSettings)
         .where(eq(tenantSettings.tenantId, shop.tenantId));
+      // Step 26h: the pages the tenant has written, so the footer links only those
+      const written = await tx
+        .select({ slug: storefrontPages.slug })
+        .from(storefrontPages)
+        .where(eq(storefrontPages.tenantId, shop.tenantId));
+      const slugs = new Set(written.map((page) => page.slug));
       return {
         name: settings.name,
         // The logo's alt text is the shop's name: it is what the logo says
@@ -100,6 +107,8 @@ export class PublicStorefrontService {
           x: settings.xUrl,
           linkedin: settings.linkedinUrl,
         },
+        // In the footer's order (SHOP_TEXT_PAGES), not the table's: rows come back in any order
+        pages: SHOP_TEXT_PAGES.filter((slug) => slugs.has(slug)),
       };
     });
   }

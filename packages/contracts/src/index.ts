@@ -64,6 +64,7 @@ export * from './stock-transfers.js';
 export * from './storefront.js';
 export * from './storefront-content.js';
 export * from './storefront-admin.js';
+export * from './storefront-appearance.js';
 export * from './supplier-payments.js';
 export * from './supplier-refunds.js';
 export * from './suppliers.js';

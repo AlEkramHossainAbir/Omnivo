@@ -4,6 +4,7 @@ import {
   Clock01Icon,
   FileEditIcon,
   LinkSquare02Icon,
+  MinusSignCircleIcon,
   Store04Icon,
   WifiDisconnected02Icon,
 } from '@hugeicons/core-free-icons';
@@ -43,9 +44,13 @@ export function ShopLine() {
 }
 
 // The shop in a new tab. A link that looks like the secondary button: it goes to another site, so
-// it is an <a> (middle-click, "copy link"), never a button with window.open
-const LINK_BUTTON =
+// it is an <a> (middle-click, "copy link"), never a button with window.open.
+// Step 26h: exported, with a small one, for the router's links that look like buttons ("Edit hero
+// banner", "Add collection"): they go to another page, so they are links too
+export const LINK_BUTTON =
   'inline-flex min-h-[42px] items-center justify-center gap-2 rounded-control border border-line-strong bg-surface px-4 text-body-sm font-medium whitespace-nowrap text-ink shadow-sm transition-colors duration-150 hover:bg-subtle';
+export const LINK_BUTTON_SM =
+  'inline-flex min-h-9 items-center justify-center gap-2 rounded-control border border-line-strong bg-surface px-3 text-body-sm font-medium whitespace-nowrap text-ink shadow-sm transition-colors duration-150 hover:bg-subtle';
 
 export function ViewShopLink({
   href,
@@ -74,6 +79,20 @@ export function ListingStatusPill({ status }: { status: StorefrontListingStatus 
   ) : (
     <Pill tone="neutral" icon={FileEditIcon}>
       {t('storefront.statuses.draft')}
+    </Pill>
+  );
+}
+
+// Step 26h: a text page in the footer or not (Shop pages and the page's editor)
+export function PageStatusPill({ written }: { written: boolean }) {
+  const { t } = useLocale();
+  return written ? (
+    <Pill tone="good" icon={CheckmarkCircle02Icon}>
+      {t('storefront.pages.written')}
+    </Pill>
+  ) : (
+    <Pill tone="neutral" icon={MinusSignCircleIcon}>
+      {t('storefront.pages.notWritten')}
     </Pill>
   );
 }

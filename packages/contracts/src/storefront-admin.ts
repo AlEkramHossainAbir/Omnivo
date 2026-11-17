@@ -302,12 +302,26 @@ const categoryFieldsSchema = z.object({
   slug: slugInputSchema,
 });
 
+// Step 26h: /c/all is the shop's "All Products" page, which the shop answers before it looks for a
+// category, so a category with the slug "all" could never be opened. Checked after withSlug, so a
+// category named "All" with an empty slug box is refused too, on the slug box that would fix it
+function notAllProducts(value: { slug: string }, ctx: z.RefinementCtx): void {
+  if (value.slug === 'all') {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['slug'],
+      message: errorCode('storefront_slug_reserved'),
+    });
+  }
+}
+
 // A new category goes last among its siblings; a new parent moves it, with everything under it, to
 // the end of that parent's list
-export const createStorefrontCategoryInputSchema = withSlug(categoryFieldsSchema);
+export const createStorefrontCategoryInputSchema =
+  withSlug(categoryFieldsSchema).superRefine(notAllProducts);
 export const updateStorefrontCategoryInputSchema = withSlug(
   categoryFieldsSchema.extend({ version: versionSchema }),
-);
+).superRefine(notAllProducts);
 export type CreateStorefrontCategoryInput = z.infer<typeof createStorefrontCategoryInputSchema>;
 export type UpdateStorefrontCategoryInput = z.infer<typeof updateStorefrontCategoryInputSchema>;
 export type StorefrontCategoryFormValues = z.input<typeof createStorefrontCategoryInputSchema>;

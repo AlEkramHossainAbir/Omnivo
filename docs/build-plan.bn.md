@@ -440,7 +440,7 @@ Partly returned / Returned, bill-এ Partly debited / Debited।
 `apps/shop` (Astro, on-demand render + CDN cache) — **একটাই ডিপ্লয়মেন্ট সব টেন্যান্টের শপ সার্ভ করবে**, `Host` হেডার দিয়ে টেন্যান্ট চেনা।
 পাবলিক API `/public/v1/*` — JWT নেই, তাই আলাদা **read-only DB role** (`omnivo_public`) + rate limit + WAF (ধাপ ২৬f; rate limit এখন edge-এ, API-তে ধাপ ২৭-এর অর্ডার আর OTP-র সাথে)।
 ERP অ্যাপে Storefront মেনু, পারমিশন `storefront.manage` (ধাপ ২৬g): Shop settings (ঠিকানা, যোগাযোগ, warehouse, delivery zone, ফ্রি ডেলিভারি, ন্যূনতম অর্ডার, পেমেন্ট) আর চেকলিস্ট পূরণ হলে "Open the shop", Shop categories, Catalog আর লিস্টিং এডিটর (ছবি, দাম ও অফার, বর্ণনা, SEO, Show in the shop)। ছবি presigned PUT-এ private ফোল্ডারে, তারপর outbox → worker-এর sharp জব পাবলিক `storefront/`-এ তিনটা WebP বানায়।
-Appearance (লোগো, রং, hero, ব্যানার, কালেকশন, হোমপেজের ক্রম), টেক্সট পেজ আর ছবি সহ dev seed (ধাপ ২৬h)।
+Shop appearance আর Shop pages (ধাপ ২৬h): লোগো আর দুটো রং (কনট্রাস্ট যাচাই ফর্মে আর API-তে), hero নিজের পেজে লাইভ প্রিভিউ সহ, সর্বোচ্চ ৬টা picture banner আর ৮টা কালেকশন (২৪টা করে লিস্টিং) হোমপেজে ১২টা ব্লক পর্যন্ত, Move up/down; চারটা টেক্সট পেজ লিস্টিং-এর section এডিটরে, আর শপের ফুটার শুধু লেখা পেজের লিংক দেয়। `pnpm seed:shop` চালু dev stack-এ API দিয়ে ছবি সহ একটা পুরো demo শপ বানায়।
 **দেখবেন:** `acme.localhost:4321`-এ আসল শপ, ERP-র প্রোডাক্ট দেখাচ্ছে।
 
 #### ধাপ ২৭: চেকআউট ও অর্ডার · ~২.৫ সপ্তাহ
@@ -572,5 +572,5 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [x] **ধাপ ২১** — Reports 🏁 MVP
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
-- [ ] **ধাপ ২৬** — শপের ভিত্তি (২৬a–২৬g শেষ: শপের সব স্ক্রিন, পাবলিক API, ERP-র Catalog/Categories/Settings; ২৬h বাকি: Appearance, Pages, seed)
+- [x] **ধাপ ২৬** — শপের ভিত্তি (২৬a–২৬h: শপের সব স্ক্রিন, পাবলিক API, ERP-র Storefront মেনু, Appearance, Pages, seed; স্টেজিং এখনো মক শপে, wildcard হোস্ট বাকি)
 - [ ] **ধাপ ২৭–২৮** — চেকআউট ও অর্ডার, কুরিয়ার অটোমেশন

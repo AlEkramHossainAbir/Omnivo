@@ -48,11 +48,11 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Controller, type Path, useForm, useWatch } from 'react-hook-form';
+import { Controller, type Path, useFieldArray, useForm, useWatch } from 'react-hook-form';
 
 import { DocumentNotice } from '../components/document-notice';
 import { PhotosCard } from '../components/storefront-photos';
-import { DescriptionCard } from '../components/storefront-sections';
+import { SectionsCard } from '../components/storefront-sections';
 import {
   ListingStatusPill,
   SaveBar,
@@ -63,6 +63,7 @@ import {
 } from '../components/storefront-parts';
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
+import { rowPath } from '../lib/products';
 import { warehousesQuery } from '../lib/queries';
 import {
   listingFormSchema,
@@ -289,6 +290,8 @@ function ListingEditor({ listing }: { listing: StorefrontListing }) {
     },
   });
 
+  // The description's sections: the shared editor gets the rows and the boxes (decision 33)
+  const sectionArray = useFieldArray({ control, name: 'descriptionSections' });
   const images = watch('images');
   const saleKind = watch('sale.kind');
   const name = watch('name');
@@ -580,7 +583,29 @@ function ListingEditor({ listing }: { listing: StorefrontListing }) {
             </div>
           </Card>
 
-          <DescriptionCard control={control} register={register} errors={errors} />
+          <SectionsCard
+            title={t('storefront.listing.descriptionTitle')}
+            subtitle={t('storefront.listing.descriptionHint')}
+            headingPlaceholder={t('storefront.listing.headingPlaceholder')}
+            bodyPlaceholder={t('storefront.listing.bodyPlaceholder')}
+            emptyText={t('storefront.listing.noSections')}
+            previewCaption={t('storefront.listing.previewCaption')}
+            rows={sectionArray.fields.map((field, index) => ({
+              key: field.id,
+              heading: sections[index]?.heading ?? '',
+              body: sections[index]?.body ?? '',
+            }))}
+            field={(index, part) => register(rowPath('descriptionSections', index, part))}
+            error={(index, part) => errors.descriptionSections?.[index]?.[part]?.message}
+            listError={
+              errors.descriptionSections?.root?.message ?? errors.descriptionSections?.message
+            }
+            onAdd={() => {
+              sectionArray.append({ heading: '', body: '' });
+            }}
+            onRemove={sectionArray.remove}
+            onSwap={sectionArray.swap}
+          />
 
           <Card>
             <CardHeader

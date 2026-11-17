@@ -190,6 +190,24 @@ import {
   uploadState,
 } from './storefront-data';
 import {
+  appearanceOf,
+  collectionOf,
+  createBanner,
+  createCollection,
+  deleteBanner,
+  deleteCollection,
+  deleteHero,
+  deletePage,
+  moveBlock,
+  pageList,
+  saveHero,
+  savePage,
+  textPageOf,
+  updateBanner,
+  updateCollection,
+  updateTheme,
+} from './storefront-appearance-data';
+import {
   findProduct,
   IMPORT_DELAY_MS,
   listProducts,
@@ -5841,6 +5859,171 @@ export const handlers = [
       const { version } = readQuery(routes.storefront.deleteListing.query, request);
       removeListing(data, id, version);
       return reply(routes.storefront.deleteListing, undefined);
+    }),
+  ),
+
+  // --- Step 26h: Shop appearance and Shop pages (storefront-appearance-data.ts) ----------------
+  // The pictures go up through 26g's upload routes above; these only name them
+
+  mock(
+    routes.storefrontAppearance.getAppearance,
+    guarded(async () => {
+      const data = shopData();
+      await delay();
+      return reply(routes.storefrontAppearance.getAppearance, appearanceOf(data));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.updateTheme,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontAppearance.updateTheme.body, request);
+      return reply(
+        routes.storefrontAppearance.updateTheme,
+        updateTheme(data, workspace.tenantId, body),
+      );
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.saveHero,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontAppearance.saveHero.body, request);
+      return reply(routes.storefrontAppearance.saveHero, saveHero(data, body));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.deleteHero,
+    guarded(({ request }) => {
+      const data = shopData();
+      const { version } = readQuery(routes.storefrontAppearance.deleteHero.query, request);
+      deleteHero(data, version);
+      return reply(routes.storefrontAppearance.deleteHero, undefined);
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.createBanner,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontAppearance.createBanner.body, request);
+      return reply(routes.storefrontAppearance.createBanner, createBanner(data, body));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.updateBanner,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontAppearance.updateBanner.params.parse(params);
+      const body = await readBody(routes.storefrontAppearance.updateBanner.body, request);
+      return reply(routes.storefrontAppearance.updateBanner, updateBanner(data, id, body));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.deleteBanner,
+    guarded(({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontAppearance.deleteBanner.params.parse(params);
+      const { version } = readQuery(routes.storefrontAppearance.deleteBanner.query, request);
+      deleteBanner(data, id, version);
+      return reply(routes.storefrontAppearance.deleteBanner, undefined);
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.getCollection,
+    guarded(async ({ params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontAppearance.getCollection.params.parse(params);
+      await delay();
+      return reply(routes.storefrontAppearance.getCollection, collectionOf(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.createCollection,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontAppearance.createCollection.body, request);
+      return reply(routes.storefrontAppearance.createCollection, createCollection(data, body));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.updateCollection,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontAppearance.updateCollection.params.parse(params);
+      const body = await readBody(routes.storefrontAppearance.updateCollection.body, request);
+      return reply(routes.storefrontAppearance.updateCollection, updateCollection(data, id, body));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.deleteCollection,
+    guarded(({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontAppearance.deleteCollection.params.parse(params);
+      const { version } = readQuery(routes.storefrontAppearance.deleteCollection.query, request);
+      deleteCollection(data, id, version);
+      return reply(routes.storefrontAppearance.deleteCollection, undefined);
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.moveHomeBlock,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontAppearance.moveHomeBlock.body, request);
+      return reply(routes.storefrontAppearance.moveHomeBlock, moveBlock(data, body));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.listPages,
+    guarded(async () => {
+      const data = shopData();
+      await delay();
+      return reply(routes.storefrontAppearance.listPages, pageList(data));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.getPage,
+    guarded(async ({ params }) => {
+      const data = shopData();
+      const { slug } = routes.storefrontAppearance.getPage.params.parse(params);
+      await delay();
+      return reply(routes.storefrontAppearance.getPage, textPageOf(data, slug));
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.savePage,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { slug } = routes.storefrontAppearance.savePage.params.parse(params);
+      const body = await readBody(routes.storefrontAppearance.savePage.body, request);
+      return reply(
+        routes.storefrontAppearance.savePage,
+        savePage(data, workspace.tenantId, slug, body),
+      );
+    }),
+  ),
+
+  mock(
+    routes.storefrontAppearance.deletePage,
+    guarded(({ request, params }) => {
+      const data = shopData();
+      const { slug } = routes.storefrontAppearance.deletePage.params.parse(params);
+      const { version } = readQuery(routes.storefrontAppearance.deletePage.query, request);
+      deletePage(data, workspace.tenantId, slug, version);
+      return reply(routes.storefrontAppearance.deletePage, undefined);
     }),
   ),
 ];

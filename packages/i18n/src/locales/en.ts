@@ -154,6 +154,9 @@ export const en = {
     storefrontCatalog: 'Catalog',
     storefrontCategories: 'Shop categories',
     storefrontSettings: 'Shop settings',
+    // Step 26h: the group's last two items, "Shop" for the same reason (decision 32)
+    storefrontAppearance: 'Shop appearance',
+    storefrontPages: 'Shop pages',
   },
   auth: {
     workspace: 'Workspace',
@@ -5234,6 +5237,71 @@ export const en = {
     // Step 26g.6: the save bar under a long form, while it has changes (the mockup's bar)
     unsaved: 'Changes not saved yet',
     discard: 'Discard changes',
+    // Step 26h: the section editor, shared by a listing's description and the text pages (decision
+    // 33). Moved here from `listing`; each page keeps its own title, placeholders and caption
+    sections: {
+      number: 'Section {{number}}',
+      heading: 'Heading',
+      body: 'Text',
+      bodyHint:
+        'A blank line starts a new paragraph. Lines that start with - make a list, and 1. a numbered one. **Bold** and [a link](https://…) work too.',
+      add: 'Add section',
+      remove: 'Remove section {{number}}',
+      moveUp: 'Move section {{number}} up',
+      moveDown: 'Move section {{number}} down',
+      showPreview: 'Preview',
+      hidePreview: 'Hide preview',
+    },
+    // Step 26h: one picture box of the logo, the hero or a picture banner (decision 34: a banner
+    // is a picture, often with its words in it; a listing keeps its "photos")
+    picture: {
+      upload: 'Upload picture',
+      replace: 'Replace picture',
+      remove: 'Remove picture',
+      uploading: 'Uploading…',
+      preparing: 'Preparing the picture…',
+      // A picture the job could not use: the error words say why; this empties the box
+      drop: 'Remove it',
+      alt: 'What the picture shows',
+      fileHint: 'JPEG, PNG or WebP, under 8 MB, at least 200 pixels on each side.',
+      // 26h.6: under an empty box after a save was tried (the schema refuses an empty id)
+      missing: 'Upload a picture.',
+    },
+    // Step 26h: a color box and its contrast line (decisions 3 and 11)
+    color: {
+      // name = the box's label, for the palette button's accessible name
+      palette: 'Pick {{name}} on a palette',
+      // ratio = formatContrast() ("4.4:1", cut, not rounded), min = "4.5:1" or "3:1"
+      ratio: '{{ratio}}, needs {{min}}',
+      ok: 'Easy to read',
+      low: 'Too low',
+    },
+    // Step 26h: the "Links to" select of the hero and a picture banner (decision 4)
+    link: {
+      label: 'Links to',
+      kinds: {
+        category: 'A shop category',
+        listing: 'A product',
+        offers: 'Products on offer',
+        all: 'All products',
+        other: 'Another address',
+      },
+      category: 'Shop category',
+      categoryPlaceholder: 'Pick a category',
+      listing: 'Product',
+      listingPlaceholder: 'Pick a product',
+      searchLabel: 'Search the catalog',
+      noMatch: 'No listing matches.',
+      href: 'Address',
+      hrefPlaceholder: '/pages/about',
+      hrefHint: 'A page of your shop, starting with /, or a whole link starting with https://.',
+      // href = the address the choice makes, under the select: "Goes to /c/skin-care"
+      goesTo: 'Goes to {{href}}',
+      // The saved address names a category or product that is gone (renamed or deleted, decision 4)
+      gone: 'Nothing in the shop has this address now, so shoppers get “page not found”. Pick where it goes again.',
+      // A draft listing has no page in the shop yet
+      draft: 'This product is a draft, so the link shows “page not found” until it is in the shop.',
+    },
     settings: {
       title: 'Shop settings',
       description: 'Your online shop’s address, contact details, delivery and payment',
@@ -5519,20 +5587,10 @@ export const en = {
       descriptionTitle: 'Description',
       descriptionHint:
         'Sections under the photos on the product page, like Benefits and How to use.',
-      sectionNumber: 'Section {{number}}',
-      heading: 'Heading',
+      // Step 26h: the editor's own words moved to `sections`; these four are the listing's
       headingPlaceholder: 'Benefits',
-      body: 'Text',
       bodyPlaceholder: '- Clears pimples\n- Gentle enough for every day',
-      bodyHint:
-        'A blank line starts a new paragraph. Lines that start with - make a list, and 1. a numbered one. **Bold** and [a link](https://…) work too.',
-      addSection: 'Add section',
-      removeSection: 'Remove section {{number}}',
-      moveSectionUp: 'Move section {{number}} up',
-      moveSectionDown: 'Move section {{number}} down',
       noSections: 'No description. The product page then shows the photos and the price only.',
-      showPreview: 'Preview',
-      hidePreview: 'Hide preview',
       previewCaption: 'As the product page shows it',
       seoTitle: 'Search engines',
       seoHint:
@@ -5543,6 +5601,233 @@ export const en = {
       seoCount: '{{count}} of {{max}} characters',
       notFound: "This listing doesn't exist.",
       loadFailed: "Couldn't load the listing. Refresh the page to try again.",
+    },
+    // Step 26h: /storefront/appearance (decision 2), three cards
+    appearance: {
+      title: 'Shop appearance',
+      description: 'Your shop’s logo, colors, hero banner and home page',
+      // Every route needs the shop's settings first (storefront_not_set_up)
+      notSetUpTitle: 'Set up the shop first',
+      notSetUpBody: 'Save the shop’s address, contact and delivery details, then give it its look.',
+      goToSettings: 'Go to shop settings',
+      loadFailed: "Couldn't load the shop’s appearance. Refresh the page to try again.",
+      theme: {
+        title: 'Logo and colors',
+        description: 'On every page of the shop',
+        logo: 'Logo',
+        logoHint:
+          'In the header and the footer, next to your shop’s name. A square picture with a plain background works best.',
+        noLogo: 'No logo. The shop shows the Omnivo mark.',
+        // name = the shop's name: the logo's alt text, here and in the shop
+        logoAlt: '{{name}} logo',
+        brand: 'Brand color',
+        brandHint: 'The header, titles, product names and labels.',
+        accent: 'Accent color',
+        accentHint: 'Add to cart, the search button, and words on the brand color.',
+        contrastCream: 'Brand color on light backgrounds',
+        contrastAccent: 'Brand and accent together',
+        reset: 'Use the default colors',
+        preview: 'In the shop',
+        // The preview's own words are the shop's (shop.header, shop.card), copied: the ERP app
+        // never loads the shop's words
+        previewSearch: 'Search for Cosmetics, Food',
+        previewChip: 'All Categories',
+        previewAddToCart: 'Add to cart',
+        saved: 'Logo and colors saved',
+      },
+      hero: {
+        title: 'Hero banner',
+        description: 'The big banner at the top of the home page',
+        none: 'No hero banner. The home page starts with its products.',
+        add: 'Add hero banner',
+        edit: 'Edit hero banner',
+        newTitle: 'Add the hero banner',
+        editTitle: 'Edit the hero banner',
+        headline: 'Headline',
+        headlinePlaceholder: 'Get 10% cash-back on shopping ৳150',
+        headlineHint: 'White, on the panel. About three short lines fit on a computer.',
+        line: 'Line under the headline',
+        linePlaceholder: 'Shop your favorite brands and save big this season.',
+        lineHint: 'On phones only.',
+        eyebrow: 'Tag',
+        eyebrowPlaceholder: 'Exclusive offer',
+        eyebrowHint: 'The small pill at the top, on phones only.',
+        button: 'Button',
+        buttonPlaceholder: 'Get 10% cashback',
+        buttonHint: 'On computers. On phones the whole banner is the link.',
+        desktopImage: 'Picture for computers',
+        desktopImageHint:
+          'On the right of the panel, 280 pixels high. About 1,400 × 560 pixels looks sharp.',
+        phoneImage: 'Picture for phones',
+        phoneImageHint:
+          'Fills the banner behind the words, 220 pixels high. About 1,080 × 660 pixels looks sharp.',
+        altPlaceholder: 'Make-up and skin care products',
+        colorsTitle: 'Colors',
+        // 26h.6: the hero page's other cards (approved with the mockup) and its preview card
+        wordsTitle: 'Words',
+        picturesTitle: 'Pictures',
+        previewTitle: 'In the shop',
+        // The segmented control's name: "Preview on Computer / Phone"
+        previewLabel: 'Preview on',
+        background: 'Background',
+        backgroundHint: 'Behind the picture on computers.',
+        panel: 'Panel',
+        panelHint: 'Behind the white headline on computers.',
+        buttonColor: 'Button',
+        buttonText: 'Button’s words',
+        contrastButton: 'Button’s words on the button',
+        contrastPanel: 'White headline on the panel',
+        previewDesktop: 'Computer',
+        previewPhone: 'Phone',
+        saved: 'Hero banner saved',
+        delete: 'Delete hero banner',
+        confirmDelete: 'Delete the hero banner?',
+        deleteBody: 'The home page then starts with its products. You can add a new one later.',
+        deleted: 'Hero banner deleted',
+      },
+      // The blocks under the product grid (decision 2: every banner and collection is on it)
+      home: {
+        title: 'Home page',
+        description: 'The blocks under the product grid, from the top',
+        // count and max in the page's language
+        count: '{{count}} of {{max}} blocks',
+        fixed: 'The hero banner and the product grid always come first.',
+        addBanner: 'Add picture banner',
+        addCollection: 'Add collection',
+        // Why an Add button is disabled (decision 6)
+        bannersFull: 'The home page has {{max}} picture banners, the most it can have.',
+        collectionsFull: 'The home page has {{max}} collections, the most it can have.',
+        full: 'The home page has {{max}} blocks, the most it can have. Delete one to add another.',
+        banner: 'Picture banner',
+        collection: 'Collection',
+        // A collection's line: all of it in the shop, some of it, or none (the shop hides an
+        // empty row)
+        products_one: '{{formatted}} product',
+        products_other: '{{formatted}} products',
+        partlyPublished: '{{published}} of {{total}} in the shop',
+        nonePublished: 'None in the shop now, so the row is hidden',
+        moveUpLabel: 'Move {{name}} up',
+        moveDownLabel: 'Move {{name}} down',
+        actions: 'Actions for {{name}}',
+        edit: 'Edit',
+        delete: 'Delete',
+        emptyTitle: 'Nothing under the product grid yet',
+        emptyBody:
+          'Add a picture banner for a sale, or a collection like Hot & Trending Right Now.',
+      },
+      // The picture banner's dialog
+      banner: {
+        newTitle: 'Add a picture banner',
+        editTitle: 'Edit picture banner',
+        description: 'A picture with its words in it, like a sale, across the home page.',
+        desktopImageHint: 'Shown 1,280 × 280 pixels. Upload 2,560 × 560 for sharp screens.',
+        phoneImageHint: 'Shown about 360 × 140 pixels. Upload 1,080 × 420.',
+        altHint:
+          'The banner’s words are in the picture, so type them here for shoppers who can’t see it.',
+        altPlaceholder: 'Himalaya mega sale, up to 30% off',
+        submit: 'Add banner',
+        added: 'Picture banner added at the end of the home page',
+        saved: 'Picture banner saved',
+        confirmDelete: 'Delete this picture banner?',
+        deleteBody: 'It leaves the home page, with its link and pictures.',
+        deleted: 'Picture banner deleted',
+        // A banner's name in the list and in labels: the words of its computer picture
+        name: 'Picture banner: {{alt}}',
+      },
+    },
+    // Step 26h: a collection's page (/storefront/collections/$id, and .../new)
+    collection: {
+      back: 'Shop appearance',
+      newTitle: 'New collection',
+      description: 'A row of products you pick, on the home page',
+      title: 'Title',
+      titlePlaceholder: 'Hot & Trending Right Now',
+      fire: 'Show a flame after the title',
+      products: 'Products',
+      // max = STOREFRONT_COLLECTION_ITEMS_MAX
+      productsHint: 'Up to {{max}}, in the order the row shows them.',
+      count: '{{count}} of {{max}}',
+      addLabel: 'Product to add',
+      addPlaceholder: 'Pick a product',
+      searchLabel: 'Search the catalog',
+      noMatch: 'No listing matches. Products in the collection already are not listed.',
+      full: 'The collection has {{max}} products, the most a row shows.',
+      none: 'No products yet. Add the ones this row shows, like your best sellers.',
+      remove: 'Remove {{name}}',
+      moveUpLabel: 'Move {{name}} up',
+      moveDownLabel: 'Move {{name}} down',
+      // A draft waits in the collection and shows once it is in the shop
+      draftHint: 'Drafts stay here and show in the row once they are in the shop.',
+      hiddenNotice:
+        'None of these products is in the shop now, so the home page hides this row until one is.',
+      create: 'Add collection',
+      created: '{{title}} added at the end of the home page',
+      saved: '{{title}} saved',
+      delete: 'Delete collection',
+      confirmDelete: 'Delete {{title}}?',
+      deleteBody: 'It leaves the home page. The products stay in the shop.',
+      deleted: '{{title}} deleted',
+      notFound: "This collection doesn't exist.",
+      loadFailed: "Couldn't load the collection. Refresh the page to try again.",
+    },
+    // Step 26h: the four text pages (decision 5)
+    pages: {
+      title: 'Shop pages',
+      description: 'The four pages linked from the shop’s footer',
+      notSetUpTitle: 'Set up the shop first',
+      notSetUpBody: 'Save the shop’s address, contact and delivery details, then write its pages.',
+      goToSettings: 'Go to shop settings',
+      // The footer's own words (shop.footer), copied
+      names: {
+        privacy: 'Privacy Policy',
+        terms: 'Terms & Condition',
+        about: 'About Us',
+        contact: 'Contact Us',
+      },
+      // What each page is for, under its name in the list
+      hints: {
+        privacy: 'How you use the names, phone numbers and addresses shoppers give you.',
+        terms: 'Your rules for delivery, returns, refunds and payment.',
+        about: 'Who you are and what you sell.',
+        contact: 'Your hotline, address and hours. The page has no form.',
+      },
+      // 26h.6: sections and the hidden name of the Edit / Write column
+      columns: {
+        page: 'Page',
+        status: 'Status',
+        sections: 'Sections',
+        updated: 'Changed',
+        actions: 'Actions',
+      },
+      written: 'In the footer',
+      notWritten: 'Not written',
+      sections_one: '{{formatted}} section',
+      sections_other: '{{formatted}} sections',
+      write: 'Write',
+      edit: 'Edit',
+      loadFailed: "Couldn't load the shop’s pages. Refresh the page to try again.",
+    },
+    // Step 26h: one text page's editor (/storefront/pages/$slug)
+    page: {
+      back: 'Shop pages',
+      notWrittenNotice:
+        'This page is not written yet. The footer leaves its link out, and its address shows “page not found”.',
+      sectionsTitle: 'Sections',
+      sectionsHint: 'Each with a heading and its text, like Delivery and Returns.',
+      headingPlaceholder: 'Returns',
+      bodyPlaceholder: '- Unopened items come back within 7 days\n- Keep the order number',
+      noSections: 'No sections yet. Add the first one, then save to put the page in the shop.',
+      previewCaption: 'As the shop shows it',
+      viewPage: 'View page',
+      // name = the page's name (pages.names)
+      created: '{{name}} is in the shop',
+      saved: '{{name}} saved',
+      delete: 'Delete page',
+      confirmDelete: 'Delete {{name}}?',
+      deleteBody:
+        'The footer drops its link, and its address shows “page not found”. You can write it again later.',
+      deleted: '{{name}} deleted',
+      loadFailed: "Couldn't load the page. Refresh the page to try again.",
     },
   },
   approvals: {
@@ -6102,7 +6387,8 @@ export const en = {
     },
     // Step 26g
     storefront: {
-      manage: 'Run the online shop: its settings, categories, listings and photos, and open it',
+      manage:
+        'Run the online shop: its settings, categories, listings and photos, its look and pages, and open it',
     },
   },
   invite: {
@@ -6182,6 +6468,8 @@ export const en = {
       storefront: 'Online shop',
       storefront_category: 'Shop categories',
       storefront_listing: 'Shop listings',
+      storefront_banner: 'Shop banners',
+      storefront_collection: 'Shop collections',
     },
     columns: {
       when: 'When',
@@ -6511,6 +6799,21 @@ export const en = {
         created: 'Set up the online shop',
         updated: 'Changed the online shop’s settings',
         launched: 'Opened the online shop',
+        // Step 26h
+        theme_updated: 'Changed the shop’s logo or colors',
+        home_moved: 'Moved a block on the shop’s home page',
+        page_saved: 'Wrote or changed a shop page',
+        page_deleted: 'Deleted a shop page',
+      },
+      storefront_banner: {
+        created: 'Added a shop banner',
+        updated: 'Edited a shop banner',
+        deleted: 'Deleted a shop banner',
+      },
+      storefront_collection: {
+        created: 'Added a shop collection',
+        updated: 'Edited a shop collection',
+        deleted: 'Deleted a shop collection',
       },
       storefront_category: {
         created: 'Added a shop category',
@@ -6733,6 +7036,31 @@ export const en = {
       seoDescription: 'Page description',
       variant: 'Product',
       published: 'In the shop',
+      // Step 26h: the logo and colors, a banner (the hero's words and colors too), a collection,
+      // and a text page, whose change is named by the page ("Terms & Condition: Returns → …")
+      logoImageId: 'Logo',
+      brandColor: 'Brand color',
+      accentColor: 'Accent color',
+      href: 'Links to',
+      desktopImage: 'Picture for computers',
+      desktopAlt: 'What the computer picture shows',
+      phoneImage: 'Picture for phones',
+      phoneAlt: 'What the phone picture shows',
+      headline: 'Headline',
+      line: 'Line under the headline',
+      eyebrow: 'Tag',
+      buttonLabel: 'Button',
+      backgroundColor: 'Background',
+      panelColor: 'Panel',
+      buttonColor: 'Button color',
+      buttonTextColor: 'Button’s words',
+      title: 'Title',
+      icon: 'Icon',
+      listings: 'Products',
+      privacy: 'Privacy Policy',
+      terms: 'Terms & Condition',
+      about: 'About Us',
+      contact: 'Contact Us',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -7613,6 +7941,28 @@ export const en = {
       'This photo is too small. Pick one at least 200 pixels on each side.',
     storefront_image_too_many_pixels:
       'This photo has too many pixels. Pick one under 40 megapixels, or make it smaller first.',
+    // Step 26h
+    storefront_slug_reserved:
+      'The shop uses “all” for its All Products page. Pick another link name, like all-items.',
+    storefront_color_format: 'Type a color as # and six letters or digits, like #005859.',
+    storefront_link_format:
+      'Type a page of the shop, starting with /, like /c/skin-care, or a whole link starting with https://.',
+    storefront_brand_contrast:
+      'Names and titles in this color are hard to read on the shop’s light backgrounds. Pick a darker color.',
+    storefront_accent_contrast:
+      'This color is too close to the brand color. Buttons need 4.5:1 between the two. Pick a lighter or darker one.',
+    storefront_button_contrast:
+      'The button’s words are hard to read on it. Make one of the two colors lighter or darker.',
+    storefront_panel_contrast:
+      'The white headline is hard to read on this panel. Pick a darker panel color.',
+    storefront_banners_full: 'The home page has 6 picture banners already. Remove one first.',
+    storefront_collections_full: 'The home page has 8 collections already. Remove one first.',
+    storefront_home_full: 'The home page has 12 blocks already. Remove one first.',
+    storefront_collection_empty: 'Add at least one product to the collection.',
+    storefront_listing_twice: 'This product is in the collection twice. Remove one.',
+    storefront_listing_invalid: 'Pick a product from the shop’s catalog.',
+    storefront_page_empty:
+      'Write at least one section. To take the page out of the shop, delete it.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

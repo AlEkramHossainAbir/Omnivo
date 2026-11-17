@@ -2,6 +2,7 @@ import type { INestApplicationContext } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
   productPageSchema,
+  publicShopSchema,
   setupSchema,
   shopCartQuoteSchema,
   shopCategorySchema,
@@ -223,6 +224,9 @@ describe('one host, one shop', () => {
     // Acme wrote an About page; Nirvor did not
     expect((await get(ACME, '/public/v1/pages/about')).statusCode).toBe(200);
     expect((await get(NIRVOR, '/public/v1/pages/about')).statusCode).toBe(404);
+    // Step 26h: and its footer does not link to Acme's page
+    const shops = await Promise.all([NIRVOR, ACME].map((host) => get(host, '/public/v1/shop')));
+    expect(shops.map((res) => publicShopSchema.parse(res.json()).pages)).toEqual([[], ['about']]);
     const home = shopHomeSchema.parse((await get(NIRVOR, '/public/v1/home')).json());
     expect(home.blocks).toEqual([]);
     expect(home.featured.map((card) => card.name)).toEqual(['Nirvor Green Tea']);

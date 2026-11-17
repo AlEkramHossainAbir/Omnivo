@@ -8,9 +8,10 @@
     "build": "astro check && astro build",
     "preview": "astro preview --port 4321",
     "start": "node dist/server/entry.mjs",
-    "typecheck": "astro check && tsc --noEmit -p e2e",
+    "typecheck": "astro check && tsc --noEmit -p e2e && tsc --noEmit -p scripts",
     "test": "vitest run --passWithNoTests",
-    "test:e2e": "playwright test --config e2e/playwright.config.ts"
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "seed": "tsx scripts/seed-shop.ts"
   },
   "dependencies": {
     "@astrojs/node": "~11.1.11",
@@ -39,6 +40,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vitest": "^5.0.1"
   }

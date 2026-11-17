@@ -30,7 +30,8 @@
     "db:generate": "pnpm --filter @omnivo/db generate",
     "db:migrate": "pnpm --filter @omnivo/db migrate",
     "db:seed": "pnpm --filter @omnivo/db seed",
-    "db:studio": "pnpm --filter @omnivo/db studio"
+    "db:studio": "pnpm --filter @omnivo/db studio",
+    "seed:shop": "pnpm --filter @omnivo/shop seed"
   },
   "devDependencies": {
     "@omnivo/config": "workspace:*",

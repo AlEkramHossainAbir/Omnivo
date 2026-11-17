@@ -44,6 +44,12 @@ export const shopThemeSchema = z.object({
   accent: hexColorSchema,
 });
 
+// The footer's four pages, at /pages/<slug>. Fixed slugs: the footer links to exactly these, and
+// each has its title in the shop's words (shop.footer.*), so a link and the page it opens always
+// say the same. Step 26h moved it up here: publicShopSchema uses it, and a const is not there
+// before its line runs
+export const SHOP_TEXT_PAGES = ['privacy', 'terms', 'about', 'contact'] as const;
+
 export const publicShopSchema = z.object({
   name: z.string().min(1),
   // null: the shop has no logo of its own, so the Omnivo mark is drawn next to its name
@@ -61,6 +67,9 @@ export const publicShopSchema = z.object({
     x: linkSchema.nullable(),
     linkedin: linkSchema.nullable(),
   }),
+  // Step 26h: the text pages the tenant has written, in the footer's order. The footer links only
+  // these, so a shopper never follows a footer link to "page not found"
+  pages: z.array(z.enum(SHOP_TEXT_PAGES)),
 });
 
 export const shopCategorySchema = z.object({
@@ -694,10 +703,7 @@ export const shopTrackingSchema = z.object({
   shipments: z.array(shopShipmentSchema).max(5),
 });
 
-// The footer's four pages, at /pages/<slug>. Fixed slugs: the footer links to exactly these, and
-// each has its title in the shop's words (shop.footer.*), so a link and the page it opens always
-// say the same
-export const SHOP_TEXT_PAGES = ['privacy', 'terms', 'about', 'contact'] as const;
+// The footer's four pages: SHOP_TEXT_PAGES, near the top (publicShopSchema lists the written ones)
 
 // One text page. The HTML is the description's kind (step 26b): <section>s with an <h2>, then <p>,
 // <ul>, <ol>, <strong>, <a> and <br>, written by the API from the tenant's sections (step 26f),
