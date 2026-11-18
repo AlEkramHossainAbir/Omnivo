@@ -6389,6 +6389,11 @@ export const en = {
     storefront: {
       manage:
         'Run the online shop: its settings, categories, listings and photos, its look and pages, and open it',
+      // Step 27a
+      order: {
+        read: 'See the shop’s orders, with the buyers’ phones and addresses',
+        manage: 'Move the shop’s orders on and cancel them',
+      },
     },
   },
   invite: {
@@ -7172,6 +7177,10 @@ export const en = {
         shift_variance:
           '{{number}} on {{register}} closed {{difference}}. Open the shift to see the count.',
       },
+      // Step 27a: a shop order got its phone code. {{total}} arrives as money ("৳578")
+      storefront: {
+        order_confirmed: 'New shop order {{number}} for {{total}}.',
+      },
     },
   },
   // API-র error code → লেখা। satisfies: contracts-এর ERROR_CODES-এ নতুন code এলে এখানে না লেখা
@@ -7895,11 +7904,17 @@ export const en = {
     shop_code_too_many: 'Too many wrong codes. Place the order again to get a new code.',
     shop_code_resend_wait: 'Wait a little, then ask for a new code.',
     shop_code_no_order: 'No order is waiting for a code. Place the order again.',
+    // Step 27a: the API's limits on orders and codes
+    shop_order_limit: 'Too many orders from here. Wait {{minutes}} minutes, then try again.',
+    shop_code_expired: 'This code has expired. Ask for a new code.',
+    shop_code_sends_used: 'No more codes can be sent for this order. Place the order again.',
     shop_order_no_format: 'Type the order number from the SMS, like W-000123.',
     shop_track_not_found: 'No order has this number and mobile number. Check both, then try again.',
     shop_track_too_many: 'Too many tries. Wait {{minutes}} minutes, then try again.',
     storefront_not_found:
       'This address is not a shop. Check the address, or ask the shop for its link.',
+    storefront_shop_key_invalid:
+      'The shop’s server sent no key or a wrong key. Check SHOP_API_KEY.',
     storefront_sale_percent: 'Type a whole percent from 1 to 99.',
     storefront_sale_zero: 'Type an amount above ৳0.',
     storefront_sale_dates: 'Pick an end after the start, or leave the end empty.',

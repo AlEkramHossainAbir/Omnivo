@@ -431,13 +431,39 @@ export const shopOrderRequestSchema = z.object({
 export const SHOP_CODE_LENGTH = 6;
 export const SHOP_CODE_TRIES = 5;
 export const SHOP_CODE_RESEND_SECONDS = 45;
+// Step 27a: the rest of the code's rules, kept by the API.
+// - A code works for 10 minutes. An SMS can arrive late, but a code that works for an hour is an
+//   hour for a guesser
+// - An order gets at most 3 codes: the first and two resends. Each SMS costs the shop money, and
+//   a phone that has not got 3 codes will not get a fourth
+// - An order and the stock it holds wait 60 minutes for the right code (system design §14.4), then
+//   the order is dropped and the stock is free again
+export const SHOP_CODE_VALID_MINUTES = 10;
+export const SHOP_CODE_SENDS = 3;
+export const SHOP_ORDER_HOLD_MINUTES = 60;
+
+// Step 27a: how many orders may be placed in one hour. Each one sends an SMS and holds stock, so
+// these limits are what stop a script from emptying a shop's shelves or its SMS balance:
+// - 5 from one phone: more than any real shopper places in an hour
+// - 20 from one connection: a shop's own office, or a mobile operator's shared address, can
+//   place several, so it is higher than the phone's
+export const SHOP_ORDERS_PER_PHONE = 5;
+export const SHOP_ORDERS_PER_ADDRESS = 20;
+export const SHOP_ORDER_WINDOW_MINUTES = 60;
+
+// "01786120356" → "+880 17•• ••• 356". The first two digits say the operator and the last three
+// let the shopper see it is their number; the rest stays off a screenshot. Step 27a: moved here
+// from the shop's mock, because the API now writes the verify page's line too
+export function maskPhone(phone: string): string {
+  return `+880 ${phone.slice(1, 3)}•• ••• ${phone.slice(-3)}`;
+}
 
 // What Confirm Order answers. Which page comes next depends on the payment method:
 // - verify: Cash on Delivery. The order waits for the phone code; the browser goes to
 //   /checkout/verify, which says where the code went ("+880 17•• ••• 356": the middle is hidden, so
 //   a screenshot of the page does not give away the number)
-// - confirmed: the order needs no code (Mobile Banking in the mock, until step 27's gateway). The
-//   checkout opens the "Order Confirmed" dialog
+// - confirmed: the order needs no code (Mobile Banking in the mock; in the API from step 27c, once
+//   the shop's gateway says it is paid). The checkout opens the "Order Confirmed" dialog
 // The order's secret token is not in the body: the route sets it as an httpOnly cookie, so no
 // script on the page can read it (decisions 4 and 5).
 export const shopOrderPlacedSchema = z.discriminatedUnion('next', [
@@ -471,6 +497,17 @@ export const shopOrderConfirmedSchema = z.object({
 // "Resend code" answers when the next one may be asked for
 export const shopCodeResentSchema = z.object({
   resendInSeconds: z.number().int().min(0),
+});
+
+// Step 27a: what /checkout/verify draws for the order that waits: the same as the `verify` answer,
+// plus the listings it holds. A right code takes them out of this browser's cart (26c's decision
+// 23), and the page cannot know them otherwise: the cart may have changed in another tab since
+// Confirm Order. It was the shop's own type (ShopCodeWait); it is here now because the API answers it
+export const shopCodeWaitSchema = z.object({
+  next: z.literal('verify'),
+  maskedPhone: z.string().min(1),
+  resendInSeconds: z.number().int().min(0),
+  listingIds: z.array(listingIdSchema).min(1).max(SHOP_CART_MAX_LINES),
 });
 
 // An order's life (system design §14.3 storefront_orders.status). Cancelled and returned end it
@@ -525,6 +562,7 @@ export type ShopOrderPlaced = z.infer<typeof shopOrderPlacedSchema>;
 export type ShopVerifyCodeRequest = z.infer<typeof shopVerifyCodeRequestSchema>;
 export type ShopOrderConfirmed = z.infer<typeof shopOrderConfirmedSchema>;
 export type ShopCodeResent = z.infer<typeof shopCodeResentSchema>;
+export type ShopCodeWait = z.infer<typeof shopCodeWaitSchema>;
 export type ShopOrderStatus = (typeof SHOP_ORDER_STATUSES)[number];
 export type ShopOrderLine = z.infer<typeof shopOrderLineSchema>;
 export type ShopOrder = z.infer<typeof shopOrderSchema>;
@@ -629,6 +667,37 @@ export const SHOP_TRACK_WINDOW_MINUTES = 15;
 // rule as the ERP's share links (document-output.ts). 128 bits cannot be guessed, so the link alone
 // is the key, and the page checks the shape before it asks the source for anything
 export const shopTrackingTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
+
+// Step 27a: the key a connection's limits are counted under (the /track form's misses, the orders
+// per connection). Moved here from the shop's server (26e's rate-limit.ts), because the API now
+// keeps both limits. An IPv4 address is its own key; an IPv6 address counts by its /64, because
+// one home or phone gets a whole /64 and could change the last half of its address at will.
+export function addressKey(address: string): string {
+  // "%en0" is a link-local address's interface name, not part of the address
+  const plain = address.trim().toLowerCase().replace(/%.*$/, '');
+  // An IPv4 address written as IPv6 ("::ffff:203.0.113.7"), which Node gives on a server that
+  // listens on both
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(plain);
+  if (mapped?.[1] !== undefined) return mapped[1];
+  if (!plain.includes(':')) return plain;
+
+  // "2001:db8::7" leaves out the groups that are zero. Put them back, so "2001:db8::7" and
+  // "2001:db8:0:0::8" give the same /64
+  const [head = '', tail] = plain.split('::');
+  const headGroups = head === '' ? [] : head.split(':');
+  const tailGroups = tail === undefined || tail === '' ? [] : tail.split(':');
+  const missing = tail === undefined ? 0 : 8 - headGroups.length - tailGroups.length;
+  const groups = [...headGroups, ...Array.from({ length: missing }, () => '0'), ...tailGroups];
+  // Leading zeros dropped too ("0db8" and "db8" are the same group)
+  const block = groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, ''));
+  return `${block.join(':')}::/64`;
+}
+
+// Step 27a: the order's other token, the one in the browser's cookies (26c's decisions 4 and 5).
+// The same shape, but a different value from the tracking link's: this one opens /order/<no>, which
+// shows the buyer's phone and address, and it never leaves the browser that placed the order. The
+// tracking link goes by SMS and gets forwarded, so it opens only the page without them
+export const shopOrderTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{22}$/);
 
 // The couriers the system design's adapters cover (§14.6). Their own names are brand names and the
 // same in every language; the shop still writes them through t() (shop.track.couriers)
@@ -807,9 +876,39 @@ export function listingParamsFromQuery(query: ShopListingQuery): PublicListingPa
   return params;
 }
 
-// Orders, the phone code and tracking are not here: they stay in the shop's mock until step 27
-// stores orders (decision 1). The quote is here already: the cart drawer and the checkout need
-// today's prices and stock, and it only reads.
+// ---------------------------------------------------------------------------------------------
+// Step 27a: the shop server's calls for orders, the phone code and tracking.
+
+// The shop's server proves it is the shop's server with this header: a key only it and the API
+// know (the API's STOREFRONT_SHOP_KEY, the shop's SHOP_API_KEY). The routes below place orders,
+// send SMS and answer with a buyer's phone and address, so they are not for anyone who finds the
+// API's address, as the read routes above are. auth: 'shop' in the route says so
+export const SHOP_KEY_HEADER = 'x-shop-key';
+
+// The shopper's own address (IP), as the shop's server got it from its proxy. The API sees only the
+// shop's server, so the order limits (SHOP_ORDERS_PER_ADDRESS) and the /track limit need this.
+// Trusted only next to a right SHOP_KEY_HEADER: anyone else could send any address
+export const SHOP_CLIENT_ADDRESS_HEADER = 'x-shop-client-address';
+
+// The bodies that carry a token. Every one is a POST with the token in its body, never in the
+// path or the query: an address ends up in logs, a proxy's history and a Referer header, and these
+// tokens open a buyer's order (26e's decision 3 kept the /track form's phone out of addresses for
+// the same reason)
+const orderTokenBodySchema = z.object({ token: shopOrderTokenSchema });
+
+// What Confirm Order answers to the shop's server: the shopper's answer, and the token the server
+// puts in the httpOnly cookie. The token is only in this answer, never in the shopper's: the API
+// keeps only its hash, so this is the one moment it exists outside the cookie
+export const publicOrderPlacedSchema = z.object({
+  answer: shopOrderPlacedSchema,
+  token: shopOrderTokenSchema,
+});
+
+export type PublicOrderPlaced = z.infer<typeof publicOrderPlacedSchema>;
+
+// Orders, the phone code and tracking (step 27a) are under auth: 'shop', the read routes under
+// 'public'. The quote stays public: the cart drawer needs today's prices and stock, and it only
+// reads.
 export const publicStorefrontRoutes = {
   shop: defineRoute({
     method: 'GET',
@@ -879,5 +978,79 @@ export const publicStorefrontRoutes = {
     status: 200,
     params: z.object({ slug: z.enum(SHOP_TEXT_PAGES) }),
     response: shopTextPageSchema,
+  }),
+
+  // Step 27a. Confirm Order: the API prices the order again, holds its stock and sends the phone
+  // code. 201, as an order was made, even though it still waits for its code
+  placeOrder: defineRoute({
+    method: 'POST',
+    path: '/public/v1/orders',
+    summary: 'Place an order: price it, hold its stock and send the phone code (shop server only)',
+    auth: 'shop',
+    status: 201,
+    body: shopOrderRequestSchema,
+    response: publicOrderPlacedSchema,
+  }),
+  // The verify page's order, by the cookie's token. 404 shop_code_no_order when none waits
+  codeWait: defineRoute({
+    method: 'POST',
+    path: '/public/v1/orders/code-wait',
+    summary: 'The order that waits for its phone code, by its token (shop server only)',
+    auth: 'shop',
+    status: 200,
+    body: orderTokenBodySchema,
+    response: shopCodeWaitSchema,
+  }),
+  verifyCode: defineRoute({
+    method: 'POST',
+    path: '/public/v1/orders/verify',
+    summary: 'Check the phone code; a right one confirms the order (shop server only)',
+    auth: 'shop',
+    status: 200,
+    body: orderTokenBodySchema.extend(shopVerifyCodeRequestSchema.shape),
+    response: shopOrderConfirmedSchema,
+  }),
+  resendCode: defineRoute({
+    method: 'POST',
+    path: '/public/v1/orders/resend',
+    summary: 'Send the phone code again (shop server only)',
+    auth: 'shop',
+    status: 200,
+    body: orderTokenBodySchema,
+    response: shopCodeResentSchema,
+  }),
+  // /order/<no>: both must match (26c's decision 5). 404 not_found for anything else
+  order: defineRoute({
+    method: 'POST',
+    path: '/public/v1/orders/find',
+    summary:
+      'A confirmed order for the browser that placed it, by number and token (shop server only)',
+    auth: 'shop',
+    status: 200,
+    body: orderTokenBodySchema.extend({ orderNo: shopOrderNoSchema }),
+    response: shopOrderSchema,
+  }),
+  // A tracking link (/t/<token>). 404 not_found for a link that names no order
+  tracking: defineRoute({
+    method: 'POST',
+    path: '/public/v1/tracking',
+    summary:
+      "An order's tracking by its link's token: no name, phone or address (shop server only)",
+    auth: 'shop',
+    status: 200,
+    body: z.object({ token: shopTrackingTokenSchema }),
+    response: shopTrackingSchema,
+  }),
+  // The /track form. 404 shop_track_not_found for any wrong pair, 429 shop_track_too_many past
+  // SHOP_TRACK_TRIES misses from one address
+  track: defineRoute({
+    method: 'POST',
+    path: '/public/v1/track',
+    summary:
+      "An order's tracking by its number and the phone it was placed with (shop server only)",
+    auth: 'shop',
+    status: 200,
+    body: shopTrackRequestSchema,
+    response: shopTrackingSchema,
   }),
 };

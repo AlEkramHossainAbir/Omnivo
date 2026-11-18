@@ -1143,6 +1143,12 @@ its data from `Astro.locals.source`, which `src/middleware.ts` sets for each req
 `SHOP_SOURCE=mock`) or the ERP's `/public/v1` for the shop the host names (`SHOP_SOURCE=api` plus `SHOP_API_URL`).
 Only the middleware imports `data/source.ts`. The API reads a shop only inside `ShopDb.read`, a read-only
 transaction as the `omnivo_public` role, so a table or column the shop needs is granted to that role in a migration.
+The order routes (place an order, the phone code, `/order/<no>`, the tracking link, `/track`) are `auth: 'shop'`:
+only the shop's server may call them, with `x-shop-key` (the shop's `SHOP_API_KEY`, required with `SHOP_SOURCE=api`,
+equal to the API's `STOREFRONT_SHOP_KEY`) and the shopper's address in `x-shop-client-address`; every token goes in
+a POST body, never in an address. The API writes them only inside `ShopDb.orders`, a transaction as `omnivo_shop`
+(the public reads plus the order tables, nothing else). A text to the shopper goes through `SmsSender` on its own
+`sms` queue, never through the outbox; in development and CI it is an email to `<phone>@sms.invalid` in Mailpit.
 A shop photo comes from the ERP's Storefront menu as a `storefront_image` upload; the worker's `sharp` job writes
 `storefront/<id>/small.webp`, `large.webp` and `wide.webp`, and only that `storefront/` folder of the storage is
 public. The original stays private, and the shop never links to it.
@@ -1366,7 +1372,10 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   location" in `muted`) and "Payment Method" (Cash on Delivery, Mobile Banking), each two cards side by
   side, 16px apart. Free delivery is not a choice: when the order reaches the shop's threshold, the Delivery
   Charge row says "Free", and a 14px `muted` line under Delivery Location says "Free delivery on orders over
-  ৳1,000". The form is `inert` until its island has run, so nothing a shopper types before then is lost.
+  ৳1,000". The form is `inert` until its island has run, so nothing a shopper types before then is lost. On the
+  API, Mobile Banking is not offered until step 27c connects a gateway (unless it is the shop's only method, and
+  then the order is refused). Too many orders (5 per phone or 20 per connection in an hour) is the form's error with
+  the minutes to wait, in the shop's digits.
 - **Checkout lines:** per line, a 155×130 `canvas` image box (radius 8), 20px gap, then the name (`sf-subtitle`,
   `brand`, max 288px) and 20px below it the stepper (the name and the stepper centered beside the image): minus and plus 40px `cream` buttons (radius 5,
   `MinusSign` / `Add01` 14px `brand`), a 60×40 quantity box between them (`card`, 1.5px `cream` border, radius 5,
@@ -1438,8 +1447,12 @@ These follow the same tokens and components. Use them exactly as written here un
   digits become ASCII), "Confirm Order" (the checkout's button), and "Resend code" as a `brand` text link (with
   "in 0:45" while it waits). A wrong code shows an `Alert02` line in `promo` under the input, with the tries left.
   After 5 wrong codes the order is dropped: the box goes and "Back to checkout" takes its place (the cart is kept).
-  The page finds its order by an httpOnly cookie, never by the number, and with no order waiting it goes to
-  `/checkout`. The mock shows its test code in a line under the sentence.
+  A code works 10 minutes and an order gets 3 codes. An expired code costs no try: the box is cleared and the line
+  says to ask for a new code. After the third code "Resend code" goes, but the box and Confirm Order stay (the last
+  code may still come or still work), with the error line and "Back to checkout" under them. An order that never
+  gets its code is deleted after 60 minutes, with the stock it held. The page finds its order by an httpOnly cookie,
+  never by the number, and with no order waiting it goes to `/checkout`. The mock shows its test code in a line under
+  the sentence; on the API the code comes only by SMS.
 - **Order details (`/order/[no]`, from "View Order Details"):** the checkout card at 848px: header "Order
   Details", the order number in `Geist Mono` `sf-title` `brand`, the status timeline of the track page, the
   delivery details (name, phone, address, area) in 16px `body`, and the lines and totals as in checkout,
@@ -1468,7 +1481,7 @@ These follow the same tokens and components. Use them exactly as written here un
   phone, of any kind, gets one answer above the boxes ("No order has this number and mobile number…", `Alert02`,
   `promo`, it takes the focus); a box with an error says so under it, and the first one takes the focus. After
   10 misses in 15 minutes from one address (IPv6: its /64) the page answers 429, "Too many tries. Wait 15
-  minutes…". It cannot send the shopper to `/t/<token>`: only the token's hash is stored. The mock shop lists
+  minutes…" (the API counts the misses in Redis; the mock source counts them itself). It cannot send the shopper to `/t/<token>`: only the token's hash is stored. The mock shop lists
   its demo orders, their phones and their links in a `canvas` box under the line.
 - **Text pages (`/pages/privacy`, `terms`, `about`, `contact`):** the
   checkout card at 848px with the footer's own word as the title in the header ("Terms & Condition"), "Last
@@ -1497,7 +1510,9 @@ never scrolls sideways. CI runs them in their own step, `pnpm --filter @omnivo/s
 `pnpm --filter @omnivo/shop typecheck` checks `e2e/` too. A test that uses up `/track`'s tries sends its own
 `X-Forwarded-For`, so it does not stop the other tests. They run on the mock source. The API source is tested
 without a browser, against a fake `/public/v1` made of the mock (`src/data/api/api-source.spec.ts`), and the API's
-answers by its own integration and tenant-leak tests (`apps/api/src/storefront/`).
+answers by its own integration and tenant-leak tests (`apps/api/src/storefront/`; the orders, the phone code, the
+limits and the race for the last piece in `storefront/orders/`, each test with its own phones and shopper address,
+because the limits count them across tests).
 
 ## Website / Landing page
 

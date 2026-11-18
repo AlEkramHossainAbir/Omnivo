@@ -15,6 +15,7 @@ import type { ShopLocale } from '../../lib/locale';
 // name the word's own placeholders
 const NAME = { name: '{{name}}' };
 const MINIMUM = { minimum: '{{minimum}}' };
+const MINUTES = { minutes: '{{minutes}}' };
 
 export function checkoutWords({ t, money }: ShopLocale, settings: ShopCheckoutSettings) {
   return {
@@ -64,7 +65,7 @@ export function checkoutWords({ t, money }: ShopLocale, settings: ShopCheckoutSe
     removedOne: t('shop.cart.removed', { count: 1, replace: { count: '{{count}}' } }),
     removedOther: t('shop.cart.removed', { count: 2, replace: { count: '{{count}}' } }),
     // The error codes the checkout can show: the form's own checks, the order route's refusals
-    // and the promo box. 18 sentences, not the 400 of `errors.*`. `satisfies`: each key must be
+    // and the promo box. 19 sentences, not the 400 of `errors.*`. `satisfies`: each key must be
     // a real error code, so a typo is a type error, not a missing sentence
     errors: {
       required: t('errors.required'),
@@ -81,6 +82,8 @@ export function checkoutWords({ t, money }: ShopLocale, settings: ShopCheckoutSe
       shop_cart_empty: t('errors.shop_cart_empty'),
       shop_order_below_minimum: t('errors.shop_order_below_minimum', MINIMUM),
       shop_order_changed: t('errors.shop_order_changed'),
+      // Step 27a: the API's orders-per-hour limit, with the minutes to wait
+      shop_order_limit: t('errors.shop_order_limit', MINUTES),
       shop_coupon_format: t('errors.shop_coupon_format'),
       shop_coupon_unknown: t('errors.shop_coupon_unknown'),
       shop_coupon_expired: t('errors.shop_coupon_expired'),

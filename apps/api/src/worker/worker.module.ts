@@ -26,12 +26,16 @@ import { StockAccountsHandler } from '../setup/stock-accounts.handler.js';
 import { TaxRatesHandler } from '../setup/tax-rates.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 import { StorageService } from '../storage/storage.service.js';
+import { SMS_SENDER, MailSmsSender } from '../sms/sms-sender.js';
 import { StorefrontImageHandler } from '../storefront/image.handler.js';
+import { OrderConfirmedHandler } from '../storefront/orders/order-confirmed.handler.js';
+import { PendingOrderSweep } from '../storefront/orders/pending-order-sweep.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { JobRunner } from './job-runner.js';
 import { OutboxRelay } from './outbox-relay.js';
 import { Queues } from './queues.js';
+import { SmsRunner } from './sms-runner.js';
 
 // The worker process: no HTTP server, no controllers — the relay and the queue workers. It does
 // not import InfraModule: that one brings the API's things (auth, the permission cache) which the
@@ -91,6 +95,13 @@ export class WorkerModule implements OnApplicationShutdown {
         ReportScheduleEmailHandler,
         // Step 26g: a shop photo's WebP files
         StorefrontImageHandler,
+        // Step 27a: the shop's orders. The bell for a confirmed one, the sweep for the ones that
+        // never got their code, and the SMS queue's consumer with its sender (Mailpit until the
+        // real provider: that one line changes then)
+        OrderConfirmedHandler,
+        PendingOrderSweep,
+        { provide: SMS_SENDER, useClass: MailSmsSender },
+        SmsRunner,
       ],
     };
   }

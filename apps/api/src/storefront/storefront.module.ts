@@ -10,6 +10,10 @@ import { StorefrontPagesService } from './admin/pages.service.js';
 import { StorefrontSettingsService } from './admin/settings.service.js';
 import { StorefrontAdminController } from './admin/storefront-admin.controller.js';
 import { StorefrontAppearanceController } from './admin/storefront-appearance.controller.js';
+import { SmsQueue } from '../sms/sms-queue.js';
+import { ShopLimits } from './orders/shop-limits.js';
+import { ShopOrdersController } from './orders/shop-orders.controller.js';
+import { ShopOrdersService } from './orders/shop-orders.service.js';
 import { PublicStorefrontController } from './public-storefront.controller.js';
 import { PublicStorefrontService } from './public-storefront.service.js';
 import { ShopDb } from './shop-db.js';
@@ -18,17 +22,22 @@ import { ShopDb } from './shop-db.js';
 // ERP's Storefront screens' routes (admin/), behind storefront.manage. The two halves share the
 // tables and the photo addresses (media.ts), never a service: the public half runs as
 // omnivo_public in a read-only transaction, the admin half as the signed-in member. Step 26h adds
-// Appearance and the text pages, with their own controller (the contract's own group)
+// Appearance and the text pages, with their own controller (the contract's own group). Step 27a
+// adds the shop server's order routes (orders/), as omnivo_shop, and the SMS they send
 @Module({
   imports: [AttachmentsModule],
   controllers: [
     PublicStorefrontController,
+    ShopOrdersController,
     StorefrontAdminController,
     StorefrontAppearanceController,
   ],
   providers: [
     ShopDb,
     PublicStorefrontService,
+    ShopOrdersService,
+    ShopLimits,
+    SmsQueue,
     StorefrontSettingsService,
     StorefrontCategoriesService,
     StorefrontImagesService,

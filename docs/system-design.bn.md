@@ -1046,7 +1046,14 @@ apps/api/src/modules/
   `storefront_tenant_for_subdomain()`), কখনো query param থেকে না। প্রতিটা রিকোয়েস্ট একটা `READ ONLY`
   transaction, শুরু হয় `SET LOCAL ROLE omnivo_public` দিয়ে: NOLOGIN role, RLS বাইপাস করতে পারে না, শুধু শপের
   দরকারি কলামে `SELECT` আছে, আর restrictive policy-তে শুধু চালু (`launched_at`) শপের প্রকাশিত লিস্টিং দেখে।
-  Rate limit আপাতত edge-এ (Cloudflare); API-তে আসল limit আসবে ধাপ ২৭-এর অর্ডার আর OTP-র সাথে।
+  পড়ার রুটের rate limit আপাতত edge-এ (Cloudflare); অর্ডার আর ফোন কোডের limit API-তে, Redis-এ (ধাপ ২৭a)।
+- **অর্ডারের রুট শুধু শপের সার্ভারের জন্য (ধাপ ২৭a):** অর্ডার দেওয়া, ফোন কোড, `/order/<no>`, ট্র্যাকিং আর `/track`
+  রুটগুলো `auth: 'shop'`। শপের সার্ভার পাঠায় `x-shop-key` (API-র `STOREFRONT_SHOP_KEY`, না থাকলে প্রতিটা অর্ডার
+  রুট `401`) আর ক্রেতার ঠিকানা `x-shop-client-address`-এ (ঠিক key-র পাশেই শুধু বিশ্বাস করা হয়)। Key ছাড়া যে কেউ
+  API-র ঠিকানা পেলে শপ ভুয়া অর্ডারে ভরে দিতে আর SMS-এর টাকা খরচ করাতে পারত। প্রতিটা token POST body-তে, কখনো
+  address-এ না (log আর `Referer`-এ চলে যায়)। লেখা হয় `ShopDb.orders`-এ, নতুন NOLOGIN role `omnivo_shop`-এ:
+  `omnivo_public`-এর সব পড়া, আর শুধু অর্ডারের টেবিলে লেখা (কলাম ধরে `UPDATE` grant)। `omnivo_public` সব শপের
+  প্রতিটা পেজের জন্য read-only থাকে।
 - **রেন্ডারিং:** পেজ শপের সার্ভারে রেন্ডার হয়। API-র উত্তর `Cache-Control: no-store`, কারণ CDN উত্তর চেনে
   address দিয়ে, `X-Shop-Host` দিয়ে না, তাই এক শপের পেজ অন্য শপে চলে যেতে পারত। শপের সার্ভার নিজের মেমরিতে
   host + path ধরে ৩০ সেকেন্ড রাখে (শুধু GET, ব্যর্থ উত্তর রাখে না, quote কখনো না)। শপের পেজ যখন CDN-এ cache
@@ -1108,16 +1115,27 @@ storefront_home_blocks (হোমপেজের ক্রম), storefront_pages
   home_blocks: প্রতিটা রো একটা image banner বা একটা কালেকশন, ঠিক একটা; মুছলে cascade-এ পেজ থেকেও যায়
   pages: sections (JSONB), না লেখা পেজের কোনো রো নেই
 
-storefront_orders
-  tenant_id, order_no, status (pending | confirmed | packed | shipped | delivered
-                               | cancelled | returned)
-  customer_name, phone, phone_verified, email, address, area, district, note
-  payment_method (cod | online), payment_status (unpaid | paid | refunded)
-  subtotal, delivery_charge, discount, total     ← সবই সার্ভারে হিসাব করা
-  sales_order_id (FK)                            ← confirm হলে ERP Sales Order তৈরি
-  source (web | facebook | manual), coupon_code
-  tracking_token_hash                            ← ট্র্যাকিং লিংকের token-এর hash (ধাপ ২৭), token নিজে কোথাও রাখা হয় না
+storefront_orders                  ← ধাপ ২৭a
+  tenant_id, order_no (W-000123, confirm-এ শপের নিজের counter থেকে; pending-এ NULL, তাই বাদ পড়া অর্ডারে ফাঁক নেই)
+  status (pending | confirmed | packed | shipped | delivered | cancelled | returned)
+  customer_name, phone (01XXXXXXXXX), address, zone_id, zone_name
+  payment_method (cod | online), subtotal, discount, coupon_code, delivery_charge, total  ← সবই সার্ভারে হিসাব করা
+  order_token_hash                               ← ব্রাউজারের httpOnly cookie-র token-এর SHA-256 (/order/<no>)
+  tracking_token_hash                            ← ট্র্যাকিং লিংকের token-এর hash, confirm-এ; token নিজে কোথাও রাখা হয় না
+  code_hash, code_expires_at, code_sent_at, code_sends, code_tries_left  ← ফোন কোড, শুধু pending-এ
+  created_at, confirmed_at, packed_at, shipped_at, delivered_at, cancelled_at, returned_at  ← ইতিহাস এই কলামেই
+  sales_order_id (FK)                            ← ধাপ ২৭b: confirm হলে ERP Sales Order
   UNIQUE (tenant_id, order_no)
+
+storefront_order_lines             ← লিস্টিং-এর কপি (নাম, slug, pack size, ছবি), লিস্টিং-এ FK নেই; variant-এ FK আছে
+  tenant_id, order_id, position, listing_id, product_id, variant_id, quantity, unit_price, line_total
+
+storefront_stock_holds             ← অর্ডার যে স্টক ধরে রাখে; নাম, ফোন বা ঠিকানা নেই, তাই omnivo_public পড়তে পারে
+  tenant_id, order_id, product_id, variant_id, warehouse_id, quantity (base unit)
+  expires_at                       ← pending-এ ৬০ মিনিট পরে; confirm-এ NULL, ধাপ ২৭b-র challan পর্যন্ত
+
+storefront_order_counters          ← শপ-প্রতি শেষ নম্বর (number_series না, SEQUENCE-ও না: rollback-এ ফাঁক)
+  tenant_id, last_value
 
 courier_accounts                   ← টেন্যান্টের নিজের কুরিয়ার অ্যাকাউন্ট
   tenant_id, courier_code (pathao | steadfast | redx | ecourier | paperfly | manual)
@@ -1144,6 +1162,21 @@ courier_remittances                ← কুরিয়ার কবে কত
 - **দাম সার্ভার ঠিক করে।** অফার রাখা হয় টেন্যান্ট যেভাবে লিখেছে (৳ বা % ছাড়, বা ছাড়ের পরের দাম); শপের
   দাম, কাটা দাম আর ribbon API বানায়। যে অফারে কিছু কমে না, সেটা দেখানো হয় না।
 - **স্টক রিজার্ভেশন:** অর্ডার `pending` হলে স্টক "reserved" হবে (TTL সহ, যেমন ৬০ মিনিট বা কনফার্ম পর্যন্ত), `confirmed` হলে আসল মুভমেন্ট লিখবে। সরাসরি quantity আপডেট **কখনো না** (§১৭-এর ৬ নম্বর ভুল)।
+  ধাপ ২৭a-তে: hold নিজের টেবিলে (`storefront_stock_holds`)। শপ দেখায় আর quote হিসাব করে **free = on hand − held**;
+  free-র চেয়ে বেশি চাইলে লাইনটা `out_of_stock`। অর্ডার দেওয়ার সময় প্রতিটা variant-এ একটা lock (সাজানো ক্রমে), তাই
+  শেষ পিসটা একবারই বিক্রি হয় (টেস্টে দুটো অর্ডার শেষ পিসের জন্য দৌড়ায়)। আসল মুভমেন্ট আসবে ধাপ ২৭b-র challan-এ।
+- **ফোন কোড (ধাপ ২৭a):** ৬ অঙ্ক, শুধু HMAC hash রাখা (key `JWT_SECRET` থেকে HKDF দিয়ে, নিজের label-এ), ১০ মিনিট,
+  ৫ বার ভুল, ৪৫ সেকেন্ড পরে নতুন কোড, এক অর্ডারে সর্বোচ্চ ৩টা কোড। ঠিক কোড নিজেই অর্ডার confirm করে: নম্বর, hold
+  আর শেষ হয় না, ট্র্যাকিং token, দ্বিতীয় SMS-এ লিংক, আর outbox ইভেন্ট `storefront.order_confirmed` → worker →
+  owner আর `storefront.order.read` যাদের আছে তাদের bell। ৫ বার ভুল হলে অর্ডার তখনই মুছে যায়, ৬০ মিনিটে কোড না
+  এলে worker-এর ৫ মিনিট পরপর sweep মুছে দেয়, hold সহ: যে ফোন কখনো confirm হয়নি, সেটা রেখে দেওয়ার কারণ নেই।
+- **Limit (ধাপ ২৭a):** এক ফোন থেকে ঘণ্টায় ৫টা আর এক connection (IPv6: /64) থেকে ২০টা অর্ডার, সব শপ মিলিয়ে, Redis-এ
+  hash করা key-তে; `/track`-এ ১৫ মিনিটে ১০ বার ভুল। Redis বন্ধ থাকলে error (`500`), কখনো "limit নেই" না।
+- **SMS (ধাপ ২৭a):** একটাই `SmsSender` interface; dev আর CI-তে প্রতিটা SMS Mailpit-এ একটা ইমেইল
+  (`<phone>@sms.invalid`)। আসল provider (BulkSMSBD, SSL Wireless বা Alpha SMS) স্টেজিং আসল SMS পাঠানোর আগে ঠিক
+  হবে, শুধু একটা নতুন class। কোড বা লিংক থাকা SMS কখনো outbox-এ যায় না (outbox-এ শুধু id থাকে): নিজের BullMQ
+  `sms` queue-তে, transaction commit হওয়ার পরে, পাঠানো হলে Redis থেকে মুছে যায়। SMS হারালেও উত্তর ব্যর্থ হয় না:
+  অর্ডার সেভ হয়ে গেছে, ক্রেতা আবার কোড চাইতে পারে।
 - **`storefront_orders` ≠ `sales_orders`।** শপের অর্ডার হলো "গ্রাহকের অনুরোধ", যেটা বাতিল বা স্প্যাম হতে পারে। কনফার্ম হলেই সেটা ERP-র Sales Order-এ পরিণত হবে। এতে ভুয়া অর্ডার দিয়ে হিসাব নষ্ট হবে না।
 - **সব টেবিলে `tenant_id` + RLS**, শপের কাস্টমার ডেটা (ফোন, ঠিকানা) সবচেয়ে সংবেদনশীল PII।
 
@@ -1241,6 +1274,20 @@ sequenceDiagram
   CI-তে না; সরাসরি DB-তে না লিখে API দিয়ে, তাই প্রতিটা নিয়ম আর audit log আসল পথেই চলে।
 - এখনো না: ব্যানারের শুরু-শেষ তারিখ, hero carousel, দুটোর বেশি রং, পেজ template, অব্যবহৃত ছবি মুছে ফেলা।
   স্টেজিং এখনো মক শপ দেখায় (wildcard শপ-হোস্ট লাগবে, `vps-deploy.en.md`)।
+
+**ধাপ ২৭a-তে যা তৈরি হয়েছে** (উপরের টেবিলের Orders-এর ভিত্তি; স্ক্রিন ধাপ ২৭b-তে):
+
+- নতুন পারমিশন `storefront.order.read` (অর্ডার, ক্রেতার ফোন আর ঠিকানা দেখা) আর `storefront.order.manage`
+  (অর্ডার এগিয়ে নেওয়া আর বাতিল), `storefront.manage` থেকে আলাদা: প্যাকারের শপের দাম বদলানোর দরকার নেই। নতুন
+  workspace-এ শপ চালানোর দুটো role টেমপ্লেট দুটোই পায়।
+- শপের `api` source আর মক order book ব্যবহার করে না: চেকআউট, ফোন কোড, `/order/<no>`, `/t/<token>` আর `/track`
+  সব API-র ৭টা `auth: 'shop'` রুটে। মক source একই কোডের নিয়ম রাখে (১০ মিনিট, ৩টা কোড), অর্ডারের limit না, তাই
+  `pnpm dev` আর Playwright আগের মতো চলে।
+- নতুন অর্ডারের bell ("New shop order W-000123 for ৳578.") আপাতত Overview খোলে; Orders পেজ ধাপ ২৭b-তে।
+- অনলাইন পেমেন্ট ধাপ ২৭c পর্যন্ত চেকআউটে দেখায় না (শুধু সেটাই শপের একমাত্র মেথড হলে দেখায়, আর অর্ডার
+  `shop_payment_unavailable`)। কুপন এখনো "unknown"।
+- এখনো না: ERP-র Orders স্ক্রিন আর অর্ডার থেকে customer, Sales Order, challan, invoice (ধাপ ২৭b), কুপন আর
+  SSLCommerz (ধাপ ২৭c), আসল SMS provider, কুরিয়ার (ধাপ ২৮)। স্টেজিং এখনো মক শপে।
 
 - **Omnivo Admin Panel** এখানে শুধু একটা জায়গায় আসে: Storefront কোন প্ল্যানে থাকবে, সেটা `feature.storefront` entitlement দিয়ে ঠিক হবে (§১৩.২)। অর্থাৎ Storefront বিক্রি হবে Growth প্ল্যানের ফিচার বা আলাদা অ্যাড-অন হিসেবে, আর কোডে কখনো `if (plan === 'growth')` লেখা হবে না।
 - ⚠️ থিম কাস্টমাইজেশনের চাপ আসবেই। উত্তর হলো **কনফিগারেশন ও কয়েকটা রেডিমেড থিম**, টেন্যান্ট-ভিত্তিক কাস্টম কোড না (§৪.৮)।

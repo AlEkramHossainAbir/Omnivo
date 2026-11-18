@@ -1,9 +1,14 @@
-import { shopOrderSchema, type ShopOrderRequest, SHOP_CODE_TRIES } from '@omnivo/contracts';
+import {
+  SHOP_CODE_TRIES,
+  shopOrderSchema,
+  shopOrderTokenSchema,
+  type ShopOrderRequest,
+} from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
-import type { ShopSource } from '../types';
+import type { PlacedOrder, ShopSource } from '../types';
 import { createMockSource } from './mock-source';
-import { maskPhone, MOCK_CODE } from './orders';
+import { MOCK_CODE } from './orders';
 
 const NEEM = 'lst-himalaya-purifying-neem-face-wash-150ml'; // ৳229
 const DANO = 'lst-dano-daily-pushti-milk-1kg'; // out of stock
@@ -21,6 +26,9 @@ const ORDER: ShopOrderRequest = {
   expectedTotal: '767',
 };
 
+// The shopper's address. The mock has no order limits, so any address does
+const ADDRESS = '203.0.113.7';
+
 // A source whose clock the test moves
 function withClock() {
   let now = new Date('2026-11-11T10:00:00+06:00');
@@ -35,16 +43,18 @@ function withClock() {
 }
 
 async function placed(source: ShopSource, request: ShopOrderRequest = ORDER) {
-  const result = await source.placeOrder(request);
+  const result = await source.placeOrder(request, ADDRESS);
   if (!result.ok) throw new Error(`refused: ${result.code}`);
   return result.value;
 }
 
-describe('the mock’s orders', () => {
-  it('hides the middle of the phone', () => {
-    expect(maskPhone('01786120356')).toBe('+880 17•• ••• 356');
-  });
+// Step 27a: a confirmed order's number is only in its answer
+function numberOf({ answer }: PlacedOrder): string {
+  if (answer.next !== 'confirmed') throw new Error('The order waits for its code');
+  return answer.orderNo;
+}
 
+describe('the mock’s orders', () => {
   it('asks Cash on Delivery for the phone code', async () => {
     const { source } = withClock();
     const order = await placed(source);
@@ -53,15 +63,16 @@ describe('the mock’s orders', () => {
       maskedPhone: '+880 17•• ••• 356',
       resendInSeconds: 45,
     });
-    expect(order.orderNo).toBe('W-000001');
-    expect(order.token).toMatch(/^[0-9a-f]{64}$/);
+    // Step 27a: the API's token shape, so one cookie check serves both sources
+    expect(shopOrderTokenSchema.safeParse(order.token).success).toBe(true);
     // Not an order yet: /order/<no> does not show it, even with the right token
-    expect(await source.order(order.orderNo, order.token)).toBeNull();
+    expect(await source.order('W-000001', order.token)).toBeNull();
   });
 
   it('confirms a right code, and the order then shows with its token only', async () => {
     const { source } = withClock();
-    const { orderNo, token } = await placed(source);
+    const { token } = await placed(source);
+    const orderNo = 'W-000001';
     expect(await source.verifyCode(token, MOCK_CODE)).toEqual({
       ok: true,
       value: { orderNo, phone: '01786120356' },
@@ -82,7 +93,7 @@ describe('the mock’s orders', () => {
     // Decision 5: the number with another order's token, or a made-up token, finds nothing
     const other = await placed(source, { ...ORDER, paymentMethod: 'online' });
     expect(await source.order(orderNo, other.token)).toBeNull();
-    expect(await source.order(orderNo, 'f'.repeat(64))).toBeNull();
+    expect(await source.order(orderNo, 'f'.repeat(22))).toBeNull();
     // And the code cannot confirm it twice
     expect(await source.verifyCode(token, MOCK_CODE)).toMatchObject({ code: 'shop_code_no_order' });
   });
@@ -92,6 +103,7 @@ describe('the mock’s orders', () => {
     await placed(source);
     const order = await placed(source, { ...ORDER, paymentMethod: 'online' });
     expect(order.answer).toEqual({ next: 'confirmed', orderNo: 'W-000002', phone: '01786120356' });
+    expect(numberOf(order)).toBe('W-000002');
     expect((await source.order('W-000002', order.token))?.status).toBe('confirmed');
   });
 
@@ -112,6 +124,41 @@ describe('the mock’s orders', () => {
     // Gone: even the right code is too late now
     expect(await source.verifyCode(token, MOCK_CODE)).toMatchObject({ code: 'shop_code_no_order' });
     expect(await source.codeWait(token)).toBeNull();
+  });
+
+  // Step 27a: the API's code rules, kept by the mock so the verify page meets them in its tests
+  it('refuses a code after its 10 minutes without spending a try', async () => {
+    const { source, wait } = withClock();
+    const { token } = await placed(source);
+    wait(10 * 60);
+    expect(await source.verifyCode(token, MOCK_CODE)).toEqual({
+      ok: false,
+      code: 'shop_code_expired',
+    });
+    expect(await source.verifyCode(token, '000000')).toEqual({
+      ok: false,
+      code: 'shop_code_expired',
+    });
+    // A new code works its own 10 minutes, and no try was spent on the expired one
+    expect(await source.resendCode(token)).toMatchObject({ ok: true });
+    expect(await source.verifyCode(token, '000000')).toMatchObject({
+      params: { triesLeft: SHOP_CODE_TRIES - 1 },
+    });
+    wait(9 * 60);
+    expect(await source.verifyCode(token, MOCK_CODE)).toMatchObject({ ok: true });
+  });
+
+  it('sends three codes at most', async () => {
+    const { source, wait } = withClock();
+    const { token } = await placed(source);
+    wait(45);
+    expect(await source.resendCode(token)).toMatchObject({ ok: true });
+    wait(45);
+    expect(await source.resendCode(token)).toMatchObject({ ok: true });
+    // The first SMS and two more: the fourth ask is refused at once, not after another wait
+    expect(await source.resendCode(token)).toEqual({ ok: false, code: 'shop_code_sends_used' });
+    // The last code still works
+    expect(await source.verifyCode(token, MOCK_CODE)).toMatchObject({ ok: true });
   });
 
   it('sends a new code only after 45 seconds, and keeps the wrong codes', async () => {
@@ -151,7 +198,7 @@ describe('the mock’s orders', () => {
 
   it('refuses what the shop does not offer', async () => {
     const { source } = withClock();
-    expect(await source.placeOrder({ ...ORDER, zoneId: 'chattogram' })).toEqual({
+    expect(await source.placeOrder({ ...ORDER, zoneId: 'chattogram' }, ADDRESS)).toEqual({
       ok: false,
       code: 'shop_zone_unknown',
     });
@@ -161,7 +208,7 @@ describe('the mock’s orders', () => {
     const { source } = withClock();
     // One face wash: ৳229 of items, ৳80 delivery
     const small = { ...ORDER, lines: [{ listingId: NEEM, quantity: 1 }], expectedTotal: '309' };
-    expect(await source.placeOrder(small)).toEqual({
+    expect(await source.placeOrder(small, ADDRESS)).toEqual({
       ok: false,
       code: 'shop_order_below_minimum',
       params: { minimum: '300' },
@@ -171,25 +218,27 @@ describe('the mock’s orders', () => {
   it('refuses an order whose total or stock changed since the last quote', async () => {
     const { source } = withClock();
     // Decision 10: the shopper saw ৳747 (an old price); the server's total is ৳767
-    expect(await source.placeOrder({ ...ORDER, expectedTotal: '747' })).toMatchObject({
+    expect(await source.placeOrder({ ...ORDER, expectedTotal: '747' }, ADDRESS)).toMatchObject({
       code: 'shop_order_changed',
     });
     // A line went out of stock: the total of what is left might still match, so it is checked
     // on its own
     const withMilk = { ...ORDER, lines: [...ORDER.lines, { listingId: DANO, quantity: 1 }] };
-    expect(await source.placeOrder(withMilk)).toMatchObject({ code: 'shop_order_changed' });
+    expect(await source.placeOrder(withMilk, ADDRESS)).toMatchObject({
+      code: 'shop_order_changed',
+    });
   });
 
   it('keeps the coupon that took money off, and copies the lines', async () => {
     const { source } = withClock();
     // ৳687 − 10% (৳68.70) + ৳80
-    const { orderNo, token } = await placed(source, {
+    const placedOrder = await placed(source, {
       ...ORDER,
       couponCode: 'WELCOME10',
       paymentMethod: 'online',
       expectedTotal: '698.30',
     });
-    const order = await source.order(orderNo, token);
+    const order = await source.order(numberOf(placedOrder), placedOrder.token);
     expect(order).toMatchObject({
       couponCode: 'WELCOME10',
       discount: '68.7000',

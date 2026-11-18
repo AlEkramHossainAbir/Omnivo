@@ -344,8 +344,9 @@ async function seed(): Promise<void> {
 
   console.log(
     `\nSign in to the ERP: workspace ${SLUG}, ${OWNER.email}, password ${OWNER.password}\n` +
-      `See the shop from this API (the shop's dev server reads the mock unless told otherwise):\n` +
-      `  SHOP_SOURCE=api SHOP_API_URL=${API_URL} pnpm --filter @omnivo/shop dev\n` +
+      `See the shop from this API (the shop's dev server reads the mock unless told otherwise).\n` +
+      `SHOP_API_KEY is the API's STOREFRONT_SHOP_KEY (.env.example has the dev one):\n` +
+      `  SHOP_SOURCE=api SHOP_API_URL=${API_URL} SHOP_API_KEY=… pnpm --filter @omnivo/shop dev\n` +
       `  then open ${launched.shopUrl}`,
   );
 }

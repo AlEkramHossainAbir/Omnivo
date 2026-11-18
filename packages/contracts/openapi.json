@@ -2210,7 +2210,7 @@
                           "maximum": 9007199254740991
                         },
                         "permissions": {
-                          "maxItems": 52,
+                          "maxItems": 54,
                           "type": "array",
                           "items": {
                             "type": "string",
@@ -2266,7 +2266,9 @@
                               "pos.register.manage",
                               "pos.shift.manage",
                               "pos.return.create",
-                              "storefront.manage"
+                              "storefront.manage",
+                              "storefront.order.read",
+                              "storefront.order.manage"
                             ]
                           }
                         }
@@ -101949,6 +101951,1048 @@
         }
       }
     },
+    "/public/v1/orders": {
+      "post": {
+        "operationId": "publicStorefront.placeOrder",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "Place an order: price it, hold its stock and send the phone code (shop server only)",
+        "security": [
+          {
+            "shopKey": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lines": {
+                    "minItems": 1,
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "listingId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "quantity": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "maximum": 99
+                        }
+                      },
+                      "required": [
+                        "listingId",
+                        "quantity"
+                      ]
+                    }
+                  },
+                  "zoneId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 32
+                  },
+                  "couponCode": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9-]{1,20}$"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "address": {
+                    "type": "string",
+                    "minLength": 10,
+                    "maxLength": 300
+                  },
+                  "paymentMethod": {
+                    "type": "string",
+                    "enum": [
+                      "cod",
+                      "online"
+                    ]
+                  },
+                  "termsAccepted": {
+                    "type": "boolean",
+                    "const": true
+                  },
+                  "expectedTotal": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "lines",
+                  "zoneId",
+                  "name",
+                  "phone",
+                  "address",
+                  "paymentMethod",
+                  "termsAccepted",
+                  "expectedTotal"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "answer": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "next": {
+                              "type": "string",
+                              "const": "verify"
+                            },
+                            "maskedPhone": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "resendInSeconds": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "next",
+                            "maskedPhone",
+                            "resendInSeconds"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "next": {
+                              "type": "string",
+                              "const": "confirmed"
+                            },
+                            "orderNo": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "phone": {
+                              "type": "string",
+                              "minLength": 1
+                            }
+                          },
+                          "required": [
+                            "next",
+                            "orderNo",
+                            "phone"
+                          ]
+                        }
+                      ]
+                    },
+                    "token": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_-]{22}$"
+                    }
+                  },
+                  "required": [
+                    "answer",
+                    "token"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/orders/code-wait": {
+      "post": {
+        "operationId": "publicStorefront.codeWait",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "The order that waits for its phone code, by its token (shop server only)",
+        "security": [
+          {
+            "shopKey": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22}$"
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "next": {
+                      "type": "string",
+                      "const": "verify"
+                    },
+                    "maskedPhone": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "resendInSeconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "listingIds": {
+                      "minItems": 1,
+                      "maxItems": 50,
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 64
+                      }
+                    }
+                  },
+                  "required": [
+                    "next",
+                    "maskedPhone",
+                    "resendInSeconds",
+                    "listingIds"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/orders/verify": {
+      "post": {
+        "operationId": "publicStorefront.verifyCode",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "Check the phone code; a right one confirms the order (shop server only)",
+        "security": [
+          {
+            "shopKey": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22}$"
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token",
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderNo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "phone": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "orderNo",
+                    "phone"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/orders/resend": {
+      "post": {
+        "operationId": "publicStorefront.resendCode",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "Send the phone code again (shop server only)",
+        "security": [
+          {
+            "shopKey": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22}$"
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "resendInSeconds": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "resendInSeconds"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/orders/find": {
+      "post": {
+        "operationId": "publicStorefront.order",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "A confirmed order for the browser that placed it, by number and token (shop server only)",
+        "security": [
+          {
+            "shopKey": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22}$"
+                  },
+                  "orderNo": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token",
+                  "orderNo"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderNo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "placedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "confirmed",
+                        "packed",
+                        "shipped",
+                        "delivered",
+                        "cancelled",
+                        "returned"
+                      ]
+                    },
+                    "history": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "confirmed",
+                              "packed",
+                              "shipped",
+                              "delivered",
+                              "cancelled",
+                              "returned"
+                            ]
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "at"
+                        ]
+                      }
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "phone": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "address": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "zoneName": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "paymentMethod": {
+                      "type": "string",
+                      "enum": [
+                        "cod",
+                        "online"
+                      ]
+                    },
+                    "lines": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "listingId": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "slug": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "name": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "packSize": {
+                            "type": "string"
+                          },
+                          "image": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string",
+                                "pattern": "^(\\/(?!\\/)|https:\\/\\/|http:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d{1,5})?\\/)"
+                              },
+                              "alt": {
+                                "type": "string",
+                                "minLength": 1
+                              }
+                            },
+                            "required": [
+                              "url",
+                              "alt"
+                            ]
+                          },
+                          "quantity": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 99
+                          },
+                          "unitPrice": {
+                            "type": "string"
+                          },
+                          "lineTotal": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "listingId",
+                          "slug",
+                          "name",
+                          "packSize",
+                          "image",
+                          "quantity",
+                          "unitPrice",
+                          "lineTotal"
+                        ]
+                      }
+                    },
+                    "subtotal": {
+                      "type": "string"
+                    },
+                    "discount": {
+                      "type": "string"
+                    },
+                    "couponCode": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "pattern": "^[A-Z0-9-]{1,20}$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "deliveryCharge": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "orderNo",
+                    "placedAt",
+                    "status",
+                    "history",
+                    "name",
+                    "phone",
+                    "address",
+                    "zoneName",
+                    "paymentMethod",
+                    "lines",
+                    "subtotal",
+                    "discount",
+                    "couponCode",
+                    "deliveryCharge",
+                    "total"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/tracking": {
+      "post": {
+        "operationId": "publicStorefront.tracking",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "An order's tracking by its link's token: no name, phone or address (shop server only)",
+        "security": [
+          {
+            "shopKey": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{22}$"
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderNo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "placedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "confirmed",
+                        "packed",
+                        "shipped",
+                        "delivered",
+                        "cancelled",
+                        "returned"
+                      ]
+                    },
+                    "history": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "confirmed",
+                              "packed",
+                              "shipped",
+                              "delivered",
+                              "cancelled",
+                              "returned"
+                            ]
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "at"
+                        ]
+                      }
+                    },
+                    "itemCount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "string"
+                    },
+                    "paymentMethod": {
+                      "type": "string",
+                      "enum": [
+                        "cod",
+                        "online"
+                      ]
+                    },
+                    "shipments": {
+                      "maxItems": 5,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "courier": {
+                            "type": "string",
+                            "enum": [
+                              "pathao",
+                              "steadfast",
+                              "redx",
+                              "ecourier",
+                              "paperfly"
+                            ]
+                          },
+                          "trackingCode": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "trackingUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "events": {
+                            "minItems": 1,
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "booked",
+                                    "picked_up",
+                                    "in_transit",
+                                    "out_for_delivery",
+                                    "delivered",
+                                    "partly_delivered",
+                                    "on_hold",
+                                    "returning",
+                                    "returned",
+                                    "cancelled"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                                },
+                                "note": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 300
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "at",
+                                "note"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "courier",
+                          "trackingCode",
+                          "trackingUrl",
+                          "events"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "orderNo",
+                    "placedAt",
+                    "status",
+                    "history",
+                    "itemCount",
+                    "total",
+                    "paymentMethod",
+                    "shipments"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/public/v1/track": {
+      "post": {
+        "operationId": "publicStorefront.track",
+        "tags": [
+          "publicStorefront"
+        ],
+        "summary": "An order's tracking by its number and the phone it was placed with (shop server only)",
+        "security": [
+          {
+            "shopKey": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string"
+                  },
+                  "orderNo": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "phone",
+                  "orderNo"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "orderNo": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "placedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "confirmed",
+                        "packed",
+                        "shipped",
+                        "delivered",
+                        "cancelled",
+                        "returned"
+                      ]
+                    },
+                    "history": {
+                      "minItems": 1,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "confirmed",
+                              "packed",
+                              "shipped",
+                              "delivered",
+                              "cancelled",
+                              "returned"
+                            ]
+                          },
+                          "at": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "at"
+                        ]
+                      }
+                    },
+                    "itemCount": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "total": {
+                      "type": "string"
+                    },
+                    "paymentMethod": {
+                      "type": "string",
+                      "enum": [
+                        "cod",
+                        "online"
+                      ]
+                    },
+                    "shipments": {
+                      "maxItems": 5,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "courier": {
+                            "type": "string",
+                            "enum": [
+                              "pathao",
+                              "steadfast",
+                              "redx",
+                              "ecourier",
+                              "paperfly"
+                            ]
+                          },
+                          "trackingCode": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 64
+                          },
+                          "trackingUrl": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^https:\\/\\/"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "events": {
+                            "minItems": 1,
+                            "maxItems": 100,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "enum": [
+                                    "booked",
+                                    "picked_up",
+                                    "in_transit",
+                                    "out_for_delivery",
+                                    "delivered",
+                                    "partly_delivered",
+                                    "on_hold",
+                                    "returning",
+                                    "returned",
+                                    "cancelled"
+                                  ]
+                                },
+                                "at": {
+                                  "type": "string",
+                                  "format": "date-time",
+                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                                },
+                                "note": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 300
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "status",
+                                "at",
+                                "note"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "courier",
+                          "trackingCode",
+                          "trackingUrl",
+                          "events"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "orderNo",
+                    "placedAt",
+                    "status",
+                    "history",
+                    "itemCount",
+                    "total",
+                    "paymentMethod",
+                    "shipments"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/storefront/settings": {
       "get": {
         "operationId": "storefront.getSettings",
@@ -109577,6 +110621,11 @@
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+      },
+      "shopKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-shop-key"
       }
     },
     "schemas": {

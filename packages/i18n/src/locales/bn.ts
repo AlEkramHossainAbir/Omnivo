@@ -5930,6 +5930,11 @@ export const bn: Messages = {
     },
     storefront: {
       manage: 'অনলাইন শপ চালানো: সেটিংস, ক্যাটাগরি, লিস্টিং আর ছবি, শপের চেহারা আর পেজ, আর শপ খোলা',
+      // Step 27a
+      order: {
+        read: 'শপের অর্ডার দেখা, ক্রেতার ফোন আর ঠিকানাসহ',
+        manage: 'শপের অর্ডার এগিয়ে নেওয়া আর বাতিল করা',
+      },
     },
   },
   invite: {
@@ -6681,6 +6686,10 @@ export const bn: Messages = {
         shift_variance:
           '{{register}}-এর {{number}} বন্ধ হয়েছে {{difference}} নিয়ে। গোনাটা দেখতে শিফটটা খুলুন।',
       },
+      // Step 27a: a shop order got its phone code. {{total}} arrives as money ("৳578")
+      storefront: {
+        order_confirmed: 'শপে নতুন অর্ডার {{number}}, মোট {{total}}।',
+      },
     },
   },
   errors: {
@@ -7375,11 +7384,17 @@ export const bn: Messages = {
     shop_code_too_many: 'অনেকবার ভুল কোড দেওয়া হয়েছে। নতুন কোড পেতে আবার অর্ডার দিন।',
     shop_code_resend_wait: 'একটু অপেক্ষা করে নতুন কোড চান।',
     shop_code_no_order: 'কোনো অর্ডার কোডের অপেক্ষায় নেই। আবার অর্ডার দিন।',
+    shop_order_limit:
+      'এখান থেকে অনেকগুলো অর্ডার হয়েছে। {{minutes}} মিনিট অপেক্ষা করে আবার চেষ্টা করুন।',
+    shop_code_expired: 'এই কোডের মেয়াদ শেষ। নতুন কোড চান।',
+    shop_code_sends_used: 'এই অর্ডারের জন্য আর কোড পাঠানো যাবে না। আবার অর্ডার দিন।',
     shop_order_no_format: 'SMS-এর অর্ডার নম্বরটি লিখুন, যেমন W-000123।',
     shop_track_not_found:
       'এই নম্বর আর মোবাইল নম্বরের কোনো অর্ডার নেই। দুটোই দেখে আবার চেষ্টা করুন।',
     shop_track_too_many: 'অনেকবার চেষ্টা হয়েছে। {{minutes}} মিনিট অপেক্ষা করে আবার চেষ্টা করুন।',
     storefront_not_found: 'এই ঠিকানায় কোনো শপ নেই। ঠিকানাটা দেখুন, অথবা শপের কাছে লিংক চেয়ে নিন।',
+    storefront_shop_key_invalid:
+      'শপের সার্ভার কোনো key পাঠায়নি, বা ভুল key পাঠিয়েছে। SHOP_API_KEY দেখুন।',
     storefront_sale_percent: '১ থেকে ৯৯-এর মধ্যে একটা পূর্ণ শতাংশ লিখুন।',
     storefront_sale_zero: '৳০-এর বেশি একটা অঙ্ক লিখুন।',
     storefront_sale_dates: 'শুরুর পরের একটা শেষ সময় বাছুন, অথবা শেষ সময় ফাঁকা রাখুন।',

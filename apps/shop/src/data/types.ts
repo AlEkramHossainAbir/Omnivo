@@ -1,16 +1,17 @@
 import type {
+  PublicOrderPlaced,
   PublicShop,
   ShopCartQuote,
   ShopCartQuoteRequest,
   ShopCategory,
   ShopCheckoutSettings,
   ShopCodeResent,
+  ShopCodeWait,
   ShopHome,
   ShopListingPage,
   ShopListingQuery,
   ShopOrder,
   ShopOrderConfirmed,
-  ShopOrderPlaced,
   ShopOrderRequest,
   ShopProductPage,
   ShopTextPage,
@@ -30,28 +31,30 @@ export type ShopRefusalCode =
   | 'shop_code_wrong'
   | 'shop_code_too_many'
   | 'shop_code_resend_wait'
-  | 'shop_code_no_order';
+  | 'shop_code_no_order'
+  // Step 27a: the API's own limits (27a's decision 17)
+  | 'shop_order_limit'
+  | 'shop_code_expired'
+  | 'shop_code_sends_used';
+
+// Step 27a: the /track form's refusals. Their own list, not ShopRefusalCode: the form is a page,
+// not one of the order routes, and draws them itself (server/track.ts), so they need no status in
+// server/orders.ts
+export type ShopTrackRefusal = 'shop_track_not_found' | 'shop_track_too_many';
 
 // What a source answers when it may say no. A refusal is a normal answer (a wrong code, a price
 // that changed), not an exception: `throw` stays for a source that is down, which the routes turn
-// into internal_error. `params` go into the error's words ("2 tries left", "Orders start at ৳300")
-export type SourceResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; code: ShopRefusalCode; params?: Record<string, string | number> };
+// into internal_error. `params` go into the error's words ("2 tries left", "Orders start at ৳300").
+// Step 27a: `C` is the list of refusals the method may give; the order routes' list by default
+export type SourceResult<T, C extends string = ShopRefusalCode> =
+  { ok: true; value: T } | { ok: false; code: C; params?: Record<string, string | number> };
 
-// A placed order and its secret token. The token never reaches the browser's scripts: the route
-// puts it in an httpOnly cookie (decision 4), and only `answer` goes into the body
-export interface PlacedOrder {
-  answer: ShopOrderPlaced;
-  orderNo: string;
-  token: string;
-}
-
-// What /checkout/verify draws for the order that waits: the same as the `verify` answer, plus the
-// listings it holds. Step 26c.5: a right code takes them out of this browser's cart (decision 23),
-// and the page cannot know them otherwise: the order is on the server, and the cart may have
-// changed in another tab since Confirm Order
-export type ShopCodeWait = Extract<ShopOrderPlaced, { next: 'verify' }> & { listingIds: string[] };
+// A placed order is the API's answer as it is (27a.1's PublicOrderPlaced): what the shopper is told
+// (`answer`) and the order's secret token. The token never reaches the browser's scripts: the route
+// puts it in an httpOnly cookie (decision 4), and only `answer` goes into the body. Step 27a: there
+// is no order number next to them any more. An order that waits for its code has none yet (27a's
+// decision 20); one confirmed at once has it in `answer`
+export type PlacedOrder = PublicOrderPlaced;
 
 // Step 26e: an order a test shop starts with, and how to track it. The verify page shows a test
 // shop's code (testCode); the /track page shows these, because a test shop sends no SMS with the
@@ -83,9 +86,12 @@ export interface ShopSource {
 
   // Step 26c: the checkout. The routes check every request with its schema first, as for quote()
   checkoutSettings(): Promise<ShopCheckoutSettings>;
-  placeOrder(request: ShopOrderRequest): Promise<SourceResult<PlacedOrder>>;
+  // Step 27a: `address` is the shopper's own (Astro's clientAddress). The API counts the orders
+  // from one connection with it (SHOP_ORDERS_PER_ADDRESS); the mock has no such limit
+  placeOrder(request: ShopOrderRequest, address: string): Promise<SourceResult<PlacedOrder>>;
   // The order that waits for its phone code, found by the token from the cookie. null: none
-  // waits (never placed, confirmed already, dropped, or past its hour)
+  // waits (never placed, confirmed already, dropped, or past its hour). Step 27a: the type is the
+  // API's answer (shopCodeWaitSchema), so the verify page draws exactly what the API sends
   codeWait(token: string): Promise<ShopCodeWait | null>;
   verifyCode(token: string, code: string): Promise<SourceResult<ShopOrderConfirmed>>;
   resendCode(token: string): Promise<SourceResult<ShopCodeResent>>;
@@ -96,14 +102,19 @@ export interface ShopSource {
   // shop: its code goes only to the phone
   readonly testCode: string | null;
 
-  // Step 26e: tracking. Both answer null for "no such order", never an error: a mistyped number and
-  // an old link are normal traffic, like an unknown slug in product().
-  // The order a tracking link names. The page checks the token's shape first
-  // (shopTrackingTokenSchema), so a source never sees a cut or edited link
+  // Step 26e: tracking. The order a tracking link names, or null for "no such order", never an
+  // error: an old link is normal traffic, like an unknown slug in product(). The page checks the
+  // token's shape first (shopTrackingTokenSchema), so a source never sees a cut or edited link
   tracking(token: string): Promise<ShopTracking | null>;
   // The /track form: the order with this number, only when it was placed with this phone. Both come
-  // from shopTrackRequestSchema, so the phone is 01XXXXXXXXX and the number W-000123
-  track(request: ShopTrackRequest): Promise<ShopTracking | null>;
+  // from shopTrackRequestSchema, so the phone is 01XXXXXXXXX and the number W-000123.
+  // Step 27a: a refusal, not null, because there are two: no such pair, and too many misses from
+  // this `address` (the shopper's, as for placeOrder). The limit moved into the source: the API
+  // keeps it in Redis, next to the orders, and the mock in its own memory (mock/rate-limit.ts)
+  track(
+    request: ShopTrackRequest,
+    address: string,
+  ): Promise<SourceResult<ShopTracking, ShopTrackRefusal>>;
   // A footer page. null: the shop has not written it, and the page answers 404
   textPage(slug: ShopTextPageSlug): Promise<ShopTextPage | null>;
   // A test shop's demo orders (ShopTestTracking); null for a real shop

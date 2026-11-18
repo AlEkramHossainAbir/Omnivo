@@ -58,6 +58,9 @@ const TARGET = {
   // Step 20b: the list, for an old notification without the shift's id; one with it opens the
   // shift (shiftOf below)
   'pos.shift_variance': '/pos/shifts',
+  // Step 27a: a new shop order. The Orders page comes in step 27b, and opens the order then; until
+  // it does, the overview, where the person was most likely to be
+  'storefront.order_confirmed': '/',
 } as const satisfies Record<Exclude<NotificationType, DocumentNotificationType>, string>;
 
 // A document's page from the notification's kind and id. The list of that kind when the id is
@@ -139,9 +142,11 @@ function badgeText(count: number): string {
 function useWords() {
   const { t, format: locale } = useLocale();
   return (params: NotificationParams): NotificationParams => {
-    const { report, format, document: kind, difference } = params;
+    const { report, format, document: kind, difference, total } = params;
     return {
       ...params,
+      // Step 27a: a shop order's total arrives as a decimal string ("578.0000"): money, whole taka
+      ...(typeof total === 'string' && isMoneyAmount(total) && { total: locale.money(total) }),
       // Step 20b (decision 66): the variance bell's signed difference becomes "৳520 short"
       ...(typeof difference === 'string' &&
         isMoneyAmount(difference.replace(/^-/, '')) && {

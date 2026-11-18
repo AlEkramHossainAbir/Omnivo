@@ -39,6 +39,9 @@ const words = {
   triesOther: t('shop.verify.triesLeft', { ...count, count: 2 }),
   tooMany: t('errors.shop_code_too_many'),
   noOrder: t('errors.shop_code_no_order'),
+  // Step 27a: the API's two other code rules (27a's decision 17)
+  expired: t('errors.shop_code_expired'),
+  sendsUsed: t('errors.shop_code_sends_used'),
   format: t('errors.shop_code_format'),
   wait: t('errors.shop_code_resend_wait'),
   failed: t('shop.verify.failed'),
@@ -159,7 +162,8 @@ const textLink =
             role="status"
             class="text-center text-sf-small text-muted empty:hidden"
           ></p>
-          {/* After five wrong codes or a dropped order: the only way on is a new order */}
+          {/* After five wrong codes or a dropped order: the only way on is a new order. Step 27a:
+              also after the third code, next to the box (the last code may still work) */}
           <a
             data-start-again
             href="/checkout"
@@ -196,6 +200,8 @@ const textLink =
     'triesOther',
     'tooMany',
     'noOrder',
+    'expired',
+    'sendsUsed',
     'format',
     'wait',
     'failed',
@@ -389,6 +395,12 @@ const textLink =
         case 'shop_code_no_order':
           this.end(this.word('noOrder'));
           return;
+        // Step 27a: no try was spent. The digits go, and "Resend code" below is the way on
+        case 'shop_code_expired':
+          this.showError(this.word('expired'));
+          this.input.value = '';
+          this.input.focus();
+          return;
         // The route's own check (400) says the same as the page's check above
         case 'invalid_input':
           this.showError(this.word('format'));
@@ -422,6 +434,8 @@ const textLink =
       const problem = problemParts(body);
       if (problem?.code === 'shop_code_no_order') {
         this.end(this.word('noOrder'));
+      } else if (problem?.code === 'shop_code_sends_used') {
+        this.sendsUsed();
       } else if (problem?.code === 'shop_code_resend_wait' && seconds !== null) {
         // Another tab asked a moment ago: the server's wait is the one that counts
         this.say(this.word('wait'));
@@ -429,6 +443,17 @@ const textLink =
       } else {
         this.showError(this.word('failed'));
       }
+    }
+
+    // Step 27a: the order has had its three codes. Not end(): the last code may still be on its way
+    // or still work for a few minutes, so the box and Confirm Order stay. "Resend code" goes, and
+    // the way back to the checkout shows under them, for a shopper whose phone never gets the SMS
+    private sendsUsed(): void {
+      window.clearInterval(this.timer);
+      part<HTMLElement>(this, '[data-resend-row]').hidden = true;
+      this.say('');
+      this.showError(this.word('sendsUsed'));
+      part<HTMLElement>(this, '[data-start-again]').hidden = false;
     }
 
     private waiting(): boolean {

@@ -117,6 +117,79 @@ test('the checkout waits for the minimum order and for the terms', async ({ page
   await expect(confirm).toBeDisabled();
 });
 
+// Step 27a: the API's own answers, which the mock never gives in a test's time (an order limit, a
+// code past its 10 minutes, a fourth code). The browser gets them as the API's source would hand
+// them over: the shop's routes answer with the same problem JSON (server/orders.ts)
+function problemBody(status: number, code: string, params?: Record<string, number>): string {
+  return JSON.stringify({ title: 'Refused', status, detail: code, code, params });
+}
+
+test('the checkout says how long to wait after too many orders', async ({ page }) => {
+  await page.goto(`/p/${SHAMPOO.slug}`);
+  await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: `One more ${SHAMPOO.name}` }).click();
+  await fillDetails(page);
+  await page.route('**/api/orders', (route) =>
+    route.fulfill({
+      status: 429,
+      contentType: 'application/problem+json',
+      body: problemBody(429, 'shop_order_limit', { minutes: 12 }),
+    }),
+  );
+  await page.getByRole('button', { name: 'Confirm Order' }).click();
+  await expect(
+    page.getByText('Too many orders from here. Wait 12 minutes, then try again.'),
+  ).toBeVisible();
+  await expect(page).toHaveURL('/checkout');
+});
+
+test('the code page says when a code expired and when no more codes can come', async ({ page }) => {
+  // The page's own clock, so "Resend code" opens without waiting 45 real seconds
+  await page.clock.install();
+  await page.goto(`/p/${SHAMPOO.slug}`);
+  await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: `One more ${SHAMPOO.name}` }).click();
+  await fillDetails(page);
+  await page.getByRole('button', { name: 'Confirm Order' }).click();
+  await expect(page).toHaveURL('/checkout/verify');
+
+  // A code past its 10 minutes: no try spent, the digits go and the box keeps the focus
+  await page.route('**/api/orders/verify', (route) =>
+    route.fulfill({
+      status: 422,
+      contentType: 'application/problem+json',
+      body: problemBody(422, 'shop_code_expired'),
+    }),
+  );
+  const box = page.getByRole('textbox', { name: '6-digit code' });
+  await box.fill('123456');
+  await page.getByRole('button', { name: 'Confirm Order' }).click();
+  await expect(page.getByText('This code has expired. Ask for a new code.')).toBeVisible();
+  await expect(box).toHaveValue('');
+  await expect(box).toBeFocused();
+
+  // The order has had its three codes: "Resend code" goes, the box stays, and the way back shows
+  await page.route('**/api/orders/resend', (route) =>
+    route.fulfill({
+      status: 422,
+      contentType: 'application/problem+json',
+      body: problemBody(422, 'shop_code_sends_used'),
+    }),
+  );
+  await page.clock.fastForward('00:46');
+  const resend = page.getByRole('button', { name: 'Resend code' });
+  await expect(resend).not.toHaveAttribute('aria-disabled', 'true');
+  await resend.click();
+  await expect(
+    page.getByText('No more codes can be sent for this order. Place the order again.'),
+  ).toBeVisible();
+  await expect(resend).toBeHidden();
+  await expect(box).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Back to checkout' })).toBeVisible();
+});
+
 test('Mobile Banking needs no phone code in the test shop', async ({ page }) => {
   await page.goto(`/p/${SHAMPOO.slug}`);
   await page.getByRole('button', { name: 'Add to cart', exact: true }).click();

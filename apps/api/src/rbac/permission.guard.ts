@@ -14,8 +14,9 @@ export class PermissionGuard implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const route = routeOf(context);
-    // চুক্তির বাইরের রুট (/docs) আর public রুট (লগইন) — এখানে দেখার কিছু নেই
-    if (!route || route.auth === 'public') return true;
+    // চুক্তির বাইরের রুট (/docs) আর public রুট (লগইন) — এখানে দেখার কিছু নেই। Step 27a: nor a
+    // 'shop' route: the shop's server is no member of any workspace, and ShopKeyGuard checked its key
+    if (route?.auth !== 'bearer') return true;
 
     // প্রতিটা লগইন-করা request-এ, permission চাক বা না চাক: বাদ পড়া সদস্যের টোকেন আরও ১৫ মিনিট বৈধ,
     // কিন্তু সে সেই সময়ে ব্রাঞ্চের তালিকাও পড়তে পারবে না। দাম: প্রতি request-এ একটা Redis GET

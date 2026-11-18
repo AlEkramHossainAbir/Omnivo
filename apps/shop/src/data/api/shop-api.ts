@@ -4,7 +4,9 @@ import {
   isErrorCode,
   problemSchema,
   type RouteDef,
+  SHOP_CLIENT_ADDRESS_HEADER,
   SHOP_HOST_HEADER,
+  SHOP_KEY_HEADER,
 } from '@omnivo/contracts';
 import type { z } from 'zod';
 
@@ -38,9 +40,16 @@ export class ShopMissingError extends Error {
 
 // What a route may answer: its value, or a refusal the caller decides about ("no such product"
 // is a normal answer for product(), a mistake for shop()). `code` is null for a code this shop
-// does not know, from an API newer than the shop
+// does not know, from an API newer than the shop. Step 27a: `params` are the problem's own
+// ("triesLeft", "seconds", "minutes"), for the words the shopper reads; {} when it has none
 export type ShopApiResult<T> =
-  { ok: true; value: T } | { ok: false; status: number; code: ErrorCode | null };
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      status: number;
+      code: ErrorCode | null;
+      params: Record<string, string | number>;
+    };
 
 // The query as the API reads it: every value a string, the ones not set left out
 type Query = Record<string, string | undefined>;
@@ -50,9 +59,12 @@ export interface ShopApi {
     route: RouteDef & { method: 'GET'; response: S },
     input?: { params?: Record<string, string>; query?: Query },
   ): Promise<ShopApiResult<z.output<S>>>;
+  // Step 27a: `clientAddress` is the shopper's address, for the routes that count a shopper
+  // (placeOrder, track). It is sent only on a route with auth 'shop', next to the key
   post<S extends z.ZodType, B extends z.ZodType>(
     route: RouteDef & { method: 'POST'; response: S; body: B },
     body: z.input<B>,
+    options?: { clientAddress?: string },
   ): Promise<ShopApiResult<z.output<S>>>;
 }
 
@@ -60,6 +72,8 @@ export interface ShopApiOptions {
   apiUrl: string;
   // The shop's host, as the shopper's browser asked for it (acme.omnivosoft.com)
   host: string;
+  // Step 27a: SHOP_API_KEY, sent on the order routes only (auth: 'shop')
+  key: string;
   cache: AnswerCache;
   // How long a page waits for the API. Long enough for a slow query, short enough that a shopper
   // sees an error page instead of a browser that spins forever
@@ -71,14 +85,21 @@ export interface ShopApiOptions {
 export function createShopApi({
   apiUrl,
   host,
+  key,
   cache,
   timeoutMs = 8_000,
   fetch: send = fetch,
 }: ShopApiOptions): ShopApi {
   // One request, read to the end: the status and the JSON body (null when it is not JSON, such as
-  // a proxy's own HTML error page). A network failure or the timeout is a ShopApiError
-  async function ask(method: 'GET' | 'POST', path: string, body?: unknown): Promise<ApiAnswer> {
-    const headers = new Headers({ accept: 'application/json', [SHOP_HOST_HEADER]: host });
+  // a proxy's own HTML error page). A network failure or the timeout is a ShopApiError.
+  // `extra` are the order routes' own headers (the key and the shopper's address)
+  async function ask(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    extra: Record<string, string> = {},
+  ): Promise<ApiAnswer> {
+    const headers = new Headers({ accept: 'application/json', [SHOP_HOST_HEADER]: host, ...extra });
     if (body !== undefined) headers.set('content-type', 'application/json');
     let response: Response;
     try {
@@ -119,11 +140,30 @@ export function createShopApi({
       );
     }
     if (problem.data.code === 'storefront_not_found') throw new ShopMissingError(host);
+    // Step 27a: a wrong key is a setup mistake, never a shopper's. The message names both settings,
+    // because the log is the only place anyone reads it: the shopper sees the checkout's "try again"
+    if (problem.data.code === 'storefront_shop_key_invalid') {
+      throw new ShopApiError(
+        answer.status,
+        `${route.method} ${path}: the API refused the shop's key. SHOP_API_KEY must be the API's STOREFRONT_SHOP_KEY`,
+      );
+    }
     return {
       ok: false,
       status: answer.status,
       code: isErrorCode(problem.data.code) ? problem.data.code : null,
+      params: problem.data.params ?? {},
     };
+  }
+
+  // Step 27a: what an order route sends besides the host. Decided by the route's own `auth`, so a
+  // read route never carries the key (it would end up in the read routes' logs and cache for no
+  // reason) and an order route never goes without it
+  function shopHeaders(route: RouteDef, clientAddress: string | undefined): Record<string, string> {
+    if (route.auth !== 'shop') return {};
+    const headers: Record<string, string> = { [SHOP_KEY_HEADER]: key };
+    if (clientAddress !== undefined) headers[SHOP_CLIENT_ADDRESS_HEADER] = clientAddress;
+    return headers;
   }
 
   return {
@@ -138,10 +178,11 @@ export function createShopApi({
       const answer = await cache.read(`${host} ${path}`, () => ask('GET', path));
       return readAnswer(route, path, answer);
     },
-    async post(route, body) {
-      // Never kept: a POST asks about one cart, and its answer is today's prices
+    async post(route, body, options = {}) {
+      // Never kept: a POST asks about one cart or one order, and its answer is for now only
       const path = buildPath(route.path);
-      return readAnswer(route, path, await ask('POST', path, body));
+      const headers = shopHeaders(route, options.clientAddress);
+      return readAnswer(route, path, await ask('POST', path, body, headers));
     },
   };
 }

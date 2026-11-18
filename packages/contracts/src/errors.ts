@@ -626,6 +626,12 @@ export const ERROR_CODES = [
   'shop_code_too_many',
   'shop_code_resend_wait',
   'shop_code_no_order',
+  // Step 27a: the API's own limits. Too many orders from one phone or one connection in an hour
+  // (params.minutes says how long to wait); a code typed after its 10 minutes (the shopper asks for
+  // a new one); all three codes of an order sent already (the shopper places the order again)
+  'shop_order_limit',
+  'shop_code_expired',
+  'shop_code_sends_used',
   // Step 26e: the /track form. An order number in another shape, no order with this number and
   // phone (one code for both: the form never says which of the two is wrong), and too many tries
   // from one connection (the problem's params.minutes says how long to wait)
@@ -636,6 +642,9 @@ export const ERROR_CODES = [
   // workspace has turned the shop off), and a listing's sale as the ERP's form sends it: a
   // percent that is not a whole 1 to 99, an amount of zero, an end not after its start
   'storefront_not_found',
+  // Step 27a: a call to a shop-server route without the shop server's key (SHOP_KEY_HEADER), or
+  // with a wrong one. 401: no shopper ever sees it, only a misconfigured shop server or a stranger
+  'storefront_shop_key_invalid',
   'storefront_sale_percent',
   'storefront_sale_zero',
   'storefront_sale_dates',

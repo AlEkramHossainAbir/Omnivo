@@ -1,10 +1,15 @@
 import {
   compareMoney,
+  maskPhone,
   SHOP_CODE_RESEND_SECONDS,
+  SHOP_CODE_SENDS,
   SHOP_CODE_TRIES,
+  SHOP_CODE_VALID_MINUTES,
+  SHOP_ORDER_HOLD_MINUTES,
   type ShopCartQuote,
   type ShopCheckoutSettings,
   type ShopCodeResent,
+  type ShopCodeWait,
   type ShopOrder,
   type ShopOrderConfirmed,
   type ShopOrderLine,
@@ -14,17 +19,23 @@ import {
   type ShopTrackRequest,
 } from '@omnivo/contracts';
 
-import type { PlacedOrder, ShopCodeWait, SourceResult } from '../types';
+import type { PlacedOrder, SourceResult } from '../types';
 
 // Step 26c: the mock's orders, kept in memory (decision 3). Everything here is what step 26's API
 // will do with tables; the shape of the answers is the same, so the pages never change.
+// Step 27a: the API does it now (apps/api/src/storefront/orders/). The mock stays for `pnpm dev`,
+// the Playwright tests and the staging demo, and keeps the API's rules for the phone code, so the
+// pages are tested against the same answers. It has no order limits: a test places many orders
+// from one address, and the API's tests check those limits.
 
 // The code the mock takes. It sends no SMS, so the verify page shows it (ShopSource.testCode)
 export const MOCK_CODE = '123456';
 
 // How long an order waits for its code: the system design's stock hold (60 minutes, §14.4). After
-// that it is dropped, and the checkout cookie with the same life is gone too
-const WAIT_MS = 60 * 60 * 1000;
+// that it is dropped, and the checkout cookie with the same life is gone too. Step 27a: the API's
+// numbers, from the contracts, so the mock and the API cannot drift apart
+const WAIT_MS = SHOP_ORDER_HOLD_MINUTES * 60 * 1000;
+const CODE_MS = SHOP_CODE_VALID_MINUTES * 60 * 1000;
 
 interface MockOrder {
   token: string;
@@ -36,6 +47,10 @@ interface MockOrder {
   wrongCodes: number;
   resendAt: number;
   expiresAt: number;
+  // Step 27a: the API's rules for the code (27a's decision 17): each code works 10 minutes, and an
+  // order gets 3 at most
+  codeExpiresAt: number;
+  codeSends: number;
 }
 
 // Step 26e: an order the mock starts with (demo-orders.ts), so a tracking link and the /track form
@@ -64,17 +79,14 @@ function trackingOf({ order, shipments }: MockOrder): ShopTracking {
   };
 }
 
-// A token nobody can guess: 32 random bytes as 64 hex digits. Web Crypto, not node:crypto, so it
-// runs wherever the shop's server runs (Node today, a worker runtime maybe later)
+// A token nobody can guess. Step 27a: the API's shape (shopOrderTokenSchema): 16 random bytes (128
+// bits) as 22 base64url characters, so the cookies check one shape for both sources. Web Crypto
+// and btoa, not node:crypto or Buffer, so it runs wherever the shop's server runs
 function newToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-}
-
-// "01786120356" → "+880 17•• ••• 356". The first two digits say the operator and the last three
-// let the shopper see it is their number; the rest stays off a screenshot
-export function maskPhone(phone: string): string {
-  return `+880 ${phone.slice(1, 3)}•• ••• ${phone.slice(-3)}`;
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  const base64 = btoa(String.fromCharCode(...bytes));
+  // base64 → base64url: no "+" or "/" (they would need escaping in a cookie), no "=" padding
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 // W-000123: W for web, so a shop order is never mistaken for an ERP sales order (decision 3)
@@ -106,6 +118,8 @@ export function createOrderBook(
       wrongCodes: 0,
       resendAt: 0,
       expiresAt: 0,
+      codeExpiresAt: 0,
+      codeSends: 0,
     });
     byTrackingToken.set(trackingToken, key);
   }
@@ -219,16 +233,18 @@ export function createOrderBook(
         // The first code was "sent" just now, so a new one waits the same 45 seconds
         resendAt: placedAt.getTime() + SHOP_CODE_RESEND_SECONDS * 1000,
         expiresAt: placedAt.getTime() + WAIT_MS,
+        codeExpiresAt: placedAt.getTime() + CODE_MS,
+        codeSends: 1,
       };
       byToken.set(token, entry);
 
-      // Mobile Banking needs no code in the mock (decision 4): confirmed at once
+      // Mobile Banking needs no code in the mock (decision 4): confirmed at once. Its number is in
+      // the answer; a Cash on Delivery order's is not, as in the API, where it has none yet. (The
+      // mock numbers an order when it is placed, which the shopper never sees: a dropped order
+      // only leaves a gap in a book that is forgotten at the next restart)
       if (request.paymentMethod === 'online') {
         const confirmed = confirm(entry);
-        return {
-          ok: true,
-          value: { answer: { next: 'confirmed', ...confirmed }, orderNo: order.orderNo, token },
-        };
+        return { ok: true, value: { answer: { next: 'confirmed', ...confirmed }, token } };
       }
       return {
         ok: true,
@@ -238,7 +254,6 @@ export function createOrderBook(
             maskedPhone: maskPhone(order.phone),
             resendInSeconds: SHOP_CODE_RESEND_SECONDS,
           },
-          orderNo: order.orderNo,
           token,
         },
       };
@@ -258,6 +273,9 @@ export function createOrderBook(
     verify(token: string, code: string): SourceResult<ShopOrderConfirmed> {
       const entry = waiting(token);
       if (!entry) return { ok: false, code: 'shop_code_no_order' };
+      // Step 27a: a code past its 10 minutes is refused before it is compared, as the API does: it
+      // cannot be right any more, so it costs no try
+      if (entry.codeExpiresAt <= now().getTime()) return { ok: false, code: 'shop_code_expired' };
       if (code === MOCK_CODE) return { ok: true, value: confirm(entry) };
 
       entry.wrongCodes += 1;
@@ -277,11 +295,17 @@ export function createOrderBook(
     resend(token: string): SourceResult<ShopCodeResent> {
       const entry = waiting(token);
       if (!entry) return { ok: false, code: 'shop_code_no_order' };
+      // Step 27a: the third code was the last, before any wait: waiting would not help
+      if (entry.codeSends >= SHOP_CODE_SENDS) return { ok: false, code: 'shop_code_sends_used' };
       const wait = secondsUntil(entry.resendAt);
       // Every SMS costs the shop money, and a page that resends on every click could be used to
       // flood someone's phone. The wait is the server's; the button's countdown only shows it
       if (wait > 0) return { ok: false, code: 'shop_code_resend_wait', params: { seconds: wait } };
       entry.resendAt = now().getTime() + SHOP_CODE_RESEND_SECONDS * 1000;
+      // The new code works its own 10 minutes. The mock's code is always MOCK_CODE, so "the newest
+      // replaces the older one" cannot be seen here; the API's tests check it
+      entry.codeSends += 1;
+      entry.codeExpiresAt = now().getTime() + CODE_MS;
       // The wrong codes are not forgiven: a new SMS must not give a guesser five more tries
       return { ok: true, value: { resendInSeconds: SHOP_CODE_RESEND_SECONDS } };
     },
@@ -319,5 +343,3 @@ export function createOrderBook(
     },
   };
 }
-
-export type MockOrderBook = ReturnType<typeof createOrderBook>;

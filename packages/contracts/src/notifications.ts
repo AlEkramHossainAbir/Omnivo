@@ -27,6 +27,9 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // so it stopped; sent to the person who made the schedule
 // report.schedule_failed: params { report, format } — one person's file or email could not be made
 // or sent; sent to the person who made the schedule
+// storefront.order_confirmed: params { id, number, total } — a shop order got its phone code
+// (step 27a); sent to the owners and the people with storefront.order.read. total is the amount
+// as a decimal string, which the bell writes as money
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
@@ -45,6 +48,7 @@ export const NOTIFICATION_TYPES = [
   'approval.rejected',
   'pos.sold_short',
   'pos.shift_variance',
+  'storefront.order_confirmed',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

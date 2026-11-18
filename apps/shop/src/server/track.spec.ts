@@ -3,10 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ShopSource } from '../data/types';
 import { mockDemoOrders } from '../data/mock/demo-orders';
 import { createMockSource } from '../data/mock/mock-source';
-import { createRateLimiter } from './rate-limit';
 import { answerTrackForm } from './track';
 
-// Step 26e: the /track form's POST
+// Step 26e: the /track form's POST. Step 27a: the limit is the source's now (the mock's here), so
+// these tests check it through the mock source, as the page meets it
 
 const SYLHET = { phone: '01786 120356', orderNo: 'w-000123' };
 const HOME = '203.0.113.7';
@@ -16,14 +16,12 @@ function post(body: Record<string, string>): Request {
   return new Request('http://shop.test/track', { method: 'POST', body: new URLSearchParams(body) });
 }
 
-// Each test has its own source and limiter, so no test spends another's tries
+// Each test has its own source, and with it its own limit, so no test spends another's tries
 function context(source: ShopSource = createMockSource(undefined, mockDemoOrders)) {
-  const limiter = createRateLimiter({ tries: 10, windowMs: 15 * 60 * 1000 });
   return {
     source,
-    limiter,
     ask: (body: Record<string, string>, address = HOME) =>
-      answerTrackForm(post(body), { source, limiter, address }),
+      answerTrackForm(post(body), { source, address }),
   };
 }
 
@@ -44,13 +42,13 @@ describe('the track form', () => {
   });
 
   it('treats a body that is not a form as empty boxes', async () => {
-    const { source, limiter } = context();
+    const { source } = context();
     const request = new Request('http://shop.test/track', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(SYLHET),
     });
-    const answer = await answerTrackForm(request, { source, limiter, address: HOME });
+    const answer = await answerTrackForm(request, { source, address: HOME });
     expect(answer.kind).toBe('invalid');
     if (answer.kind === 'invalid') expect(answer.values).toEqual({ phone: '', orderNo: '' });
   });
@@ -89,17 +87,27 @@ describe('the track form', () => {
     expect((await ask(SYLHET)).kind).toBe('found');
   });
 
-  it('says try again when the source fails, and counts no miss', async () => {
+  it('says try again when the source fails', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const broken: ShopSource = {
       ...createMockSource(),
       track: () => Promise.reject(new Error('API down')),
     };
     const { ask } = context(broken);
-    for (let attempt = 0; attempt < 11; attempt += 1) {
-      expect(await ask(SYLHET)).toMatchObject({ kind: 'refused', code: 'internal_error' });
-    }
+    expect(await ask(SYLHET)).toMatchObject({ kind: 'refused', code: 'internal_error' });
     expect(error).toHaveBeenCalledWith('track order failed', expect.any(Error));
     error.mockRestore();
+  });
+
+  it('says try again in a minute when the source gives no wait', async () => {
+    // An API that broke its word (429 without params.minutes): never "in NaN minutes"
+    const stopped: ShopSource = {
+      ...createMockSource(),
+      track: () => Promise.resolve({ ok: false, code: 'shop_track_too_many' }),
+    };
+    expect(await context(stopped).ask(SYLHET)).toMatchObject({
+      code: 'shop_track_too_many',
+      params: { minutes: 1 },
+    });
   });
 });

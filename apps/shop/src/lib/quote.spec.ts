@@ -61,4 +61,29 @@ describe('isCartQuote', () => {
     ).toBe(false);
     expect(isCartQuote({ ...quote, subtotal: 229 })).toBe(false);
   });
+
+  it("takes the contract's picture addresses: MinIO's http on this computer, never http elsewhere", () => {
+    const line = {
+      status: 'available',
+      listingId: 'lst-a',
+      slug: 'neem',
+      name: 'Neem',
+      packSize: '150ml',
+      quantity: 1,
+      unitPrice: '229.0000',
+      lineTotal: '229.0000',
+    };
+    const quoteWith = (url: string) => ({
+      lines: [{ ...line, image: { url, alt: 'Neem' } }],
+      itemCount: 1,
+      subtotal: '229.0000',
+    });
+    expect(isCartQuote(quoteWith('http://localhost:9000/omnivo/storefront/a/small.webp'))).toBe(
+      true,
+    );
+    expect(isCartQuote(quoteWith('https://media.omnivo.shop/storefront/a/small.webp'))).toBe(true);
+    expect(isCartQuote(quoteWith('http://media.omnivo.shop/storefront/a/small.webp'))).toBe(false);
+    expect(isCartQuote(quoteWith('http://localhost.evil.com/a.webp'))).toBe(false);
+    expect(isCartQuote(quoteWith('//evil.com/a.webp'))).toBe(false);
+  });
 });

@@ -447,6 +447,12 @@ Shop appearance আর Shop pages (ধাপ ২৬h): লোগো আর দ�
 
 কার্ট → চেকআউট (**দাম, ডিসকাউন্ট, ডেলিভারি চার্জ সব সার্ভারে হিসাব — ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে**), **স্টক রিজার্ভেশন TTL সহ**, COD + **ফোন OTP বাধ্যতামূলক**, অনলাইন পেমেন্ট (টেন্যান্টের নিজের গেটওয়ে, এনক্রিপ্টেড credentials), `storefront_orders`, অর্ডারের সাথে ট্র্যাকিং লিংকের token (শুধু hash রাখা) আর ক্রেতাকে SMS-এ লিংক (`/t/<token>`, পেজটা ধাপ ২৬e-তে তৈরি), অর্ডার বোর্ড UI, confirm হলে outbox → worker → Sales Order + স্টক মুভমেন্ট + জার্নাল।
 
+তিন ভাগে (প্রতিটার নিজের guide):
+
+- **২৭a (হয়েছে):** `storefront_orders` + লাইন + স্টক hold (pending-এ ৬০ মিনিট, confirm-এ challan পর্যন্ত; শপ দেখায় on hand − held) + শপ-প্রতি counter (`W-000123`, confirm-এ); ফোন কোড SMS-এ (HMAC hash, ১০ মিনিট, ৫ বার ভুল, ৩টা কোড), ঠিক কোডে নিজেই confirm, ট্র্যাকিং token আর দ্বিতীয় SMS-এ লিংক; `SmsSender` (dev-এ Mailpit, আসল provider পরে); শপের সার্ভারের key দিয়ে ৭টা `auth: 'shop'` রুট, নতুন role `omnivo_shop`; Redis-এ limit (ফোন-প্রতি ৫, connection-প্রতি ২০, ঘণ্টায়); bell `storefront.order_confirmed`; পারমিশন `storefront.order.read` / `.manage`; শপের `api` source মক order book ছাড়া। Guide: [step-27a-shop-orders.en.md](step-27a-shop-orders.en.md)।
+- **২৭b:** ERP-র Storefront → Orders (status tab সহ data table), Packed / Shipped / Delivered / Cancelled; confirm-এ ফোন দিয়ে customer + Sales Order, Packed-এ challan, Delivered-এ invoice, ডেলিভারি চার্জ একটা service product।
+- **২৭c:** কুপন আর অনলাইন পেমেন্ট (SSLCommerz, শপের নিজের এনক্রিপ্টেড credentials)।
+
 #### ধাপ ২৮: কুরিয়ার অটোমেশন · ~৩.৫ সপ্তাহ
 
 `shipping` মডিউল + `packages/contracts`-এ **`CourierAdapter` ইন্টারফেস**। **প্রথমে `manual` অ্যাডাপ্টার** (শুধু CSV export + লেবেল), তারপর Steadfast, তারপর Pathao।
@@ -573,4 +579,5 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
 - [x] **ধাপ ২৬** — শপের ভিত্তি (২৬a–২৬h: শপের সব স্ক্রিন, পাবলিক API, ERP-র Storefront মেনু, Appearance, Pages, seed; স্টেজিং এখনো মক শপে, wildcard হোস্ট বাকি)
-- [ ] **ধাপ ২৭–২৮** — চেকআউট ও অর্ডার, কুরিয়ার অটোমেশন
+- [ ] **ধাপ ২৭** — চেকআউট ও অর্ডার (২৭a হয়েছে: অর্ডার DB-তে, স্টক hold, ফোন কোড SMS-এ, ট্র্যাকিং লিংক, limit; ২৭b ERP-র Orders স্ক্রিন ও ডকুমেন্ট আর ২৭c কুপন ও অনলাইন পেমেন্ট বাকি)
+- [ ] **ধাপ ২৮** — কুরিয়ার অটোমেশন

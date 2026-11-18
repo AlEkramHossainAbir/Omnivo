@@ -13,7 +13,7 @@ const STEVIA = '7c1e5d1a-1d1f-4f4e-9b65-3a0f7f1c2a02';
 const DANO = '7c1e5d1a-1d1f-4f4e-9b65-3a0f7f1c2a03';
 const GONE = '7c1e5d1a-1d1f-4f4e-9b65-3a0f7f1c2a04';
 
-function quoted(id: string, name: string, price: string, inStock = true): QuotedListing {
+function quoted(id: string, name: string, price: string, free = '10.0000'): QuotedListing {
   const image = { url: `https://media.example.com/storefront/${id}/small.webp`, alt: name };
   const listing: ShopListing = {
     id,
@@ -26,17 +26,17 @@ function quoted(id: string, name: string, price: string, inStock = true): Quoted
     saleUntil: null,
     discount: null,
     badges: [],
-    inStock,
+    inStock: Number(free) > 0,
     categoryId: '7c1e5d1a-1d1f-4f4e-9b65-3a0f7f1c2a10',
   };
-  return { listing, image };
+  return { listing, image, free };
 }
 
 // What the database gives: numeric(19,4), so every amount has four decimals
 const LISTINGS = new Map([
   [NEEM, quoted(NEEM, 'Himalaya Purifying Neem Face Wash', '229.0000')],
   [STEVIA, quoted(STEVIA, 'Zero Cal Stevia 30 Sachets', '120.0000')],
-  [DANO, quoted(DANO, 'Dano Daily Pushti Milk 1kg', '780.0000', false)],
+  [DANO, quoted(DANO, 'Dano Daily Pushti Milk 1kg', '780.0000', '0.0000')],
 ]);
 
 const SETTINGS: ShopCheckoutSettings = {
@@ -73,6 +73,17 @@ describe('quoteCart (public API)', () => {
     expect(answer.lines[0]).toMatchObject({ unitPrice: '229.0000', lineTotal: '687.0000' });
     expect(answer.lines[2]).toEqual({ status: 'unavailable', listingId: GONE });
     expect(answer).toMatchObject({ itemCount: 3, subtotal: '687.0000', belowMinimum: false });
+  });
+
+  // Step 27a: an order holds as many as its line asks for, so fewer free is out of stock for it
+  it('calls a line out of stock when fewer are free than it asks for', () => {
+    const few = new Map([
+      [NEEM, quoted(NEEM, 'Himalaya Purifying Neem Face Wash', '229.0000', '2.0000')],
+    ]);
+    const lines = (quantity: number) =>
+      quoteCart({ lines: [{ listingId: NEEM, quantity }] }, few, SETTINGS).lines[0]?.status;
+    expect(lines(2)).toBe('available');
+    expect(lines(3)).toBe('out_of_stock');
   });
 
   it('adds the zone charge, and none from the free-delivery amount on', () => {
