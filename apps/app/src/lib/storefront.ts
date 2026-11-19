@@ -176,6 +176,8 @@ export function settingsFormValues(
       freeDeliveryFrom: '',
       minimumOrder: '',
       paymentMethods: ['cod'],
+      // Step 27b (decision 4): none picked; the first order with a charge makes "Delivery charge"
+      deliveryVariantId: '',
       version: 1,
     };
   }
@@ -198,6 +200,8 @@ export function settingsFormValues(
     freeDeliveryFrom: plainAmount(shop.freeDeliveryFrom ?? ''),
     minimumOrder: plainAmount(shop.minimumOrder ?? ''),
     paymentMethods: shop.paymentMethods,
+    // null (none picked yet) is the select's empty choice, ''
+    deliveryVariantId: shop.deliveryVariantId ?? '',
     version: shop.version,
   };
 }

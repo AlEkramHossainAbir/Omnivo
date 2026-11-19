@@ -280,6 +280,15 @@ export const AUDIT_ACTIONS = [
   'storefront_collection.created',
   'storefront_collection.updated',
   'storefront_collection.deleted',
+  // Step 27b: a shop order's moves in the ERP (entity = storefront_order). The documents a move
+  // makes (sales order, challan, invoice, sales return) write their own entries as well, with the
+  // order's number in their changes. sales_order_made is the retry; the one made at confirm has
+  // no member, so the worker writes it with no actor
+  'storefront_order.sales_order_made',
+  'storefront_order.packed',
+  'storefront_order.shipped',
+  'storefront_order.delivered',
+  'storefront_order.cancelled',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -343,6 +352,7 @@ export const AUDIT_ENTITY_TYPES = [
   'storefront_listing',
   'storefront_banner',
   'storefront_collection',
+  'storefront_order',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

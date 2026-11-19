@@ -391,6 +391,61 @@ export class DeliveriesService {
     return { id: row.id, number, lineIds: posted.map((line) => line.id) };
   }
 
+  // Step 27b: a shop order's Packed (decision 5): a posted challan of its sales order, in the
+  // caller's transaction (StorefrontOrdersService, which holds the shop order's lock and ends its
+  // stock hold in the same transaction). Each line names the order line it delivers; a line of the
+  // order split over two batches is two lines here, as on the form. postAndLog checks them against
+  // the order and posts, like a challan written by hand. `shippingAddress`: the shop order's
+  // address as text, the sales order's own. Returns the challan's id.
+  async postForShopOrder(
+    tx: Transaction,
+    input: {
+      customerId: string;
+      orderId: string;
+      date: string;
+      warehouseId: string;
+      shippingAddress: string | null;
+      note: string | null;
+      lines: readonly (LineInput & { orderLineId: string })[];
+    },
+  ): Promise<string> {
+    const customer = await this.customerOf(tx, input.customerId);
+    const lines = await resolveLines(tx, input.lines, 'out');
+    const orderLineIds = input.lines.map((line) => line.orderLineId);
+    const [row] = await tx
+      .insert(deliveries)
+      .values({
+        tenantId: getTenantId(),
+        date: input.date,
+        customerId: input.customerId,
+        orderId: input.orderId,
+        warehouseId: input.warehouseId,
+        shippingAddress: input.shippingAddress,
+        note: input.note,
+        createdBy: currentPrincipal().userId,
+        updatedBy: currentPrincipal().userId,
+      })
+      .returning();
+    if (!row) throw new Error('Delivery insert returned no row');
+    await this.writeLines(tx, row.id, lines, orderLineIds);
+    await audit(tx, {
+      action: 'delivery.created',
+      entityType: 'delivery',
+      entityId: row.id,
+      changes: created(
+        await this.snapshot(
+          tx,
+          row,
+          customer,
+          await this.orderRef(tx, input.orderId),
+          lines.length,
+        ),
+      ),
+    });
+    await this.postAndLog(tx, row);
+    return row.id;
+  }
+
   // A draft out of the warehouse, like a stock adjustment "out": the date and the warehouse
   // checked, the lines checked again against their products and (for an order) against what the
   // order still has to deliver, the number taken, the stock moved at its average cost, and the

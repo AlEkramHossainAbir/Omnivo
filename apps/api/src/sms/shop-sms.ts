@@ -1,6 +1,6 @@
 import { type LanguageCode, SHOP_CODE_VALID_MINUTES } from '@omnivo/contracts';
 
-// Step 27a: the shop's two SMS, in the shop's language (storefront_settings.language). Written
+// Step 27a: the shop's two SMS (27b adds a third), in the shop's language (storefront_settings.language). Written
 // here, side by side, like the emails' words (mail/invitation-email.ts): @omnivo/i18n is the
 // browser's. satisfies makes a third language a compile error until it has its words.
 //
@@ -33,6 +33,21 @@ export function confirmedSms(
   const words = {
     en: `${shopName}: order ${orderNo} is confirmed. Track it here: ${link}`,
     bn: `${shopName}: অর্ডার ${orderNo} নিশ্চিত হয়েছে। এখানে দেখুন: ${link}`,
+  } satisfies Record<LanguageCode, string>;
+  return words[language];
+}
+
+// Step 27b: the shop cancelled the order (decision 8). The hotline, so the shopper can ask why: the
+// reason the staff typed is theirs (decision 19), and never goes in a message
+export function cancelledSms(
+  language: LanguageCode,
+  shopName: string,
+  orderNo: string,
+  hotline: string,
+): string {
+  const words = {
+    en: `${shopName}: order ${orderNo} was cancelled. Questions? Call ${hotline}.`,
+    bn: `${shopName}: অর্ডার ${orderNo} বাতিল করা হয়েছে। কিছু জানতে কল করুন ${hotline}।`,
   } satisfies Record<LanguageCode, string>;
   return words[language];
 }

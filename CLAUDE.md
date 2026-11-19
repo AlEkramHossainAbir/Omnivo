@@ -613,7 +613,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   after the window or its day was closed in the books. A sale's page says per line "1 pcs came back", lists its
   returns, and its exchange payment links "From return POS1-R000012". A shift's page has "Cash paid back" in the
   drawer's sum, the sales' discounts and VAT, and a refunds card (count, VAT on returns, per method).
-- **Storefront menu (`storefront.manage`):** a sidebar group "Storefront", hidden without the permission: Catalog
+- **Storefront menu (`storefront.manage`, `storefront.order.read`):** a sidebar group "Storefront", hidden without
+  either permission: Shop orders first (`ShoppingBag01`, with `storefront.order.read`, and a `crit` count of the new
+  orders on the right, asked every 30 seconds like the approvals count), then, with `storefront.manage`, Catalog
   (`Store04`), Shop categories (`FolderLibrary`), Shop appearance (`PaintBoard`), Shop pages (`Files01`), Shop
   settings (`WebDesign01`). The links say "Shop …" because the phone's nav row has no group labels. A page under
   another (a listing, the hero, a collection, a text page) keeps its item marked, because its address starts with
@@ -626,7 +628,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Shop settings (`/storefront/settings`):** cards (Name and address: the shop address with `Globe02` and the
   `.omnivo.shop` suffix in the box, the shop name, the language; Contact; Social pages; Stock and delivery: the
   warehouse select, up to 6 delivery zones as rows of a name, a 180px money input and a remove icon button, "Add
-  zone" secondary `sm`, then free delivery from and minimum order, empty = none; Payment: a checkbox group) beside a
+  zone" secondary `sm`, then free delivery from and minimum order, empty = none, and the "Delivery charge’s service"
+  select (the workspace's active services, "name · SKU"; empty = "Made by the first order with a charge", and it
+  can't be emptied again once an order used one); Payment: a checkbox group) beside a
   340px column, sticky from `lg`. Before the first save the form starts from the company's details under a neutral
   document notice, and "Set up the shop" is the primary button; after it, the save bar. The column is the "Open
   the shop" checklist: three rows with 1px `line` rules, each a 22px circle (`good-bg` with a `good` `Tick02` when
@@ -754,6 +758,48 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   the footer and its address shows "page not found". Then the sections card ("Sections", "Each with a heading and
   its text, like Delivery and Returns.") and the save bar. The first save puts it in the shop ("Terms & Condition is
   in the shop"); a page always keeps at least one section, so taking it out is Delete.
+- **Shop orders (`/storefront/orders`, `storefront.order.read`):** the page header ("Orders from your online shop,
+  from the phone code to the shopper’s door"; "View shop" only with `storefront.manage`, and no "Changes show in
+  the shop" line), a search box ("Order number, name or phone", max 320px, inside the tab only), a segmented control
+  New / Packed / Shipped / Delivered / Cancelled / All (the tab is in the address, `?view=packed`; New, the default,
+  has none), then a data table sorted on the server and paged: order (number in `Geist Mono`, "3 items" under it),
+  confirmed (date and time, newest first at first, sortable), shopper (name, phone under it), delivery zone,
+  payment, total (sortable) and status (the status pill, plus a `crit` "Needs attention" pill). A row click opens the
+  order. On a phone the card leaves out Payment. A pending order (waiting for its phone code) never shows. Empty: "No
+  shop orders yet" on All, the tab's own line on the others, and "No order matches" with "Search every order" (moves
+  to All, keeps the search). Online only.
+- **Shop order page (`/storefront/orders/$orderId`):** a "Shop orders" back link (`ArrowLeft01`), the number (`h1`) with
+  its pills beside it and "Placed …" under it; on the right "Cancel order" (secondary,
+  `CancelCircle`, while New or Packed) and the next step's primary button: "Make the sales order" (`Agreement01`, a
+  New order without one), "Mark packed" (`Package`), "Mark shipped" (`DeliveryTruck01`, at once), "Mark delivered"
+  (`PackageDelivered`, asks first: it posts an invoice). On a phone the two buttons share a row. One notice under
+  the header: `crit` "The sales order could not be made." with the error's own words, else neutral "This order has
+  no sales order yet…", else what the next step does (a delivered order's ends with a "Record payment" link to a new
+  money receipt for that invoice, with `sales.receipt.manage`). Without `storefront.order.manage`, no buttons and a
+  neutral notice that says which permission moves orders. From `xl` two columns: Items (a 40px photo, name, "SKU ·
+  150ml", "2 pcs × ৳229", the amount; then Subtotal, Discount only when there is one, Delivery charge or "Free", and
+  the Total at 500, all on `subtle`) and Timeline (oldest first, 24px round icons on `subtle`, the step it is at on
+  `brand-soft`/`brand`, a 1px `line` between them, the time in 12px `ink-3`, and "Why: …" under Cancelled), beside a
+  340px column of Deliver to (name, mobile number, address with its line breaks, zone, payment, "Customer in Omnivo"
+  or "Found by the phone with the sales order") and Documents (sales order, challan, invoice, sales return; each
+  number a link, or when it comes: "When it is packed"; a cancelled order lists only what it made). On a phone the
+  cards are Items, Deliver to, Documents, Timeline. Amounts like the shop (paisa only when there is some). Online
+  only.
+- **Packed dialog:** the dialog at 560px, "Pack W-000123", "The challan takes these goods out of Main warehouse…".
+  One block per line in a 1px `line` box (radius 10px): the name and "Needs 3 pcs"; an untracked product says "No
+  batch or serial number to pick."; a batch product has rows of a batch select ("AT-2408 · expires 30 Nov 2026 · 12
+  pcs here", first expiry first as the server suggests) and a quantity box, a remove icon button (disabled on the
+  last row), "Add another batch" (secondary `sm`) and "2 of 3 pcs picked" (`good` with `CheckmarkCircle02` once it adds up), or
+  `crit` "No batch of this product has stock in …"; a serial product has the serial number box and "1 of 2 typed".
+  A quantity shows without its zeros at the end, never rounded. Errors land under the box the API names
+  (`lines.0.picks.1.quantity`). "Mark packed" (primary).
+- **Cancel shop order dialog:** "Cancel W-000123?", what happens (a new order frees its stock; a packed one gets a
+  sales return), "Why" (optional, 200 characters, "Only your team sees this. The SMS does not say why."), "Keep the
+  order" (secondary) and "Cancel order" (primary).
+- **Shop order statuses:** New (`brand`, `Clock01`), Packed (`brand`, `Package`), Shipped (`brand`,
+  `DeliveryTruck01`), Delivered (`good`, `PackageDelivered`), Cancelled (neutral, `CancelCircle`), Returned (neutral,
+  `PackageReceive`, step 28), plus a second `crit` "Needs attention" pill (`Alert02`) while its sales order could
+  not be made. The timeline's icons: placed `ShoppingCart01`, confirmed `SmartPhone01`, then the pills' icons.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -885,7 +931,10 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   for an offer that has ended, a credit note more than 6 months after its invoice, an overdue bill or a bill whose
   prices differ from its orders, a device that has not synced for 24 hours or 7 days, or an `ArrowTurnBackward`
   icon and the approver's comment for a document sent back by an approval,
-  `subtle` with `ink-2` text and an `InformationCircle` icon otherwise. It is `DocumentNotice` in
+  `crit-bg` with `crit` text and an `Alert02` icon when the document can't go on until someone acts (a shop order
+  whose sales order could not be made), and
+  `subtle` with `ink-2` text and an `InformationCircle` icon otherwise. An optional action (a text link like "Record
+  payment") sits at the end of the line and wraps under the words on a phone. It is `DocumentNotice` in
   `apps/app/src/components/document-notice.tsx` (since 18c; the sign-in page uses it, so it may not import any
   module's code).
 - **Credit line and credit dialog:** under the customer box on an order or invoice form, a 13px line: "Credit

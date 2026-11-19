@@ -36,6 +36,7 @@ import type { Workspace } from './fixtures';
 import { MockProblem } from './mock';
 import { pageOf } from './sales-document-data';
 import { balancesOf, findVariant } from './stock-data';
+import { checkDeliveryService, deliveryChoicesOf } from './storefront-order-data';
 import {
   type MockCategory,
   type MockListing,
@@ -128,6 +129,8 @@ export function setupOf(data: WorkspaceData, workspace: Workspace): StorefrontSe
       hotline: data.settings.phone ?? '',
       address: data.settings.address ?? '',
     },
+    // Step 27b: the services the delivery charge may be billed as (storefront-order-data.ts)
+    deliveryChoices: deliveryChoicesOf(data),
   };
 }
 
@@ -162,6 +165,8 @@ function fieldsOf(input: CreateStorefrontSettingsInput, before: readonly ShopDel
     freeDeliveryFrom: input.freeDeliveryFrom === null ? null : money(input.freeDeliveryFrom),
     minimumOrder: input.minimumOrder === null ? null : money(input.minimumOrder),
     paymentMethods: input.paymentMethods,
+    // Step 27b: checked by checkDeliveryService() before it is kept
+    deliveryVariantId: input.deliveryVariantId,
   };
 }
 
@@ -182,6 +187,7 @@ function settingsSnapshot(shop: MockShop) {
     freeDeliveryFrom: shop.freeDeliveryFrom,
     minimumOrder: shop.minimumOrder,
     paymentMethods: shop.paymentMethods.join(', '),
+    deliveryVariantId: shop.deliveryVariantId,
   };
 }
 
@@ -203,6 +209,7 @@ export function createShop(
   if (data.storefront.shop !== null) throw new MockProblem(409, 'storefront_set_up_already');
   assertWarehouse(data, input.defaultWarehouseId);
   assertSubdomainFree(input.subdomain);
+  checkDeliveryService(data, input.deliveryVariantId);
   const shop: MockShop = {
     ...fieldsOf(input, []),
     launchedAt: null,
@@ -234,6 +241,7 @@ export function updateShop(
     assertWarehouse(data, input.defaultWarehouseId);
   }
   if (input.subdomain !== before.subdomain) assertSubdomainFree(input.subdomain);
+  checkDeliveryService(data, input.deliveryVariantId);
   const after: MockShop = {
     ...before,
     ...fieldsOf(input, before.deliveryZones),

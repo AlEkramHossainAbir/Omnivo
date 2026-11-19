@@ -1124,15 +1124,22 @@ storefront_orders                  ← ধাপ ২৭a
   tracking_token_hash                            ← ট্র্যাকিং লিংকের token-এর hash, confirm-এ; token নিজে কোথাও রাখা হয় না
   code_hash, code_expires_at, code_sent_at, code_sends, code_tries_left  ← ফোন কোড, শুধু pending-এ
   created_at, confirmed_at, packed_at, shipped_at, delivered_at, cancelled_at, returned_at  ← ইতিহাস এই কলামেই
-  sales_order_id (FK)                            ← ধাপ ২৭b: confirm হলে ERP Sales Order
+  sales_order_id, delivery_id, invoice_id, sales_return_id  ← ধাপ ২৭b: অর্ডার যে ডকুমেন্ট বানিয়েছে, (tenant_id, id)
+                                   FK; CHECK: packed-এর পরে challan, delivered-এ invoice, packed থেকে বাতিলে return
+  document_error                   ← ধাপ ২৭b: Sales Order বানানো না গেলে শুধু error code, SO হলেই NULL
+  cancel_reason                    ← ধাপ ২৭b: স্টাফের লেখা কারণ (২০০ অক্ষর), SMS-এ যায় না
   UNIQUE (tenant_id, order_no)
+  (customer_id নেই: customer Sales Order থেকে পড়া হয়)
 
 storefront_order_lines             ← লিস্টিং-এর কপি (নাম, slug, pack size, ছবি), লিস্টিং-এ FK নেই; variant-এ FK আছে
   tenant_id, order_id, position, listing_id, product_id, variant_id, quantity, unit_price, line_total
 
 storefront_stock_holds             ← অর্ডার যে স্টক ধরে রাখে; নাম, ফোন বা ঠিকানা নেই, তাই omnivo_public পড়তে পারে
   tenant_id, order_id, product_id, variant_id, warehouse_id, quantity (base unit)
-  expires_at                       ← pending-এ ৬০ মিনিট পরে; confirm-এ NULL, ধাপ ২৭b-র challan পর্যন্ত
+  expires_at                       ← pending-এ ৬০ মিনিট পরে; confirm-এ NULL, challan (Packed) বা বাতিল পর্যন্ত
+
+storefront_settings-এ ধাপ ২৭b: delivery_product_id + delivery_variant_id (দুটোই থাকে বা দুটোই NULL) ←
+  ডেলিভারি চার্জ যে service product হিসেবে বিল হয়
 
 storefront_order_counters          ← শপ-প্রতি শেষ নম্বর (number_series না, SEQUENCE-ও না: rollback-এ ফাঁক)
   tenant_id, last_value
@@ -1164,7 +1171,9 @@ courier_remittances                ← কুরিয়ার কবে কত
 - **স্টক রিজার্ভেশন:** অর্ডার `pending` হলে স্টক "reserved" হবে (TTL সহ, যেমন ৬০ মিনিট বা কনফার্ম পর্যন্ত), `confirmed` হলে আসল মুভমেন্ট লিখবে। সরাসরি quantity আপডেট **কখনো না** (§১৭-এর ৬ নম্বর ভুল)।
   ধাপ ২৭a-তে: hold নিজের টেবিলে (`storefront_stock_holds`)। শপ দেখায় আর quote হিসাব করে **free = on hand − held**;
   free-র চেয়ে বেশি চাইলে লাইনটা `out_of_stock`। অর্ডার দেওয়ার সময় প্রতিটা variant-এ একটা lock (সাজানো ক্রমে), তাই
-  শেষ পিসটা একবারই বিক্রি হয় (টেস্টে দুটো অর্ডার শেষ পিসের জন্য দৌড়ায়)। আসল মুভমেন্ট আসবে ধাপ ২৭b-র challan-এ।
+  শেষ পিসটা একবারই বিক্রি হয় (টেস্টে দুটো অর্ডার শেষ পিসের জন্য দৌড়ায়)। ধাপ ২৭b-তে: আসল মুভমেন্ট confirm-এ না,
+  Packed-এর posted challan-এ, আর একই transaction-এ hold মুছে যায়; ততক্ষণ Sales Order স্টক ধরে না (ধাপ ১৫b),
+  hold-ই ধরে।
 - **ফোন কোড (ধাপ ২৭a):** ৬ অঙ্ক, শুধু HMAC hash রাখা (key `JWT_SECRET` থেকে HKDF দিয়ে, নিজের label-এ), ১০ মিনিট,
   ৫ বার ভুল, ৪৫ সেকেন্ড পরে নতুন কোড, এক অর্ডারে সর্বোচ্চ ৩টা কোড। ঠিক কোড নিজেই অর্ডার confirm করে: নম্বর, hold
   আর শেষ হয় না, ট্র্যাকিং token, দ্বিতীয় SMS-এ লিংক, আর outbox ইভেন্ট `storefront.order_confirmed` → worker →
@@ -1283,11 +1292,41 @@ sequenceDiagram
 - শপের `api` source আর মক order book ব্যবহার করে না: চেকআউট, ফোন কোড, `/order/<no>`, `/t/<token>` আর `/track`
   সব API-র ৭টা `auth: 'shop'` রুটে। মক source একই কোডের নিয়ম রাখে (১০ মিনিট, ৩টা কোড), অর্ডারের limit না, তাই
   `pnpm dev` আর Playwright আগের মতো চলে।
-- নতুন অর্ডারের bell ("New shop order W-000123 for ৳578.") আপাতত Overview খোলে; Orders পেজ ধাপ ২৭b-তে।
+- নতুন অর্ডারের bell ("New shop order W-000123 for ৳578.") ধাপ ২৭a-তে Overview খুলত; ধাপ ২৭b থেকে অর্ডারের পেজ।
 - অনলাইন পেমেন্ট ধাপ ২৭c পর্যন্ত চেকআউটে দেখায় না (শুধু সেটাই শপের একমাত্র মেথড হলে দেখায়, আর অর্ডার
   `shop_payment_unavailable`)। কুপন এখনো "unknown"।
-- এখনো না: ERP-র Orders স্ক্রিন আর অর্ডার থেকে customer, Sales Order, challan, invoice (ধাপ ২৭b), কুপন আর
-  SSLCommerz (ধাপ ২৭c), আসল SMS provider, কুরিয়ার (ধাপ ২৮)। স্টেজিং এখনো মক শপে।
+
+**ধাপ ২৭b-তে যা তৈরি হয়েছে** (উপরের টেবিলের Orders, বোর্ডের বদলে status tab সহ লিস্ট):
+
+- **Confirm → customer + Sales Order, worker-এ।** `storefront.order_confirmed` ইভেন্টের handler (`omnivo_app`
+  হিসেবে, member ছাড়া, তাই ডকুমেন্টের `created_by` NULL) আগে ফোন দিয়ে customer খোঁজে: দুই পাশই ১১ অঙ্কে
+  (`01786120356`), কয়েকটা active মিললে সবচেয়ে পুরনোটা, না মিললে ক্রেতার নাম, ফোন আর ঠিকানা দিয়ে নতুন customer
+  (credit limit ছাড়া)। তারপর confirmed Sales Order: দাম VAT সহ, লাইনের দাম শপের unit price, তাই ERP-র মোট শপের
+  মোটের সাথে পয়সা পর্যন্ত মেলে; ঠিকানা লেখা হিসেবে (customer-এর সেভ করা ঠিকানা বদলায় না)। credit limit পার হলেও
+  অর্ডার হয় (POS-এর মতো), audit log-এ actor ছাড়া। ক্রেতার confirm কখনো ERP-র কারণে ব্যর্থ হয় না: handler না
+  পারলে (একটা archived প্রোডাক্ট, ধরুন) error code অর্ডারে থাকে (`document_error`), লিস্টে "Needs attention",
+  পেজে "Make the sales order" বাটন। handler অর্ডার `FOR UPDATE` lock করে, তাই দুটো SO হয় না।
+- **ডেলিভারি চার্জ একটা service product।** প্রথম চার্জওয়ালা অর্ডার "Delivery charge" বানায় একবার (workspace-এর
+  pcs unit আর ডিফল্ট VAT rate-এ, settings lock করে), id শপের settings-এ থাকে, Shop settings-এ অন্য service বাছা
+  যায়; কোনো অর্ডার ব্যবহার করার পরে খালি করা যায় না। ফ্রি ডেলিভারিতে লাইন নেই।
+- **Packed = posted challan** hold-এর warehouse থেকে, একই transaction-এ hold মুছে। ডায়ালগের batch আর পরামর্শ
+  নিজের রুট থেকে (`pack-plan`, first-expiry-first সার্ভারে, কারণ প্যাকারের স্টক স্ক্রিন পড়ার অধিকার নেই);
+  serial প্রোডাক্টে পরামর্শ নেই। challan হাতে লেখা challan-এর মতোই যাচাই হয় (স্টক না থাকলে তার নিজের error,
+  ঠিক সেই pick-এর নিচে)।
+- **Shipped শুধু status** (কুরিয়ার ধাপ ২৮-এ)। **Delivered = posted invoice** challan-এর লাইন আর ডেলিভারি চার্জের,
+  তারিখ workspace-এর আজ, unpaid; Shipped-এর পরেই শুধু। COD-এর টাকা সাধারণ money receipt-এ ("Record payment"
+  লিংক); ধাপ ২৮-এ কুরিয়ারের payout থেকে।
+- **Cancel** New-এ (SO বাতিল, hold শেষ) আর Packed-এ (পুরো challan-এর posted sales return, তারপর SO বাতিল: সব
+  ফেরত আসার পরে SO কিছুই ডেলিভার করেনি, তাই Close না, Cancel)। Shipped-এর পরে না (সেটা "returned", ধাপ ২৮)।
+  commit-এর পরে ক্রেতাকে SMS, শপের hotline সহ; কারণ শুধু স্টাফের।
+- **পারমিশন:** `storefront.order.manage` দিয়েই ডকুমেন্ট হয়, প্যাকারের `sales.*` লাগে না। sales service-গুলোর
+  ভেতরে caller-এর transaction-এর entry point (`createForShop`, `cancelIn`, `postForShopOrder`, `createIn`), তাই
+  শপের নিয়মের আলাদা কপি নেই। প্রতিটা মুভ অর্ডারের audit action (`storefront_order.packed`, …), ডকুমেন্ট নিজেরাও লেখে।
+  প্রতিটা মুভে version check, ভুল ধাপে `storefront_order_step_invalid`।
+- **স্ক্রিন:** Storefront গ্রুপে প্রথমে Shop orders (গ্রুপ `storefront.order.read` দিয়েও দেখায়, নতুন অর্ডারের
+  সংখ্যা নিজের ছোট রুট `counts` থেকে), tab সহ লিস্ট, অর্ডারের পেজ। pending অর্ডার ERP কখনো দেখায় না। অনলাইন শুধু।
+- **এখনো না:** কুপন আর SSLCommerz (ধাপ ২৭c), আসল SMS provider, কুরিয়ার, COD-এর টাকা নিজে থেকে আর ফেরত আসা
+  পার্সেল (ধাপ ২৮), অর্ডার এডিট, একসাথে অনেক অর্ডার প্যাক। স্টেজিং এখনো মক শপে।
 
 - **Omnivo Admin Panel** এখানে শুধু একটা জায়গায় আসে: Storefront কোন প্ল্যানে থাকবে, সেটা `feature.storefront` entitlement দিয়ে ঠিক হবে (§১৩.২)। অর্থাৎ Storefront বিক্রি হবে Growth প্ল্যানের ফিচার বা আলাদা অ্যাড-অন হিসেবে, আর কোডে কখনো `if (plan === 'growth')` লেখা হবে না।
 - ⚠️ থিম কাস্টমাইজেশনের চাপ আসবেই। উত্তর হলো **কনফিগারেশন ও কয়েকটা রেডিমেড থিম**, টেন্যান্ট-ভিত্তিক কাস্টম কোড না (§৪.৮)।

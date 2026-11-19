@@ -37,7 +37,7 @@ import { isForeignKeyViolation, isUniqueViolation } from '../common/db/pg-errors
 import { containsPattern } from '../common/db/search.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, encodeCursor } from '../common/pagination/cursor.js';
-import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
+import { currentActorId, currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { NumberingService } from '../numbering/numbering.service.js';
@@ -262,6 +262,13 @@ export class CustomersService {
     }
   }
 
+  // Step 27b: a shopper the phone matched no customer for (decision 2), in the caller's
+  // transaction: the worker's, when it makes a shop order's sales order. The code is the next
+  // number, like the form's empty box. Returns the new customer's id
+  async createForShop(tx: Transaction, input: CustomerInput): Promise<string> {
+    return (await this.insert(tx, input, null, false)).id;
+  }
+
   async update(id: string, input: UpdateCustomerInput): Promise<Customer> {
     const canSeeBalance = await this.access.canSee();
     try {
@@ -471,8 +478,8 @@ export class CustomersService {
         code,
         isCustomer: true,
         ...this.fields(input),
-        createdBy: currentPrincipal().userId,
-        updatedBy: currentPrincipal().userId,
+        createdBy: currentActorId(),
+        updatedBy: currentActorId(),
       })
       .returning({ id: parties.id });
     if (!row) throw new Error('Customer insert returned no row');

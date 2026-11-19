@@ -450,7 +450,7 @@ Shop appearance আর Shop pages (ধাপ ২৬h): লোগো আর দ�
 তিন ভাগে (প্রতিটার নিজের guide):
 
 - **২৭a (হয়েছে):** `storefront_orders` + লাইন + স্টক hold (pending-এ ৬০ মিনিট, confirm-এ challan পর্যন্ত; শপ দেখায় on hand − held) + শপ-প্রতি counter (`W-000123`, confirm-এ); ফোন কোড SMS-এ (HMAC hash, ১০ মিনিট, ৫ বার ভুল, ৩টা কোড), ঠিক কোডে নিজেই confirm, ট্র্যাকিং token আর দ্বিতীয় SMS-এ লিংক; `SmsSender` (dev-এ Mailpit, আসল provider পরে); শপের সার্ভারের key দিয়ে ৭টা `auth: 'shop'` রুট, নতুন role `omnivo_shop`; Redis-এ limit (ফোন-প্রতি ৫, connection-প্রতি ২০, ঘণ্টায়); bell `storefront.order_confirmed`; পারমিশন `storefront.order.read` / `.manage`; শপের `api` source মক order book ছাড়া। Guide: [step-27a-shop-orders.en.md](step-27a-shop-orders.en.md)।
-- **২৭b:** ERP-র Storefront → Orders (status tab সহ data table), Packed / Shipped / Delivered / Cancelled; confirm-এ ফোন দিয়ে customer + Sales Order, Packed-এ challan, Delivered-এ invoice, ডেলিভারি চার্জ একটা service product।
+- **২৭b (হয়েছে):** ERP-র Storefront → Shop orders (New / Packed / Shipped / Delivered / Cancelled / All tab, search, নতুন অর্ডারের সংখ্যা সাইডবারে) আর অর্ডারের পেজ (পরের ধাপের একটা বাটন, Items, Timeline, Deliver to, Documents); confirm-এ worker ফোন দিয়ে customer খোঁজে (না পেলে বানায়) আর VAT সহ দামে confirmed Sales Order বানায়, না পারলে error code অর্ডারেই থাকে ("Needs attention", আবার চেষ্টার বাটন); Packed = posted challan (batch first-expiry-first, serial টাইপ বা স্ক্যান) আর hold শেষ, একই transaction-এ; Shipped শুধু status; Delivered = posted invoice (challan-এর লাইন + ডেলিভারি চার্জ), unpaid, টাকা সাধারণ money receipt-এ; Cancel: New-এ SO বাতিল আর hold শেষ, Packed-এ পুরো challan-এর sales return তারপর SO বাতিল, ক্রেতাকে SMS; ডেলিভারি চার্জ একটা service product ("Delivery charge", প্রথম চার্জওয়ালা অর্ডার বানায়, Shop settings-এ বদলানো যায়); শুধু `storefront.order.manage` দিয়েই ডকুমেন্ট হয়, প্রতিটা মুভ audit log-এ; bell অর্ডারের পেজ খোলে। Guide: [step-27b-shop-orders-erp.en.md](step-27b-shop-orders-erp.en.md)।
 - **২৭c:** কুপন আর অনলাইন পেমেন্ট (SSLCommerz, শপের নিজের এনক্রিপ্টেড credentials)।
 
 #### ধাপ ২৮: কুরিয়ার অটোমেশন · ~৩.৫ সপ্তাহ
@@ -579,5 +579,5 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
 - [x] **ধাপ ২৬** — শপের ভিত্তি (২৬a–২৬h: শপের সব স্ক্রিন, পাবলিক API, ERP-র Storefront মেনু, Appearance, Pages, seed; স্টেজিং এখনো মক শপে, wildcard হোস্ট বাকি)
-- [ ] **ধাপ ২৭** — চেকআউট ও অর্ডার (২৭a হয়েছে: অর্ডার DB-তে, স্টক hold, ফোন কোড SMS-এ, ট্র্যাকিং লিংক, limit; ২৭b ERP-র Orders স্ক্রিন ও ডকুমেন্ট আর ২৭c কুপন ও অনলাইন পেমেন্ট বাকি)
+- [ ] **ধাপ ২৭** — চেকআউট ও অর্ডার (২৭a হয়েছে: অর্ডার DB-তে, স্টক hold, ফোন কোড SMS-এ, ট্র্যাকিং লিংক, limit; ২৭b হয়েছে: ERP-র Shop orders স্ক্রিন, অর্ডার থেকে customer, Sales Order, challan, invoice আর sales return; ২৭c কুপন ও অনলাইন পেমেন্ট বাকি)
 - [ ] **ধাপ ২৮** — কুরিয়ার অটোমেশন

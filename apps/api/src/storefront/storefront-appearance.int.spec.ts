@@ -386,6 +386,8 @@ describe('the logo and the colors', () => {
       freeDeliveryFrom: '',
       minimumOrder: '',
       paymentMethods: ['cod'],
+      // Step 27b: "Made by the first order with a charge"
+      deliveryVariantId: '',
     });
     expect(made.statusCode, made.body).toBe(201);
     const category = await send('POST', '/storefront/categories', {
@@ -502,6 +504,7 @@ describe('the logo and the colors', () => {
         freeDeliveryFrom: '',
         minimumOrder: '',
         paymentMethods: ['cod'],
+        deliveryVariantId: '',
         version: before.version,
       }),
       409,

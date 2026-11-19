@@ -92,6 +92,20 @@ export function seedsVatMonth(): boolean {
   }
 }
 
+// Step 27b: Rahman Fashion's shop orders (storefront-order-data.ts). They make sales orders,
+// challans, an invoice and customers, and two accessories with their stock, which would change the
+// numbers and the lists the other e2e tests read. A test asks for them with
+// test.use({ shopOrders: true }); `pnpm dev:mock` has no key and gets them.
+export const MOCK_NO_SHOP_ORDERS_KEY = 'omnivo.mock.noShopOrders';
+
+export function seedsShopOrders(): boolean {
+  try {
+    return localStorage.getItem(MOCK_NO_SHOP_ORDERS_KEY) === null;
+  } catch {
+    return true;
+  }
+}
+
 export function meIn(
   workspace: Workspace,
   companyName: string,

@@ -155,6 +155,19 @@ function SettingsForm({
       label: `${warehouse.code} · ${warehouse.name}`,
     })),
   ];
+  // Step 27b (decision 4): the active services the delivery charge may be billed as. The API sends
+  // the saved one too when it was archived since, so the select never shows a value it has no
+  // option for
+  const deliveryOptions = [
+    { value: '', label: t('storefront.settings.deliveryProductAuto') },
+    ...setup.deliveryChoices.map((choice) => ({
+      value: choice.variantId,
+      label: t('storefront.settings.deliveryProductOption', {
+        name: choice.name,
+        sku: choice.sku,
+      }),
+    })),
+  ];
   const languageOptions = LANGUAGES.map((item) => ({ value: item.code, label: item.label }));
   const paymentOptions = SHOP_PAYMENT_METHODS.map((method) => ({
     value: method,
@@ -349,6 +362,16 @@ function SettingsForm({
               </Button>
             </div>
           </fieldset>
+          {/* Step 27b: right under the zones, the charges it bills. Optional: empty, the first
+              order with a charge makes "Delivery charge" and saves it here */}
+          <SelectField
+            label={t('storefront.settings.deliveryProduct')}
+            optional
+            hint={t('storefront.settings.deliveryProductHint')}
+            options={deliveryOptions}
+            {...register('deliveryVariantId')}
+            error={errors.deliveryVariantId?.message}
+          />
           <div className="grid gap-5 sm:grid-cols-2 sm:gap-x-4">
             <FormField
               control={control}

@@ -240,29 +240,34 @@ export class InvoicesService {
   }
 
   create(input: InvoiceInput): Promise<Invoice> {
-    return this.withTenant(async (tx) => {
-      const customer = await assertCustomer(tx, input.customerId);
-      const fields = await this.check(tx, customer.id, input, null);
-      const [row] = await tx
-        .insert(invoices)
-        .values({
-          tenantId: getTenantId(),
-          ...fields.header,
-          createdBy: currentPrincipal().userId,
-          updatedBy: currentPrincipal().userId,
-        })
-        .returning();
-      if (!row) throw new Error('Invoice insert returned no row');
-      await this.writeLines(tx, row.id, input.lines, fields.lines, fields.sources);
-      await audit(tx, {
-        action: 'invoice.created',
-        entityType: 'invoice',
-        entityId: row.id,
-        changes: created(this.snapshot(row, customer, fields.lines.length)),
-      });
-      if (input.post) await this.postAndLog(tx, row, input.overrideCreditLimit);
-      return this.read(tx, row.id);
+    return this.withTenant(async (tx) => this.read(tx, await this.createIn(tx, input)));
+  }
+
+  // Step 27b: the save (and the post, when asked) in the caller's transaction: create() above,
+  // and a shop order's Delivered (StorefrontOrdersService), which bills its challan and its
+  // delivery charge and sets the shop order's status in the same transaction. Returns the id
+  async createIn(tx: Transaction, input: InvoiceInput): Promise<string> {
+    const customer = await assertCustomer(tx, input.customerId);
+    const fields = await this.check(tx, customer.id, input, null);
+    const [row] = await tx
+      .insert(invoices)
+      .values({
+        tenantId: getTenantId(),
+        ...fields.header,
+        createdBy: currentPrincipal().userId,
+        updatedBy: currentPrincipal().userId,
+      })
+      .returning();
+    if (!row) throw new Error('Invoice insert returned no row');
+    await this.writeLines(tx, row.id, input.lines, fields.lines, fields.sources);
+    await audit(tx, {
+      action: 'invoice.created',
+      entityType: 'invoice',
+      entityId: row.id,
+      changes: created(this.snapshot(row, customer, fields.lines.length)),
     });
+    if (input.post) await this.postAndLog(tx, row, input.overrideCreditLimit);
+    return row.id;
   }
 
   update(id: string, input: UpdateInvoiceInput): Promise<Invoice> {

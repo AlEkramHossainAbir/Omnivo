@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { codeSms, confirmedSms } from './shop-sms.js';
+import { cancelledSms, codeSms, confirmedSms } from './shop-sms.js';
 
 describe('the shop SMS', () => {
   it('puts the code first, in ASCII digits in both languages', () => {
@@ -18,5 +18,14 @@ describe('the shop SMS', () => {
       `Nirvor: order W-000123 is confirmed. Track it here: ${link}`,
     );
     expect(confirmedSms('bn', 'Nirvor', 'W-000123', link)).toContain(link);
+  });
+
+  it('says the order was cancelled and where to ask, never why', () => {
+    expect(cancelledSms('en', 'Nirvor', 'W-000123', '09610-123456')).toBe(
+      'Nirvor: order W-000123 was cancelled. Questions? Call 09610-123456.',
+    );
+    expect(cancelledSms('bn', 'নির্ভর', 'W-000123', '09610-123456')).toBe(
+      'নির্ভর: অর্ডার W-000123 বাতিল করা হয়েছে। কিছু জানতে কল করুন 09610-123456।',
+    );
   });
 });

@@ -25,7 +25,10 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
+import { invoices } from './invoices.js';
 import { productVariants } from './products.js';
+import { deliveries, salesOrders } from './sales-documents.js';
+import { salesReturns } from './sales-returns.js';
 import { tenants } from './tenants.js';
 import { warehouses } from './warehouses.js';
 
@@ -101,6 +104,22 @@ export const storefrontOrders = pgTable(
     deliveredAt: timestamp('delivered_at', { withTimezone: true }),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     returnedAt: timestamp('returned_at', { withTimezone: true }),
+    // Step 27b: the ERP documents the order made, each NULL until its step. The link lives here
+    // and not on the documents: a sales order or a challan does not need to know it came from the
+    // shop, and the sales tables stay as every other sale writes them. The sales order (and its
+    // customer) is made by the confirm event's handler (decision 1)
+    salesOrderId: uuid('sales_order_id'),
+    // The posted challan made at Packed (decision 5)
+    deliveryId: uuid('delivery_id'),
+    // The posted invoice made at Delivered (decision 7)
+    invoiceId: uuid('invoice_id'),
+    // The posted sales return made when a packed order is cancelled (decision 8)
+    salesReturnId: uuid('sales_return_id'),
+    // Why the handler could not make the sales order (decision 16): an error code
+    // ("sales_variant_archived"), never a message. The page shows it with t('errors.…')
+    documentError: text('document_error'),
+    // What the member typed when cancelling, for the staff only (decision 19)
+    cancelReason: text('cancel_reason'),
   },
   (table) => [
     // The target of the lines' and the holds' FKs. A constraint, not a uniqueIndex like the other
@@ -180,6 +199,76 @@ export const storefrontOrders = pgTable(
           ELSE true END
         AND (${table.status} = 'cancelled') = (${table.cancelledAt} IS NOT NULL)
         AND (${table.status} = 'returned') = (${table.returnedAt} IS NOT NULL)`,
+    ),
+    // Step 27b: the list's tabs ("New" = confirmed) and the nav's count, newest first. Partial:
+    // the ERP never shows a pending order (decision 13), and the pending ones come and go
+    index('storefront_orders_list_idx')
+      .on(table.tenantId, table.status, table.confirmedAt.desc())
+      .where(sql`${table.status} <> 'pending'`),
+    // One document belongs to one order. 27b.3 writes each link once; unique all the same, so a
+    // bug that linked one challan to two orders fails here instead of packing one parcel twice
+    uniqueIndex('storefront_orders_sales_order_idx')
+      .on(table.tenantId, table.salesOrderId)
+      .where(sql`${table.salesOrderId} IS NOT NULL`),
+    uniqueIndex('storefront_orders_delivery_idx')
+      .on(table.tenantId, table.deliveryId)
+      .where(sql`${table.deliveryId} IS NOT NULL`),
+    uniqueIndex('storefront_orders_invoice_idx')
+      .on(table.tenantId, table.invoiceId)
+      .where(sql`${table.invoiceId} IS NOT NULL`),
+    uniqueIndex('storefront_orders_sales_return_idx')
+      .on(table.tenantId, table.salesReturnId)
+      .where(sql`${table.salesReturnId} IS NOT NULL`),
+    // Documents of this workspace. No ON DELETE: a posted document is never deleted, and the
+    // sales order is made confirmed, so it is never a draft that could be
+    foreignKey({
+      name: 'storefront_orders_sales_order_fk',
+      columns: [table.tenantId, table.salesOrderId],
+      foreignColumns: [salesOrders.tenantId, salesOrders.id],
+    }),
+    foreignKey({
+      name: 'storefront_orders_delivery_fk',
+      columns: [table.tenantId, table.deliveryId],
+      foreignColumns: [deliveries.tenantId, deliveries.id],
+    }),
+    foreignKey({
+      name: 'storefront_orders_invoice_fk',
+      columns: [table.tenantId, table.invoiceId],
+      foreignColumns: [invoices.tenantId, invoices.id],
+    }),
+    foreignKey({
+      name: 'storefront_orders_sales_return_fk',
+      columns: [table.tenantId, table.salesReturnId],
+      foreignColumns: [salesReturns.tenantId, salesReturns.id],
+    }),
+    // Each document comes after the one it is made from, and at its step: a challan only with a
+    // sales order, an invoice and a return only with a challan. Packed, Shipped and Delivered
+    // always have their challan, Delivered its invoice, and a cancel after Packed its return. A
+    // pending order has none of them: omnivo_shop may INSERT whole rows, and this keeps it from
+    // placing an order that points at a sales order
+    check(
+      'storefront_orders_documents_check',
+      sql`(${table.deliveryId} IS NULL OR ${table.salesOrderId} IS NOT NULL)
+        AND (${table.invoiceId} IS NULL OR ${table.deliveryId} IS NOT NULL)
+        AND (${table.salesReturnId} IS NULL OR (${table.deliveryId} IS NOT NULL AND ${table.status} = 'cancelled'))
+        AND (${table.status} NOT IN ('packed', 'shipped', 'delivered') OR ${table.deliveryId} IS NOT NULL)
+        AND (${table.status} <> 'delivered' OR ${table.invoiceId} IS NOT NULL)
+        AND (${table.status} <> 'cancelled' OR ${table.packedAt} IS NULL OR ${table.salesReturnId} IS NOT NULL)
+        AND (${table.status} <> 'pending' OR num_nonnulls(${table.salesOrderId}, ${table.documentError}) = 0)`,
+    ),
+    // An error code in snake_case, and only while there is no sales order: once the retry made
+    // it, the error is out of date. The pattern keeps a bug from storing an exception's message,
+    // which the page would then show to the staff as it is
+    check(
+      'storefront_orders_document_error_check',
+      sql`${table.documentError} IS NULL OR (${table.salesOrderId} IS NULL
+        AND ${table.documentError} ~ '^[a-z][a-z0-9_]{0,63}$')`,
+    ),
+    // The reason belongs to a cancelled order, 1 to 200 characters (cancelStorefrontOrderInputSchema)
+    check(
+      'storefront_orders_cancel_reason_check',
+      sql`${table.cancelReason} IS NULL OR (${table.status} = 'cancelled'
+        AND char_length(${table.cancelReason}) BETWEEN 1 AND 200)`,
     ),
   ],
 );

@@ -196,6 +196,8 @@ export function settingsBody(subdomain: string, warehouseId: string): SettingsBo
     freeDeliveryFrom: mockCheckoutSettings.freeDeliveryFrom,
     minimumOrder: mockCheckoutSettings.minimumOrder,
     paymentMethods: [...mockCheckoutSettings.paymentMethods],
+    // Step 27b: none picked, so the first order with a charge makes "Delivery charge" itself
+    deliveryVariantId: null,
   };
 }
 

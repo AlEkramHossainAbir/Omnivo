@@ -110,7 +110,7 @@ import { type InstallWay, promptInstall, useInstallWay } from '../lib/install';
 import { savePreference } from '../lib/preferences';
 import { logout, switchTenant } from '../lib/session';
 import { useCan } from '../lib/permissions';
-import { waitingCountQuery } from '../lib/queries';
+import { storefrontOrderCountQuery, waitingCountQuery } from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { useSyncAge, useSyncSummary } from '../lib/sync-summary';
 import { isTheme } from '../lib/theme';
@@ -364,6 +364,13 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
   const canInventoryReports = can('inventory.report.read');
   // Step 17a: how many documents wait for this person's decision, polled like the bell's badge
   const { data: waiting = 0 } = useQuery(waitingCountQuery(me?.tenant.id ?? ''));
+  // Step 27b: the shop orders nobody has packed yet. Only for someone who may read them: anyone
+  // else would be refused every 30 seconds
+  const canShopOrders = can('storefront.order.read');
+  const { data: newOrders = 0 } = useQuery({
+    ...storefrontOrderCountQuery(me?.tenant.id ?? ''),
+    enabled: canShopOrders,
+  });
   // Step 18b: sign out at once with nothing on the device, else ask. Step 20b (decision 6): an
   // open POS shift comes first: it is closed before anything else.
   const { waiting: unsynced, openShift } = useSyncSummary();
@@ -666,25 +673,43 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
           </NavGroup>
           {/* Step 26g (decision 5): the online shop, for the people who run it. After Stock, the
               group the shop sells from */}
-          {can('storefront.manage') && (
+          {/* Step 27b (decision 10): the group shows for the people who run the shop and for the
+              packers, who may only read and move its orders. They see Shop orders alone */}
+          {(can('storefront.manage') || canShopOrders) && (
             <NavGroup label={t('nav.storefront')}>
-              <NavLink to="/storefront/listings" icon={Store04Icon}>
-                {t('nav.storefrontCatalog')}
-              </NavLink>
-              <NavLink to="/storefront/categories" icon={FolderLibraryIcon}>
-                {t('nav.storefrontCategories')}
-              </NavLink>
-              {/* Step 26h: the look and the text pages, before the settings (approved with the
-                  mockup: the things changed most often come first) */}
-              <NavLink to="/storefront/appearance" icon={PaintBoardIcon}>
-                {t('nav.storefrontAppearance')}
-              </NavLink>
-              <NavLink to="/storefront/pages" icon={Files01Icon}>
-                {t('nav.storefrontPages')}
-              </NavLink>
-              <NavLink to="/storefront/settings" icon={WebDesign01Icon}>
-                {t('nav.storefrontSettings')}
-              </NavLink>
+              {/* Decision 34: first, the page the shop's staff open every day. The count is the
+                  orders that wait to be packed, crit like the approvals count: work to do */}
+              {canShopOrders && (
+                <NavLink
+                  to="/storefront/orders"
+                  icon={ShoppingBag01Icon}
+                  count={newOrders > 0 ? newOrders : undefined}
+                  countTone="crit"
+                >
+                  {t('nav.storefrontOrders')}
+                </NavLink>
+              )}
+              {can('storefront.manage') && (
+                <>
+                  <NavLink to="/storefront/listings" icon={Store04Icon}>
+                    {t('nav.storefrontCatalog')}
+                  </NavLink>
+                  <NavLink to="/storefront/categories" icon={FolderLibraryIcon}>
+                    {t('nav.storefrontCategories')}
+                  </NavLink>
+                  {/* Step 26h: the look and the text pages, before the settings (approved with
+                      the mockup: the things changed most often come first) */}
+                  <NavLink to="/storefront/appearance" icon={PaintBoardIcon}>
+                    {t('nav.storefrontAppearance')}
+                  </NavLink>
+                  <NavLink to="/storefront/pages" icon={Files01Icon}>
+                    {t('nav.storefrontPages')}
+                  </NavLink>
+                  <NavLink to="/storefront/settings" icon={WebDesign01Icon}>
+                    {t('nav.storefrontSettings')}
+                  </NavLink>
+                </>
+              )}
             </NavGroup>
           )}
           <NavGroup label={t('nav.workspace')}>

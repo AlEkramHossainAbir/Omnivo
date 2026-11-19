@@ -1,5 +1,6 @@
-import { HourglassIcon, InformationCircleIcon } from '@hugeicons/core-free-icons';
+import { Alert02Icon, HourglassIcon, InformationCircleIcon } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { cn } from '@omnivo/ui';
 import type { ReactNode } from 'react';
 
 // A notice above a document: what its state means and what to do next. Icon plus words, never
@@ -8,31 +9,43 @@ import type { ReactNode } from 'react';
 // too, and importing it from there would pull the quotation page into their chunks. Step 17a: a
 // notice may bring its own icon (a requisition sent back is not an hourglass). Step 18c: moved here
 // from sales-parts.tsx, which reaches the route map through stock-parts.tsx: the sign-in page must
-// not load every module's schemas to show one notice.
+// not load every module's schemas to show one notice. Step 27b: crit, for a shop order whose sales
+// order could not be made (it blocks the next step, so it is an error, not a warning), and an
+// action at the end of the line (a "Record payment" link), which wraps under the words on a phone.
+const TONES = {
+  warn: 'border-warn/30 bg-warn-bg text-warn',
+  crit: 'border-crit/30 bg-crit-bg text-crit',
+  neutral: 'border-line bg-subtle text-ink-2',
+} as const;
+
+const ICONS = { warn: HourglassIcon, crit: Alert02Icon, neutral: InformationCircleIcon } as const;
+
 export function DocumentNotice({
   tone,
   icon,
+  action,
   children,
 }: {
-  tone: 'warn' | 'neutral';
+  tone: keyof typeof TONES;
   icon?: IconSvgElement;
+  action?: ReactNode;
   children: ReactNode;
 }) {
   return (
     <p
-      className={
-        tone === 'warn'
-          ? 'flex items-start gap-2 rounded-control border border-warn/30 bg-warn-bg px-3 py-2.5 text-body-sm text-warn'
-          : 'flex items-start gap-2 rounded-control border border-line bg-subtle px-3 py-2.5 text-body-sm text-ink-2'
-      }
+      className={cn(
+        'flex flex-wrap items-start gap-x-2 gap-y-1 rounded-control border px-3 py-2.5 text-body-sm',
+        TONES[tone],
+      )}
     >
       <HugeiconsIcon
-        icon={icon ?? (tone === 'warn' ? HourglassIcon : InformationCircleIcon)}
+        icon={icon ?? ICONS[tone]}
         size={17}
         strokeWidth={1.5}
         className="mt-px shrink-0"
       />
-      <span>{children}</span>
+      <span className="min-w-0 flex-1 basis-60">{children}</span>
+      {action}
     </p>
   );
 }

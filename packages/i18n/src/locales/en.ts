@@ -157,6 +157,8 @@ export const en = {
     // Step 26h: the group's last two items, "Shop" for the same reason (decision 32)
     storefrontAppearance: 'Shop appearance',
     storefrontPages: 'Shop pages',
+    // Step 27b: the shop's orders, first in the group (decision 34)
+    storefrontOrders: 'Shop orders',
   },
   auth: {
     workspace: 'Workspace',
@@ -5360,6 +5362,14 @@ export const en = {
         'Orders of this much or more pay no delivery charge. Empty means never free.',
       minimumOrder: 'Minimum order',
       minimumOrderHint: 'Checkout waits until the cart reaches this. Empty means no minimum.',
+      // Step 27b (decisions 4 and 17): the service the sales order and the invoice bill the
+      // delivery charge as. Empty = the first order with a charge makes "Delivery charge"
+      deliveryProduct: 'Delivery charge’s service',
+      deliveryProductAuto: 'Made by the first order with a charge',
+      deliveryProductHint:
+        'Sales orders and invoices bill the delivery charge as this service. Leave it empty and the first order with a charge makes one called Delivery charge.',
+      // name · sku of an active service (deliveryChoices)
+      deliveryProductOption: '{{name}} · {{sku}}',
       paymentTitle: 'Payment',
       payments: 'Ways to pay',
       paymentsHint: 'Mobile Banking is bKash or Nagad, paid before the parcel leaves.',
@@ -5828,6 +5838,201 @@ export const en = {
         'The footer drops its link, and its address shows “page not found”. You can write it again later.',
       deleted: '{{name}} deleted',
       loadFailed: "Couldn't load the page. Refresh the page to try again.",
+    },
+    // Step 27b: the shop's orders (/storefront/orders, decision 10). Reading needs
+    // storefront.order.read, every button storefront.order.manage. Online only: offline the
+    // pages show storefront.needsConnection, like the rest of the menu
+    orders: {
+      title: 'Shop orders',
+      description: 'Orders from your online shop, from the phone code to the shopper’s door',
+      searchLabel: 'Search the orders',
+      searchPlaceholder: 'Order number, name or phone',
+      view: 'Show',
+      // The tabs (STOREFRONT_ORDER_VIEWS). "New" is a confirmed order nobody has packed yet
+      // (decision 13); returned has no tab until step 28, it shows under All
+      views: {
+        confirmed: 'New',
+        packed: 'Packed',
+        shipped: 'Shipped',
+        delivered: 'Delivered',
+        cancelled: 'Cancelled',
+        all: 'All',
+      },
+      // The status pill (STOREFRONT_ORDER_STATUSES), the tab's own word
+      statuses: {
+        confirmed: 'New',
+        packed: 'Packed',
+        shipped: 'Shipped',
+        delivered: 'Delivered',
+        cancelled: 'Cancelled',
+        returned: 'Returned',
+      },
+      // A second, crit pill: the sales order could not be made (decision 16)
+      needsAttention: 'Needs attention',
+      columns: {
+        order: 'Order',
+        confirmed: 'Confirmed',
+        customer: 'Shopper',
+        zone: 'Delivery',
+        payment: 'Payment',
+        total: 'Total',
+        status: 'Status',
+      },
+      // Under the number: count = itemCount, the pieces in the order
+      items_one: '{{formatted}} item',
+      items_other: '{{formatted}} items',
+      emptyTitle: 'No shop orders yet',
+      emptyBody:
+        'An order shows here once the shopper confirms it with the code sent to their phone. Its stock is held for it until it is packed.',
+      // A tab with nothing in it (no search): the title, then the tab's own line
+      viewEmptyTitle: 'Nothing here',
+      viewEmpty: {
+        confirmed: 'No order waits to be packed. New orders show here as shoppers confirm them.',
+        packed: 'No packed order waits to leave the shop.',
+        shipped: 'No order is on its way.',
+        delivered: 'No order is delivered yet.',
+        cancelled: 'No order was cancelled.',
+      },
+      noMatchTitle: 'No order matches',
+      noMatchBody: 'Check the number or the phone. The search looks in this tab only.',
+      searchAll: 'Search every order',
+      loadFailed: "Couldn't load the shop orders. Refresh the page to try again.",
+    },
+    // Step 27b: one order's page (/storefront/orders/$orderId): the next step's button, the
+    // lines, the shopper, the documents and the timeline (decision 10)
+    order: {
+      back: 'Shop orders',
+      // Under the title (the order's number)
+      placedOn: 'Placed {{date}}',
+      notFound:
+        'This order doesn’t exist, or the shopper has not typed the phone code yet. The shop deletes an order that never gets its code.',
+      loadFailed: "Couldn't load the order. Refresh the page to try again.",
+      cantManage:
+        'You can view shop orders. Ask a workspace owner for the storefront.order.manage permission to move them on.',
+      // The next step's button, one per status (decisions 5–8, 28). Cancel is secondary
+      makeSalesOrder: 'Make the sales order',
+      pack: 'Mark packed',
+      ship: 'Mark shipped',
+      deliver: 'Mark delivered',
+      cancel: 'Cancel order',
+      // The toasts. number = the order's (W-000123), the others the documents' own
+      salesOrderMade: 'Sales order {{salesOrder}} made for {{number}}',
+      packed: '{{number}} packed. Challan {{delivery}} posted.',
+      shipped: '{{number}} shipped',
+      delivered: '{{number}} delivered. Invoice {{invoice}} posted.',
+      cancelled: '{{number}} cancelled. The shopper gets an SMS.',
+      // The neutral document notice under the header: what the next step does
+      next: {
+        confirmed:
+          'Pack the goods, then mark it packed. That posts the challan, takes the stock out and ends the hold.',
+        packed: 'Mark it shipped when the parcel leaves the shop.',
+        shipped: 'Mark it delivered when the shopper has it. That posts the invoice.',
+        // Decision 7: the cash on delivery comes in as an ordinary money receipt
+        delivered:
+          'The invoice waits for its money. Record the cash when the rider brings it back.',
+      },
+      recordPayment: 'Record payment',
+      // Decision 1: the crit notice. reason = the error's own words (errors.*), a whole sentence
+      documentError: 'The sales order could not be made. {{reason}}',
+      // Decision 29: an order confirmed before 27b has no sales order and no error
+      noSalesOrder: 'This order has no sales order yet. Make it before the goods are packed.',
+      // The lines card
+      linesTitle: 'Items',
+      // packSize may be empty; the page then shows the SKU alone
+      lineSubline: '{{sku}} · {{packSize}}',
+      // quantity = "2 pcs" (the variant's base unit), price = the shop's unit price
+      lineQuantity: '{{quantity}} × {{price}}',
+      noPhoto: 'No photo',
+      subtotal: 'Subtotal',
+      // code = the coupon (27c); "Discount" alone when there is none
+      discountCode: 'Discount ({{code}})',
+      discount: 'Discount',
+      deliveryCharge: 'Delivery charge',
+      free: 'Free',
+      total: 'Total',
+      // The shopper card: what they typed at checkout, and the customer the phone found or made
+      shopperTitle: 'Deliver to',
+      phone: 'Mobile number',
+      address: 'Address',
+      zone: 'Delivery zone',
+      payment: 'Payment',
+      customer: 'Customer in Omnivo',
+      // Decision 2: until the sales order is made, no customer is picked
+      customerNotYet: 'Found by the phone with the sales order',
+      // The documents card (decision 9: a number links only for someone who may read that kind)
+      documentsTitle: 'Documents',
+      documentsHint: 'What the order made in the books and the stock',
+      documents: {
+        salesOrder: 'Sales order',
+        delivery: 'Challan',
+        invoice: 'Invoice',
+        salesReturn: 'Sales return',
+      },
+      // A document not made yet: when it will be. A sales return is only for a packed order
+      // that is cancelled, so it has no "not yet" line
+      documentsWhen: {
+        salesOrder: 'When the order is confirmed',
+        delivery: 'When it is packed',
+        invoice: 'When it is delivered',
+      },
+      // The timeline card, oldest first (history)
+      timelineTitle: 'Timeline',
+      history: {
+        pending: 'Placed in the shop',
+        confirmed: 'Confirmed with the phone code',
+        packed: 'Packed',
+        shipped: 'Shipped',
+        delivered: 'Delivered',
+        cancelled: 'Cancelled',
+        returned: 'Returned',
+      },
+      // Under the cancelled step: what the member typed (decision 19, staff only)
+      cancelReason: 'Why: {{reason}}',
+      // Decision 35: Delivered posts an invoice, so it asks first. Shipped does not
+      deliverTitle: 'Mark {{number}} delivered?',
+      deliverBody:
+        'This posts an invoice for {{total}}, dated today. It stays unpaid until you record the money.',
+      // The Packed dialog (decisions 5, 14, 15, 32)
+      packing: {
+        title: 'Pack {{number}}',
+        description:
+          'The challan takes these goods out of {{warehouse}}. Check the batches, or type or scan the serial numbers.',
+        // The line's header: quantity = "3 pcs"
+        needs: 'Needs {{quantity}}',
+        // An untracked product: one pick, nothing to choose
+        untracked: 'No batch or serial number to pick.',
+        batch: 'Batch',
+        batchPlaceholder: 'Pick a batch',
+        // available = on hand in the warehouse, with its unit ("12 pcs")
+        batchOption: '{{lot}} · expires {{date}} · {{available}} here',
+        batchOptionNoExpiry: '{{lot}} · {{available}} here',
+        quantity: 'Quantity',
+        addBatch: 'Add another batch',
+        // number = the pick's place in the line, from 1
+        removeBatch: 'Remove batch {{number}}',
+        noBatches: 'No batch of this product has stock in {{warehouse}}.',
+        // picked and quantity with the unit: "2 of 3 pcs"
+        picked: '{{picked}} of {{quantity}} picked',
+        serials: 'Serial numbers',
+        // needed = the line's quantity
+        serialsHint: 'One per line, or scan them. This line needs {{needed}}.',
+        serialsCount: '{{entered}} of {{needed}} typed',
+        submit: 'Mark packed',
+        loadFailed: "Couldn't load what to pack. Close this and try again.",
+      },
+      // The Cancel dialog (decisions 8 and 19)
+      cancelling: {
+        title: 'Cancel {{number}}?',
+        bodyConfirmed:
+          'The stock held for it is free again, and its sales order is cancelled. The shopper gets an SMS that the order was cancelled.',
+        bodyPacked:
+          'A sales return brings the packed goods back into stock, and the sales order is cancelled. The shopper gets an SMS that the order was cancelled.',
+        reason: 'Why',
+        reasonPlaceholder: 'The shopper did not answer the phone',
+        reasonHint: 'Only your team sees this. The SMS does not say why.',
+        keep: 'Keep the order',
+        submit: 'Cancel order',
+      },
     },
   },
   approvals: {
@@ -6475,6 +6680,7 @@ export const en = {
       storefront_listing: 'Shop listings',
       storefront_banner: 'Shop banners',
       storefront_collection: 'Shop collections',
+      storefront_order: 'Shop orders',
     },
     columns: {
       when: 'When',
@@ -6833,6 +7039,14 @@ export const en = {
         unpublished: 'Took a listing out of the shop',
         deleted: 'Deleted a shop listing',
       },
+      // Step 27b
+      storefront_order: {
+        sales_order_made: 'Made the sales order of a shop order',
+        packed: 'Marked a shop order packed',
+        shipped: 'Marked a shop order shipped',
+        delivered: 'Marked a shop order delivered',
+        cancelled: 'Cancelled a shop order',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -7029,6 +7243,8 @@ export const en = {
       freeDeliveryFrom: 'Free delivery from',
       minimumOrder: 'Minimum order',
       paymentMethods: 'Ways to pay',
+      // Step 27b
+      deliveryVariantId: 'Delivery charge’s service',
       launched: 'Open',
       position: 'Place in the list',
       packSize: 'Pack size',
@@ -7978,6 +8194,17 @@ export const en = {
     storefront_listing_invalid: 'Pick a product from the shop’s catalog.',
     storefront_page_empty:
       'Write at least one section. To take the page out of the shop, delete it.',
+    storefront_order_step_invalid:
+      'This order has moved on since you opened it. Reload the page to see where it is now.',
+    storefront_order_no_sales_order:
+      'This order has no sales order yet. Choose Make the sales order first.',
+    storefront_order_line_missing: 'Pack every line of the order, and only its own lines.',
+    storefront_order_line_twice: 'This line is in the list twice. Remove one.',
+    storefront_order_pick_total:
+      'The batches and quantities must add up to what the shopper ordered for this line.',
+    storefront_delivery_product_invalid: 'Pick an active service, like Delivery charge.',
+    storefront_delivery_product_required:
+      'Orders already use a delivery charge service. Pick one; it can be another service.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

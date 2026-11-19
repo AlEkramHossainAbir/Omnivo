@@ -706,6 +706,19 @@ export const ERROR_CODES = [
   'storefront_listing_invalid',
   // A text page saved with no section (Delete is the way to take a page out of the shop)
   'storefront_page_empty',
+  // Step 27b: the shop's orders in the ERP. A move the order's status does not take (Shipped on a
+  // new order, Cancel after it shipped), Packed before the sales order exists, a line of the order
+  // missing from Packed (or one it does not have, or one twice), picks that do not add up to the
+  // line's quantity
+  'storefront_order_step_invalid',
+  'storefront_order_no_sales_order',
+  'storefront_order_line_missing',
+  'storefront_order_line_twice',
+  'storefront_order_pick_total',
+  // The delivery charge's product in the shop's settings: not an active service of this
+  // workspace, or emptied after the first order made it (decision 4)
+  'storefront_delivery_product_invalid',
+  'storefront_delivery_product_required',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

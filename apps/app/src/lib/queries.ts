@@ -1772,3 +1772,16 @@ export function waitingCountQuery(tenantId: string) {
     staleTime: 0,
   });
 }
+
+// Step 27b (decision 18): the new shop orders, for the sidebar's count next to "Shop orders".
+// Polled like the approvals count; under ['storefront', tenantId, 'orders'], so a move on the
+// order's page refreshes it at once. Here, not in lib/storefront-orders.ts: the sidebar is in the
+// first chunk, the orders' pages are not
+export function storefrontOrderCountQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['storefront', tenantId, 'orders', 'counts'],
+    queryFn: async () => (await call(routes.storefrontOrders.countOrders)).confirmed,
+    refetchInterval: 30_000,
+    staleTime: 0,
+  });
+}

@@ -44,6 +44,13 @@ function order(overrides: Partial<OrderRow> = {}): OrderRow {
     deliveredAt: null,
     cancelledAt: null,
     returnedAt: null,
+    // Step 27b: the ERP documents and their notes; the shop's views read none of them
+    salesOrderId: null,
+    deliveryId: null,
+    invoiceId: null,
+    salesReturnId: null,
+    documentError: null,
+    cancelReason: null,
     ...overrides,
   };
 }

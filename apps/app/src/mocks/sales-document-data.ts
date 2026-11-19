@@ -526,24 +526,30 @@ function openQuotation(data: WorkspaceData, quotationId: string, customerId: str
   return quotation;
 }
 
-// Step 18b: an order written on a device comes with the id the device made (push-data.ts)
+// Step 18b: an order written on a device comes with the id the device made (push-data.ts). Step
+// 27b: a shop order's (storefront-order-data.ts), like the API's createForShop: its prices include
+// VAT whatever the workspace's setting, and it keeps the address the shopper typed as text
 export function createOrder(
   data: WorkspaceData,
   input: OrderFields,
   quotationId: string | null,
   id: string = crypto.randomUUID(),
+  shop: { pricesIncludeVat: boolean; shippingAddress: string } | null = null,
 ): MockOrder {
   const customer = customerOf(data, input.customerId, null);
   const quotation = quotationId === null ? null : openQuotation(data, quotationId, customer.id);
   // An order made from a quotation reads its prices the way the quotation did
-  const pricesIncludeVat = quotation?.pricesIncludeVat ?? data.settings.pricesIncludeVat;
+  const pricesIncludeVat =
+    shop?.pricesIncludeVat ?? quotation?.pricesIncludeVat ?? data.settings.pricesIncludeVat;
+  const parts = orderParts(data, input, customer, pricesIncludeVat, new Set());
   const created: MockOrder = {
     id,
     number: null,
     status: 'draft',
     confirmedAt: null,
     quotationId: quotation?.id ?? null,
-    ...orderParts(data, input, customer, pricesIncludeVat, new Set()),
+    ...parts,
+    shippingAddress: parts.shippingAddress ?? shop?.shippingAddress ?? null,
     version: 1,
     updatedAt: now(),
   };

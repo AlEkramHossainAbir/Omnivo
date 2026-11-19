@@ -5,6 +5,11 @@ import {
   problemSchema,
   SHOP_ORDERS_PER_PHONE,
   shopOrderConfirmedSchema,
+  type StorefrontOrder,
+  storefrontOrderCountsSchema,
+  storefrontOrderPageSchema,
+  storefrontOrderSchema,
+  storefrontSetupSchema,
 } from '@omnivo/contracts';
 import { sql as drizzleSql } from 'drizzle-orm';
 import postgres from 'postgres';
@@ -28,9 +33,11 @@ import {
   type TestRedis,
 } from '../../testing/containers.js';
 import { bearer, type SignedIn, signUp } from '../../testing/http.js';
+import { lastMailTo } from '../../testing/mailpit.js';
 import {
   clientAddress,
   codeFor,
+  deliveryServiceUpdate,
   type OrderShop,
   orderRequest,
   orderShop,
@@ -38,6 +45,7 @@ import {
   placeOrder,
   shopHeaders,
   shopPost,
+  smsAddress,
   trackingTokenFor,
 } from '../../testing/shop-orders.js';
 import { ShopDb } from '../shop-db.js';
@@ -266,6 +274,193 @@ describe('two shops', () => {
     );
     expect(res.statusCode).toBe(429);
     expect(problemOf(res).code).toBe('shop_order_limit');
+  });
+});
+
+// Step 27b: Storefront → Shop orders. Each workspace's staff see, move and plan their own shop's
+// orders only, the sales order's customer is found among the workspace's own customers, and a
+// service of another workspace cannot be the delivery charge
+describe("the ERP's shop orders", () => {
+  function send(who: SignedIn, method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) {
+    return app.inject({
+      method,
+      url,
+      headers: bearer(who.accessToken),
+      ...(payload === undefined ? {} : { payload }),
+    });
+  }
+
+  async function idOf(shop: OrderShop, orderNo: string): Promise<string> {
+    const [row] = z.array(z.object({ id: z.uuid() })).parse(
+      await sql`
+          SELECT id::text FROM storefront_orders
+          WHERE tenant_id = ${shop.tenantId} AND order_no = ${orderNo}`,
+    );
+    if (row === undefined) throw new Error(`no order ${orderNo}`);
+    return row.id;
+  }
+
+  // The order once the worker has made its sales order, read by its own workspace's owner
+  async function withSalesOrder(who: SignedIn, id: string): Promise<StorefrontOrder> {
+    return eventually(async () => {
+      const res = await send(who, 'GET', `/storefront/orders/${id}`);
+      expect(res.statusCode, res.body).toBe(200);
+      const order = storefrontOrderSchema.parse(res.json());
+      expect(order.salesOrder).not.toBeNull();
+      return order;
+    });
+  }
+
+  async function confirmedIn(tenantId: string): Promise<string[]> {
+    return z
+      .array(z.object({ id: z.string() }))
+      .parse(
+        await sql`
+          SELECT id::text FROM storefront_orders
+          WHERE tenant_id = ${tenantId} AND status <> 'pending'`,
+      )
+      .map((row) => row.id)
+      .sort();
+  }
+
+  it("open, plan and move none of the other workspace's orders", async () => {
+    const id = await idOf(nirvor, nirvorOrder.orderNo);
+    const before = await withSalesOrder(nirvorOwner, id);
+    const { version } = before;
+    for (const [method, step, body] of [
+      ['GET', '', undefined],
+      ['GET', '/pack-plan', undefined],
+      ['POST', '/sales-order', { version }],
+      [
+        'POST',
+        '/pack',
+        {
+          version,
+          lines: [{ position: 1, picks: [{ batchId: '', quantity: '2', serialNumbers: [] }] }],
+        },
+      ],
+      ['POST', '/ship', { version }],
+      ['POST', '/deliver', { version }],
+      ['POST', '/cancel', { version, reason: 'Not ours' }],
+    ] as const) {
+      const res = await send(acmeOwner, method, `/storefront/orders/${id}${step}`, body);
+      expect(res.statusCode, `${method} ${step}`).toBe(404);
+      expect(problemOf(res).code).toBe('not_found');
+    }
+    // Untouched at Nirvor: still new, still the version its page read
+    const after = await send(nirvorOwner, 'GET', `/storefront/orders/${id}`);
+    expect(storefrontOrderSchema.parse(after.json())).toMatchObject({
+      status: 'confirmed',
+      version,
+    });
+  });
+
+  it('list, count and search their own orders only', async () => {
+    await withSalesOrder(acmeOwner, await idOf(acme, acmeOrder.orderNo));
+    for (const [who, shop] of [
+      [nirvorOwner, nirvor],
+      [acmeOwner, acme],
+    ] as const) {
+      const page = storefrontOrderPageSchema.parse(
+        (await send(who, 'GET', '/storefront/orders?view=all&limit=100')).json(),
+      );
+      expect(page.items.map((item) => item.id).sort()).toEqual(await confirmedIn(shop.tenantId));
+      const counts = storefrontOrderCountsSchema.parse(
+        (await send(who, 'GET', '/storefront/orders/counts')).json(),
+      );
+      const [row] = countSchema.parse(
+        await sql`
+          SELECT count(*)::int AS n FROM storefront_orders
+          WHERE tenant_id = ${shop.tenantId} AND status = 'confirmed'`,
+      );
+      expect(counts.confirmed).toBe(row?.n);
+    }
+    // Nirvor's buyer, searched for at Acme by phone and by number: nothing. Acme's own W-000001
+    // is the only one with that number there
+    const byPhone = storefrontOrderPageSchema.parse(
+      (
+        await send(acmeOwner, 'GET', `/storefront/orders?view=all&search=${nirvorOrder.phone}`)
+      ).json(),
+    );
+    expect(byPhone.items).toEqual([]);
+    const byNumber = storefrontOrderPageSchema.parse(
+      (
+        await send(acmeOwner, 'GET', `/storefront/orders?view=all&search=${nirvorOrder.orderNo}`)
+      ).json(),
+    );
+    expect(byNumber.items.map((item) => item.id)).toEqual([await idOf(acme, acmeOrder.orderNo)]);
+  });
+
+  it("find or make the customer and the delivery service in the order's own workspace", async () => {
+    // Nirvor's buyer orders from Acme too. Nirvor has a customer with this phone; Acme must not
+    // find it, but make its own
+    const nirvorCustomer = (
+      await withSalesOrder(nirvorOwner, await idOf(nirvor, nirvorOrder.orderNo))
+    ).customer;
+    const headers = shopHeaders(acme.host, clientAddress(41));
+    const sent = await lastMailTo(mail.apiUrl, smsAddress(nirvorOrder.phone));
+    const token = await placeOrder(
+      app,
+      headers,
+      orderRequest(acme.listingId, 2, nirvorOrder.phone, TWO),
+    );
+    const { code } = await codeFor(mail.apiUrl, nirvorOrder.phone, sent.id);
+    const res = await shopPost(app, '/orders/verify', headers, { token, code });
+    expect(res.statusCode, res.body).toBe(200);
+    const { orderNo } = shopOrderConfirmedSchema.parse(res.json());
+    const acmeCustomer = (await withSalesOrder(acmeOwner, await idOf(acme, orderNo))).customer;
+    expect(acmeCustomer).not.toBeNull();
+    expect(acmeCustomer?.id).not.toBe(nirvorCustomer?.id);
+    expect(
+      (await send(nirvorOwner, 'GET', `/customers/${acmeCustomer?.id ?? ''}`)).statusCode,
+    ).toBe(404);
+
+    const customers = z
+      .array(z.object({ tenant: z.string() }))
+      .parse(
+        await sql`
+          SELECT tenant_id::text AS tenant FROM parties WHERE phone = ${nirvorOrder.phone}
+          ORDER BY tenant_id`,
+      )
+      .map((row) => row.tenant);
+    expect(customers).toEqual([nirvor.tenantId, acme.tenantId].sort());
+    // Each workspace made its own "Delivery charge" with its first order
+    const services = z.array(z.object({ tenant: z.string(), n: z.number() })).parse(
+      await sql`
+          SELECT tenant_id::text AS tenant, count(*)::int AS n FROM products
+          WHERE name = 'Delivery charge' GROUP BY tenant_id ORDER BY tenant_id`,
+    );
+    expect(services).toEqual(
+      [nirvor.tenantId, acme.tenantId].sort().map((tenant) => ({ tenant, n: 1 })),
+    );
+  });
+
+  it("refuse the other workspace's service as the delivery charge", async () => {
+    const nirvorSetup = storefrontSetupSchema.parse(
+      (await send(nirvorOwner, 'GET', '/storefront/settings')).json(),
+    );
+    const nirvorService = nirvorSetup.shop?.deliveryVariantId ?? null;
+    expect(nirvorService).not.toBeNull();
+    const acmeSetup = storefrontSetupSchema.parse(
+      (await send(acmeOwner, 'GET', '/storefront/settings')).json(),
+    );
+    if (acmeSetup.shop === null) throw new Error('Acme has no shop');
+    // Nor does Acme's select offer it
+    expect(acmeSetup.deliveryChoices.map((choice) => choice.variantId)).not.toContain(
+      nirvorService,
+    );
+    const res = await send(
+      acmeOwner,
+      'PUT',
+      '/storefront/settings',
+      deliveryServiceUpdate(acmeSetup.shop, nirvorService ?? ''),
+    );
+    expect(res.statusCode).toBe(409);
+    expect(problemOf(res).code).toBe('storefront_delivery_product_invalid');
+    const after = storefrontSetupSchema.parse(
+      (await send(acmeOwner, 'GET', '/storefront/settings')).json(),
+    );
+    expect(after.shop?.deliveryVariantId).toBe(acmeSetup.shop.deliveryVariantId);
   });
 });
 

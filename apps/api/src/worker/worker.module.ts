@@ -1,12 +1,13 @@
 import { type DynamicModule, Inject, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { createDb, type Db } from '@omnivo/db';
+import { Redis } from 'ioredis';
 
 import { createWithTenant } from '../common/tenant/with-tenant.js';
 import { DocumentEmailHandler } from '../documents/email.handler.js';
 import { DocumentFileHandler } from '../documents/file.handler.js';
 import { DocumentFileMaker } from '../documents/file-maker.js';
 import type { WorkerConfig } from '../config.js';
-import { CONFIG, DB, RELAY_DB, STORAGE_CONFIG, WITH_TENANT } from '../infra/tokens.js';
+import { CONFIG, DB, REDIS, RELAY_DB, STORAGE_CONFIG, WITH_TENANT } from '../infra/tokens.js';
 import { LowStockHandler } from '../inventory/low-stock.handler.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
@@ -15,10 +16,16 @@ import { NumberingService } from '../numbering/numbering.service.js';
 import { ShiftVarianceHandler } from '../pos/shift-variance.handler.js';
 import { SoldShortHandler } from '../pos/sold-short.handler.js';
 import { ProductImportHandler } from '../products/import.handler.js';
+import { ProductsService } from '../products/products.service.js';
+import { PermissionService } from '../rbac/permission.service.js';
 import { ReportExportHandler } from '../reports/export.handler.js';
 import { ReportScheduleEmailHandler } from '../reports/report-schedule-email.handler.js';
 import { ReportScheduleRunHandler } from '../reports/report-schedule-run.handler.js';
 import { ReportScheduleSweep } from '../reports/report-schedule-sweep.js';
+import { BalanceAccess } from '../sales/balance-access.js';
+import { CreditService } from '../sales/credit.service.js';
+import { CustomersService } from '../sales/customers.service.js';
+import { SalesOrdersService } from '../sales/sales-orders.service.js';
 import { CatalogHandler } from '../setup/catalog.handler.js';
 import { ChartHandler } from '../setup/chart.handler.js';
 import { ProvisioningHandler } from '../setup/provisioning.handler.js';
@@ -30,6 +37,7 @@ import { SMS_SENDER, MailSmsSender } from '../sms/sms-sender.js';
 import { StorefrontImageHandler } from '../storefront/image.handler.js';
 import { OrderConfirmedHandler } from '../storefront/orders/order-confirmed.handler.js';
 import { PendingOrderSweep } from '../storefront/orders/pending-order-sweep.js';
+import { ShopSalesOrderMaker } from '../storefront/orders/sales-order-maker.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { JobRunner } from './job-runner.js';
@@ -46,6 +54,7 @@ export class WorkerModule implements OnApplicationShutdown {
   constructor(
     @Inject(DB) private readonly db: Db,
     @Inject(RELAY_DB) private readonly relayDb: Db,
+    @Inject(REDIS) private readonly redis: Redis,
   ) {}
 
   static register(config: WorkerConfig): DynamicModule {
@@ -102,12 +111,27 @@ export class WorkerModule implements OnApplicationShutdown {
         PendingOrderSweep,
         { provide: SMS_SENDER, useClass: MailSmsSender },
         SmsRunner,
+        // Step 27b: a confirmed order's customer and sales order, made by OrderConfirmedHandler
+        // with the services the ERP's screens use, so a shop sale follows the same rules
+        ShopSalesOrderMaker,
+        CustomersService,
+        SalesOrdersService,
+        ProductsService,
+        // What those services ask for. CreditService and BalanceAccess read a member's permissions,
+        // which the shop's sales order never asks (no member; 'storefront_order' skips it), so this
+        // Redis client is never used here: lazyConnect, and it never opens a connection
+        CreditService,
+        BalanceAccess,
+        PermissionService,
+        { provide: REDIS, useFactory: () => new Redis(config.redisUrl, { lazyConnect: true }) },
       ],
     };
   }
 
   // Last: the relay and the queue workers have stopped in beforeApplicationShutdown by now
   async onApplicationShutdown(): Promise<void> {
+    // disconnect(), not quit(): quit() sends a command, which would open the connection first
+    this.redis.disconnect();
     await Promise.all([this.db.$client.end(), this.relayDb.$client.end()]);
   }
 }

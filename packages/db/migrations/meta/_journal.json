@@ -505,6 +505,13 @@
       "when": 1794905152629,
       "tag": "0071_storefront-orders-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1794980505007,
+      "tag": "0072_storefront-order-documents",
+      "breakpoints": true
     }
   ]
 }

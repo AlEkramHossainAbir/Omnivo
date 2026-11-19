@@ -1,4 +1,5 @@
 import {
+  type ErrorCode,
   type ShopPaymentMethod,
   type ShopTextPageSlug,
   slugFromName,
@@ -10,6 +11,7 @@ import {
   type StorefrontHero,
   type StorefrontImage,
   type StorefrontListing,
+  type StorefrontOrder,
   type StorefrontSale,
   type StorefrontSection,
   type StorefrontSettings,
@@ -115,6 +117,53 @@ export interface MockPage {
   updatedAt: string;
 }
 
+// Step 27b: a shop order as the ERP keeps it: 27a's storefront_orders row with its lines, and the
+// four documents 27b links to it. The mock never has a pending one: an order waiting for its phone
+// code is the shopper's (apps/shop), and the ERP never lists it. Each line keeps the listing's copy
+// as the shopper saw it (name, pack size, photo, price); the timeline is kept as it grows, the
+// shape the page reads (the API works it out from the row's *_at columns)
+export interface MockShopOrderLine {
+  position: number;
+  listingId: string;
+  name: string;
+  packSize: string;
+  image: StorefrontImage | null;
+  productId: string;
+  variantId: string;
+  quantity: number;
+  unitPrice: string;
+  lineTotal: string;
+}
+
+export interface MockShopOrder {
+  id: string;
+  orderNo: string;
+  status: StorefrontOrder['status'];
+  history: StorefrontOrder['history'];
+  customerName: string;
+  // 11 digits, as the shop's checkout keeps it (01711223344)
+  phone: string;
+  address: string;
+  zoneName: string;
+  paymentMethod: ShopPaymentMethod;
+  lines: MockShopOrderLine[];
+  subtotal: string;
+  discount: string;
+  couponCode: string | null;
+  deliveryCharge: string;
+  total: string;
+  // The warehouse the stock is held in (27a copied the shop's onto each hold)
+  warehouseId: string;
+  cancelReason: string | null;
+  salesOrderId: string | null;
+  deliveryId: string | null;
+  invoiceId: string | null;
+  salesReturnId: string | null;
+  documentError: ErrorCode | null;
+  version: number;
+  updatedAt: string;
+}
+
 export interface MockStorefront {
   shop: MockShop | null;
   categories: MockCategory[];
@@ -127,6 +176,8 @@ export interface MockStorefront {
   collections: MockCollection[];
   home: MockHomeBlock[];
   pages: Map<ShopTextPageSlug, MockPage>;
+  // Step 27b: the shop's confirmed orders, newest first (storefront-order-data.ts)
+  orders: MockShopOrder[];
 }
 
 export function emptyStorefront(): MockStorefront {
@@ -142,6 +193,7 @@ export function emptyStorefront(): MockStorefront {
     collections: [],
     home: [],
     pages: new Map(),
+    orders: [],
   };
 }
 
@@ -174,7 +226,8 @@ function seedPicture(
   return { id, alt };
 }
 
-function seedPhoto(
+// Step 27b: exported for the shop orders' two extra listings (storefront-order-data.ts)
+export function seedPhoto(
   data: WorkspaceData,
   label: string,
   colour: string,
@@ -241,6 +294,7 @@ export function seedStorefront(data: WorkspaceData, garments: boolean): void {
     freeDeliveryFrom: '2000.0000',
     minimumOrder: null,
     paymentMethods: payments,
+    deliveryVariantId: null,
     launchedAt: daysAgo(12),
     version: 4,
     updatedAt: daysAgo(3),

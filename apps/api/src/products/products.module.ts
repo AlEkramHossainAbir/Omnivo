@@ -21,5 +21,7 @@ import { UnitsService } from './units.service.js';
     ProductImportsController,
   ],
   providers: [UnitsService, ProductCategoriesService, ProductsService, ProductImportsService],
+  // Step 27b: the shop's "Delivery charge" service is made with ProductsService (storefront/)
+  exports: [ProductsService],
 })
 export class ProductsModule {}

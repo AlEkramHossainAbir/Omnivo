@@ -3,6 +3,8 @@ import {
   publicOrderPlacedSchema,
   type ShopOrderRequestInput,
   setupSchema,
+  type StorefrontSettings,
+  type StorefrontSettingsFormValues,
   unitListSchema,
   warehouseListSchema,
 } from '@omnivo/contracts';
@@ -213,4 +215,36 @@ export async function setStock(
     INSERT INTO stock_balances (tenant_id, warehouse_id, product_id, variant_id, quantity)
     VALUES (${at.tenantId}, ${at.warehouseId}, ${at.productId}, ${at.variantId}, ${quantity})
     ON CONFLICT ON CONSTRAINT stock_balances_key DO UPDATE SET quantity = EXCLUDED.quantity`;
+}
+
+// Step 27b: what the Shop settings form sends for a shop as it is saved, with only the delivery
+// charge's service changed ('' = "Made on the first order"). A zone keeps its id when the id is one
+// the form could send: the one launchShop writes (inside_dhaka) has an underscore, which the form's
+// rule refuses, so it goes as a new zone and the save gives it an id of its own. Read the zone's id
+// again after a save that went through
+export function deliveryServiceUpdate(
+  shop: StorefrontSettings,
+  deliveryVariantId: string,
+): StorefrontSettingsFormValues {
+  return {
+    subdomain: shop.subdomain,
+    name: shop.name,
+    language: shop.language,
+    hotline: shop.hotline,
+    address: shop.address,
+    facebookUrl: shop.facebookUrl ?? '',
+    instagramUrl: shop.instagramUrl ?? '',
+    xUrl: shop.xUrl ?? '',
+    linkedinUrl: shop.linkedinUrl ?? '',
+    defaultWarehouseId: shop.defaultWarehouseId ?? '',
+    deliveryZones: shop.deliveryZones.map((zone) => ({
+      ...zone,
+      id: /^[a-z0-9-]{1,32}$/.test(zone.id) ? zone.id : null,
+    })),
+    freeDeliveryFrom: shop.freeDeliveryFrom ?? '',
+    minimumOrder: shop.minimumOrder ?? '',
+    paymentMethods: shop.paymentMethods,
+    deliveryVariantId,
+    version: shop.version,
+  };
 }

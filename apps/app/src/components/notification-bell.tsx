@@ -58,9 +58,9 @@ const TARGET = {
   // Step 20b: the list, for an old notification without the shift's id; one with it opens the
   // shift (shiftOf below)
   'pos.shift_variance': '/pos/shifts',
-  // Step 27a: a new shop order. The Orders page comes in step 27b, and opens the order then; until
-  // it does, the overview, where the person was most likely to be
-  'storefront.order_confirmed': '/',
+  // Step 27a: a new shop order. Step 27b: the list's New tab, for an old notification without the
+  // order's id; one with it opens the order (shopOrderOf below)
+  'storefront.order_confirmed': '/storefront/orders',
 } as const satisfies Record<Exclude<NotificationType, DocumentNotificationType>, string>;
 
 // A document's page from the notification's kind and id. The list of that kind when the id is
@@ -127,6 +127,14 @@ function useOpenDocument(): (params: NotificationParams) => Promise<void> {
 function shiftOf(notification: Notification): string | null {
   const { id } = notification.params;
   return notification.type === 'pos.shift_variance' && typeof id === 'string' && id !== ''
+    ? id
+    : null;
+}
+
+// Step 27b: the new-order bell opens its order. Its id is the order's (27a's handler sends it)
+function shopOrderOf(notification: Notification): string | null {
+  const { id } = notification.params;
+  return notification.type === 'storefront.order_confirmed' && typeof id === 'string' && id !== ''
     ? id
     : null;
 }
@@ -296,10 +304,13 @@ export function NotificationBell() {
                   if (notification.readAt === null) markRead.mutate(notification.id);
                   setOpen(false);
                   const shiftId = shiftOf(notification);
+                  const orderId = shopOrderOf(notification);
                   if (opensDocument(notification.type)) {
                     void openDocument(notification.params);
                   } else if (shiftId !== null) {
                     void navigate({ to: '/pos/shifts/$shiftId', params: { shiftId } });
+                  } else if (orderId !== null) {
+                    void navigate({ to: '/storefront/orders/$orderId', params: { orderId } });
                   } else {
                     void navigate({ to: TARGET[notification.type] });
                   }
