@@ -252,9 +252,11 @@ const zoneIdSchema = z.string().min(1).max(32);
 
 // A coupon code as the shopper typed it. Trimmed and upper-cased here, so " welcome10 " and
 // "WELCOME10" are one code, and the server never compares two spellings of it. Letters, digits and
-// dashes only: a code is printed on a flyer and typed on a phone
+// dashes only: a code is printed on a flyer and typed on a phone. Step 27c: exported, because the
+// ERP's coupon form saves a code with the same rule (storefront-coupons.ts), so a code the tenant
+// saves is always one a shopper can type
 export const SHOP_COUPON_MAX_LENGTH = 20;
-const couponCodeSchema = z
+export const shopCouponCodeSchema = z
   .string()
   .trim()
   .toUpperCase()
@@ -267,7 +269,7 @@ const couponCodeSchema = z
 export const shopCartQuoteRequestSchema = z.object({
   lines: cartLinesSchema,
   zoneId: zoneIdSchema.optional(),
-  couponCode: couponCodeSchema.optional(),
+  couponCode: shopCouponCodeSchema.optional(),
 });
 
 // The parts of a listing a cart line draws: the 96×80 image box, the name (a link to its page) and
@@ -304,21 +306,33 @@ export const shopCartQuoteLineSchema = z.discriminatedUnion('status', [
 // the cart is still priced, and the promo box says why the code did nothing.
 // - none: no code was sent
 // - applied: the code took money off; `discount` says how, so the promo box can say "10% off" or
-//   "৳50 off" next to the code
+//   "৳50 off" next to the code. Step 27c: `upTo` is the most a percent coupon takes off ("10%
+//   off, up to ৳200"); null for an amount, or a percent with no such limit
 // - refused: the code did nothing. `reason` is an error code the promo box turns into words:
 //   unknown (no such code), expired (its last day has passed) or below its minimum (the items
-//   are worth less than `minimum`, which the words name)
+//   are worth less than `minimum`, which the words name). Step 27c adds used up: the tenant
+//   allowed it a number of orders, and that many have it. A code that starts on a later day is
+//   unknown, so a sale the tenant has not announced yet does not leak through the promo box
+export const SHOP_COUPON_REFUSALS = [
+  'shop_coupon_unknown',
+  'shop_coupon_expired',
+  'shop_coupon_used_up',
+  'shop_coupon_minimum',
+] as const;
+export type ShopCouponRefusal = (typeof SHOP_COUPON_REFUSALS)[number];
+
 export const shopCouponResultSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('none') }),
   z.object({
     status: z.literal('applied'),
-    code: couponCodeSchema,
+    code: shopCouponCodeSchema,
     discount: shopDiscountSchema,
+    upTo: shopMoneySchema.nullable(),
   }),
   z.object({
     status: z.literal('refused'),
-    code: couponCodeSchema,
-    reason: z.enum(['shop_coupon_unknown', 'shop_coupon_expired', 'shop_coupon_minimum']),
+    code: shopCouponCodeSchema,
+    reason: z.enum(SHOP_COUPON_REFUSALS),
     // Only for shop_coupon_minimum: "Add ৳120 more to use this code" needs the amount
     minimum: shopMoneySchema.nullable(),
   }),
@@ -413,7 +427,7 @@ export const shopPhoneSchema = z
 export const shopOrderRequestSchema = z.object({
   lines: cartLinesSchema.min(1, errorCode('shop_cart_empty')),
   zoneId: zoneIdSchema,
-  couponCode: couponCodeSchema.optional(),
+  couponCode: shopCouponCodeSchema.optional(),
   name: z.string().trim().min(1, errorCode('required')).max(80, errorCode('too_long')),
   phone: shopPhoneSchema,
   // Long enough for "House 12, Road 5, Block C, Mirpur 10, Dhaka", short enough for a label
@@ -548,7 +562,7 @@ export const shopOrderSchema = z.object({
   lines: z.array(shopOrderLineSchema).min(1),
   subtotal: shopMoneySchema,
   discount: shopMoneySchema,
-  couponCode: couponCodeSchema.nullable(),
+  couponCode: shopCouponCodeSchema.nullable(),
   deliveryCharge: shopMoneySchema,
   total: shopMoneySchema,
 });

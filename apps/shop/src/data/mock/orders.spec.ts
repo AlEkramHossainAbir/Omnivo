@@ -249,4 +249,48 @@ describe('the mock’s orders', () => {
       { listingId: NEEM, quantity: 3, unitPrice: '229', lineTotal: '687.0000' },
     ]);
   });
+
+  // Step 27c: the coupon's uses, counted from the book as the API counts its orders table
+  it('takes a once-per-number code once per mobile number, counting an order still waiting', async () => {
+    const { source, wait } = withClock();
+    // ৳687 − 10% (৳68.70) + ৳80
+    const welcome = { ...ORDER, couponCode: 'WELCOME10', expectedTotal: '698.30' };
+    // Cash on Delivery: it waits for its code, and already holds the use
+    await placed(source, welcome);
+    expect(await source.placeOrder(welcome, ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_coupon_used_by_phone',
+    });
+    // Another number may, and the same number may order without the code
+    await placed(source, { ...welcome, phone: '01711284519' });
+    await placed(source);
+
+    // The first order never got its code: after its hour it is dropped and gives the use back
+    wait(61 * 60);
+    await placed(source, welcome);
+  });
+
+  it('gives the last use to the first order, and back when that order is dropped', async () => {
+    const { source } = withClock();
+    // EID100 may be on one order: ৳687 − ৳100 + ৳80
+    const eid = { ...ORDER, couponCode: 'EID100', expectedTotal: '667' };
+    const { token } = await placed(source, eid);
+
+    // The next shopper's quote says "used up". One who saw ৳667 before is refused: the total
+    // without the code is not the one they saw, and the checkout prices the cart again
+    expect((await source.quote({ lines: ORDER.lines, couponCode: 'EID100' })).coupon).toMatchObject(
+      { status: 'refused', reason: 'shop_coupon_used_up' },
+    );
+    expect(await source.placeOrder({ ...eid, phone: '01711284519' }, ADDRESS)).toMatchObject({
+      ok: false,
+      code: 'shop_order_changed',
+    });
+
+    // Five wrong codes drop the first order, and the use is free again
+    for (let tries = 0; tries < SHOP_CODE_TRIES; tries += 1)
+      await source.verifyCode(token, '000000');
+    expect((await source.quote({ lines: ORDER.lines, couponCode: 'EID100' })).coupon.status).toBe(
+      'applied',
+    );
+  });
 });

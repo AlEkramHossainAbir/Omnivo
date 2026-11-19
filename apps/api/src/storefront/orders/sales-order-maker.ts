@@ -4,6 +4,7 @@ import {
   type CustomerInput,
   productInputSchema,
   type SalesLineInput,
+  spreadMoney,
   todayIn,
 } from '@omnivo/contracts';
 import {
@@ -167,14 +168,17 @@ export class ShopSalesOrderMaker {
   }
 
   // One sales order line per shop line, in the cart's order (its line number = the position), in
-  // the product's base unit at the shop's unit price (decision 3). No line discount: the shop's
-  // price is already what the shopper pays
+  // the product's base unit at the shop's unit price (decision 3). Step 27c: a coupon's discount is
+  // spread over these lines as amount discounts, in proportion to each line's total (decision 4),
+  // so the sales order's total is still the shop's. The delivery line gets none: a coupon never
+  // takes money off the delivery charge
   private async goodsLines(tx: Transaction, order: OrderRow): Promise<SalesLineInput[]> {
     const rows = await tx
       .select({
         variantId: storefrontOrderLines.variantId,
         quantity: storefrontOrderLines.quantity,
         unitPrice: storefrontOrderLines.unitPrice,
+        lineTotal: storefrontOrderLines.lineTotal,
         unitId: products.baseUnitId,
         taxRateId: rateOf,
       })
@@ -193,7 +197,11 @@ export class ShopSalesOrderMaker {
         ),
       )
       .orderBy(asc(storefrontOrderLines.position));
-    return rows.map((row) => ({
+    const discounts = lineDiscounts(
+      order.discount,
+      rows.map((row) => row.lineTotal),
+    );
+    return rows.map((row, index) => ({
       variantId: row.variantId,
       unitId: row.unitId,
       quantity: String(row.quantity),
@@ -201,7 +209,7 @@ export class ShopSalesOrderMaker {
       description: null,
       unitPrice: row.unitPrice,
       discountType: 'amount',
-      discount: '0',
+      discount: discounts[index] ?? '0',
       taxRateId: requireRate(row.taxRateId),
     }));
   }
@@ -323,6 +331,17 @@ export class ShopSalesOrderMaker {
     if (warehouseId === null) throw new Error(`Order ${order.id} has no warehouse`);
     return warehouseId;
   }
+}
+
+// A shop order's discount as one amount per goods line, to the paisa (spreadMoney: the largest
+// remainder rule, so the pieces add up to the discount exactly and none is more than its line).
+// A sales line's discount has at most 2 decimals (discountSchema), which spreadMoney's pieces
+// always have, and a line's total is quantity × price to the paisa (multiplyMoney), so the weights
+// are whole paisa too. No coupon, no spread: every line gets '0', as before step 27c.
+// Exported for its unit test
+export function lineDiscounts(discount: string, lineTotals: readonly string[]): string[] {
+  if (compareMoney(discount, '0') === 0) return lineTotals.map(() => '0');
+  return spreadMoney(discount, lineTotals);
 }
 
 // A product with no rate of its own in a workspace with no default rate: the sales order's own

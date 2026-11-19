@@ -1,9 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  compareMoney,
   compareQuantity,
   type DocumentRef,
   type ErrorCode,
   isErrorCode,
+  multiplyMoney,
   type PackStorefrontOrderInput,
   type StorefrontOrder,
   type StorefrontOrderCounts,
@@ -15,6 +17,7 @@ import {
   type StorefrontOrderSummary,
   type StorefrontPackPlan,
   storefrontImageSchema,
+  spreadMoney,
   sumQuantity,
   subtractQuantity,
   todayIn,
@@ -456,7 +459,10 @@ export class StorefrontOrdersService {
       if (!branch) throw new Error(`Warehouse ${salesOrder.warehouseId} is missing`);
 
       // Each challan line at its order line's price and VAT rate; then the delivery charge, the
-      // sales order's lines after the order's own (the maker added it last)
+      // sales order's lines after the order's own (the maker added it last). Step 27c: and with
+      // its share of the order line's discount (a coupon's, spread by the maker), or the invoice
+      // would bill more than the shopper pays
+      const discounts = challanDiscounts(challan, soLineById);
       const goods = challan.map((line) => {
         const soLine = line.orderLineId === null ? undefined : soLineById.get(line.orderLineId);
         if (soLine === undefined) throw new Error(`Challan line ${line.id} has no order line`);
@@ -467,7 +473,7 @@ export class StorefrontOrdersService {
           description: soLine.description,
           unitPrice: soLine.unitPrice,
           discountType: 'amount' as const,
-          discount: '0',
+          discount: discounts.get(line.id) ?? '0',
           taxRateId: soLine.taxRateId,
           deliveryLineId: line.id,
           orderLineId: null,
@@ -956,4 +962,34 @@ function fefo(
     left = subtractQuantity(left, take);
   }
   return picks;
+}
+
+// Step 27c: each challan line's share of its sales order line's discount, by challan line id. A
+// line packed from two batches is two challan lines of one order line, so the order line's
+// discount is spread over them by what each is worth at the order's price (spreadMoney: to the
+// paisa, adding up to the discount exactly). One challan line per order line, the usual case,
+// takes the whole discount. The maker wrote every discount of a shop's sales order as an amount
+// (sales-order-maker.ts); a line without one gets none. Exported for its unit test
+export function challanDiscounts(
+  challan: readonly { id: string; orderLineId: string | null; quantity: string }[],
+  orderLines: ReadonlyMap<string, { discountType: string; discount: string; unitPrice: string }>,
+): Map<string, string> {
+  const byOrderLine = new Map<string, { id: string; quantity: string }[]>();
+  for (const line of challan) {
+    if (line.orderLineId === null) continue;
+    byOrderLine.set(line.orderLineId, [...(byOrderLine.get(line.orderLineId) ?? []), line]);
+  }
+  const shares = new Map<string, string>();
+  for (const [orderLineId, lines] of byOrderLine) {
+    const orderLine = orderLines.get(orderLineId);
+    if (orderLine?.discountType !== 'amount' || compareMoney(orderLine.discount, '0') === 0) {
+      continue;
+    }
+    const pieces = spreadMoney(
+      orderLine.discount,
+      lines.map((line) => multiplyMoney(line.quantity, orderLine.unitPrice)),
+    );
+    lines.forEach((line, index) => shares.set(line.id, pieces[index] ?? '0'));
+  }
+  return shares;
 }

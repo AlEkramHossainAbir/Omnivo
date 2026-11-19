@@ -719,6 +719,18 @@ export const ERROR_CODES = [
   // workspace, or emptied after the first order made it (decision 4)
   'storefront_delivery_product_invalid',
   'storefront_delivery_product_required',
+  // Step 27c: coupons. In the shop: a code every allowed order has taken already (the quote's
+  // refusal), and a once-per-phone code this mobile number has used on another order (Confirm
+  // Order's refusal: the quote does not know the phone yet). In the ERP's form: a code another
+  // coupon of the workspace has (archived ones too), a code changed after an order had it, a last
+  // day before the first, "up to" on an amount coupon, a number of uses that is not 1 to 1,000,000
+  'shop_coupon_used_up',
+  'shop_coupon_used_by_phone',
+  'storefront_coupon_code_taken',
+  'storefront_coupon_code_locked',
+  'storefront_coupon_dates',
+  'storefront_coupon_up_to',
+  'storefront_coupon_limit_format',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

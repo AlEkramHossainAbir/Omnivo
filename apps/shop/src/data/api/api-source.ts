@@ -97,6 +97,9 @@ export function createApiSource(api: ShopApi): ShopSource {
           'shop_order_below_minimum',
           'shop_order_changed',
           'shop_order_limit',
+          // Step 27c: without it here, the API's 422 would be a mistake (internal_error), and the
+          // shopper would never learn to take the code out
+          'shop_coupon_used_by_phone',
         ],
         'place order',
       );

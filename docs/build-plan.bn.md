@@ -447,11 +447,12 @@ Shop appearance আর Shop pages (ধাপ ২৬h): লোগো আর দ�
 
 কার্ট → চেকআউট (**দাম, ডিসকাউন্ট, ডেলিভারি চার্জ সব সার্ভারে হিসাব — ব্রাউজার শুধু `listing_id`, পরিমাণ, এলাকা আর কুপন কোড পাঠাবে**), **স্টক রিজার্ভেশন TTL সহ**, COD + **ফোন OTP বাধ্যতামূলক**, অনলাইন পেমেন্ট (টেন্যান্টের নিজের গেটওয়ে, এনক্রিপ্টেড credentials), `storefront_orders`, অর্ডারের সাথে ট্র্যাকিং লিংকের token (শুধু hash রাখা) আর ক্রেতাকে SMS-এ লিংক (`/t/<token>`, পেজটা ধাপ ২৬e-তে তৈরি), অর্ডার বোর্ড UI, confirm হলে outbox → worker → Sales Order + স্টক মুভমেন্ট + জার্নাল।
 
-তিন ভাগে (প্রতিটার নিজের guide):
+চার ভাগে (প্রতিটার নিজের guide):
 
 - **২৭a (হয়েছে):** `storefront_orders` + লাইন + স্টক hold (pending-এ ৬০ মিনিট, confirm-এ challan পর্যন্ত; শপ দেখায় on hand − held) + শপ-প্রতি counter (`W-000123`, confirm-এ); ফোন কোড SMS-এ (HMAC hash, ১০ মিনিট, ৫ বার ভুল, ৩টা কোড), ঠিক কোডে নিজেই confirm, ট্র্যাকিং token আর দ্বিতীয় SMS-এ লিংক; `SmsSender` (dev-এ Mailpit, আসল provider পরে); শপের সার্ভারের key দিয়ে ৭টা `auth: 'shop'` রুট, নতুন role `omnivo_shop`; Redis-এ limit (ফোন-প্রতি ৫, connection-প্রতি ২০, ঘণ্টায়); bell `storefront.order_confirmed`; পারমিশন `storefront.order.read` / `.manage`; শপের `api` source মক order book ছাড়া। Guide: [step-27a-shop-orders.en.md](step-27a-shop-orders.en.md)।
 - **২৭b (হয়েছে):** ERP-র Storefront → Shop orders (New / Packed / Shipped / Delivered / Cancelled / All tab, search, নতুন অর্ডারের সংখ্যা সাইডবারে) আর অর্ডারের পেজ (পরের ধাপের একটা বাটন, Items, Timeline, Deliver to, Documents); confirm-এ worker ফোন দিয়ে customer খোঁজে (না পেলে বানায়) আর VAT সহ দামে confirmed Sales Order বানায়, না পারলে error code অর্ডারেই থাকে ("Needs attention", আবার চেষ্টার বাটন); Packed = posted challan (batch first-expiry-first, serial টাইপ বা স্ক্যান) আর hold শেষ, একই transaction-এ; Shipped শুধু status; Delivered = posted invoice (challan-এর লাইন + ডেলিভারি চার্জ), unpaid, টাকা সাধারণ money receipt-এ; Cancel: New-এ SO বাতিল আর hold শেষ, Packed-এ পুরো challan-এর sales return তারপর SO বাতিল, ক্রেতাকে SMS; ডেলিভারি চার্জ একটা service product ("Delivery charge", প্রথম চার্জওয়ালা অর্ডার বানায়, Shop settings-এ বদলানো যায়); শুধু `storefront.order.manage` দিয়েই ডকুমেন্ট হয়, প্রতিটা মুভ audit log-এ; bell অর্ডারের পেজ খোলে। Guide: [step-27b-shop-orders-erp.en.md](step-27b-shop-orders-erp.en.md)।
-- **২৭c:** কুপন আর অনলাইন পেমেন্ট (SSLCommerz, শপের নিজের এনক্রিপ্টেড credentials)।
+- **২৭c (হয়েছে):** কুপন: `storefront_coupons` (percent ঐচ্ছিক "up to" সহ বা টাকা, ন্যূনতম অর্ডার, শুরু-শেষ দিন workspace-এর time zone-এ, মোট ব্যবহার, এক মোবাইল নম্বরে একবার, archive, মোছা না); ব্যবহার গোনা অর্ডার দেওয়া থেকে (pending hold-এর ভেতরে, বাতিল ফেরত দেয়), কুপনের রো lock করে, শেষ ব্যবহার একবারই; প্রথম অর্ডারের পরে কোড আর বদলায় না; একটাই নিয়ম `judgeShopCoupon()` API আর মক শপে; ছাড় আইটেমের লাইনে line discount হিসেবে ভাগ (`spreadMoney()`, পয়সা পর্যন্ত, ডেলিভারিতে না), তাই SO আর invoice শপের মোটে মেলে; ERP-র Storefront → Shop coupons (Current / Archived, ডায়ালগ ফর্ম, audit log)। Guide: [step-27c-coupons.en.md](step-27c-coupons.en.md)।
+- **২৭d:** অনলাইন পেমেন্ট (SSLCommerz, শপের নিজের এনক্রিপ্টেড credentials, sandbox account নেই তাই fake gateway দিয়ে যাচাই)।
 
 #### ধাপ ২৮: কুরিয়ার অটোমেশন · ~৩.৫ সপ্তাহ
 
@@ -579,5 +580,5 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [ ] **ধাপ ২২–২৪** — Website + Admin + Billing
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
 - [x] **ধাপ ২৬** — শপের ভিত্তি (২৬a–২৬h: শপের সব স্ক্রিন, পাবলিক API, ERP-র Storefront মেনু, Appearance, Pages, seed; স্টেজিং এখনো মক শপে, wildcard হোস্ট বাকি)
-- [ ] **ধাপ ২৭** — চেকআউট ও অর্ডার (২৭a হয়েছে: অর্ডার DB-তে, স্টক hold, ফোন কোড SMS-এ, ট্র্যাকিং লিংক, limit; ২৭b হয়েছে: ERP-র Shop orders স্ক্রিন, অর্ডার থেকে customer, Sales Order, challan, invoice আর sales return; ২৭c কুপন ও অনলাইন পেমেন্ট বাকি)
+- [ ] **ধাপ ২৭** — চেকআউট ও অর্ডার (২৭a হয়েছে: অর্ডার DB-তে, স্টক hold, ফোন কোড SMS-এ, ট্র্যাকিং লিংক, limit; ২৭b হয়েছে: ERP-র Shop orders স্ক্রিন, অর্ডার থেকে customer, Sales Order, challan, invoice আর sales return; ২৭c হয়েছে: কুপন, ERP-র Shop coupons স্ক্রিন, ছাড় SO আর invoice-এর লাইনে; ২৭d অনলাইন পেমেন্ট বাকি)
 - [ ] **ধাপ ২৮** — কুরিয়ার অটোমেশন

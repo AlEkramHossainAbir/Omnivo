@@ -512,6 +512,20 @@
       "when": 1794980505007,
       "tag": "0072_storefront-order-documents",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1795063647930,
+      "tag": "0073_storefront-coupons",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1795063653913,
+      "tag": "0074_storefront-coupons-rules",
+      "breakpoints": true
     }
   ]
 }

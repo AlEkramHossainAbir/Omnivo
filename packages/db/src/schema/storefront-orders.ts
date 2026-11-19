@@ -29,6 +29,7 @@ import { invoices } from './invoices.js';
 import { productVariants } from './products.js';
 import { deliveries, salesOrders } from './sales-documents.js';
 import { salesReturns } from './sales-returns.js';
+import { storefrontCoupons } from './storefront-coupons.js';
 import { tenants } from './tenants.js';
 import { warehouses } from './warehouses.js';
 
@@ -73,10 +74,13 @@ export const storefrontOrders = pgTable(
     zoneId: text('zone_id').notNull(),
     zoneName: text('zone_name').notNull(),
     paymentMethod: text('payment_method', { enum: SHOP_PAYMENT_METHODS }).notNull(),
-    // The server's own sums, never the browser's (system design §14.4). discount and coupon_code
-    // stay '0' and NULL until coupons come in 27c
+    // The server's own sums, never the browser's (system design §14.4). discount is what the
+    // coupon took off the items (shopCouponDiscount), '0' without one
     subtotal: numeric('subtotal', { precision: 19, scale: 4 }).notNull(),
     discount: numeric('discount', { precision: 19, scale: 4 }).notNull().default('0'),
+    // Step 27c: the coupon the order was placed with, and its code as the shopper typed it (upper
+    // case). Both or neither; the foreign key below names the pair, so the code is the coupon's
+    couponId: uuid('coupon_id'),
     couponCode: text('coupon_code'),
     deliveryCharge: numeric('delivery_charge', { precision: 19, scale: 4 }).notNull(),
     total: numeric('total', { precision: 19, scale: 4 }).notNull(),
@@ -270,6 +274,27 @@ export const storefrontOrders = pgTable(
       sql`${table.cancelReason} IS NULL OR (${table.status} = 'cancelled'
         AND char_length(${table.cancelReason}) BETWEEN 1 AND 200)`,
     ),
+    // Step 27c: the coupon of this workspace, with the code it has. MATCH SIMPLE skips the key when
+    // either column is NULL, so the check below makes it both or neither. No ON DELETE (a coupon is
+    // archived, never deleted) and no ON UPDATE: while an order points at it, the code cannot
+    // change, which 0074's guard says first, with a name the API can answer by
+    foreignKey({
+      name: 'storefront_orders_coupon_fk',
+      columns: [table.tenantId, table.couponId, table.couponCode],
+      foreignColumns: [storefrontCoupons.tenantId, storefrontCoupons.id, storefrontCoupons.code],
+    }),
+    // No coupon, no discount. A coupon may still take ৳0 off: 1% of ৳0.40 is less than a paisa
+    check(
+      'storefront_orders_coupon_check',
+      sql`(${table.couponId} IS NULL) = (${table.couponCode} IS NULL)
+        AND (${table.couponId} IS NOT NULL OR ${table.discount} = 0)`,
+    ),
+    // How many orders hold a use of a coupon (storefront_coupon_uses() in 0074): the quote asks it
+    // for every cart with a code, so it reads this index and not the orders. Partial: most orders
+    // have no coupon
+    index('storefront_orders_coupon_idx')
+      .on(table.tenantId, table.couponId, table.status, table.createdAt)
+      .where(sql`${table.couponId} IS NOT NULL`),
   ],
 );
 

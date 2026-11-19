@@ -13,12 +13,17 @@ import { createRateLimiter } from './rate-limit';
 import { mockCategories, mockShop } from './shop';
 
 // Step 26c: everything the mock prices a cart with, at one moment. Exported for the tests, which
-// price carts without a source
-export function mockQuoteContext(now: Date): QuoteContext {
+// price carts without a source. Step 27c: `used` counts a code's orders; a test without an order
+// book has none
+export function mockQuoteContext(
+  now: Date,
+  used: (code: string) => number = () => 0,
+): QuoteContext {
   return {
     catalog: mockCatalog,
     settings: mockCheckoutSettings,
     coupons: mockCoupons,
+    used,
     timeZone: mockShop.timeZone,
     now,
   };
@@ -40,7 +45,8 @@ export function createMockSource(
   demo: readonly MockDemoOrder[] = [],
 ): ShopSource {
   const orders = createOrderBook(now, demo);
-  const context = () => mockQuoteContext(now());
+  // Step 27c: each quote counts the coupon's orders in this source's own book
+  const context = () => mockQuoteContext(now(), orders.couponUses);
   // Step 27a: the /track form's misses, moved here from server/track.ts. The source's own clock, so
   // a test that moves time moves the window too
   const trackLimiter = createRateLimiter({
@@ -64,7 +70,9 @@ export function createMockSource(
     // browser says it costs (decision 10). The shopper's address is not used: the mock has no order
     // limits (data/mock/orders.ts)
     placeOrder: (request) =>
-      Promise.resolve(orders.place(request, quoteCart(request, context()), mockCheckoutSettings)),
+      Promise.resolve(
+        orders.place(request, quoteCart(request, context()), mockCheckoutSettings, mockCoupons),
+      ),
     codeWait: (token) => Promise.resolve(orders.codeWait(token)),
     verifyCode: (token, code) => Promise.resolve(orders.verify(token, code)),
     resendCode: (token) => Promise.resolve(orders.resend(token)),

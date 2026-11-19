@@ -138,6 +138,8 @@ export const bn: Messages = {
     storefrontPages: 'শপের পেজ',
     // ধাপ ২৭b: শপের অর্ডার, গ্রুপে প্রথমে (সিদ্ধান্ত ৩৪)
     storefrontOrders: 'শপের অর্ডার',
+    // ধাপ ২৭c: ক্যাটালগের পরে, দুটোই শপের দাম নিয়ে (সিদ্ধান্ত ২৯)
+    storefrontCoupons: 'শপের কুপন',
   },
   auth: {
     workspace: 'ওয়ার্কস্পেস',
@@ -5572,6 +5574,94 @@ export const bn: Messages = {
         submit: 'অর্ডার বাতিল করুন',
       },
     },
+    // ধাপ ২৭c: শপের কুপন (/storefront/coupons, সিদ্ধান্ত ৫)
+    coupons: {
+      title: 'কুপন',
+      description: 'প্রোমো বক্সে ক্রেতা যে কোড লিখে অর্ডারে ছাড় পান',
+      add: 'কুপন যোগ করুন',
+      searchLabel: 'কুপন খুঁজুন',
+      searchPlaceholder: 'কোড',
+      view: 'দেখান',
+      views: { current: 'চালু', archived: 'আর্কাইভ করা' },
+      statuses: {
+        active: 'চালু',
+        scheduled: 'শুরু হবে',
+        ended: 'শেষ',
+        archived: 'আর্কাইভ করা',
+      },
+      columns: {
+        code: 'কোড',
+        discount: 'ছাড়',
+        minimum: 'কমপক্ষে অর্ডার',
+        days: 'দিন',
+        used: 'ব্যবহার',
+        status: 'অবস্থা',
+        // The row menu's column: a header for screen readers only (27c.6)
+        actions: 'কাজ',
+      },
+      percentOff: '{{percent}}% ছাড়',
+      percentOffUpTo: '{{percent}}% ছাড়, সর্বোচ্চ {{upTo}}',
+      amountOff: '{{amount}} ছাড়',
+      onePerPhone: 'একটা মোবাইল নম্বরে একবার',
+      minimumFrom: '{{amount}} থেকে',
+      anyAmount: 'যেকোনো অঙ্ক',
+      daysBetween: '{{from}} – {{to}}',
+      daysFrom: '{{from}} থেকে',
+      daysUntil: '{{to}} পর্যন্ত',
+      anyDay: 'যেকোনো দিন',
+      usedOf: '{{limit}}-এর মধ্যে {{formatted}} ব্যবহার হয়েছে',
+      used_one: '{{formatted}} বার ব্যবহার হয়েছে',
+      used_other: '{{formatted}} বার ব্যবহার হয়েছে',
+      actions: '{{code}}-এর কাজ',
+      edit: 'বদলান',
+      archive: 'আর্কাইভ করুন',
+      restore: 'ফিরিয়ে আনুন',
+      confirmArchive: '{{code}} আর্কাইভ করবেন?',
+      archiveBody:
+        'শপ এখনই এটা নেওয়া বন্ধ করবে: কেউ লিখলে বলা হবে কোডটি নেই। যেসব অর্ডারে এটা আছে, সেগুলোর ছাড় থাকবে।',
+      archivedToast: '{{code}} আর্কাইভ করা হয়েছে',
+      restoredToast: '{{code}} ফিরিয়ে আনা হয়েছে',
+      emptyTitle: 'এখনো কোনো কুপন নেই',
+      emptyBody:
+        'অফারের জন্য একটা কোড বানান, যেমন প্রথম অর্ডারে ১০% ছাড়ের WELCOME10, বা ৳৫০০ বা বেশির অর্ডারে ৳৫০ ছাড়ের FLAT50।',
+      emptyArchivedTitle: 'কোনো আর্কাইভ করা কুপন নেই',
+      emptyArchivedBody:
+        'শপ যেন কোনো কুপন আর না নেয়, তাহলে সেটা আর্কাইভ করুন। যেসব অর্ডারে এটা ব্যবহার হয়েছে, সেগুলোর ছাড় থাকবে।',
+      noMatchTitle: 'কোনো কুপন মেলেনি',
+      noMatchBody: 'কোডটা মিলিয়ে দেখুন। খোঁজা হয় শুধু এই ট্যাবে।',
+      loadFailed: 'কুপন আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
+    },
+    // ধাপ ২৭c: কুপনের ডায়ালগ ফর্ম
+    coupon: {
+      newTitle: 'কুপন যোগ করুন',
+      editTitle: '{{code}} বদলান',
+      description: 'কুপন পুরো কার্টের পণ্যের দাম থেকে ছাড় দেয়, ডেলিভারি চার্জ থেকে কখনো না।',
+      code: 'কোড',
+      codePlaceholder: 'WELCOME10',
+      codeHint: 'সর্বোচ্চ ২০টি অক্ষর, অঙ্ক বা ড্যাশ। ক্রেতা ছোট হাতের অক্ষরেও লিখতে পারেন।',
+      codeLockedHint: 'একটা অর্ডারে এই কোড ব্যবহার হয়েছে, তাই এটা আর বদলানো যায় না।',
+      kind: 'ছাড়',
+      kinds: { percent: 'শতাংশ ছাড়', amount: 'টাকা ছাড়' },
+      values: { percent: 'শতাংশ ছাড় (১ থেকে ৯৯)', amount: 'কত টাকা ছাড়' },
+      percentPlaceholder: '10',
+      upTo: 'সর্বোচ্চ',
+      upToHint: 'একটা অর্ডারে সবচেয়ে বেশি যত ছাড়। ফাঁকা মানে কোনো সীমা নেই।',
+      minimum: 'কমপক্ষে অর্ডার',
+      minimumHint: 'ডেলিভারি চার্জ ছাড়া পণ্যের দাম অন্তত এত হতে হবে। ফাঁকা মানে যেকোনো অঙ্ক।',
+      startsOn: 'প্রথম দিন',
+      lastDay: 'শেষ দিন',
+      daysHint:
+        'ওয়ার্কস্পেসের টাইম জোনে পুরো দিন, দুই দিনই ধরে। প্রথম দিনের আগে শপ বলবে কোডটি নেই।',
+      usageLimit: 'কয়টা অর্ডারে চলবে',
+      usageLimitHint:
+        'মোট কয়টা অর্ডারে এটা ব্যবহার করা যাবে। ফোনের কোডের অপেক্ষায় থাকা অর্ডার একটা ব্যবহার ধরে রাখে; বাতিল হলে সেটা ফেরত আসে।',
+      onePerPhone: 'একটা মোবাইল নম্বরে একবার',
+      onePerPhoneHint: 'একই নম্বর থেকে দ্বিতীয় অর্ডারে এই কোড নেওয়া হবে না।',
+      submitNew: 'কুপন যোগ করুন',
+      submitEdit: 'পরিবর্তন সেভ করুন',
+      created: '{{code}} যোগ হয়েছে',
+      updated: '{{code}}-এর পরিবর্তন সেভ হয়েছে',
+    },
   },
   approvals: {
     title: 'অনুমোদন',
@@ -6184,6 +6274,7 @@ export const bn: Messages = {
       storefront_banner: 'শপের ব্যানার',
       storefront_collection: 'শপের কালেকশন',
       storefront_order: 'শপের অর্ডার',
+      storefront_coupon: 'শপের কুপন',
     },
     columns: {
       when: 'কখন',
@@ -6538,6 +6629,13 @@ export const bn: Messages = {
         delivered: 'শপের অর্ডার পৌঁছেছে বলে চিহ্ন দিয়েছেন',
         cancelled: 'শপের অর্ডার বাতিল করেছেন',
       },
+      // Step 27c
+      storefront_coupon: {
+        created: 'শপের কুপন বানিয়েছেন',
+        updated: 'শপের কুপন বদলেছেন',
+        archived: 'শপের কুপন আর্কাইভ করেছেন',
+        restored: 'আর্কাইভ করা কুপন আবার শপে দিয়েছেন',
+      },
     },
     fields: {
       name: 'নাম',
@@ -6729,6 +6827,14 @@ export const bn: Messages = {
       paymentMethods: 'পেমেন্টের উপায়',
       // ধাপ ২৭b
       deliveryVariantId: 'ডেলিভারি চার্জের সার্ভিস',
+      // Step 27c: a coupon (code above is its code)
+      discount: 'ছাড়',
+      upTo: 'সর্বোচ্চ',
+      minimum: 'কমপক্ষে যত টাকার পণ্য',
+      startsOn: 'প্রথম দিন',
+      lastDay: 'শেষ দিন',
+      usageLimit: 'কয়টা অর্ডারে চলবে',
+      onePerPhone: 'একটা মোবাইল নম্বরে একবার',
       launched: 'খোলা',
       position: 'তালিকায় জায়গা',
       packSize: 'প্যাকের সাইজ',
@@ -7640,6 +7746,16 @@ export const bn: Messages = {
     storefront_delivery_product_invalid: 'একটা চালু সার্ভিস বাছুন, যেমন ডেলিভারি চার্জ।',
     storefront_delivery_product_required:
       'অর্ডারে আগে থেকেই একটা ডেলিভারি চার্জের সার্ভিস আছে। একটা বাছুন, অন্য সার্ভিসও হতে পারে।',
+    shop_coupon_used_up: 'শপ যতবার দেয়, এই কোড ততবার ব্যবহার হয়ে গেছে।',
+    shop_coupon_used_by_phone:
+      'এই কোড একটা মোবাইল নম্বরে একবারই চলে, আর এই নম্বরে চলেছে। অর্ডার করতে কোডটা সরান।',
+    storefront_coupon_code_taken: 'আরেকটা কুপনের এই কোড আছে। অন্য একটা লিখুন।',
+    storefront_coupon_code_locked:
+      'একটা অর্ডারে এই কোড ব্যবহার হয়েছে, তাই এটা বদলানো যাবে না। নতুন কোডের জন্য নতুন কুপন বানান।',
+    storefront_coupon_dates: 'প্রথম দিন বা তার পরের একটা শেষ দিন বাছুন, অথবা ফাঁকা রাখুন।',
+    storefront_coupon_up_to: '“সর্বোচ্চ” শুধু শতাংশের কুপনে থাকে। ঘরটা ফাঁকা রাখুন।',
+    storefront_coupon_limit_format:
+      '১ থেকে ১০,০০,০০০-এর মধ্যে অর্ডারের একটা পূর্ণ সংখ্যা লিখুন, অথবা কোনো সীমা না চাইলে ফাঁকা রাখুন।',
   },
   ui: {
     dataTable: {

@@ -415,6 +415,28 @@ describe('orders on the API source', () => {
     });
   });
 
+  // Step 27c: the API's 422 for a once-per-number coupon is an answer the checkout has words for,
+  // not a mistake. The fake API is the mock, which keeps the same rule
+  it('passes on a coupon this mobile number has had', async () => {
+    const { source } = setup();
+    const welcome = {
+      ...order,
+      couponCode: 'WELCOME10',
+      expectedTotal: (
+        await createMockSource().quote({
+          lines: order.lines,
+          zoneId: order.zoneId,
+          couponCode: 'WELCOME10',
+        })
+      ).total,
+    };
+    expect((await source.placeOrder(welcome, ADDRESS)).ok).toBe(true);
+    expect(await source.placeOrder(welcome, ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_coupon_used_by_phone',
+    });
+  });
+
   it('throws on a refusal the page has no words for', async () => {
     const { source, api } = setup();
     const { token } = await place(source);

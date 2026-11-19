@@ -616,8 +616,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Storefront menu (`storefront.manage`, `storefront.order.read`):** a sidebar group "Storefront", hidden without
   either permission: Shop orders first (`ShoppingBag01`, with `storefront.order.read`, and a `crit` count of the new
   orders on the right, asked every 30 seconds like the approvals count), then, with `storefront.manage`, Catalog
-  (`Store04`), Shop categories (`FolderLibrary`), Shop appearance (`PaintBoard`), Shop pages (`Files01`), Shop
-  settings (`WebDesign01`). The links say "Shop …" because the phone's nav row has no group labels. A page under
+  (`Store04`), Shop coupons (`CouponPercent`), Shop categories (`FolderLibrary`), Shop appearance (`PaintBoard`),
+  Shop pages (`Files01`), Shop settings (`WebDesign01`). The links say "Shop …" because the phone's nav row has no group labels. A page under
   another (a listing, the hero, a collection, a text page) keeps its item marked, because its address starts with
   the item's link. Every page is online only: offline it is the
   empty state "Needs a connection" (`WifiDisconnected02`). Once the shop is set up, each page header has "View
@@ -640,6 +640,28 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   can't be closed again. Once open, the card is "The shop is open": a 40px `good-bg` `StoreVerified01` tile, "Open
   since 16 Nov 2026 at …", a `good` "Open" pill and a full-width "View shop". Changing an open shop's address asks
   first: the old address stops working and nothing sends shoppers on.
+- **Shop coupons (`/storefront/coupons`):** works before the shop is set up (a coupon can wait for it), so "View shop"
+  shows only once it is, and there is no "Changes show in the shop" line (the shop's price check is not cached, so a
+  coupon acts at once). The page header with "Add coupon" (primary, `PlusSign`), a search box ("Code", max 320px, in
+  the tab only), a Current / Archived segmented control, then a data table (cards on a phone), not sortable, newest
+  first, paged: code (`Geist Mono` 500, "Once per mobile number" in caption `ink-3` under it when on), takes off ("10%
+  off, up to ৳200", "৳50 off"), minimum order ("From ৳500" or "Any amount"), days ("1 Nov 2026 – 30 Nov 2026", "From …",
+  "Until …", "Any day", both days included, in the workspace's time zone), used (right, "12 of 100 used" or "12
+  used"), status, and a row menu (`MoreHorizontal`, "Actions for WELCOME10"): Edit (`Edit02`) and Archive
+  (`Archive02`, asks first: the shop stops taking it at once, orders keep their discount), or on an archived row
+  Restore alone (`ArchiveRestore`, no question, a toast). A row click opens Edit; an archived row opens nothing.
+  Empty: "No coupons yet" (`CouponPercent`, "Add coupon"), "No archived coupons" (`Archive02`), "No coupon matches"
+  (`Search01`). The used count may be up to 30 seconds old (the app's list cache).
+- **Coupon dialog:** "Add a coupon" or "Edit WELCOME10": Code (`CouponPercent`, upper-cased, up to 20 letters,
+  digits or hyphens; once an order used it, a read-only `subtle` box with `LockKeyhole` and "An order has used this
+  code, so it can’t change."), Discount as a Percent off / Taka off segmented control, the value (the label follows
+  the kind: "Percent off (1 to 99)", whole percent, or "Amount off", a money input), "Up to" (a money input, percent
+  only: switching to Taka off hides and empties it), Minimum order, First day and Last day (date pickers), Number of
+  orders (whole, 1 to 1,000,000) and the checkbox "Once per mobile number"; every box but the code and the value is
+  "(optional)" (`Field`'s `optional`, `ink-3`) and empty means no limit. "Add coupon" / "Save changes".
+- **Shop coupon statuses:** Active (`good`, `CheckmarkCircle02`), Scheduled (`brand`, `Calendar03`, before its first
+  day), Ended (neutral, `Hourglass`, after its last day or used up), Archived (neutral, `Archive02`). The API works
+  the status out from the days and the uses.
 - **Shop categories (`/storefront/categories`):** the page header with "Add category" (primary, `PlusSign`), a
   search box (max 384px), then a `TreeList`. A row: the name as a button that opens the edit dialog, the link
   (`/c/skin-care`, `Geist Mono` caption `ink-3`, from `sm`), "12 listings" (caption `ink-3` `tabular-nums`), then
@@ -1422,7 +1444,7 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   side, 16px apart. Free delivery is not a choice: when the order reaches the shop's threshold, the Delivery
   Charge row says "Free", and a 14px `muted` line under Delivery Location says "Free delivery on orders over
   ৳1,000". The form is `inert` until its island has run, so nothing a shopper types before then is lost. On the
-  API, Mobile Banking is not offered until step 27c connects a gateway (unless it is the shop's only method, and
+  API, Mobile Banking is not offered until step 27d connects a gateway (unless it is the shop's only method, and
   then the order is refused). Too many orders (5 per phone or 20 per connection in an hour) is the form's error with
   the minutes to wait, in the shop's digits.
 - **Checkout lines:** per line, a 155×130 `canvas` image box (radius 8), 20px gap, then the name (`sf-subtitle`,
@@ -1435,6 +1457,10 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   above it inside the same rules, 24px apart. "Total" row 20px/700:
   label `brand`, amount `price`. Promo box: 60px `canvas` pill, "Add Promo" placeholder 16px/600 `muted` at
   36px in, and an "Apply Coupon" button inside it (156×52, 4px inset, `brand`, `accent` 16px/600, radius 999).
+  Under it, an applied code is a 14px/500 line with `CheckmarkCircle02` ("WELCOME10 applied: 10% off, up to ৳200",
+  the cap only when the coupon has one) and a "Remove the code" link; a refused one is the field's error line with
+  the reason (does not exist, ended, used up, under its minimum). The coupon comes off the items only, never
+  delivery. "Once per mobile number" is known only when the order is placed, so it is the form's error then.
   Terms: a 20px checkbox (`CheckmarkSquare02` `brand` when checked) and "I agree with the Terms and Conditions"
   18px `body`, the link underlined (it opens in a new tab), 12px apart. Confirm Order: full width, 64px, `accent`,
   radius 4, 18px/600 `brand`; disabled until the terms are ticked, while newer prices load, with an out-of-stock

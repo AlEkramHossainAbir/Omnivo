@@ -159,6 +159,9 @@ export const en = {
     storefrontPages: 'Shop pages',
     // Step 27b: the shop's orders, first in the group (decision 34)
     storefrontOrders: 'Shop orders',
+    // Step 27c: after Catalog, both about the shop's prices (decision 29). "Shop" for the phone's
+    // nav row, like the others
+    storefrontCoupons: 'Shop coupons',
   },
   auth: {
     workspace: 'Workspace',
@@ -6034,6 +6037,106 @@ export const en = {
         submit: 'Cancel order',
       },
     },
+    // Step 27c: the shop's coupons (/storefront/coupons, decision 5), storefront.manage. Online
+    // only, like the rest of the menu. The shop need not be set up: a coupon can wait for it
+    coupons: {
+      title: 'Coupons',
+      description: 'Codes shoppers type in the promo box to take money off their order',
+      add: 'Add coupon',
+      searchLabel: 'Search coupons',
+      searchPlaceholder: 'Code',
+      view: 'Show',
+      // The tabs (STOREFRONT_COUPON_VIEWS, decision 18)
+      views: { current: 'Current', archived: 'Archived' },
+      // The pill (STOREFRONT_COUPON_STATUSES), worked out by the API from the days and the uses
+      statuses: {
+        active: 'Active',
+        scheduled: 'Scheduled',
+        ended: 'Ended',
+        archived: 'Archived',
+      },
+      columns: {
+        code: 'Code',
+        discount: 'Takes off',
+        minimum: 'Minimum order',
+        days: 'Days',
+        used: 'Used',
+        status: 'Status',
+        // The row menu's column: a header for screen readers only (27c.6)
+        actions: 'Actions',
+      },
+      // The discount column (decision 30). percent in the page's digits, upTo and amount with ৳
+      percentOff: '{{percent}}% off',
+      percentOffUpTo: '{{percent}}% off, up to {{upTo}}',
+      amountOff: '{{amount}} off',
+      // Under the code, only when it is on
+      onePerPhone: 'Once per mobile number',
+      // The minimum column: "From ৳500", or none
+      minimumFrom: 'From {{amount}}',
+      anyAmount: 'Any amount',
+      // The days column, both days included (dates already formatted)
+      daysBetween: '{{from}} – {{to}}',
+      daysFrom: 'From {{from}}',
+      daysUntil: 'Until {{to}}',
+      anyDay: 'Any day',
+      // The uses column: count = used for the plural, formatted/limit in the page's digits
+      usedOf: '{{formatted}} of {{limit}} used',
+      used_one: '{{formatted}} used',
+      used_other: '{{formatted}} used',
+      // The row's menu (an icon button needs a name)
+      actions: 'Actions for {{code}}',
+      edit: 'Edit',
+      archive: 'Archive',
+      restore: 'Restore',
+      // Decision 31: archive asks first, restore does not
+      confirmArchive: 'Archive {{code}}?',
+      archiveBody:
+        'The shop stops taking it at once: a shopper who types it is told the code does not exist. Orders that have it keep their discount.',
+      archivedToast: '{{code}} archived',
+      restoredToast: '{{code}} restored',
+      emptyTitle: 'No coupons yet',
+      emptyBody:
+        'Make a code for a sale, like WELCOME10 for 10% off a first order, or FLAT50 for ৳50 off orders of ৳500 or more.',
+      emptyArchivedTitle: 'No archived coupons',
+      emptyArchivedBody:
+        'Archive a coupon to stop the shop taking it. Orders that used it keep their discount.',
+      noMatchTitle: 'No coupon matches',
+      noMatchBody: 'Check the code. The search looks in this tab only.',
+      loadFailed: "Couldn't load the coupons. Refresh the page to try again.",
+    },
+    // Step 27c: the coupon's dialog form (StorefrontCouponFormValues)
+    coupon: {
+      newTitle: 'Add a coupon',
+      editTitle: 'Edit {{code}}',
+      description: 'A coupon takes money off the items of the whole cart, never off delivery.',
+      code: 'Code',
+      codePlaceholder: 'WELCOME10',
+      codeHint: 'Up to 20 letters, digits or hyphens. Shoppers may type it in small letters too.',
+      // codeLocked: the box is shown read-only (storefront_coupon_code_locked)
+      codeLockedHint: 'An order has used this code, so it can’t change.',
+      kind: 'Discount',
+      kinds: { percent: 'Percent off', amount: 'Taka off' },
+      // The value box's label follows the kind (decision 17)
+      values: { percent: 'Percent off (1 to 99)', amount: 'Amount off' },
+      percentPlaceholder: '10',
+      upTo: 'Up to',
+      upToHint: 'The most it takes off one order. Empty means no limit.',
+      minimum: 'Minimum order',
+      minimumHint: 'What the items must cost before delivery. Empty means any amount.',
+      startsOn: 'First day',
+      lastDay: 'Last day',
+      daysHint:
+        'Whole days in your workspace’s time zone, both days included. Before the first day the shop says the code does not exist.',
+      usageLimit: 'Number of orders',
+      usageLimitHint:
+        'How many orders may use it in all. An order waiting for its phone code holds a use; a cancelled one gives it back.',
+      onePerPhone: 'Once per mobile number',
+      onePerPhoneHint: 'A second order from the same number is refused with this code.',
+      submitNew: 'Add coupon',
+      submitEdit: 'Save changes',
+      created: '{{code}} added',
+      updated: 'Changes to {{code}} saved',
+    },
   },
   approvals: {
     title: 'Approvals',
@@ -6681,6 +6784,7 @@ export const en = {
       storefront_banner: 'Shop banners',
       storefront_collection: 'Shop collections',
       storefront_order: 'Shop orders',
+      storefront_coupon: 'Shop coupons',
     },
     columns: {
       when: 'When',
@@ -7047,6 +7151,13 @@ export const en = {
         delivered: 'Marked a shop order delivered',
         cancelled: 'Cancelled a shop order',
       },
+      // Step 27c
+      storefront_coupon: {
+        created: 'Made a shop coupon',
+        updated: 'Edited a shop coupon',
+        archived: 'Archived a shop coupon',
+        restored: 'Gave an archived shop coupon back to the shop',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -7245,6 +7356,14 @@ export const en = {
       paymentMethods: 'Ways to pay',
       // Step 27b
       deliveryVariantId: 'Delivery charge’s service',
+      // Step 27c: a coupon (code above is its code)
+      discount: 'Takes off',
+      upTo: 'Up to',
+      minimum: 'Items worth at least',
+      startsOn: 'First day',
+      lastDay: 'Last day',
+      usageLimit: 'Orders allowed',
+      onePerPhone: 'Once per mobile number',
       launched: 'Open',
       position: 'Place in the list',
       packSize: 'Pack size',
@@ -8205,6 +8324,16 @@ export const en = {
     storefront_delivery_product_invalid: 'Pick an active service, like Delivery charge.',
     storefront_delivery_product_required:
       'Orders already use a delivery charge service. Pick one; it can be another service.',
+    shop_coupon_used_up: 'This code has been used as many times as the shop allows.',
+    shop_coupon_used_by_phone:
+      'This code works once per mobile number, and this number has used it. Remove the code to order.',
+    storefront_coupon_code_taken: 'Another coupon has this code. Type a different one.',
+    storefront_coupon_code_locked:
+      'An order has used this code, so it can’t change. Make a new coupon for a new code.',
+    storefront_coupon_dates: 'Pick a last day on or after the first day, or leave it empty.',
+    storefront_coupon_up_to: 'Only a percent coupon has an “up to” amount. Leave it empty.',
+    storefront_coupon_limit_format:
+      'Type a whole number of orders from 1 to 1,000,000, or leave it empty for no limit.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

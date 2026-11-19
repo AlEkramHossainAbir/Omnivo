@@ -1120,6 +1120,8 @@ storefront_orders                  ← ধাপ ২৭a
   status (pending | confirmed | packed | shipped | delivered | cancelled | returned)
   customer_name, phone (01XXXXXXXXX), address, zone_id, zone_name
   payment_method (cod | online), subtotal, discount, coupon_code, delivery_charge, total  ← সবই সার্ভারে হিসাব করা
+  coupon_id                        ← ধাপ ২৭c: (tenant_id, coupon_id, coupon_code) FK কুপনে, তাই অর্ডারের কোড সবসময়
+                                   কুপনেরই; CHECK: দুটোই থাকে বা দুটোই NULL, কুপন ছাড়া discount ০
   order_token_hash                               ← ব্রাউজারের httpOnly cookie-র token-এর SHA-256 (/order/<no>)
   tracking_token_hash                            ← ট্র্যাকিং লিংকের token-এর hash, confirm-এ; token নিজে কোথাও রাখা হয় না
   code_hash, code_expires_at, code_sent_at, code_sends, code_tries_left  ← ফোন কোড, শুধু pending-এ
@@ -1143,6 +1145,16 @@ storefront_settings-এ ধাপ ২৭b: delivery_product_id + delivery_varian
 
 storefront_order_counters          ← শপ-প্রতি শেষ নম্বর (number_series না, SEQUENCE-ও না: rollback-এ ফাঁক)
   tenant_id, last_value
+
+storefront_coupons                 ← ধাপ ২৭c: পুরো কার্টের কুপন (ডেলিভারি চার্জে কখনো না)
+  tenant_id, code (A–Z, ০–৯, হাইফেন, ২০ অক্ষর; UNIQUE per tenant, archived সহ)
+  discount_kind (percent | amount), discount_value, up_to (শুধু percent-এ)
+  minimum, starts_on, last_day (date, workspace-এর time zone-এ, দুই দিনই ধরে)
+  usage_limit, one_per_phone, archived_at (মোছা হয় না)
+  first_ordered_at                 ← প্রথম অর্ডারে একবার বসে; এরপর কোড বদলায় না (guard trigger)
+  (ব্যবহারের কোনো counter নেই: `storefront_coupon_uses()` SECURITY DEFINER ফাংশন অর্ডার গোনে, বাতিল বাদে,
+   pending শুধু hold-এর ৬০ মিনিটের ভেতরে; omnivo_public archived কুপন দেখে না, omnivo_shop শুধু
+   first_ordered_at বদলাতে পারে, যেটা কুপনের রো lock করার উপায়)
 
 courier_accounts                   ← টেন্যান্টের নিজের কুরিয়ার অ্যাকাউন্ট
   tenant_id, courier_code (pathao | steadfast | redx | ecourier | paperfly | manual)
@@ -1235,6 +1247,7 @@ sequenceDiagram
 | **Delivery** | এলাকাভিত্তিক ডেলিভারি চার্জ, ফ্রি ডেলিভারির সীমা, কোন এলাকায় ডেলিভারি হবে |
 | **Payments** | COD চালু/বন্ধ, অনলাইন গেটওয়ে কী, ন্যূনতম অর্ডার |
 | **Couriers** | কুরিয়ার অ্যাকাউন্ট যোগ করা, ডিফল্ট কুরিয়ার, **অটো-কনসাইনমেন্ট নীতি** (বন্ধ / কনফার্মে / পেমেন্টে) |
+| **Coupons** | কুপন কোড: percent বা টাকা, ন্যূনতম অর্ডার, শুরু-শেষ দিন, মোট ব্যবহার, এক নম্বরে একবার (ধাপ ২৭c) |
 | **Orders** | অর্ডার বোর্ড (pending → confirmed → packed → shipped → delivered), বাল্ক লেবেল প্রিন্ট, বাল্ক কনসাইনমেন্ট, বাতিল ও রিটার্ন |
 | **Domain** | `acme.omnivo.shop` বা নিজের ডোমেইন সংযোগ (DNS ধাপ সহ) |
 
@@ -1293,8 +1306,8 @@ sequenceDiagram
   সব API-র ৭টা `auth: 'shop'` রুটে। মক source একই কোডের নিয়ম রাখে (১০ মিনিট, ৩টা কোড), অর্ডারের limit না, তাই
   `pnpm dev` আর Playwright আগের মতো চলে।
 - নতুন অর্ডারের bell ("New shop order W-000123 for ৳578.") ধাপ ২৭a-তে Overview খুলত; ধাপ ২৭b থেকে অর্ডারের পেজ।
-- অনলাইন পেমেন্ট ধাপ ২৭c পর্যন্ত চেকআউটে দেখায় না (শুধু সেটাই শপের একমাত্র মেথড হলে দেখায়, আর অর্ডার
-  `shop_payment_unavailable`)। কুপন এখনো "unknown"।
+- অনলাইন পেমেন্ট ধাপ ২৭d পর্যন্ত চেকআউটে দেখায় না (শুধু সেটাই শপের একমাত্র মেথড হলে দেখায়, আর অর্ডার
+  `shop_payment_unavailable`)। কুপন ধাপ ২৭c পর্যন্ত "unknown" ছিল।
 
 **ধাপ ২৭b-তে যা তৈরি হয়েছে** (উপরের টেবিলের Orders, বোর্ডের বদলে status tab সহ লিস্ট):
 
@@ -1325,8 +1338,29 @@ sequenceDiagram
   প্রতিটা মুভে version check, ভুল ধাপে `storefront_order_step_invalid`।
 - **স্ক্রিন:** Storefront গ্রুপে প্রথমে Shop orders (গ্রুপ `storefront.order.read` দিয়েও দেখায়, নতুন অর্ডারের
   সংখ্যা নিজের ছোট রুট `counts` থেকে), tab সহ লিস্ট, অর্ডারের পেজ। pending অর্ডার ERP কখনো দেখায় না। অনলাইন শুধু।
-- **এখনো না:** কুপন আর SSLCommerz (ধাপ ২৭c), আসল SMS provider, কুরিয়ার, COD-এর টাকা নিজে থেকে আর ফেরত আসা
+- **এখনো না:** কুপন (ধাপ ২৭c) আর SSLCommerz (ধাপ ২৭d), আসল SMS provider, কুরিয়ার, COD-এর টাকা নিজে থেকে আর ফেরত আসা
   পার্সেল (ধাপ ২৮), অর্ডার এডিট, একসাথে অনেক অর্ডার প্যাক। স্টেজিং এখনো মক শপে।
+
+**ধাপ ২৭c-তে যা তৈরি হয়েছে** (কুপন; উপরের টেবিলে নতুন সেকশন, অনলাইন পেমেন্ট ধাপ ২৭d-তে):
+
+- **Shop coupons** (`/storefront/coupons`, পারমিশন `storefront.manage`, Catalog-এর পরে): Current / Archived tab,
+  কোড দিয়ে search, ডায়ালগে নতুন বা এডিট, Archive (আগে জিজ্ঞেস করে) আর Restore। শপ set up হওয়ার আগেও চলে।
+  প্রতিটা সেভে version check আর audit log (`storefront_coupon.created` / `updated` / `archived` / `restored`)।
+- **নিয়ম:** percent (১–৯৯, পূর্ণ সংখ্যা, ঐচ্ছিক "up to") বা টাকা; ঐচ্ছিক ন্যূনতম অর্ডার (ডেলিভারি ছাড়া আইটেমের
+  দাম), প্রথম আর শেষ দিন, মোট কয়টা অর্ডার, আর "এক মোবাইল নম্বরে একবার"। প্রথম দিনের আগে আর archived কুপন শপে
+  "unknown" (কোডটা আছে কিনা বাইরের কেউ জানতে পারে না)। একটা নিয়ম, একটা ফাংশন: `judgeShopCoupon()` আর
+  `shopCouponDiscount()` contracts-এ, API আর মক শপ দুটোই সেটা ডাকে।
+- **ব্যবহার গোনা:** অর্ডার দেওয়ার সময় থেকে (ফোন কোডের অপেক্ষায় থাকা অর্ডারও একটা ধরে রাখে, hold-এর ভেতরে), বাতিল
+  হলে ফেরত দেয়। অর্ডার দেওয়ার সময় কুপনের রো `FOR UPDATE` lock হয়, তারপর নতুন statement-এ গোনা, তাই শেষ
+  ব্যবহারটা একবারই যায়: দৌড়ে হারা অর্ডার মোট বদলেছে বলে `409 shop_order_changed` পায়। "এক নম্বরে একবার"
+  শুধু অর্ডার দেওয়ার সময় জানা যায় (`422 shop_coupon_used_by_phone`), quote-এ না।
+- **ERP-র ডকুমেন্টে:** ছাড় আইটেমের লাইনগুলোতে line discount হিসেবে ভাগ হয় (`spreadMoney()`, largest remainder,
+  পয়সা পর্যন্ত, ডেলিভারি লাইনে কখনো না), তাই Sales Order আর invoice-এর মোট শপের মোটের সাথে মেলে। ধাপ ২৭b-র invoice
+  লাইনে discount ০ ছিল; এখন challan-এর লাইনগুলো SO লাইনের ছাড় নিজেদের ভাগমতো নেয়।
+- **চেকআউট:** promo box-এ কোড লাগানো থাকলে "WELCOME10 applied: 10% off, up to ৳200"; প্রতিটা প্রত্যাখ্যানের নিজের
+  error code (unknown, expired, used up, minimum, used by phone)।
+- **এখনো না:** SSLCommerz আর অনলাইন পেমেন্ট (ধাপ ২৭d), নির্দিষ্ট প্রোডাক্ট বা ক্যাটাগরির কুপন, ফ্রি ডেলিভারি কুপন,
+  এক অর্ডারে একাধিক কুপন, কুপন-প্রতি রিপোর্ট।
 
 - **Omnivo Admin Panel** এখানে শুধু একটা জায়গায় আসে: Storefront কোন প্ল্যানে থাকবে, সেটা `feature.storefront` entitlement দিয়ে ঠিক হবে (§১৩.২)। অর্থাৎ Storefront বিক্রি হবে Growth প্ল্যানের ফিচার বা আলাদা অ্যাড-অন হিসেবে, আর কোডে কখনো `if (plan === 'growth')` লেখা হবে না।
 - ⚠️ থিম কাস্টমাইজেশনের চাপ আসবেই। উত্তর হলো **কনফিগারেশন ও কয়েকটা রেডিমেড থিম**, টেন্যান্ট-ভিত্তিক কাস্টম কোড না (§৪.৮)।

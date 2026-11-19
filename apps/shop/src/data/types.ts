@@ -35,7 +35,9 @@ export type ShopRefusalCode =
   // Step 27a: the API's own limits (27a's decision 17)
   | 'shop_order_limit'
   | 'shop_code_expired'
-  | 'shop_code_sends_used';
+  | 'shop_code_sends_used'
+  // Step 27c: a once-per-mobile-number coupon this phone has an order with (27c's decision 3)
+  | 'shop_coupon_used_by_phone';
 
 // Step 27a: the /track form's refusals. Their own list, not ShopRefusalCode: the form is a page,
 // not one of the order routes, and draws them itself (server/track.ts), so they need no status in

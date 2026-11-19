@@ -1079,6 +1079,17 @@ const storefrontListingRoute = createRoute({
   ),
 });
 
+// Step 27c: the shop's coupons (decision 5), behind storefront.manage like the catalog. One page:
+// a coupon opens in a dialog, so it has no address of its own
+const storefrontCouponsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/coupons',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-coupons'),
+    'StorefrontCouponsPage',
+  ),
+});
+
 const storefrontCategoriesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/storefront/categories',
@@ -1292,6 +1303,7 @@ const routeTree = rootRoute.addChildren([
     storefrontOrderRoute,
     storefrontListingsRoute,
     storefrontListingRoute,
+    storefrontCouponsRoute,
     storefrontCategoriesRoute,
     storefrontSettingsRoute,
     storefrontAppearanceRoute,

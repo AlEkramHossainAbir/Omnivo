@@ -1,5 +1,6 @@
 import {
   type ErrorCode,
+  type ShopCouponRule,
   type ShopPaymentMethod,
   type ShopTextPageSlug,
   slugFromName,
@@ -164,6 +165,20 @@ export interface MockShopOrder {
   updatedAt: string;
 }
 
+// Step 27c: a coupon as the table keeps it (storefront-coupon-data.ts has the rules). The mock has
+// no shop checkout, so the orders that have a code are not real orders here:
+// - used: how many orders hold a use now (the API counts them with storefront_coupon_uses())
+// - codeLocked: an order has had the code (the API's first_ordered_at)
+export interface MockCoupon extends ShopCouponRule {
+  id: string;
+  used: number;
+  codeLocked: boolean;
+  archivedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface MockStorefront {
   shop: MockShop | null;
   categories: MockCategory[];
@@ -178,6 +193,8 @@ export interface MockStorefront {
   pages: Map<ShopTextPageSlug, MockPage>;
   // Step 27b: the shop's confirmed orders, newest first (storefront-order-data.ts)
   orders: MockShopOrder[];
+  // Step 27c: the shop's coupons, archived ones too, in the order they were made
+  coupons: MockCoupon[];
 }
 
 export function emptyStorefront(): MockStorefront {
@@ -194,6 +211,7 @@ export function emptyStorefront(): MockStorefront {
     home: [],
     pages: new Map(),
     orders: [],
+    coupons: [],
   };
 }
 

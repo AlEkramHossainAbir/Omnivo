@@ -28,6 +28,7 @@ function order(overrides: Partial<OrderRow> = {}): OrderRow {
     paymentMethod: 'cod',
     subtotal: '498.0000',
     discount: '0.0000',
+    couponId: null,
     couponCode: null,
     deliveryCharge: '80.0000',
     total: '578.0000',

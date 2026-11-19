@@ -64,6 +64,7 @@ import {
   seedSalesDocuments,
 } from './sales-document-data';
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
+import { seedCoupons } from './storefront-coupon-data';
 import { seedShopOrders } from './storefront-order-data';
 import { emptyStorefront, type MockStorefront, seedStorefront } from './storefront-seed';
 import { emptySuppliers, type MockSuppliers, seedSuppliers } from './supplier-data';
@@ -249,6 +250,9 @@ function seed(workspace: Workspace): WorkspaceData {
   seedStorefront(data, garments);
   // Step 27b: after the shop it sells from (storefront-order-data.ts, fixtures.ts → seedsShopOrders)
   if (garments && seedsShopOrders()) seedShopOrders(data);
+  // Step 27c: the mockup's coupons (storefront-coupon-data.ts). A coupon needs no shop, but only
+  // the garments workspace has one to run them
+  if (garments) seedCoupons(data);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });

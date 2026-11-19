@@ -63,6 +63,7 @@ export * from './stock-revaluations.js';
 export * from './stock-transfers.js';
 export * from './storefront.js';
 export * from './storefront-content.js';
+export * from './storefront-coupons.js';
 export * from './storefront-admin.js';
 export * from './storefront-appearance.js';
 export * from './storefront-orders.js';

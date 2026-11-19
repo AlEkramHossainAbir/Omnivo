@@ -219,6 +219,17 @@ describe('POST /api/orders', () => {
     });
   });
 
+  // Step 27c
+  it('answers a coupon this mobile number has had with 422', async () => {
+    const source = createMockSource();
+    // ৳687 − 10% (৳68.70) + ৳80. The first order holds the use while it waits for its code
+    const welcome = { ...ORDER, couponCode: 'WELCOME10', expectedTotal: '698.30' };
+    await answerPlaceOrder(post('/api/orders', welcome), source, ADDRESS, OPTIONS);
+    const response = await answerPlaceOrder(post('/api/orders', welcome), source, ADDRESS, OPTIONS);
+    expect(response.status).toBe(422);
+    expect(await problemOf(response)).toMatchObject({ code: 'shop_coupon_used_by_phone' });
+  });
+
   it('hides a failing source behind internal_error', async () => {
     const down: ShopSource = {
       ...createMockSource(),

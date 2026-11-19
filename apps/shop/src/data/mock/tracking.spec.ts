@@ -54,9 +54,11 @@ describe('the mock’s demo orders', () => {
 
   it('are priced like the checkout prices an order', () => {
     const [dhaka, chattogram, sylhet] = mockDemoOrders.map(({ order: demo }) => demo);
-    // Over ৳1,000 of items, so its delivery was free
+    // Over ৳1,000 of items, so its delivery was free. Step 27c: less EID100's ৳100. The free
+    // delivery still looks at the items before the coupon (26c's decision 8)
     expect(compareMoney(dhaka?.deliveryCharge ?? '', '0')).toBe(0);
-    expect(compareMoney(dhaka?.total ?? '', '1299')).toBe(0);
+    expect(dhaka).toMatchObject({ couponCode: 'EID100', discount: '100.0000' });
+    expect(compareMoney(dhaka?.total ?? '', '1199')).toBe(0);
     expect(compareMoney(chattogram?.total ?? '', '520')).toBe(0);
     // The contracts' fixture: ৳458 of items and ৳120 outside Dhaka
     expect(compareMoney(sylhet?.total ?? '', '578')).toBe(0);

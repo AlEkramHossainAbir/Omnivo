@@ -1,17 +1,20 @@
 import {
   compareMoney,
   compareQuantity,
+  judgeShopCoupon,
   multiplyMoney,
+  shopCouponDiscount,
   subtractMoney,
   sumMoney,
   type ShopCartQuote,
   type ShopCartQuoteLine,
   type ShopCartQuoteRequest,
   type ShopCheckoutSettings,
-  type ShopCouponResult,
   type ShopImage,
   type ShopListing,
 } from '@omnivo/contracts';
+
+import type { QuoteCoupon } from './coupon-sql.js';
 
 // A listing as the quote needs it: the card (price, stock) and the photo a cart line draws. The
 // line's photo is the small size (media.ts), the same as the card's, so it is the card's own.
@@ -24,9 +27,11 @@ export interface QuotedListing {
 
 // Step 26f: the cart's prices, the same rules as the shop's mock (apps/shop/src/data/mock/quote.ts,
 // step 26c), so the drawer and the checkout do not change when the shop moves to this API. Each
-// line at the listing's price now, summed with the money helpers (never JavaScript numbers). Only
-// coupons differ: the ERP has none until step 27c, so a code is always refused as unknown. Step
+// line at the listing's price now, summed with the money helpers (never JavaScript numbers). Step
 // 27a: placing an order prices it with this same function, so the order and the last quote agree.
+// Step 27c: and the coupon is judged here too, with the contracts' rule (judgeShopCoupon), which
+// the shop's mock uses as well. `coupon` is the one the cart's code names, read by the caller
+// (quotedCoupon or lockedCoupon in coupon-sql.ts), so this function stays free of SQL.
 //
 // `listings` has only what the shop shows now: a listing that is unpublished, deleted, archived in
 // the ERP or without a price is not in it, and its line is 'unavailable'.
@@ -34,6 +39,7 @@ export function quoteCart(
   request: ShopCartQuoteRequest,
   listings: ReadonlyMap<string, QuotedListing>,
   settings: ShopCheckoutSettings,
+  { coupon: found, today }: QuoteCoupon,
 ): ShopCartQuote {
   const lines = request.lines.map((line): ShopCartQuoteLine => {
     const found = listings.get(line.listingId);
@@ -64,18 +70,14 @@ export function quoteCart(
   const sold = lines.filter((line) => line.status === 'available');
   const subtotal = sumMoney(sold.map((line) => line.lineTotal));
 
-  // No coupon takes anything off yet (see above). The promo box then says "This code does not
-  // exist", which is true of every code in a shop with no coupons
-  const coupon: ShopCouponResult =
-    request.couponCode === undefined
-      ? { status: 'none' }
-      : {
-          status: 'refused',
-          code: request.couponCode,
-          reason: 'shop_coupon_unknown',
-          minimum: null,
-        };
-  const discount = '0.0000';
+  // The reasons in their order (decision 15), on the items before the coupon. A refused code is an
+  // answer, never an error: the promo box says why, and the order goes ahead without it
+  const coupon = judgeShopCoupon(request.couponCode, found?.rule, {
+    subtotal,
+    today,
+    used: found?.used ?? 0,
+  });
+  const discount = coupon.status === 'applied' ? shopCouponDiscount(coupon, subtotal) : '0.0000';
 
   // Both rules look at the subtotal, the items before the coupon (step 26c's decision 8)
   const freeDelivery =

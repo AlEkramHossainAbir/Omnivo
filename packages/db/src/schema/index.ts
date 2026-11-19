@@ -54,3 +54,4 @@ export * from './pos.js';
 export * from './report-schedules.js';
 export * from './storefront.js';
 export * from './storefront-orders.js';
+export * from './storefront-coupons.js';

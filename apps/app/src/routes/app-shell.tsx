@@ -11,6 +11,7 @@ import {
   CheckmarkBadge01Icon,
   Coins01Icon,
   ComputerPhoneSyncIcon,
+  CouponPercentIcon,
   DashboardSquare01Icon,
   DeliveryReturn01Icon,
   DeliveryTruck01Icon,
@@ -693,6 +694,10 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
                 <>
                   <NavLink to="/storefront/listings" icon={Store04Icon}>
                     {t('nav.storefrontCatalog')}
+                  </NavLink>
+                  {/* Step 27c (decision 29): after Catalog, both about the shop's prices */}
+                  <NavLink to="/storefront/coupons" icon={CouponPercentIcon}>
+                    {t('nav.storefrontCoupons')}
                   </NavLink>
                   <NavLink to="/storefront/categories" icon={FolderLibraryIcon}>
                     {t('nav.storefrontCategories')}

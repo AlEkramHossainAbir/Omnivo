@@ -36,6 +36,7 @@ import type { Config } from '../../config.js';
 import { CONFIG } from '../../infra/tokens.js';
 import { codeSms, confirmedSms } from '../../sms/shop-sms.js';
 import { SmsQueue } from '../../sms/sms-queue.js';
+import { lockedCoupon, markOrdered, usedByPhone } from '../coupon-sql.js';
 import { checkoutSettingsOf, quotedListings } from '../public-storefront.service.js';
 import { quoteCart } from '../quote.js';
 import { ShopDb, type ShopScope } from '../shop-db.js';
@@ -217,11 +218,14 @@ export class ShopOrdersService {
               )
               .orderBy(asc(storefrontListings.variantId));
       for (const { variantId } of variants) await lockVariant(tx, scope.tenantId, variantId);
+      // Step 27c: then the coupon's row, and its uses counted after the lock (lockedCoupon says
+      // why in two statements). A second shopper with the same code waits here for the first
+      const found = await lockedCoupon(tx, scope, request.couponCode);
 
       // The order is priced by the quote's own function from the rows a quote reads, so it is
       // exactly what the checkout showed, or it is refused
       const listings = await quotedListings(tx, scope, request.lines, this.mediaUrl);
-      const quote = quoteCart(request, listings, settings);
+      const quote = quoteCart(request, listings, settings, found);
       // Every line as it is in the cart: one out of stock or gone since the last quote would leave
       // the shopper with less than they chose (26c's decision 10). The checkout quotes again and
       // shows what changed
@@ -235,9 +239,28 @@ export class ShopOrdersService {
         });
       }
       // The total the shopper saw. A price or a sale that changed since the last quote shows here
+      // Step 27c: so is a coupon the last use of which went to another order a moment ago: the
+      // total without it is not the one the shopper saw, and the checkout's new quote says "used
+      // up". A code that was refused already in the checkout takes nothing off either way, and the
+      // order goes ahead without it (the promo box said why)
       if (compareMoney(quote.total, request.expectedTotal) !== 0) {
         throw refused(409, 'shop_order_changed', "The cart's prices or stock changed.");
       }
+      // The coupon the order keeps: only an applied one
+      const coupon = quote.coupon.status === 'applied' ? found.coupon : undefined;
+      // Once per mobile number, now that the phone is known. A thrown refusal rolls the whole
+      // transaction back, so no lock or mark outlives it
+      if (
+        coupon?.rule.onePerPhone === true &&
+        (await usedByPhone(tx, scope, coupon.id, request.phone))
+      ) {
+        throw refused(
+          422,
+          'shop_coupon_used_by_phone',
+          'This mobile number has an order with this coupon already.',
+        );
+      }
+      if (coupon !== undefined) await markOrdered(tx, scope, coupon.id);
 
       const [order] = await tx
         .insert(storefrontOrders)
@@ -255,8 +278,10 @@ export class ShopOrdersService {
           paymentMethod: request.paymentMethod,
           subtotal: quote.subtotal,
           discount: quote.discount,
-          // Coupons come in 27c; until then the quote applies none
-          couponCode: null,
+          // Step 27c: the id and the code together; the foreign key checks that they are one
+          // coupon's, so the order's page and its documents always say the coupon's own code
+          couponId: coupon?.id ?? null,
+          couponCode: coupon?.rule.code ?? null,
           // The zone was found, so the quote has its charge; `?? '0'` only satisfies the type
           deliveryCharge: quote.deliveryCharge ?? '0',
           total: quote.total,

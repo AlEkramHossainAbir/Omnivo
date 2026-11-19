@@ -210,6 +210,15 @@ import {
   updateTheme,
 } from './storefront-appearance-data';
 import {
+  couponOf,
+  couponPage,
+  couponSnapshot,
+  createCoupon,
+  setCouponArchived,
+  toCoupon,
+  updateCoupon,
+} from './storefront-coupon-data';
+import {
   cancelShopOrder,
   deliverShopOrder,
   findShopOrder,
@@ -6221,6 +6230,88 @@ export const handlers = [
       if (salesOrderId !== null) record(data, 'sales_order.cancelled', 'sales_order', salesOrderId);
       recordShopMove(data, 'storefront_order.cancelled', order, before);
       return reply(routes.storefrontOrders.cancelOrder, toShopOrder(data, order));
+    }),
+  ),
+
+  // --- Step 27c: Shop coupons (storefront-coupon-data.ts) --------------------------------------
+  // storefront.manage, like every Storefront route but Shop orders (shopData())
+
+  mock(
+    routes.storefrontCoupons.listCoupons,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const query = readQuery(routes.storefrontCoupons.listCoupons.query, request);
+      await delay();
+      return reply(routes.storefrontCoupons.listCoupons, couponPage(data, query));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.getCoupon,
+    guarded(async ({ params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontCoupons.getCoupon.params.parse(params);
+      await delay();
+      return reply(routes.storefrontCoupons.getCoupon, couponOf(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.createCoupon,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontCoupons.createCoupon.body, request);
+      const coupon = createCoupon(data, body);
+      record(
+        data,
+        'storefront_coupon.created',
+        'storefront_coupon',
+        coupon.id,
+        diff({}, couponSnapshot(coupon)),
+      );
+      return reply(routes.storefrontCoupons.createCoupon, toCoupon(data, coupon));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.updateCoupon,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontCoupons.updateCoupon.params.parse(params);
+      const body = await readBody(routes.storefrontCoupons.updateCoupon.body, request);
+      const { coupon, before } = updateCoupon(data, id, body);
+      record(
+        data,
+        'storefront_coupon.updated',
+        'storefront_coupon',
+        id,
+        diff(couponSnapshot(before), couponSnapshot(coupon)),
+      );
+      return reply(routes.storefrontCoupons.updateCoupon, toCoupon(data, coupon));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.archiveCoupon,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontCoupons.archiveCoupon.params.parse(params);
+      const { version } = await readBody(routes.storefrontCoupons.archiveCoupon.body, request);
+      const { coupon, changed } = setCouponArchived(data, id, version, true);
+      if (changed) record(data, 'storefront_coupon.archived', 'storefront_coupon', id);
+      return reply(routes.storefrontCoupons.archiveCoupon, toCoupon(data, coupon));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.restoreCoupon,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontCoupons.restoreCoupon.params.parse(params);
+      const { version } = await readBody(routes.storefrontCoupons.restoreCoupon.body, request);
+      const { coupon, changed } = setCouponArchived(data, id, version, false);
+      if (changed) record(data, 'storefront_coupon.restored', 'storefront_coupon', id);
+      return reply(routes.storefrontCoupons.restoreCoupon, toCoupon(data, coupon));
     }),
   ),
 ];

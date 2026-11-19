@@ -10,6 +10,7 @@ import {
   type ShopCheckoutSettings,
   type ShopCodeResent,
   type ShopCodeWait,
+  type ShopCouponRule,
   type ShopOrder,
   type ShopOrderConfirmed,
   type ShopOrderLine,
@@ -144,6 +145,22 @@ export function createOrderBook(
     return entry;
   }
 
+  // Step 27c: an order that holds a use of its coupon now (27c's decision 3): every order but a
+  // cancelled one, and one that waits for its phone code only inside its hour. The API's
+  // storefront_coupon_uses() counts the same orders. A dropped order (five wrong codes, or its hour
+  // over) is no longer in the book, so it gives its use back too
+  function holdsUse(entry: MockOrder, code: string): boolean {
+    const { order } = entry;
+    if (order.couponCode !== code || order.status === 'cancelled') return false;
+    return order.status !== 'pending' || entry.expiresAt > now().getTime();
+  }
+
+  function couponUses(code: string): number {
+    let uses = 0;
+    for (const entry of byToken.values()) if (holdsUse(entry, code)) uses += 1;
+    return uses;
+  }
+
   function confirm(entry: MockOrder): ShopOrderConfirmed {
     const at = now().toISOString();
     entry.order.status = 'confirmed';
@@ -152,12 +169,17 @@ export function createOrderBook(
   }
 
   return {
+    // Step 27c: what the quote's `used` reads (mock-source.ts)
+    couponUses,
+
     // Confirm Order. `quote` is the cart priced again on the server from the request's own lines,
-    // zone and coupon; this only decides whether the order may be placed with it
+    // zone and coupon; this only decides whether the order may be placed with it.
+    // Step 27c: `coupons` are the shop's, for the rule of the code the quote applied
     place(
       request: ShopOrderRequest,
       quote: ShopCartQuote,
       settings: ShopCheckoutSettings,
+      coupons: readonly ShopCouponRule[],
     ): SourceResult<PlacedOrder> {
       const zone = settings.zones.find((candidate) => candidate.id === request.zoneId);
       if (!zone) return { ok: false, code: 'shop_zone_unknown' };
@@ -191,8 +213,24 @@ export function createOrderBook(
       }
       // The zone was found, so the quote has its charge; `?? '0'` only satisfies the type
       const deliveryCharge = quote.deliveryCharge ?? '0';
+      // Step 27c: a coupon whose last use went to another order since the shopper's quote shows
+      // here too: the quote above says "used up" and takes nothing off, so its total is not the
+      // one the shopper saw. The checkout prices the cart again and the promo box says why
       if (compareMoney(quote.total, request.expectedTotal) !== 0) {
         return { ok: false, code: 'shop_order_changed' };
+      }
+      // Step 27c: once per mobile number, now that the phone is known, after the total as in the
+      // API. Only for a code that took money off: a refused one is not kept on the order anyway
+      const applied = quote.coupon.status === 'applied' ? quote.coupon.code : null;
+      const rule = coupons.find((candidate) => candidate.code === applied);
+      if (
+        applied !== null &&
+        rule?.onePerPhone === true &&
+        [...byToken.values()].some(
+          (entry) => entry.order.phone === request.phone && holdsUse(entry, applied),
+        )
+      ) {
+        return { ok: false, code: 'shop_coupon_used_by_phone' };
       }
 
       // Orders that never got their code are dropped once their hour is over. Done here, on the

@@ -50,6 +50,7 @@ import {
   listingWith,
   selectListings,
 } from './listing-sql.js';
+import { quotedCoupon } from './coupon-sql.js';
 import { shopImage, type StorefrontImageSize } from './media.js';
 import { quoteCart, type QuotedListing } from './quote.js';
 import { ShopDb, type ShopScope, storefrontNotFound } from './shop-db.js';
@@ -202,7 +203,14 @@ export class PublicStorefrontService {
   quote(host: string | undefined, request: ShopCartQuoteRequest): Promise<ShopCartQuote> {
     return this.shopDb.read(host, async (tx, shop) => {
       const listings = await quotedListings(tx, shop, request.lines, this.mediaUrl);
-      return quoteCart(request, listings, await checkoutSettingsOf(tx, shop));
+      // Step 27c: the coupon the code names, with its uses now. No lock: a quote promises nothing,
+      // and placing the order judges the code again under the coupon's lock
+      return quoteCart(
+        request,
+        listings,
+        await checkoutSettingsOf(tx, shop),
+        await quotedCoupon(tx, shop, request.couponCode),
+      );
     });
   }
 

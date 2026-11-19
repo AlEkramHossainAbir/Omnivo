@@ -34,6 +34,7 @@ const REFUSALS = {
   shop_order_limit: [429, 'Too many orders from this phone or connection.'],
   shop_code_expired: [422, 'The code has expired. Ask for a new one.'],
   shop_code_sends_used: [422, 'This order has had all its codes.'],
+  shop_coupon_used_by_phone: [422, 'This mobile number has an order with this coupon already.'],
 } as const satisfies Record<ShopRefusalCode, readonly [ProblemStatus, string]>;
 
 function refused(

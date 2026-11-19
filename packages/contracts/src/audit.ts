@@ -289,6 +289,12 @@ export const AUDIT_ACTIONS = [
   'storefront_order.shipped',
   'storefront_order.delivered',
   'storefront_order.cancelled',
+  // Step 27c: the shop's coupons (entity = storefront_coupon). An order that uses one writes
+  // nothing here: the order itself keeps the code and the discount
+  'storefront_coupon.created',
+  'storefront_coupon.updated',
+  'storefront_coupon.archived',
+  'storefront_coupon.restored',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -353,6 +359,7 @@ export const AUDIT_ENTITY_TYPES = [
   'storefront_banner',
   'storefront_collection',
   'storefront_order',
+  'storefront_coupon',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

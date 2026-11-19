@@ -20,10 +20,12 @@ async function waitForCheckout(page: Page): Promise<void> {
   await expect(page.getByRole('main').locator('form')).not.toHaveAttribute('inert');
 }
 
-async function fillDetails(page: Page): Promise<void> {
+// Step 27c: `phone` for a test whose orders must not meet another test's (a coupon that works once
+// per mobile number)
+async function fillDetails(page: Page, phone = '01786120356'): Promise<void> {
   await waitForCheckout(page);
   await page.getByRole('textbox', { name: 'Full Name' }).fill('Nusrat Jahan');
-  await page.getByRole('textbox', { name: 'Mobile Number' }).fill('01786120356');
+  await page.getByRole('textbox', { name: 'Mobile Number' }).fill(phone);
   await page.getByRole('textbox', { name: 'Delivery Address' }).fill('House 12, Road 5, Dhanmondi');
   await page.getByRole('radio', { name: 'Inside Dhaka — ৳80' }).check();
   // The box is sr-only under its icon (CLAUDE.md → Checkout lines), so a click on it is a click on
@@ -233,4 +235,54 @@ test('nothing typed into the checkout before its script runs is lost', async ({ 
   await name.fill('Nusrat Jahan');
   await page.getByRole('textbox', { name: 'Mobile Number' }).fill('01786120356');
   await expect(name).toHaveValue('Nusrat Jahan');
+});
+
+// Step 27c: the promo box with the mock's coupons (data/mock/checkout.ts), judged by the contracts'
+// rule. WELCOME10 is 10% off, up to ৳200, once per mobile number; EID100's one use is taken by the
+// demo order W-000121
+test('a coupon takes money off once per mobile number, and a used-up one says so', async ({
+  page,
+}) => {
+  // A number no other test (or an earlier try of this one) has ordered with: the shop's server,
+  // and its order book, live as long as the whole run
+  const phone = `0171${String(Math.floor(Math.random() * 10_000_000)).padStart(7, '0')}`;
+  await page.goto(`/p/${SHAMPOO.slug}`);
+  await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: `One more ${SHAMPOO.name}` }).click();
+  await fillDetails(page, phone);
+  const main = page.getByRole('main');
+  const promo = page.getByRole('textbox', { name: 'Promo code' });
+  const status = page.getByRole('status').filter({ hasText: /code|applied/ });
+
+  await promo.fill('eid100');
+  await page.getByRole('button', { name: 'Apply Coupon' }).click();
+  await expect(status).toContainText('This code has been used as many times as the shop allows.');
+  await expect(main).toContainText('Total৳538');
+
+  await page.getByRole('button', { name: 'Remove the code' }).click();
+  await promo.fill('welcome10');
+  await page.getByRole('button', { name: 'Apply Coupon' }).click();
+  // ৳458 − 10% (৳45.80) + ৳80. The line names the cap, which this cart does not reach
+  await expect(status).toContainText('WELCOME10 applied: 10% off, up to ৳200');
+  await expect(main).toContainText('Total৳492.20');
+  await expectNoSideScroll(page);
+  await page.getByRole('button', { name: 'Confirm Order' }).click();
+  // The order waits for its code, and holds the use already: the cart is still there
+  await expect(page).toHaveURL('/checkout/verify');
+
+  // The same number again, with the same code: refused when the order is placed, the only moment
+  // the shop knows the phone
+  await page.goto('/checkout');
+  await fillDetails(page, phone);
+  await promo.fill('WELCOME10');
+  await page.getByRole('button', { name: 'Apply Coupon' }).click();
+  await expect(main).toContainText('Total৳492.20');
+  await page.getByRole('button', { name: 'Confirm Order' }).click();
+  await expect(
+    page.getByText(
+      'This code works once per mobile number, and this number has used it. Remove the code to order.',
+    ),
+  ).toBeVisible();
+  await expect(page).toHaveURL('/checkout');
 });

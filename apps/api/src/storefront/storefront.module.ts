@@ -6,12 +6,14 @@ import { SalesModule } from '../sales/sales.module.js';
 import { StorefrontAppearanceService } from './admin/appearance.service.js';
 import { StorefrontCategoriesService } from './admin/categories.service.js';
 import { StorefrontCollectionsService } from './admin/collections.service.js';
+import { StorefrontCouponsService } from './admin/coupons.service.js';
 import { StorefrontImagesService } from './admin/images.service.js';
 import { StorefrontListingsService } from './admin/listings.service.js';
 import { StorefrontPagesService } from './admin/pages.service.js';
 import { StorefrontSettingsService } from './admin/settings.service.js';
 import { StorefrontAdminController } from './admin/storefront-admin.controller.js';
 import { StorefrontAppearanceController } from './admin/storefront-appearance.controller.js';
+import { StorefrontCouponsController } from './admin/storefront-coupons.controller.js';
 import { SmsQueue } from '../sms/sms-queue.js';
 import { ShopLimits } from './orders/shop-limits.js';
 import { ShopOrdersController } from './orders/shop-orders.controller.js';
@@ -31,7 +33,9 @@ import { ShopDb } from './shop-db.js';
 // adds the shop server's order routes (orders/), as omnivo_shop, and the SMS they send. Step 27b
 // adds Shop orders, the ERP's side of them (orders/storefront-orders.*): its moves make sales
 // documents with the sales services (SalesModule), and the "Delivery charge" service with
-// ProductsService
+// ProductsService. Step 27c adds Coupons (admin/coupons.service.ts, its own controller); the
+// quote and placing an order read a coupon through coupon-sql.ts, never through that service, for
+// the reason above
 @Module({
   imports: [AttachmentsModule, SalesModule, ProductsModule],
   controllers: [
@@ -40,6 +44,7 @@ import { ShopDb } from './shop-db.js';
     StorefrontAdminController,
     StorefrontAppearanceController,
     StorefrontOrdersController,
+    StorefrontCouponsController,
   ],
   providers: [
     ShopDb,
@@ -56,6 +61,7 @@ import { ShopDb } from './shop-db.js';
     StorefrontPagesService,
     ShopSalesOrderMaker,
     StorefrontOrdersService,
+    StorefrontCouponsService,
   ],
 })
 export class StorefrontModule {}
