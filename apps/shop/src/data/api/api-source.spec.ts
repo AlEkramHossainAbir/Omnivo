@@ -1,17 +1,27 @@
 import {
   listingQueryFromParams,
   publicListingParamsSchema,
+  SHOP_CLIENT_ADDRESS_HEADER,
   SHOP_HOST_HEADER,
+  SHOP_KEY_HEADER,
   shopCartQuoteRequestSchema,
+  shopOrderNoSchema,
+  shopOrderRequestSchema,
+  shopOrderTokenSchema,
+  shopTrackingTokenSchema,
+  shopTrackRequestSchema,
+  shopVerifyCodeRequestSchema,
   type ShopTextPageSlug,
 } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
+import { mockDemoOrders } from '../mock/demo-orders';
 import { mockHome } from '../mock/home';
 import { createMockSource } from '../mock/mock-source';
-import { createOrderBook, MOCK_CODE, type MockOrderBook } from '../mock/orders';
+import { MOCK_CODE } from '../mock/orders';
 import { mockCategories, mockShop } from '../mock/shop';
-import type { ShopSource } from '../types';
+import type { ShopSource, SourceResult } from '../types';
 import { createAnswerCache } from './answer-cache';
 import { createApiSource } from './api-source';
 import { createShopApi, ShopApiError, ShopMissingError } from './shop-api';
@@ -21,12 +31,36 @@ import { createShopApi, ShopApiError, ShopMissingError } from './shop-api';
 // is written down, so a test can see what the shop sent
 const HOST = 'nirvor.omnivo.test';
 const API = 'http://api.test';
+// Step 27a: the shop server's key (SHOP_API_KEY) and the shopper's address
+const KEY = 'test-shop-key-0123456789abcdef0123456789';
+const ADDRESS = '203.0.113.7';
 const STEVIA = 'lst-zero-cal-stevia-30-sachets';
 const NEEM = 'himalaya-purifying-neem-face-wash-150ml';
 
-function problem(status: number, code: string): Response {
-  return Response.json({ title: 'Refused', status, detail: code, code }, { status });
+function problem(status: number, code: string, params?: Record<string, string | number>): Response {
+  return Response.json(
+    { title: 'Refused', status, detail: code, code, ...(params ? { params } : {}) },
+    { status },
+  );
 }
+
+// Step 27a: a source's refusal as the API sends it, with the API's statuses
+// (shop-orders.service.ts)
+const STATUS: Record<string, number> = {
+  shop_order_changed: 409,
+  shop_order_limit: 429,
+  shop_code_resend_wait: 429,
+  shop_track_too_many: 429,
+  shop_code_no_order: 404,
+  shop_track_not_found: 404,
+};
+
+function answered<T>(result: SourceResult<T, string>, status = 200): Response {
+  if (result.ok) return Response.json(result.value, { status });
+  return problem(STATUS[result.code] ?? 422, result.code, result.params);
+}
+
+const tokenBody = z.object({ token: shopOrderTokenSchema });
 
 function fakeApi(data: ShopSource = createMockSource()) {
   const requests: Request[] = [];
@@ -41,6 +75,14 @@ function fakeApi(data: ShopSource = createMockSource()) {
     if (request.method === 'POST' && path === '/cart/quote') {
       const body = shopCartQuoteRequestSchema.parse(await request.json());
       return Response.json(await data.quote(body));
+    }
+    // Step 27a: the order routes, behind the key like the API's ShopKeyGuard. The mock behind them
+    // keeps the API's rules for the code (data/mock/orders.ts)
+    if (request.method === 'POST' && /^\/(?:orders|tracking|track)(?:\/|$)/.test(path)) {
+      if (request.headers.get(SHOP_KEY_HEADER) !== KEY) {
+        return problem(401, 'storefront_shop_key_invalid');
+      }
+      return orderRoute(path, request);
     }
     if (path === '/shop') return Response.json(await data.shop());
     if (path === '/categories') return Response.json(await data.categories());
@@ -63,6 +105,39 @@ function fakeApi(data: ShopSource = createMockSource()) {
     return problem(404, 'not_found');
   }
 
+  async function orderRoute(path: string, request: Request): Promise<Response> {
+    const json: unknown = await request.json();
+    const address = request.headers.get(SHOP_CLIENT_ADDRESS_HEADER) ?? 'no address';
+    switch (path) {
+      case '/orders':
+        return answered(await data.placeOrder(shopOrderRequestSchema.parse(json), address), 201);
+      case '/orders/code-wait': {
+        const wait = await data.codeWait(tokenBody.parse(json).token);
+        return wait === null ? problem(404, 'shop_code_no_order') : Response.json(wait);
+      }
+      case '/orders/verify': {
+        const body = tokenBody.extend(shopVerifyCodeRequestSchema.shape).parse(json);
+        return answered(await data.verifyCode(body.token, body.code));
+      }
+      case '/orders/resend':
+        return answered(await data.resendCode(tokenBody.parse(json).token));
+      case '/orders/find': {
+        const body = tokenBody.extend({ orderNo: shopOrderNoSchema }).parse(json);
+        const order = await data.order(body.orderNo, body.token);
+        return order === null ? problem(404, 'not_found') : Response.json(order);
+      }
+      case '/tracking': {
+        const body = z.object({ token: shopTrackingTokenSchema }).parse(json);
+        const tracking = await data.tracking(body.token);
+        return tracking === null ? problem(404, 'not_found') : Response.json(tracking);
+      }
+      case '/track':
+        return answered(await data.track(shopTrackRequestSchema.parse(json), address));
+      default:
+        return problem(404, 'not_found');
+    }
+  }
+
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     requests.push(request.clone());
@@ -83,12 +158,11 @@ function fakeApi(data: ShopSource = createMockSource()) {
   };
 }
 
-// A shop source on the fake API, with its own cache and order book, as data/source.ts makes one
-function setup({ host = HOST, api = fakeApi(), book = createOrderBook() } = {}) {
+// A shop source on the fake API, with its own cache, as data/source.ts makes one
+function setup({ host = HOST, api = fakeApi(), key = KEY } = {}) {
   const cache = createAnswerCache({ ttlMs: 30_000, maxEntries: 100 });
   const source = createApiSource(
-    createShopApi({ apiUrl: API, host, cache, fetch: api.fetch }),
-    () => book,
+    createShopApi({ apiUrl: API, host, key, cache, fetch: api.fetch }),
   );
   return { source, api, cache };
 }
@@ -171,9 +245,7 @@ describe('the API source', () => {
     const api = fakeApi();
     const cache = createAnswerCache({ ttlMs: 30_000, maxEntries: 100 });
     const sourceOf = (host: string) =>
-      createApiSource(createShopApi({ apiUrl: API, host, cache, fetch: api.fetch }), () =>
-        createOrderBook(),
-      );
+      createApiSource(createShopApi({ apiUrl: API, host, key: KEY, cache, fetch: api.fetch }));
     await sourceOf(HOST).shop();
     await sourceOf(HOST).shop();
     // Another host is another shop: never the first one's answer
@@ -218,10 +290,11 @@ describe('the API source', () => {
     const down = createShopApi({
       apiUrl: API,
       host: HOST,
+      key: KEY,
       cache: createAnswerCache({ ttlMs: 30_000, maxEntries: 10 }),
       fetch: () => Promise.reject(new TypeError('fetch failed')),
     });
-    await expect(createApiSource(down, createOrderBook).shop()).rejects.toMatchObject({
+    await expect(createApiSource(down).shop()).rejects.toMatchObject({
       name: 'ShopApiError',
       status: 0,
     });
@@ -230,6 +303,7 @@ describe('the API source', () => {
     const hung = createShopApi({
       apiUrl: API,
       host: HOST,
+      key: KEY,
       cache: createAnswerCache({ ttlMs: 30_000, maxEntries: 10 }),
       timeoutMs: 20,
       fetch: (_input, init) =>
@@ -239,9 +313,7 @@ describe('the API source', () => {
           });
         }),
     });
-    await expect(createApiSource(hung, createOrderBook).home()).rejects.toBeInstanceOf(
-      ShopApiError,
-    );
+    await expect(createApiSource(hung).home()).rejects.toBeInstanceOf(ShopApiError);
   });
 });
 
@@ -262,43 +334,157 @@ describe('orders on the API source', () => {
   }
 
   async function place(source: ShopSource) {
-    const placed = await source.placeOrder({ ...order, expectedTotal: await expectedTotal() });
+    const placed = await source.placeOrder(
+      { ...order, expectedTotal: await expectedTotal() },
+      ADDRESS,
+    );
     if (!placed.ok) throw new Error(`refused: ${placed.code}`);
     return placed.value;
   }
 
-  it('prices the order with the API and sends it no name, phone or address', async () => {
+  const sentTo = (api: ReturnType<typeof fakeApi>, path: string) =>
+    api.requests.filter((request) => new URL(request.url).pathname === `/public/v1${path}`);
+
+  it('places an order with the API, and sends the key and the address on order routes only', async () => {
     const { source, api } = setup();
+    await source.shop();
+    await source.quote({ lines: order.lines });
     const placed = await place(source);
-    expect(placed.orderNo).toBe('W-000001');
+    expect(placed.answer).toEqual({
+      next: 'verify',
+      maskedPhone: '+880 17•• ••• 356',
+      resendInSeconds: 45,
+    });
 
-    const quote = api.requests.find((request) => request.url.endsWith('/cart/quote'));
-    expect(await quote?.json()).toEqual({ lines: order.lines, zoneId: 'inside_dhaka' });
-
-    // The code is the mock's until step 27 sends SMS, and the page shows it
-    expect(source.testCode).toBe(MOCK_CODE);
-    const confirmed = await source.verifyCode(placed.token, MOCK_CODE);
-    expect(confirmed).toMatchObject({ ok: true, value: { orderNo: 'W-000001' } });
-    expect((await source.order('W-000001', placed.token))?.total).toBe(await expectedTotal());
+    // The whole order goes to the API in one request: no quote first (the API prices it itself)
+    const [sent] = sentTo(api, '/orders');
+    expect(await sent?.json()).toMatchObject({ name: 'Sumi Akter', phone: '01786120356' });
+    expect(sent?.headers.get(SHOP_KEY_HEADER)).toBe(KEY);
+    expect(sent?.headers.get(SHOP_CLIENT_ADDRESS_HEADER)).toBe(ADDRESS);
+    expect(sentTo(api, '/cart/quote')).toHaveLength(1);
+    // A read route carries neither
+    for (const path of ['/shop', '/cart/quote']) {
+      const [read] = sentTo(api, path);
+      expect(read?.headers.get(SHOP_KEY_HEADER)).toBeNull();
+      expect(read?.headers.get(SHOP_CLIENT_ADDRESS_HEADER)).toBeNull();
+    }
   });
 
-  it('refuses an order whose price changed since the checkout saw it', async () => {
+  it('confirms with the code and opens the order with its token', async () => {
+    const { source, api } = setup();
+    const { token } = await place(source);
+    expect((await source.codeWait(token))?.listingIds).toEqual([STEVIA]);
+
+    // A real shop shows no code: it goes only to the phone (the fake API is the mock, which takes
+    // MOCK_CODE)
+    expect(source.testCode).toBeNull();
+    expect(await source.verifyCode(token, MOCK_CODE)).toEqual({
+      ok: true,
+      value: { orderNo: 'W-000001', phone: '01786120356' },
+    });
+    expect(await source.codeWait(token)).toBeNull();
+    expect((await source.order('W-000001', token))?.total).toBe(await expectedTotal());
+    // Another browser's token finds nothing
+    expect(await source.order('W-000001', 'A'.repeat(22))).toBeNull();
+    // Every token went in a body, never in an address (27a's decision 15)
+    expect(api.paths().some((path) => path.includes(token))).toBe(false);
+  });
+
+  it('passes on the refusals the pages know, with their params', async () => {
+    const { source, api } = setup();
+    expect(await source.placeOrder({ ...order, expectedTotal: '1.0000' }, ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_order_changed',
+    });
+    const { token } = await place(source);
+    expect(await source.verifyCode(token, '000000')).toEqual({
+      ok: false,
+      code: 'shop_code_wrong',
+      params: { triesLeft: 4 },
+    });
+    expect(await source.resendCode(token)).toMatchObject({
+      ok: false,
+      code: 'shop_code_resend_wait',
+      params: { seconds: 45 },
+    });
+    api.failWith(problem(429, 'shop_order_limit', { minutes: 12 }));
+    expect(await source.placeOrder({ ...order, expectedTotal: '1' }, ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_order_limit',
+      params: { minutes: 12 },
+    });
+  });
+
+  // Step 27c: the API's 422 for a once-per-number coupon is an answer the checkout has words for,
+  // not a mistake. The fake API is the mock, which keeps the same rule
+  it('passes on a coupon this mobile number has had', async () => {
     const { source } = setup();
-    const placed = await source.placeOrder({ ...order, expectedTotal: '1.0000' });
-    expect(placed).toEqual({ ok: false, code: 'shop_order_changed' });
+    const welcome = {
+      ...order,
+      couponCode: 'WELCOME10',
+      expectedTotal: (
+        await createMockSource().quote({
+          lines: order.lines,
+          zoneId: order.zoneId,
+          couponCode: 'WELCOME10',
+        })
+      ).total,
+    };
+    expect((await source.placeOrder(welcome, ADDRESS)).ok).toBe(true);
+    expect(await source.placeOrder(welcome, ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_coupon_used_by_phone',
+    });
   });
 
-  it('keeps each shop’s orders in its own book', async () => {
-    // data/source.ts gives each host its own book; two books here stand for two shops
-    const first: MockOrderBook = createOrderBook();
-    const second: MockOrderBook = createOrderBook();
-    const acme = setup({ book: first }).source;
-    const nirvor = setup({ book: second }).source;
-    const fromAcme = await place(acme);
-    expect((await place(nirvor)).orderNo).toBe('W-000001');
-    // The second shop cannot open the first one's order, even with its token
-    expect(await nirvor.order(fromAcme.orderNo, fromAcme.token)).toBeNull();
+  it('throws on a refusal the page has no words for', async () => {
+    const { source, api } = setup();
+    const { token } = await place(source);
+    // An order limit is not an answer to a code: a mistake on one side, not a shopper's
+    api.failWith(problem(429, 'shop_order_limit', { minutes: 12 }));
+    await expect(source.verifyCode(token, MOCK_CODE)).rejects.toBeInstanceOf(ShopApiError);
+  });
+
+  it('names the setting to fix when the API refuses the key', async () => {
+    const { source } = setup({ key: 'not-the-api-key-0123456789abcdef01234' });
+    await expect(
+      source.placeOrder({ ...order, expectedTotal: await expectedTotal() }, ADDRESS),
+    ).rejects.toThrow(/SHOP_API_KEY/);
+    // The read routes need no key, so the shop's pages still work
+    expect(await source.shop()).toEqual(mockShop);
+  });
+
+  it('does not ask for an order number the API would refuse', async () => {
+    const { source, api } = setup();
+    // From an edited cookie: the same "not found" as a wrong number, not a 500
+    expect(await source.order('abc', 'A'.repeat(22))).toBeNull();
+    expect(sentTo(api, '/orders/find')).toHaveLength(0);
+  });
+
+  it('tracks by link and by the form, with the API’s limit', async () => {
+    const { source, api } = setup({ api: fakeApi(createMockSource(undefined, mockDemoOrders)) });
+    expect((await source.tracking('C2etI9zQb8E5ZugpwzVWyA'))?.orderNo).toBe('W-000123');
+    expect(await source.tracking('A'.repeat(22))).toBeNull();
+
+    const sylhet = shopTrackRequestSchema.parse({ phone: '01786120356', orderNo: 'W-000123' });
+    expect(await source.track(sylhet, ADDRESS)).toMatchObject({
+      ok: true,
+      value: { orderNo: 'W-000123' },
+    });
+    const wrong = shopTrackRequestSchema.parse({ phone: '01711284519', orderNo: 'W-000123' });
+    expect(await source.track(wrong, ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_track_not_found',
+    });
+    // The form's misses count under the shopper's address, which only the API sees this way
+    expect(sentTo(api, '/track')[0]?.headers.get(SHOP_CLIENT_ADDRESS_HEADER)).toBe(ADDRESS);
+    api.failWith(problem(429, 'shop_track_too_many', { minutes: 14 }));
+    expect(await source.track(sylhet, ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_track_too_many',
+      params: { minutes: 14 },
+    });
     // A real shop offers no demo orders on /track
-    expect(acme.testTracking).toBeNull();
+    expect(source.testTracking).toBeNull();
   });
 });

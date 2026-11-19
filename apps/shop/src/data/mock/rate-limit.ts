@@ -9,8 +9,11 @@
 // guesser still gets no more than `tries` misses in any one window.
 //
 // The memory is this process's. Two shop servers behind one address would each have their own, so
-// a guesser would get `tries` from each; that is fine for one server, and step 27's real tracking
-// moves the limit into the API, next to the orders.
+// a guesser would get `tries` from each; that is fine for one server.
+//
+// Step 27a: moved from server/ into the mock. The API keeps the real limit in Redis, next to the
+// orders (shop-limits.ts), so only the mock source counts misses here (mock-source.ts). The key
+// is made by addressKey() from @omnivo/contracts, the same function the API uses.
 
 interface Window {
   misses: number;
@@ -82,30 +85,4 @@ export function createRateLimiter({
       windows.set(key, { misses: 1, endsAt: now() + windowMs });
     },
   };
-}
-
-// The part of an address that names one connection. An IPv4 address is one home or one phone (or
-// many phones behind a mobile operator's shared address, which is why the form counts only misses).
-// An IPv6 home or phone gets a whole /64 block: 18 billion billion addresses that are all the same
-// person, so the key is the block, the first four groups. Without that, every miss could come from
-// a new address and the limit would never be reached.
-export function addressKey(address: string): string {
-  // "%en0" is a link-local address's interface name, not part of the address
-  const plain = address.trim().toLowerCase().replace(/%.*$/, '');
-  // An IPv4 address written as IPv6 ("::ffff:203.0.113.7"), which Node gives on a server that
-  // listens on both
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(plain);
-  if (mapped?.[1] !== undefined) return mapped[1];
-  if (!plain.includes(':')) return plain;
-
-  // "2001:db8::7" leaves out the groups that are zero. Put them back, so "2001:db8::7" and
-  // "2001:db8:0:0::8" give the same /64
-  const [head = '', tail] = plain.split('::');
-  const headGroups = head === '' ? [] : head.split(':');
-  const tailGroups = tail === undefined || tail === '' ? [] : tail.split(':');
-  const missing = tail === undefined ? 0 : 8 - headGroups.length - tailGroups.length;
-  const groups = [...headGroups, ...Array.from({ length: missing }, () => '0'), ...tailGroups];
-  // Leading zeros dropped too ("0db8" and "db8" are the same group)
-  const block = groups.slice(0, 4).map((group) => group.replace(/^0+(?=.)/, ''));
-  return `${block.join(':')}::/64`;
 }

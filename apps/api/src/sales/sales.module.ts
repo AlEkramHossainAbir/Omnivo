@@ -81,7 +81,8 @@ import { SalesReturnsService } from './sales-returns.service.js';
   ],
   // Step 16: the PDF of a quotation, an invoice, a receipt or a credit note is built from what
   // their get() returns (documents/models.service.ts). Step 18b: the sync's push runs a device's
-  // customers and order drafts through CustomersService and SalesOrdersService.
+  // customers and order drafts through CustomersService and SalesOrdersService. Step 27b: a shop
+  // order's moves make their documents with DeliveriesService and SalesReturnsService too.
   exports: [
     QuotationsService,
     InvoicesService,
@@ -89,6 +90,8 @@ import { SalesReturnsService } from './sales-returns.service.js';
     CreditNotesService,
     CustomersService,
     SalesOrdersService,
+    DeliveriesService,
+    SalesReturnsService,
   ],
 })
 export class SalesModule {}

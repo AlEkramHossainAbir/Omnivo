@@ -27,7 +27,7 @@ import { isForeignKeyViolation, isUniqueViolation } from '../common/db/pg-errors
 import { containsPattern } from '../common/db/search.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, encodeCursor } from '../common/pagination/cursor.js';
-import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
+import { currentActorId, currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { NumberingService } from '../numbering/numbering.service.js';
@@ -233,34 +233,39 @@ export class ProductsService {
 
   async create(input: ProductInput): Promise<Product> {
     try {
-      return await this.withTenant(async (tx) => {
-        const context = await loadProductContext(tx);
-        const checked = checkProduct(input, context);
-        if (checked.issues.length > 0) throw issuesError(checked.issues);
-        const code = input.code ?? (await this.newCode(tx));
-        const skus = resolveSkus(input, code);
-        const taken = await findTaken(tx, { codes: [code], skus, barcodes: barcodesOf(input) });
-        const conflicts = takenIssues(input, code, skus, taken);
-        if (conflicts.length > 0) throw issuesError(conflicts);
-
-        const [id] = await insertProducts(
-          tx,
-          [{ input, code, skus, customFields: checked.customFields }],
-          currentPrincipal().userId,
-        );
-        if (id === undefined) throw new Error('Product insert returned no id');
-        const product = await this.read(tx, id);
-        await audit(tx, {
-          action: 'product.created',
-          entityType: 'product',
-          entityId: id,
-          changes: created(await this.snapshot(tx, product)),
-        });
-        return product;
-      });
+      return await this.withTenant((tx) => this.createIn(tx, input));
     } catch (error) {
       throw racedError(error);
     }
+  }
+
+  // Step 27b: the save in the caller's transaction: create() above, and the shop's "Delivery
+  // charge" service, made by the first shop order that has a delivery charge (decision 4), in the
+  // worker with no member behind it (currentActorId() is null there)
+  async createIn(tx: Transaction, input: ProductInput): Promise<Product> {
+    const context = await loadProductContext(tx);
+    const checked = checkProduct(input, context);
+    if (checked.issues.length > 0) throw issuesError(checked.issues);
+    const code = input.code ?? (await this.newCode(tx));
+    const skus = resolveSkus(input, code);
+    const taken = await findTaken(tx, { codes: [code], skus, barcodes: barcodesOf(input) });
+    const conflicts = takenIssues(input, code, skus, taken);
+    if (conflicts.length > 0) throw issuesError(conflicts);
+
+    const [id] = await insertProducts(
+      tx,
+      [{ input, code, skus, customFields: checked.customFields }],
+      currentActorId(),
+    );
+    if (id === undefined) throw new Error('Product insert returned no id');
+    const product = await this.read(tx, id);
+    await audit(tx, {
+      action: 'product.created',
+      entityType: 'product',
+      entityId: id,
+      changes: created(await this.snapshot(tx, product)),
+    });
+    return product;
   }
 
   async update(id: string, input: UpdateProductInput): Promise<Product> {

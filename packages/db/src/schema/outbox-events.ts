@@ -25,6 +25,9 @@ export const OUTBOX_EVENT_TYPES = [
   'report.schedule_due',
   'report.schedule_email',
   'storefront.image_uploaded',
+  // Step 27a: a shop order got its right phone code. The worker rings the bell of the members who
+  // read the orders; 27b also makes the customer and the sales order from it
+  'storefront.order_confirmed',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

@@ -105,6 +105,7 @@ export const shopBn: ShopMessages = {
     applying: 'প্রয়োগ হচ্ছে…',
     removeCoupon: 'কোডটি সরান',
     couponApplied: '{{code}} প্রয়োগ হয়েছে: {{off}} ছাড়',
+    couponAppliedUpTo: '{{code}} প্রয়োগ হয়েছে: {{off}} ছাড়, সর্বোচ্চ {{upTo}}',
     payment: 'পেমেন্টের উপায়',
     cod: 'ক্যাশ অন ডেলিভারি',
     online: 'মোবাইল ব্যাংকিং',

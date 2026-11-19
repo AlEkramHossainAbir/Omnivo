@@ -1,10 +1,9 @@
-import { SHOP_API_URL, SHOP_SOURCE } from 'astro:env/server';
+import { SHOP_API_KEY, SHOP_API_URL, SHOP_SOURCE } from 'astro:env/server';
 
 import { createAnswerCache } from './api/answer-cache';
 import { createApiSource } from './api/api-source';
 import { createShopApi } from './api/shop-api';
 import { shopConfigOf } from './config';
-import { createOrderBook, type MockOrderBook } from './mock/orders';
 import { mockSource } from './mock/mock-source';
 import type { ShopSource } from './types';
 
@@ -14,27 +13,16 @@ import type { ShopSource } from './types';
 // names, so src/middleware.ts asks sourceFor() once per request and puts the answer in
 // Astro.locals.source, which every page and route reads.
 
-// Read once, when the server starts. astro:env reads both at run time ("secret" in
+// Read once, when the server starts. astro:env reads them at run time ("secret" in
 // astro.config.ts), so one built image serves the mock or the API by its environment
-const config = shopConfigOf(SHOP_SOURCE, SHOP_API_URL);
+const config = shopConfigOf(SHOP_SOURCE, SHOP_API_URL, SHOP_API_KEY);
 
 // One cache for the whole server, every shop's answers in it, keyed by host (decision 24):
 // 30 seconds, so a price changed in the ERP shows within half a minute, and at most 1,000 answers
 const cache = createAnswerCache({ ttlMs: 30_000, maxEntries: 1_000 });
 
-// 26f.5's decision b: each shop's orders in its own book, so one shop's W-000001 is never another
-// shop's. Made at the first order, and only for a launched shop: the middleware stops every other
-// host before a page runs. They live as long as the process, as the mock's do
-const books = new Map<string, MockOrderBook>();
-
-function bookFor(host: string): MockOrderBook {
-  let book = books.get(host);
-  if (book === undefined) {
-    book = createOrderBook();
-    books.set(host, book);
-  }
-  return book;
-}
+// Step 27a: no mock order books here any more (26f.5's decision b kept one per host). The API keeps
+// every shop's orders in its own tables, numbered per shop
 
 export function sourceFor(url: URL): ShopSource {
   if (config.source === 'mock') return mockSource;
@@ -42,7 +30,5 @@ export function sourceFor(url: URL): ShopSource {
   // "acme.localhost" are one shop. URL has made it lower case already. Behind the proxy this is the
   // shopper's host, not the proxy's (security.allowedDomains in astro.config.ts)
   const host = url.hostname;
-  return createApiSource(createShopApi({ apiUrl: config.apiUrl, host, cache }), () =>
-    bookFor(host),
-  );
+  return createApiSource(createShopApi({ apiUrl: config.apiUrl, key: config.apiKey, host, cache }));
 }

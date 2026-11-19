@@ -626,6 +626,12 @@ export const ERROR_CODES = [
   'shop_code_too_many',
   'shop_code_resend_wait',
   'shop_code_no_order',
+  // Step 27a: the API's own limits. Too many orders from one phone or one connection in an hour
+  // (params.minutes says how long to wait); a code typed after its 10 minutes (the shopper asks for
+  // a new one); all three codes of an order sent already (the shopper places the order again)
+  'shop_order_limit',
+  'shop_code_expired',
+  'shop_code_sends_used',
   // Step 26e: the /track form. An order number in another shape, no order with this number and
   // phone (one code for both: the form never says which of the two is wrong), and too many tries
   // from one connection (the problem's params.minutes says how long to wait)
@@ -636,6 +642,9 @@ export const ERROR_CODES = [
   // workspace has turned the shop off), and a listing's sale as the ERP's form sends it: a
   // percent that is not a whole 1 to 99, an amount of zero, an end not after its start
   'storefront_not_found',
+  // Step 27a: a call to a shop-server route without the shop server's key (SHOP_KEY_HEADER), or
+  // with a wrong one. 401: no shopper ever sees it, only a misconfigured shop server or a stranger
+  'storefront_shop_key_invalid',
   'storefront_sale_percent',
   'storefront_sale_zero',
   'storefront_sale_dates',
@@ -697,6 +706,31 @@ export const ERROR_CODES = [
   'storefront_listing_invalid',
   // A text page saved with no section (Delete is the way to take a page out of the shop)
   'storefront_page_empty',
+  // Step 27b: the shop's orders in the ERP. A move the order's status does not take (Shipped on a
+  // new order, Cancel after it shipped), Packed before the sales order exists, a line of the order
+  // missing from Packed (or one it does not have, or one twice), picks that do not add up to the
+  // line's quantity
+  'storefront_order_step_invalid',
+  'storefront_order_no_sales_order',
+  'storefront_order_line_missing',
+  'storefront_order_line_twice',
+  'storefront_order_pick_total',
+  // The delivery charge's product in the shop's settings: not an active service of this
+  // workspace, or emptied after the first order made it (decision 4)
+  'storefront_delivery_product_invalid',
+  'storefront_delivery_product_required',
+  // Step 27c: coupons. In the shop: a code every allowed order has taken already (the quote's
+  // refusal), and a once-per-phone code this mobile number has used on another order (Confirm
+  // Order's refusal: the quote does not know the phone yet). In the ERP's form: a code another
+  // coupon of the workspace has (archived ones too), a code changed after an order had it, a last
+  // day before the first, "up to" on an amount coupon, a number of uses that is not 1 to 1,000,000
+  'shop_coupon_used_up',
+  'shop_coupon_used_by_phone',
+  'storefront_coupon_code_taken',
+  'storefront_coupon_code_locked',
+  'storefront_coupon_dates',
+  'storefront_coupon_up_to',
+  'storefront_coupon_limit_format',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

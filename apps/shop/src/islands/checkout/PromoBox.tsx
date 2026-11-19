@@ -100,10 +100,17 @@ export function PromoBox({
                 strokeWidth={1.5}
                 aria-hidden="true"
               />
-              {fill(words.couponApplied, {
-                code: result.code,
-                off: discountText(result.discount, money),
-              })}
+              {/* Step 27c: a cap is part of the offer, so the line names it */}
+              {result.upTo === null
+                ? fill(words.couponApplied, {
+                    code: result.code,
+                    off: discountText(result.discount, money),
+                  })
+                : fill(words.couponAppliedUpTo, {
+                    code: result.code,
+                    off: discountText(result.discount, money),
+                    upTo: money(result.upTo),
+                  })}
             </span>
             {remove}
           </p>

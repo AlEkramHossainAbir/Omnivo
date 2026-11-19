@@ -41,13 +41,10 @@ function shownListings(shop: ShopScope): SQL {
     SELECT l.id, l.slug, l.name, l.pack_size, l.category_id, l.badges, l.images, l.published_at,
            l.description_sections, l.seo_title, l.seo_description,
            l.sale_kind, l.sale_value, l.sale_starts_at, l.sale_ends_at,
+           l.product_id, l.variant_id,
            v.sku, u.name AS unit_name, r.regular, s.on_sale,
            CASE WHEN s.on_sale THEN r.regular - o.off ELSE r.regular END AS price,
-           -- Decision 3: in stock = more than nothing in the shop's warehouse. Summed over the
-           -- batches, so a batch below zero (step 20a's sold-short) takes from the others
-           (SELECT coalesce(sum(b.quantity), 0) FROM stock_balances b
-             WHERE b.tenant_id = l.tenant_id AND b.variant_id = l.variant_id
-               AND b.warehouse_id = ${shop.warehouseId}::uuid) > 0 AS in_stock
+           f.free, f.free > 0 AS in_stock
       FROM storefront_listings l
       JOIN product_variants v ON v.tenant_id = l.tenant_id AND v.id = l.variant_id
       JOIN products p ON p.tenant_id = l.tenant_id AND p.id = l.product_id
@@ -70,6 +67,20 @@ function shownListings(shop: ShopScope): SQL {
       CROSS JOIN LATERAL (
         SELECT coalesce(o.running AND o.off > 0 AND r.regular - o.off > 0, false) AS on_sale
       ) s
+      -- 26f's decision 3: in stock = more than nothing in the shop's warehouse. Summed over the
+      -- batches, so a batch below zero (step 20a's sold-short) takes from the others. Step 27a:
+      -- minus what orders hold there (27a's decision 6). A waiting order's hold counts until its
+      -- expires_at, a confirmed order's (NULL) until its challan. Same clock as the price: one
+      -- answer never shows a hold as both on and over
+      CROSS JOIN LATERAL (
+        SELECT (SELECT coalesce(sum(b.quantity), 0) FROM stock_balances b
+                 WHERE b.tenant_id = l.tenant_id AND b.variant_id = l.variant_id
+                   AND b.warehouse_id = ${shop.warehouseId}::uuid)
+             - (SELECT coalesce(sum(h.quantity), 0) FROM storefront_stock_holds h
+                 WHERE h.tenant_id = l.tenant_id AND h.variant_id = l.variant_id
+                   AND h.warehouse_id = ${shop.warehouseId}::uuid
+                   AND (h.expires_at IS NULL OR h.expires_at > ${now})) AS free
+      ) f
      WHERE l.tenant_id = ${shop.tenantId}::uuid
        AND l.published_at IS NOT NULL
        AND v.archived_at IS NULL AND p.archived_at IS NULL
@@ -90,7 +101,8 @@ const LISTING_COLUMNS = sql`
   shown.seo_description, shown.regular::text, shown.sale_kind, shown.sale_value::text,
   ${isoText(sql`shown.sale_starts_at`)} AS sale_starts_at,
   ${isoText(sql`shown.sale_ends_at`)} AS sale_ends_at,
-  ${isoText(sql`shown.published_at`)} AS published_at, shown.price::text, shown.in_stock`;
+  ${isoText(sql`shown.published_at`)} AS published_at, shown.price::text, shown.in_stock,
+  shown.product_id::text, shown.variant_id::text, shown.free::text`;
 
 const isoSchema = z.iso.datetime();
 
@@ -118,6 +130,11 @@ const listingRowSchema = z.object({
   published_at: isoSchema,
   price: z.string(),
   in_stock: z.boolean(),
+  // Step 27a: the stock item and how much of it is free (on hand minus held), for the quote and
+  // the order. Never on a card: the shop says only "in stock", not how many (26f's decision 3)
+  product_id: z.uuid(),
+  variant_id: z.uuid(),
+  free: z.string(),
 });
 
 export type ListingRow = z.infer<typeof listingRowSchema>;

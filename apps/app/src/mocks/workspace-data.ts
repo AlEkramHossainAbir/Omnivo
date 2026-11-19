@@ -36,7 +36,14 @@ import {
   type MockDocumentOutput,
   seedDocumentOutput,
 } from './document-output-data';
-import { HEAD_OFFICES, OWNER, seedsTradeHistory, seedsVatMonth, type Workspace } from './fixtures';
+import {
+  HEAD_OFFICES,
+  OWNER,
+  seedsShopOrders,
+  seedsTradeHistory,
+  seedsVatMonth,
+  type Workspace,
+} from './fixtures';
 import { emptyBilling, type MockBilling } from './invoice-data';
 import { emptyJournal, type MockJournal, seedJournal } from './journal-data';
 import { MockProblem } from './mock';
@@ -57,6 +64,8 @@ import {
   seedSalesDocuments,
 } from './sales-document-data';
 import { emptyStock, type MockStock, seedStock, warehouse } from './stock-data';
+import { seedCoupons } from './storefront-coupon-data';
+import { seedShopOrders } from './storefront-order-data';
 import { emptyStorefront, type MockStorefront, seedStorefront } from './storefront-seed';
 import { emptySuppliers, type MockSuppliers, seedSuppliers } from './supplier-data';
 import { emptySync, type MockSync, seedDevices } from './sync-data';
@@ -239,6 +248,11 @@ function seed(workspace: Workspace): WorkspaceData {
   if (garments) seedReportSchedules(data);
   // Step 26g: after the stock (the shop counts in the Main store) and the catalog it lists from
   seedStorefront(data, garments);
+  // Step 27b: after the shop it sells from (storefront-order-data.ts, fixtures.ts → seedsShopOrders)
+  if (garments && seedsShopOrders()) seedShopOrders(data);
+  // Step 27c: the mockup's coupons (storefront-coupon-data.ts). A coupon needs no shop, but only
+  // the garments workspace has one to run them
+  if (garments) seedCoupons(data);
   record(data, 'workspace.created', 'workspace', workspace.tenantId, {
     name: { from: null, to: workspace.name },
   });

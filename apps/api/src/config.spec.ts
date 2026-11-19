@@ -23,7 +23,7 @@ function env(extra: Record<string, string>): Record<string, string> {
 describe('storefront config', () => {
   it('serves the photos from the storage bucket in dev, on localhost', () => {
     const { storefront } = loadConfig(env({}));
-    expect(storefront).toEqual({
+    expect(storefront).toMatchObject({
       baseDomain: 'localhost',
       mediaUrl: 'http://localhost:9000/omnivo',
       shopScheme: 'http',
@@ -39,7 +39,7 @@ describe('storefront config', () => {
         STOREFRONT_MEDIA_URL: 'https://media.omnivo.shop/',
       }),
     );
-    expect(storefront).toEqual({
+    expect(storefront).toMatchObject({
       baseDomain: 'omnivo.shop',
       mediaUrl: 'https://media.omnivo.shop',
       shopScheme: 'https',
@@ -77,5 +77,26 @@ describe('storefront config', () => {
         /Invalid environment/,
       );
     }
+  });
+});
+
+// Step 27a: the shop server's key and the phone code's key
+describe('order keys', () => {
+  it('has no shop key until one is set, and refuses a short one', () => {
+    expect(loadConfig(env({})).storefront.shopKey).toBeNull();
+    const key = 'a-shop-key-of-at-least-thirty-two-chars';
+    expect(loadConfig(env({ STOREFRONT_SHOP_KEY: key })).storefront.shopKey).toBe(key);
+    expect(() => loadConfig(env({ STOREFRONT_SHOP_KEY: 'short' }))).toThrow(/Invalid environment/);
+  });
+
+  it('derives the code key from JWT_SECRET: 32 bytes, never the secret itself', () => {
+    const { codeKey } = loadConfig(env({})).storefront;
+    expect(codeKey).toHaveLength(32);
+    expect(codeKey.toString('utf8')).not.toContain('test-jwt-secret');
+    // The same secret gives the same key (a code sent before a restart still works) …
+    expect(loadConfig(env({})).storefront.codeKey.equals(codeKey)).toBe(true);
+    // … and another secret another key
+    const other = loadConfig(env({ JWT_SECRET: 'another-jwt-secret-that-is-32-bytes-long' }));
+    expect(other.storefront.codeKey.equals(codeKey)).toBe(false);
   });
 });

@@ -39,6 +39,7 @@ import { RolesModule } from './roles/roles.module.js';
 import { SalesModule } from './sales/sales.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { SetupModule } from './setup/setup.module.js';
+import { ShopKeyGuard } from './storefront/shop-key.guard.js';
 import { StorefrontModule } from './storefront/storefront.module.js';
 import { SyncModule } from './sync/sync.module.js';
 import { TaxModule } from './tax/tax.module.js';
@@ -82,6 +83,8 @@ export class AppModule implements NestModule {
       providers: [
         // ক্রম গুরুত্বপূর্ণ: আগে "কে" (AuthGuard → 401), তারপর "কী করতে পারে" (PermissionGuard → 403)
         { provide: APP_GUARD, useClass: AuthGuard },
+        // Step 27a: "who" for the shop's server: its key, on the 'shop' routes only (→ 401)
+        { provide: APP_GUARD, useClass: ShopKeyGuard },
         { provide: APP_GUARD, useClass: PermissionGuard },
         // প্রতিটা response চুক্তির schema দিয়ে যাচাই আর অচেনা ফিল্ড ছাঁটাই
         { provide: APP_INTERCEPTOR, useClass: ContractInterceptor },

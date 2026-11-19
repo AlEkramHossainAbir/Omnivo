@@ -70,6 +70,9 @@ const DESCRIPTIONS = {
     'Take goods back at a POS register and pay the money back, or use it for an exchange',
   'storefront.manage':
     'Run the online shop: its settings, categories, listings and photos, its look and pages, and open it to shoppers',
+  'storefront.order.read': "See the online shop's orders, with the buyers' phones and addresses",
+  'storefront.order.manage':
+    "Move the online shop's orders on (packed, shipped, delivered) and cancel them",
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

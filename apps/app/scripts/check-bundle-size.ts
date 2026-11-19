@@ -38,7 +38,9 @@ const INITIAL_BUDGET = 245 * 1024;
 // 26g: 150 KB (you chose this). A shop listing's editor is one form of five cards (the photo
 // uploader, the sale with its dates, the description with its preview): 145.9 KB. Loading two of
 // its cards on their own saved only 4 KB, most of the chunk being the route table and form parts.
-const CHUNK_BUDGET = 150 * 1024;
+// Step 27b: 155 KB (you chose this). The Shop orders' nine routes grew the route table, and the
+// listing's editor went from 149.8 to 150.8 KB without changing; the orders' own pages are 95–109 KB.
+const CHUNK_BUDGET = 155 * 1024;
 // Step 19a: everything the service worker downloads the first time, gz (the fonts do not shrink).
 // 1.3 MB at 19a. It is downloaded once per device; a new version downloads only the files that
 // changed.

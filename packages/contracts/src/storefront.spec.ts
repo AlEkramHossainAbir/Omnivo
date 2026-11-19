@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  addressKey,
   listingParamsFromQuery,
+  maskPhone,
+  publicOrderPlacedSchema,
+  SHOP_KEY_HEADER,
+  shopCodeWaitSchema,
+  shopOrderTokenSchema,
   listingQueryFromParams,
   publicListingParamsSchema,
   publicShopSchema,
@@ -693,9 +699,87 @@ describe('public API', () => {
 
   it('has no login on any route, and every path under /public/v1', () => {
     for (const route of Object.values(publicStorefrontRoutes)) {
-      expect(route.auth).toBe('public');
+      expect(route.auth).not.toBe('bearer');
       expect(route.path.startsWith('/public/v1/')).toBe(true);
     }
+  });
+});
+
+describe("the shop server's order routes (step 27a.1)", () => {
+  const TOKEN = 'AbCdEfGhIjKlMnOpQrStUv';
+
+  it("keeps every route that writes or shows an order behind the shop server's key", () => {
+    // The read routes stay open: a shop's pages show them to anyone. Everything that places an
+    // order, sends an SMS or answers with an order needs the key, so a stranger who finds the API
+    // cannot fill a shop with orders or walk its tracking links
+    const byAuth = (auth: 'public' | 'shop') =>
+      Object.entries(publicStorefrontRoutes)
+        .filter(([, route]) => route.auth === auth)
+        .map(([name]) => name)
+        .sort();
+    expect(byAuth('shop')).toEqual(
+      ['codeWait', 'order', 'placeOrder', 'resendCode', 'track', 'tracking', 'verifyCode'].sort(),
+    );
+    expect(byAuth('public')).toEqual(
+      [
+        'categories',
+        'checkoutSettings',
+        'home',
+        'listings',
+        'product',
+        'quote',
+        'shop',
+        'textPage',
+      ].sort(),
+    );
+    expect(SHOP_KEY_HEADER).toBe('x-shop-key');
+  });
+
+  it('never puts a token or a phone in an address', () => {
+    // POST with a body for every shop route: a path or a query ends up in logs and Referer headers
+    for (const route of Object.values(publicStorefrontRoutes)) {
+      if (route.auth !== 'shop') continue;
+      expect(route.method).toBe('POST');
+      expect(route.path).not.toContain(':');
+      expect('query' in route).toBe(false);
+    }
+  });
+
+  it("takes a 22-character base64url token, like a tracking link's", () => {
+    expect(shopOrderTokenSchema.safeParse(TOKEN).success).toBe(true);
+    expect(shopOrderTokenSchema.safeParse(`${TOKEN}A`).success).toBe(false);
+    // The mock's 64 hex digits are not the API's: the shop never sends one to the API
+    expect(shopOrderTokenSchema.safeParse('a'.repeat(64)).success).toBe(false);
+    expect(shopOrderTokenSchema.safeParse('AbCdEfGhIjKlMnOpQrSt+/').success).toBe(false);
+  });
+
+  it('checks the code and the token together on verify', () => {
+    const body = publicStorefrontRoutes.verifyCode.body;
+    expect(body.parse({ token: TOKEN, code: '১২৩ ৪৫৬' })).toEqual({ token: TOKEN, code: '123456' });
+    expect(body.safeParse({ code: '123456' }).success).toBe(false);
+  });
+
+  it('finds an order by its number however it was typed, with its token', () => {
+    const body = publicStorefrontRoutes.order.body;
+    expect(body.parse({ token: TOKEN, orderNo: 'w000123' })).toEqual({
+      token: TOKEN,
+      orderNo: 'W-000123',
+    });
+  });
+
+  it("answers the placed order with its token beside the shopper's answer", () => {
+    const placed = {
+      answer: { next: 'verify', maskedPhone: maskPhone('01786120356'), resendInSeconds: 45 },
+      token: TOKEN,
+    };
+    expect(publicOrderPlacedSchema.parse(placed)).toEqual(placed);
+    expect(placed.answer.maskedPhone).toBe('+880 17•• ••• 356');
+  });
+
+  it('says which listings the waiting order holds', () => {
+    const wait = { next: 'verify', maskedPhone: '+880 17•• ••• 356', resendInSeconds: 0 };
+    expect(shopCodeWaitSchema.safeParse({ ...wait, listingIds: ['l1'] }).success).toBe(true);
+    expect(shopCodeWaitSchema.safeParse({ ...wait, listingIds: [] }).success).toBe(false);
   });
 });
 
@@ -718,5 +802,26 @@ describe('public API answers (step 26f.3)', () => {
       shopHomeSchema.safeParse({ hero: null, featured: [], hasMoreFeatured: false, blocks: [] })
         .success,
     ).toBe(true);
+  });
+});
+
+// Step 27a: moved from the shop's server (26e), with its cases, because the API counts by it now
+describe('addressKey', () => {
+  it('keeps an IPv4 address as it is, also when Node writes it as IPv6', () => {
+    expect(addressKey('203.0.113.7')).toBe('203.0.113.7');
+    expect(addressKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
+  });
+
+  it('counts an IPv6 address by its /64 block, however it is written', () => {
+    const block = addressKey('2001:db8:1:2::a');
+    expect(block).toBe('2001:db8:1:2::/64');
+    expect(addressKey('2001:0DB8:0001:0002:ffff:ffff:ffff:ffff')).toBe(block);
+    expect(addressKey('fe80::1%en0')).toBe('fe80:0:0:0::/64');
+    expect(addressKey('2001:db8::7')).toBe('2001:db8:0:0::/64');
+    expect(addressKey('::1')).toBe('0:0:0:0::/64');
+  });
+
+  it('gives two neighbouring blocks two keys', () => {
+    expect(addressKey('2001:db8:1:2::a')).not.toBe(addressKey('2001:db8:1:3::a'));
   });
 });

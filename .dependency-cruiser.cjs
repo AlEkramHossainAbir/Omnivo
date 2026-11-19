@@ -52,7 +52,15 @@ module.exports = {
         'The API hands work to the worker by writing an outbox row with emit(), in the same transaction as the change. A job put on the queue straight from a request is lost when that transaction rolls back after it, or runs before the data it needs is committed.',
       from: {
         path: '^apps/api/src/',
-        pathNot: ['^apps/api/src/worker/', '^apps/api/src/worker\\.ts$', '\\.spec\\.ts$'],
+        pathNot: [
+          '^apps/api/src/worker/',
+          '^apps/api/src/worker\\.ts$',
+          '\\.spec\\.ts$',
+          // Step 27a: the one exception. An SMS carries a phone code or a tracking link, so it never
+          // goes into the outbox table; SmsQueue adds it only after the order's transaction has
+          // committed, so the rollback this rule guards against cannot happen to it
+          '^apps/api/src/sms/sms-queue\\.ts$',
+        ],
       },
       to: { path: 'node_modules/bullmq/' },
     },

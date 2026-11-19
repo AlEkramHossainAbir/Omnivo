@@ -3,12 +3,14 @@ import {
   accountTypeFits,
   addQuantity,
   APPROVAL_DOCUMENTS,
+  type AuditAction,
   type AuthSession,
   compareQuantity,
   dashboardCardsFor,
   type ErrorCode,
   isCostSort,
   isStockValueSort,
+  type PermissionKey,
   type Preferences,
   type ProductCategory,
   routes,
@@ -207,6 +209,28 @@ import {
   updateCollection,
   updateTheme,
 } from './storefront-appearance-data';
+import {
+  couponOf,
+  couponPage,
+  couponSnapshot,
+  createCoupon,
+  setCouponArchived,
+  toCoupon,
+  updateCoupon,
+} from './storefront-coupon-data';
+import {
+  cancelShopOrder,
+  deliverShopOrder,
+  findShopOrder,
+  type MadeSalesOrder,
+  packPlanOf,
+  packShopOrder,
+  retrySalesOrder,
+  shipShopOrder,
+  shopOrderCounts,
+  shopOrderPage,
+  toShopOrder,
+} from './storefront-order-data';
 import {
   findProduct,
   IMPORT_DELAY_MS,
@@ -483,6 +507,71 @@ function shopData(): WorkspaceData {
     throw new MockProblem(403, 'permission_missing');
   }
   return current();
+}
+
+// Step 27b: the Shop orders' routes ask for their own permission, as the API's guard does:
+// storefront.order.read to read, storefront.order.manage for every move (decision 9). A packer
+// with these two alone has no storefront.manage
+function shopOrderData(permission: PermissionKey): WorkspaceData {
+  if (!me().permissions.includes(permission)) {
+    throw new MockProblem(403, 'permission_missing');
+  }
+  return current();
+}
+
+// The audit row of a move (the API's move()): the shop's number, the status before and after, and
+// the reason a member typed when cancelling
+function recordShopMove(
+  data: WorkspaceData,
+  action: AuditAction,
+  order: { id: string; orderNo: string; status: string; cancelReason: string | null },
+  before: string,
+): void {
+  record(
+    data,
+    action,
+    'storefront_order',
+    order.id,
+    diff(
+      { order: order.orderNo, status: before },
+      {
+        order: order.orderNo,
+        status: order.status,
+        ...(action === 'storefront_order.cancelled' && { reason: order.cancelReason }),
+      },
+    ),
+  );
+}
+
+// What making a shop order's sales order writes in the audit log: the customer and the "Delivery
+// charge" service when they were made, the sales order, the credit override, and the link
+function recordSalesOrderMade(
+  data: WorkspaceData,
+  order: { id: string; orderNo: string },
+  made: MadeSalesOrder,
+): void {
+  if (made.customerMade) record(data, 'customer.created', 'customer', made.customerId);
+  if (made.deliveryProductId !== null) {
+    record(data, 'product.created', 'product', made.deliveryProductId);
+  }
+  record(data, 'sales_order.created', 'sales_order', made.salesOrder.id);
+  record(data, 'sales_order.confirmed', 'sales_order', made.salesOrder.id);
+  if (made.overridden) {
+    record(
+      data,
+      'credit_limit.overridden',
+      'sales_order',
+      made.salesOrder.id,
+      diff({}, made.overridden),
+    );
+  }
+  record(
+    data,
+    'storefront_order.sales_order_made',
+    'storefront_order',
+    order.id,
+    diff({}, { order: order.orderNo }),
+  );
 }
 
 // audit-এর "আগের মান" — ফর্মের ঘরগুলো
@@ -6024,6 +6113,205 @@ export const handlers = [
       const { version } = readQuery(routes.storefrontAppearance.deletePage.query, request);
       deletePage(data, workspace.tenantId, slug, version);
       return reply(routes.storefrontAppearance.deletePage, undefined);
+    }),
+  ),
+
+  // --- Step 27b: Shop orders (storefront-order-data.ts) ----------------------------------------
+  // Every move runs in transaction(): a document the mock refuses (stock_insufficient on a batch)
+  // leaves no number used and no stock moved, like the API's transaction
+
+  mock(
+    routes.storefrontOrders.listOrders,
+    guarded(async ({ request }) => {
+      const data = shopOrderData(routes.storefrontOrders.listOrders.permission);
+      const query = readQuery(routes.storefrontOrders.listOrders.query, request);
+      await delay();
+      return reply(routes.storefrontOrders.listOrders, shopOrderPage(data, query));
+    }),
+  ),
+
+  // Before /:id, like the API's controller: "counts" is not an id
+  mock(
+    routes.storefrontOrders.countOrders,
+    guarded(() => {
+      const data = shopOrderData(routes.storefrontOrders.countOrders.permission);
+      return reply(routes.storefrontOrders.countOrders, shopOrderCounts(data));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrders.getOrder,
+    guarded(async ({ params }) => {
+      const data = shopOrderData(routes.storefrontOrders.getOrder.permission);
+      const { id } = routes.storefrontOrders.getOrder.params.parse(params);
+      await delay();
+      return reply(routes.storefrontOrders.getOrder, toShopOrder(data, findShopOrder(data, id)));
+    }),
+  ),
+
+  // Not in transaction(): a refusal is kept on the order (its documentError) and still answered
+  mock(
+    routes.storefrontOrders.makeSalesOrder,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontOrders.makeSalesOrder.permission);
+      const { id } = routes.storefrontOrders.makeSalesOrder.params.parse(params);
+      const { version } = await readBody(routes.storefrontOrders.makeSalesOrder.body, request);
+      const made = retrySalesOrder(data, id, version);
+      const order = findShopOrder(data, id);
+      recordSalesOrderMade(data, order, made);
+      return reply(routes.storefrontOrders.makeSalesOrder, toShopOrder(data, order));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrders.getPackPlan,
+    guarded(async ({ params }) => {
+      const data = shopOrderData(routes.storefrontOrders.getPackPlan.permission);
+      const { id } = routes.storefrontOrders.getPackPlan.params.parse(params);
+      await delay();
+      return reply(routes.storefrontOrders.getPackPlan, packPlanOf(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrders.packOrder,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontOrders.packOrder.permission);
+      const { id } = routes.storefrontOrders.packOrder.params.parse(params);
+      const body = await readBody(routes.storefrontOrders.packOrder.body, request);
+      const { order, delivery } = transaction(data, () => packShopOrder(data, id, body));
+      record(data, 'delivery.created', 'delivery', delivery.id);
+      record(data, 'delivery.posted', 'delivery', delivery.id);
+      recordShopMove(data, 'storefront_order.packed', order, 'confirmed');
+      return reply(routes.storefrontOrders.packOrder, toShopOrder(data, order));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrders.shipOrder,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontOrders.shipOrder.permission);
+      const { id } = routes.storefrontOrders.shipOrder.params.parse(params);
+      const { version } = await readBody(routes.storefrontOrders.shipOrder.body, request);
+      const order = shipShopOrder(data, id, version);
+      recordShopMove(data, 'storefront_order.shipped', order, 'packed');
+      return reply(routes.storefrontOrders.shipOrder, toShopOrder(data, order));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrders.deliverOrder,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontOrders.deliverOrder.permission);
+      const { id } = routes.storefrontOrders.deliverOrder.params.parse(params);
+      const { version } = await readBody(routes.storefrontOrders.deliverOrder.body, request);
+      const { order, invoiceId } = transaction(data, () => deliverShopOrder(data, id, version));
+      record(data, 'invoice.created', 'invoice', invoiceId);
+      record(data, 'invoice.posted', 'invoice', invoiceId);
+      recordShopMove(data, 'storefront_order.delivered', order, 'shipped');
+      return reply(routes.storefrontOrders.deliverOrder, toShopOrder(data, order));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrders.cancelOrder,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontOrders.cancelOrder.permission);
+      const { id } = routes.storefrontOrders.cancelOrder.params.parse(params);
+      const body = await readBody(routes.storefrontOrders.cancelOrder.body, request);
+      const before = findShopOrder(data, id).status;
+      const { order, salesReturnId, salesOrderId } = transaction(data, () =>
+        cancelShopOrder(data, id, body),
+      );
+      if (salesReturnId !== null) {
+        record(data, 'sales_return.created', 'sales_return', salesReturnId);
+        record(data, 'sales_return.posted', 'sales_return', salesReturnId);
+      }
+      if (salesOrderId !== null) record(data, 'sales_order.cancelled', 'sales_order', salesOrderId);
+      recordShopMove(data, 'storefront_order.cancelled', order, before);
+      return reply(routes.storefrontOrders.cancelOrder, toShopOrder(data, order));
+    }),
+  ),
+
+  // --- Step 27c: Shop coupons (storefront-coupon-data.ts) --------------------------------------
+  // storefront.manage, like every Storefront route but Shop orders (shopData())
+
+  mock(
+    routes.storefrontCoupons.listCoupons,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const query = readQuery(routes.storefrontCoupons.listCoupons.query, request);
+      await delay();
+      return reply(routes.storefrontCoupons.listCoupons, couponPage(data, query));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.getCoupon,
+    guarded(async ({ params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontCoupons.getCoupon.params.parse(params);
+      await delay();
+      return reply(routes.storefrontCoupons.getCoupon, couponOf(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.createCoupon,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontCoupons.createCoupon.body, request);
+      const coupon = createCoupon(data, body);
+      record(
+        data,
+        'storefront_coupon.created',
+        'storefront_coupon',
+        coupon.id,
+        diff({}, couponSnapshot(coupon)),
+      );
+      return reply(routes.storefrontCoupons.createCoupon, toCoupon(data, coupon));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.updateCoupon,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontCoupons.updateCoupon.params.parse(params);
+      const body = await readBody(routes.storefrontCoupons.updateCoupon.body, request);
+      const { coupon, before } = updateCoupon(data, id, body);
+      record(
+        data,
+        'storefront_coupon.updated',
+        'storefront_coupon',
+        id,
+        diff(couponSnapshot(before), couponSnapshot(coupon)),
+      );
+      return reply(routes.storefrontCoupons.updateCoupon, toCoupon(data, coupon));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.archiveCoupon,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontCoupons.archiveCoupon.params.parse(params);
+      const { version } = await readBody(routes.storefrontCoupons.archiveCoupon.body, request);
+      const { coupon, changed } = setCouponArchived(data, id, version, true);
+      if (changed) record(data, 'storefront_coupon.archived', 'storefront_coupon', id);
+      return reply(routes.storefrontCoupons.archiveCoupon, toCoupon(data, coupon));
+    }),
+  ),
+
+  mock(
+    routes.storefrontCoupons.restoreCoupon,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.storefrontCoupons.restoreCoupon.params.parse(params);
+      const { version } = await readBody(routes.storefrontCoupons.restoreCoupon.body, request);
+      const { coupon, changed } = setCouponArchived(data, id, version, false);
+      if (changed) record(data, 'storefront_coupon.restored', 'storefront_coupon', id);
+      return reply(routes.storefrontCoupons.restoreCoupon, toCoupon(data, coupon));
     }),
   ),
 ];

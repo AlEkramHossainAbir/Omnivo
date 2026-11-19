@@ -18,6 +18,7 @@ import {
   type ShopHome,
   type ShopHomeBlock,
   type ShopListingPage,
+  type ShopPaymentMethod,
   type ShopProductPage,
   type ShopTextPage,
   type ShopTextPageSlug,
@@ -41,7 +42,15 @@ import { notFound } from '../common/http/app-error.js';
 import type { Transaction } from '../common/tenant/with-tenant.js';
 import type { Config } from '../config.js';
 import { CONFIG } from '../infra/tokens.js';
-import { idIn, listingOf, listingPage, listingWith, selectListings } from './listing-sql.js';
+import {
+  idIn,
+  listingOf,
+  listingPage,
+  type ListingRow,
+  listingWith,
+  selectListings,
+} from './listing-sql.js';
+import { quotedCoupon } from './coupon-sql.js';
 import { shopImage, type StorefrontImageSize } from './media.js';
 import { quoteCart, type QuotedListing } from './quote.js';
 import { ShopDb, type ShopScope, storefrontNotFound } from './shop-db.js';
@@ -193,19 +202,15 @@ export class PublicStorefrontService {
 
   quote(host: string | undefined, request: ShopCartQuoteRequest): Promise<ShopCartQuote> {
     return this.shopDb.read(host, async (tx, shop) => {
-      const ids = request.lines
-        .map((line) => line.listingId)
-        .filter((id) => uuidSchema.safeParse(id).success);
-      const rows = await selectListings(tx, shop, sql`WHERE ${idIn(sql`shown.id`, ids)}`);
-      const listings = new Map<string, QuotedListing>();
-      for (const row of rows) {
-        const listing = listingOf(row, shop, this.mediaUrl);
-        // The card's photo (the first, small) is the cart line's photo too. It is always there
-        // (listingRowSchema: at least one); TypeScript only cannot know it
-        const [image] = listing.images;
-        if (image !== undefined) listings.set(row.id, { listing, image });
-      }
-      return quoteCart(request, listings, await checkoutSettingsOf(tx, shop));
+      const listings = await quotedListings(tx, shop, request.lines, this.mediaUrl);
+      // Step 27c: the coupon the code names, with its uses now. No lock: a quote promises nothing,
+      // and placing the order judges the code again under the coupon's lock
+      return quoteCart(
+        request,
+        listings,
+        await checkoutSettingsOf(tx, shop),
+        await quotedCoupon(tx, shop, request.couponCode),
+      );
     });
   }
 
@@ -368,8 +373,33 @@ async function categoriesOf(tx: Transaction, shop: ShopScope): Promise<ShopCateg
     );
 }
 
-// The checkout's settings, also what the quote applies
-async function checkoutSettingsOf(tx: Transaction, shop: ShopScope): Promise<ShopCheckoutSettings> {
+// The cart's listings as the quote needs them, by id. Step 27a: shared with placing an order
+// (orders/shop-orders.service.ts), so the order is priced from exactly the rows a quote reads.
+// The cart's ids are checked first: anything that is not a uuid is a listing that cannot exist
+export async function quotedListings(
+  tx: Transaction,
+  shop: ShopScope,
+  lines: readonly { listingId: string }[],
+  mediaUrl: string,
+): Promise<Map<string, QuotedListing & { row: ListingRow }>> {
+  const ids = lines.map((line) => line.listingId).filter((id) => uuidSchema.safeParse(id).success);
+  const rows = await selectListings(tx, shop, sql`WHERE ${idIn(sql`shown.id`, ids)}`);
+  const listings = new Map<string, QuotedListing & { row: ListingRow }>();
+  for (const row of rows) {
+    const listing = listingOf(row, shop, mediaUrl);
+    // The card's photo (the first, small) is the cart line's photo too. It is always there
+    // (listingRowSchema: at least one); TypeScript only cannot know it
+    const [image] = listing.images;
+    if (image !== undefined) listings.set(row.id, { listing, image, free: row.free, row });
+  }
+  return listings;
+}
+
+// The checkout's settings, also what the quote applies. Step 27a: exported for placing an order
+export async function checkoutSettingsOf(
+  tx: Transaction,
+  shop: ShopScope,
+): Promise<ShopCheckoutSettings> {
   const [settings] = await tx
     .select({
       zones: storefrontSettings.deliveryZones,
@@ -384,8 +414,17 @@ async function checkoutSettingsOf(tx: Transaction, shop: ShopScope): Promise<Sho
     // A launched shop has one to six (storefront_settings_launch_check and zones_check); each
     // zone's shape is checked here, because jsonb holds whatever was written
     zones: z.array(shopDeliveryZoneSchema).parse(settings.zones),
-    paymentMethods: settings.paymentMethods,
+    paymentMethods: offeredMethods(settings.paymentMethods),
     freeDeliveryFrom: settings.freeDeliveryFrom,
     minimumOrder: settings.minimumOrder,
   };
+}
+
+// Step 27a: the payment methods the checkout offers. Mobile Banking needs the shop's own gateway,
+// which step 27c connects; until then an online order would only fail, so the checkout does not
+// show it. A shop that ticked Mobile Banking alone keeps it (the contract needs at least one
+// method), and placing such an order is refused as shop_payment_unavailable, which is true
+export function offeredMethods(methods: readonly ShopPaymentMethod[]): ShopPaymentMethod[] {
+  const working = methods.filter((method) => method !== 'online');
+  return working.length > 0 ? working : [...methods];
 }

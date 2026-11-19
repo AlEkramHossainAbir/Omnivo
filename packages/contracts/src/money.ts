@@ -144,6 +144,47 @@ export function splitMoney(value: string, count: number): string[] {
   );
 }
 
+// A value shared over a few weights in proportion, to the paisa, so the pieces add up to the value
+// exactly (step 27c: a coupon's ৳100 over lines of ৳300 and ৳200 is ৳60 and ৳40). Each weight gets
+// its share rounded down; the paisa that rounding left over go one each to the weights whose share
+// lost the most, the earlier one first on a tie (the largest remainder rule). So a piece is never
+// more than its weight, as long as the value is not more than all the weights together: a coupon
+// never takes more off a line than the line costs. The value and the weights are whole paisa (a
+// coupon's discount and the lines' totals are), the weights positive.
+export function spreadMoney(value: string, weights: readonly string[]): string[] {
+  const valuePaisa = paisaOf(value);
+  const weightPaisa = weights.map(paisaOf);
+  if (weightPaisa.some((weight) => weight <= 0n)) throw new Error('Every weight must be positive');
+  const whole = weightPaisa.reduce((sum, weight) => sum + weight, 0n);
+  if (valuePaisa < 0n || valuePaisa > whole) {
+    throw new Error(`Cannot spread "${value}" over weights worth less`);
+  }
+  const shares = weightPaisa.map((weight) => ({
+    paisa: (valuePaisa * weight) / whole,
+    remainder: (valuePaisa * weight) % whole,
+  }));
+  let left = valuePaisa - shares.reduce((sum, share) => sum + share.paisa, 0n);
+  // Largest remainder first. sort() is stable, so equal remainders keep the lines' order. Fewer
+  // paisa are left than there are weights, so one round is always enough
+  const byRemainder = [...shares].sort((a, b) =>
+    a.remainder === b.remainder ? 0 : a.remainder > b.remainder ? -1 : 1,
+  );
+  for (const share of byRemainder) {
+    if (left === 0n) break;
+    share.paisa += 1n;
+    left -= 1n;
+  }
+  return shares.map((share) => fromUnits(share.paisa * PAISA));
+}
+
+// A whole number of paisa, or an error: spreadMoney works in paisa, and a value with a fraction of
+// a paisa would lose it without anyone noticing
+function paisaOf(value: string): bigint {
+  const units = toUnits(value);
+  if (units % PAISA !== 0n) throw new Error(`Not a whole number of paisa: "${value}"`);
+  return units / PAISA;
+}
+
 // What one unit costs: value ÷ quantity, to 4 decimals (৳1,000 for 3 pieces = ৳333.3333). The
 // quantity must be positive.
 export function unitCostOf(value: string, quantity: string): string {

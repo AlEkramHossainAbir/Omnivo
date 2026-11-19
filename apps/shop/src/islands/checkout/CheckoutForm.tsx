@@ -14,6 +14,7 @@ import {
   type ShopPaymentMethod,
 } from '@omnivo/contracts';
 import type { Language } from '@omnivo/i18n';
+import { formatNumber } from '@omnivo/i18n/format';
 import { useMemo, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 
@@ -184,11 +185,14 @@ export default function CheckoutForm({
       refresh();
     }
     const minimum = problem.params?.minimum;
+    // Step 27a: shop_order_limit's wait, in the shop's digits ("১২ মিনিট" in Bangla)
+    const minutes = problem.params?.minutes;
     setSubmitError(
       general === null
         ? null
         : errorText(words, general, {
             minimum: minimum === undefined ? '' : money(String(minimum)),
+            minutes: typeof minutes === 'number' ? formatNumber(minutes, language) : '',
           }),
     );
   }

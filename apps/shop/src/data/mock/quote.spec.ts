@@ -163,8 +163,13 @@ describe('quoteCart: coupons', () => {
   it('takes a percent off the items, never off the delivery', () => {
     const answer = quote({ lines, zoneId: 'inside_dhaka', couponCode: 'WELCOME10' });
     expect(answer).toMatchObject({
-      coupon: { status: 'applied', code: 'WELCOME10', discount: { kind: 'percent', value: 10 } },
-      // 10% of ৳807, to the paisa
+      coupon: {
+        status: 'applied',
+        code: 'WELCOME10',
+        discount: { kind: 'percent', value: 10 },
+        upTo: '200',
+      },
+      // 10% of ৳807, to the paisa, under its ৳200
       discount: '80.7000',
       deliveryCharge: '80.0000',
       total: '806.3000',
@@ -215,7 +220,16 @@ describe('quoteCart: coupons', () => {
     const generous: QuoteContext = {
       ...context,
       coupons: [
-        { code: 'BIG', discount: { kind: 'amount', value: '1000' }, minimum: null, lastDay: null },
+        {
+          code: 'BIG',
+          discount: { kind: 'amount', value: '1000' },
+          upTo: null,
+          minimum: null,
+          startsOn: null,
+          lastDay: null,
+          usageLimit: null,
+          onePerPhone: false,
+        },
       ],
     };
     const answer = quote(
@@ -224,5 +238,33 @@ describe('quoteCart: coupons', () => {
     );
     // ৳120 of items, ৳120 off, and the delivery is still paid
     expect(answer).toMatchObject({ discount: '120.0000', total: '80.0000' });
+  });
+
+  // Step 27c: the rules the contracts' judgeShopCoupon() added
+  it('takes no more than a percent coupon’s “up to”', () => {
+    // 10% of ৳2,500 is ৳250; WELCOME10 takes ৳200 at most
+    const answer = quote(
+      { lines: [{ listingId: STEVIA, quantity: 5 }], couponCode: 'WELCOME10' },
+      steviaAt('500'),
+    );
+    expect(answer).toMatchObject({ discount: '200.0000', total: '2300.0000' });
+  });
+
+  it('refuses a code every use of which is taken, counted by the order book', () => {
+    // EID100 may be on one order. With one order holding it, the next cart is refused
+    const used = mockQuoteContext(NOW, (code) => (code === 'EID100' ? 1 : 0));
+    expect(quote({ lines, couponCode: 'EID100' }, used)).toMatchObject({
+      coupon: { status: 'refused', code: 'EID100', reason: 'shop_coupon_used_up', minimum: null },
+      discount: '0.0000',
+    });
+    expect(quote({ lines, couponCode: 'EID100' }).coupon.status).toBe('applied');
+  });
+
+  it('answers “unknown” for a code that has not started yet', () => {
+    // SOON starts in 2099: the promo box must not announce a sale early (decision 3)
+    expect(quote({ lines, couponCode: 'SOON' }).coupon).toMatchObject({
+      status: 'refused',
+      reason: 'shop_coupon_unknown',
+    });
   });
 });

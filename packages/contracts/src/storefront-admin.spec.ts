@@ -162,6 +162,7 @@ const SETTINGS = {
   freeDeliveryFrom: '',
   minimumOrder: '',
   paymentMethods: ['cod'],
+  deliveryVariantId: '',
 } as const;
 
 describe('the shop settings', () => {
@@ -171,7 +172,25 @@ describe('the shop settings', () => {
       defaultWarehouseId: null,
       freeDeliveryFrom: null,
       minimumOrder: null,
+      deliveryVariantId: null,
     });
+  });
+
+  // Step 27b: the delivery charge's service (decision 4)
+  it('keeps a picked delivery service, and refuses one that is not an id', () => {
+    const variantId = '0b9f2c4e-7a51-4c3d-9e8f-1a2b3c4d5e6f';
+    expect(
+      createStorefrontSettingsInputSchema.parse({ ...SETTINGS, deliveryVariantId: variantId })
+        .deliveryVariantId,
+    ).toBe(variantId);
+    expect(
+      errorsOf(
+        createStorefrontSettingsInputSchema.safeParse({
+          ...SETTINGS,
+          deliveryVariantId: 'delivery',
+        }),
+      ),
+    ).toEqual({ deliveryVariantId: ['storefront_delivery_product_invalid'] });
   });
 
   it('keeps a zone id when it has one, and names a new zone null', () => {

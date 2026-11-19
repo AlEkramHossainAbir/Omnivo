@@ -21,6 +21,8 @@ import { fiscalYearRoutes, reportExportRoutes, reportRoutes } from './reports.js
 import { stockMovementReportRoutes } from './stock-movement-report.js';
 import { storefrontRoutes } from './storefront-admin.js';
 import { storefrontAppearanceRoutes } from './storefront-appearance.js';
+import { storefrontCouponRoutes } from './storefront-coupons.js';
+import { storefrontOrderRoutes } from './storefront-orders.js';
 import { publicStorefrontRoutes } from './storefront.js';
 import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
@@ -159,4 +161,6 @@ export const routes = {
   publicStorefront: publicStorefrontRoutes,
   storefront: storefrontRoutes,
   storefrontAppearance: storefrontAppearanceRoutes,
+  storefrontOrders: storefrontOrderRoutes,
+  storefrontCoupons: storefrontCouponRoutes,
 };

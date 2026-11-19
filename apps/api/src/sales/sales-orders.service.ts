@@ -24,12 +24,12 @@ import { z } from 'zod';
 import { audit, created, diff } from '../common/audit/audit.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
-import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
+import { currentActorId, currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { assertWarehousesActive } from '../inventory/stock-lines.js';
 import { NumberingService } from '../numbering/numbering.service.js';
-import { CreditService } from './credit.service.js';
+import { type CreditOverride, CreditService } from './credit.service.js';
 import {
   assertCustomer,
   customerRefs,
@@ -324,21 +324,47 @@ export class SalesOrdersService {
   // Called off before anything left the warehouse
   cancel(id: string, version: number): Promise<SalesOrder> {
     return this.withTenant(async (tx) => {
-      const row = await this.lock(tx, id, version);
-      if (row.status !== 'confirmed') throw notConfirmed();
-      if (await this.anythingDelivered(tx, id)) {
-        throw new AppError(
-          409,
-          'order_partly_delivered',
-          'Some of this order was delivered. Close it instead.',
-        );
-      }
-      // A billed service line: the customer owes for it, so the order did happen (step 15c)
-      if (await this.anythingInvoiced(tx, id)) throw hasInvoices();
-      await this.write(tx, id, { status: 'cancelled' });
-      await audit(tx, { action: 'sales_order.cancelled', entityType: 'sales_order', entityId: id });
+      await this.cancelIn(tx, id, version);
       return this.read(tx, id);
     });
+  }
+
+  // Step 27b: the cancel itself, in the caller's transaction: the order page's Cancel above, and a
+  // shop order's cancel (StorefrontOrdersService), which holds the shop order's lock and passes
+  // null for the version (the member saw the shop order's version, not this one's)
+  async cancelIn(tx: Transaction, id: string, version: number | null): Promise<void> {
+    const row = await this.lock(tx, id, version);
+    if (row.status !== 'confirmed') throw notConfirmed();
+    if (await this.anythingDelivered(tx, id)) {
+      throw new AppError(
+        409,
+        'order_partly_delivered',
+        'Some of this order was delivered. Close it instead.',
+      );
+    }
+    // A billed service line: the customer owes for it, so the order did happen (step 15c)
+    if (await this.anythingInvoiced(tx, id)) throw hasInvoices();
+    await this.write(tx, id, { status: 'cancelled' });
+    await audit(tx, { action: 'sales_order.cancelled', entityType: 'sales_order', entityId: id });
+  }
+
+  // Step 27b: a shop order's sales order (decisions 1 to 3), in the caller's transaction, by the
+  // worker (no member: currentActorId() is null) or by "Make the sales order" (a member). Confirmed
+  // at once, with its prices including VAT whatever the workspace's setting, so its total is the
+  // shop's total to the paisa. Over the customer's credit limit it still goes (the audit log says
+  // so). `shippingAddress`: the address the shopper typed for this order, kept as the document's
+  // text; the customer's saved addresses are not touched. Returns the order's id.
+  async createForShop(
+    tx: Transaction,
+    input: SalesOrderDraftInput,
+    shippingAddress: string,
+  ): Promise<string> {
+    const row = await this.insert(tx, { ...input, quotationId: null }, null, {
+      pricesIncludeVat: true,
+      shippingAddress,
+    });
+    await this.confirmAndLog(tx, row, 'storefront_order');
+    return row.id;
   }
 
   // A new draft, its lines and its audit row: the form's order (confirmed after, when asked) and
@@ -347,6 +373,8 @@ export class SalesOrdersService {
     tx: Transaction,
     input: SalesOrderDraftInput & { quotationId: string | null },
     id: string | null,
+    // Step 27b: a shop order's (createForShop)
+    shop: { pricesIncludeVat: boolean; shippingAddress: string } | null = null,
   ): Promise<OrderRow> {
     const customer = await assertCustomer(tx, input.customerId);
     await assertWarehousesActive(tx, [{ field: 'warehouseId', warehouseId: input.warehouseId }]);
@@ -355,7 +383,8 @@ export class SalesOrdersService {
       input.quotationId === null ? null : await this.openQuotation(tx, input.quotationId, customer);
     // An order made from a quotation reads its prices the way the quotation did: the form copied
     // them from there. Otherwise the workspace setting now.
-    const pricesIncludeVat = quotation?.pricesIncludeVat ?? (await pricesIncludeVatNow(tx));
+    const pricesIncludeVat =
+      shop?.pricesIncludeVat ?? quotation?.pricesIncludeVat ?? (await pricesIncludeVatNow(tx));
     const lines = await resolveSalesLines(tx, input.lines, pricesIncludeVat);
     const [row] = await tx
       .insert(salesOrders)
@@ -368,13 +397,13 @@ export class SalesOrdersService {
         customerReference: input.customerReference,
         warehouseId: input.warehouseId,
         shippingAddressId: address?.id ?? null,
-        shippingAddress: address?.text ?? null,
+        shippingAddress: address?.text ?? shop?.shippingAddress ?? null,
         quotationId: quotation?.id ?? null,
         pricesIncludeVat,
         note: input.note,
         ...documentTotals(lines.map((line) => line.amounts)),
-        createdBy: currentPrincipal().userId,
-        updatedBy: currentPrincipal().userId,
+        createdBy: currentActorId(),
+        updatedBy: currentActorId(),
       })
       .returning();
     if (!row) throw new Error('Sales order insert returned no row');
@@ -401,7 +430,7 @@ export class SalesOrdersService {
   private async confirmAndLog(
     tx: Transaction,
     draft: OrderRow,
-    overrideCreditLimit: boolean,
+    overrideCreditLimit: CreditOverride,
   ): Promise<void> {
     const before = await this.credit.lock(tx, draft.customerId);
     const number = draft.number ?? (await this.numbering.next(tx, 'sales.order', draft.date));
@@ -409,7 +438,7 @@ export class SalesOrdersService {
       status: 'confirmed',
       number,
       confirmedAt: new Date(),
-      confirmedBy: currentPrincipal().userId,
+      confirmedBy: currentActorId(),
     });
     await audit(tx, {
       action: 'sales_order.confirmed',
@@ -533,7 +562,7 @@ export class SalesOrdersService {
       .set({
         ...fields,
         version: sql`${salesOrders.version} + 1`,
-        updatedBy: currentPrincipal().userId,
+        updatedBy: currentActorId(),
       })
       .where(and(eq(salesOrders.tenantId, getTenantId()), eq(salesOrders.id, id)));
   }
@@ -555,14 +584,15 @@ export class SalesOrdersService {
 
   // FOR UPDATE: every change to an order takes turns with the others, and with a delivery being
   // posted against it (DeliveriesService locks the order the same way)
-  private async lock(tx: Transaction, id: string, version: number): Promise<OrderRow> {
+  // version null: no check (cancelIn from a shop order)
+  private async lock(tx: Transaction, id: string, version: number | null): Promise<OrderRow> {
     const [row] = await tx
       .select()
       .from(salesOrders)
       .where(and(eq(salesOrders.tenantId, getTenantId()), eq(salesOrders.id, id)))
       .for('update');
     if (!row) throw notFound('Sales order');
-    if (row.version !== version) throw versionConflict();
+    if (version !== null && row.version !== version) throw versionConflict();
     return row;
   }
 

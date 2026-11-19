@@ -1,14 +1,7 @@
-import {
-  SHOP_TRACK_TRIES,
-  SHOP_TRACK_WINDOW_MINUTES,
-  shopTrackRequestSchema,
-  type ErrorCode,
-  type ShopTracking,
-} from '@omnivo/contracts';
+import { shopTrackRequestSchema, type ErrorCode, type ShopTracking } from '@omnivo/contracts';
 
-import type { ShopSource } from '../data/types';
+import type { ShopSource, ShopTrackRefusal, SourceResult } from '../data/types';
 import { fieldErrorsOf, parseOptions } from './problem';
-import { addressKey, createRateLimiter, type RateLimiter } from './rate-limit';
 
 // Step 26e: the /track form's POST, without Astro around it, like orders.ts. The page (26e.3)
 // passes the request, the source, the limiter and the visitor's address, and draws what comes back.
@@ -28,7 +21,7 @@ export type TrackFieldErrors = Partial<Record<keyof TrackFormValues, ErrorCode[]
 
 // The refusals the page writes above the form. Each is an error code, so its words are
 // t('errors.<code>') like any other error
-export type TrackRefusal = 'shop_track_not_found' | 'shop_track_too_many' | 'internal_error';
+export type TrackRefusal = ShopTrackRefusal | 'internal_error';
 
 export type TrackFormAnswer =
   | { kind: 'found'; tracking: ShopTracking }
@@ -41,13 +34,6 @@ export type TrackFormAnswer =
       params?: { minutes: number };
     };
 
-// The one limiter the shop's server uses, made when the module first loads. Its memory lives as
-// long as the process, like the mock's orders
-export const trackLimiter: RateLimiter = createRateLimiter({
-  tries: SHOP_TRACK_TRIES,
-  windowMs: SHOP_TRACK_WINDOW_MINUTES * 60 * 1000,
-});
-
 // A box's value. `get` gives null for a box the form did not send and a File for a file input;
 // both count as empty, so a hand-made request cannot make the page draw a File's name
 function text(form: FormData, name: keyof TrackFormValues): string {
@@ -55,16 +41,17 @@ function text(form: FormData, name: keyof TrackFormValues): string {
   return typeof value === 'string' ? value : '';
 }
 
+// Step 27a: no limiter here any more. The limit is the source's (ShopSource.track): the API's in
+// Redis, or the mock's in memory
 interface TrackFormContext {
   source: ShopSource;
-  limiter: RateLimiter;
   // Astro.clientAddress: the visitor's IP (astro.config.mjs → security says where it comes from)
   address: string;
 }
 
 export async function answerTrackForm(
   request: Request,
-  { source, limiter, address }: TrackFormContext,
+  { source, address }: TrackFormContext,
 ): Promise<TrackFormAnswer> {
   let form: FormData;
   try {
@@ -76,29 +63,18 @@ export async function answerTrackForm(
   }
   const values = { phone: text(form, 'phone'), orderNo: text(form, 'orderNo') };
 
-  // The limit first: once it is reached, nothing is looked up, so a guesser learns nothing more
-  // until the window ends, however right the next guess is
-  const key = addressKey(address);
-  const wait = limiter.waitFor(key);
-  if (wait > 0) {
-    return {
-      kind: 'refused',
-      values,
-      code: 'shop_track_too_many',
-      params: { minutes: Math.ceil(wait / 60) },
-    };
-  }
-
   // A box typed wrong ("0178", "SO-2026") is not a miss: nothing was looked up, so it tells a
-  // guesser nothing and costs no try
+  // guesser nothing and costs no try. Step 27a: this check now comes before the limit, because the
+  // limit is the source's. A stopped guesser who types a broken number is told what to fix, which
+  // tells them nothing about any order
   const parsed = shopTrackRequestSchema.safeParse(values, parseOptions);
   if (!parsed.success) {
     return { kind: 'invalid', values, fieldErrors: fieldErrorsOf(parsed.error) };
   }
 
-  let tracking: ShopTracking | null;
+  let result: SourceResult<ShopTracking, ShopTrackRefusal>;
   try {
-    tracking = await source.track(parsed.data);
+    result = await source.track(parsed.data, address);
   } catch (error) {
     // The real source calls the API, which can be down. Logged with its details, like
     // sourceFailed in problem.ts; the shopper gets "try again", and no try is counted
@@ -106,11 +82,20 @@ export async function answerTrackForm(
     return { kind: 'refused', values, code: 'internal_error' };
   }
 
-  // Only a miss counts (decision 3). A shopper who checks their own order ten times is never
-  // stopped, and many people behind one mobile operator's address share the misses, not the looks
-  if (tracking === null) {
-    limiter.miss(key);
-    return { kind: 'refused', values, code: 'shop_track_not_found' };
+  // Only a miss counts (decision 3), in the source. A shopper who checks their own order ten times
+  // is never stopped, and many people behind one mobile operator's address share the misses, not
+  // the looks
+  if (result.ok) return { kind: 'found', tracking: result.value };
+  if (result.code === 'shop_track_too_many') {
+    // The source says how long; a missing number (an API that broke its word) still reads as "try
+    // again later" rather than "in NaN minutes"
+    const minutes = result.params?.minutes;
+    return {
+      kind: 'refused',
+      values,
+      code: result.code,
+      params: { minutes: typeof minutes === 'number' ? minutes : 1 },
+    };
   }
-  return { kind: 'found', tracking };
+  return { kind: 'refused', values, code: result.code };
 }

@@ -13,6 +13,8 @@ import { answerPlaceOrder, answerResendCode, answerVerifyCode } from './orders';
 
 const NEEM = 'lst-himalaya-purifying-neem-face-wash-150ml'; // ৳229
 const OPTIONS = { secure: false };
+// The shopper's address, which the route passes on to the source (the API counts orders by it)
+const ADDRESS = '203.0.113.7';
 
 // What the checkout sends: the phone as the shopper typed it
 const ORDER: ShopOrderRequestInput = {
@@ -66,7 +68,7 @@ function withClock() {
 
 // Places a Cash on Delivery order and gives back the cookie the browser keeps
 async function placeCod(source: ShopSource): Promise<string> {
-  const response = await answerPlaceOrder(post('/api/orders', ORDER), source, OPTIONS);
+  const response = await answerPlaceOrder(post('/api/orders', ORDER), source, ADDRESS, OPTIONS);
   expect(response.status).toBe(201);
   return sentBack(cookiesOf(response).get('shop_checkout'));
 }
@@ -74,7 +76,7 @@ async function placeCod(source: ShopSource): Promise<string> {
 describe('POST /api/orders', () => {
   it('places a Cash on Delivery order and keeps its token out of reach of scripts', async () => {
     const { source } = withClock();
-    const response = await answerPlaceOrder(post('/api/orders', ORDER), source, OPTIONS);
+    const response = await answerPlaceOrder(post('/api/orders', ORDER), source, ADDRESS, OPTIONS);
     expect(response.status).toBe(201);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
 
@@ -87,7 +89,7 @@ describe('POST /api/orders', () => {
 
     const cookie = cookiesOf(response).get('shop_checkout') ?? '';
     expect(cookie).toMatch(
-      /^shop_checkout=[0-9a-f]{64}; Path=\/; Max-Age=3600; HttpOnly; SameSite=Lax$/,
+      /^shop_checkout=[A-Za-z0-9_-]{22}; Path=\/; Max-Age=3600; HttpOnly; SameSite=Lax$/,
     );
     // The token is only in the cookie, never in the body a script can read
     expect(text).not.toContain(sentBack(cookie).split('=')[1]);
@@ -95,7 +97,9 @@ describe('POST /api/orders', () => {
 
   it('marks the cookies Secure in production', async () => {
     const { source } = withClock();
-    const response = await answerPlaceOrder(post('/api/orders', ORDER), source, { secure: true });
+    const response = await answerPlaceOrder(post('/api/orders', ORDER), source, ADDRESS, {
+      secure: true,
+    });
     expect(cookiesOf(response).get('shop_checkout')).toMatch(/; Secure$/);
   });
 
@@ -104,6 +108,7 @@ describe('POST /api/orders', () => {
     const response = await answerPlaceOrder(
       post('/api/orders', { ...ORDER, paymentMethod: 'online' }),
       source,
+      ADDRESS,
       OPTIONS,
     );
     expect(response.status).toBe(201);
@@ -114,7 +119,7 @@ describe('POST /api/orders', () => {
     });
     const cookies = cookiesOf(response);
     expect(cookies.get('shop_orders')).toMatch(
-      /^shop_orders=W-000001:[0-9a-f]{64}; Path=\/; Max-Age=2592000;/,
+      /^shop_orders=W-000001:[A-Za-z0-9_-]{22}; Path=\/; Max-Age=2592000;/,
     );
     // A code that was still waiting from an earlier try is forgotten
     expect(cookies.get('shop_checkout')).toMatch(/^shop_checkout=; Path=\/; Max-Age=0;/);
@@ -130,6 +135,7 @@ describe('POST /api/orders', () => {
         address: 'Dhaka',
       }),
       source,
+      ADDRESS,
       OPTIONS,
     );
     expect(response.status).toBe(400);
@@ -148,7 +154,7 @@ describe('POST /api/orders', () => {
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(ORDER),
     });
-    const response = await answerPlaceOrder(request, source, OPTIONS);
+    const response = await answerPlaceOrder(request, source, ADDRESS, OPTIONS);
     expect(response.status).toBe(400);
     expect((await problemOf(response)).code).toBe('malformed_request');
   });
@@ -158,6 +164,7 @@ describe('POST /api/orders', () => {
     const response = await answerPlaceOrder(
       post('/api/orders', { ...ORDER, expectedTotal: '700' }),
       source,
+      ADDRESS,
       OPTIONS,
     );
     expect(response.status).toBe(409);
@@ -173,11 +180,54 @@ describe('POST /api/orders', () => {
         expectedTotal: '309',
       }),
       source,
+      ADDRESS,
       OPTIONS,
     );
     expect(response.status).toBe(422);
     const problem = await problemOf(response);
     expect(problem).toMatchObject({ code: 'shop_order_below_minimum', params: { minimum: '300' } });
+  });
+
+  // Step 27a
+  it('passes the shopper’s address to the source', async () => {
+    const { source } = withClock();
+    const addresses: string[] = [];
+    const watched: ShopSource = {
+      ...source,
+      placeOrder: (request, address) => {
+        addresses.push(address);
+        return source.placeOrder(request, address);
+      },
+    };
+    await answerPlaceOrder(post('/api/orders', ORDER), watched, ADDRESS, OPTIONS);
+    expect(addresses).toEqual([ADDRESS]);
+  });
+
+  it('answers the order limit with 429 and the wait in Retry-After', async () => {
+    const limited: ShopSource = {
+      ...createMockSource(),
+      placeOrder: () =>
+        Promise.resolve({ ok: false, code: 'shop_order_limit', params: { minutes: 12 } }),
+    };
+    const response = await answerPlaceOrder(post('/api/orders', ORDER), limited, ADDRESS, OPTIONS);
+    expect(response.status).toBe(429);
+    // Retry-After is in seconds; the words say minutes
+    expect(response.headers.get('Retry-After')).toBe('720');
+    expect(await problemOf(response)).toMatchObject({
+      code: 'shop_order_limit',
+      params: { minutes: 12 },
+    });
+  });
+
+  // Step 27c
+  it('answers a coupon this mobile number has had with 422', async () => {
+    const source = createMockSource();
+    // ৳687 − 10% (৳68.70) + ৳80. The first order holds the use while it waits for its code
+    const welcome = { ...ORDER, couponCode: 'WELCOME10', expectedTotal: '698.30' };
+    await answerPlaceOrder(post('/api/orders', welcome), source, ADDRESS, OPTIONS);
+    const response = await answerPlaceOrder(post('/api/orders', welcome), source, ADDRESS, OPTIONS);
+    expect(response.status).toBe(422);
+    expect(await problemOf(response)).toMatchObject({ code: 'shop_coupon_used_by_phone' });
   });
 
   it('hides a failing source behind internal_error', async () => {
@@ -188,7 +238,7 @@ describe('POST /api/orders', () => {
     const quiet = console.error;
     console.error = () => undefined;
     try {
-      const response = await answerPlaceOrder(post('/api/orders', ORDER), down, OPTIONS);
+      const response = await answerPlaceOrder(post('/api/orders', ORDER), down, ADDRESS, OPTIONS);
       expect(response.status).toBe(500);
       expect(JSON.stringify(await problemOf(response))).not.toContain('10.0.0.5');
     } finally {
@@ -253,11 +303,28 @@ describe('POST /api/orders/verify', () => {
     expect(cookiesOf(response).get('shop_checkout')).toMatch(/Max-Age=0/);
   });
 
+  // Step 27a: no try is spent, and the cookie stays: a new code still confirms the order
+  it('refuses a code after its 10 minutes and keeps the order', async () => {
+    const { source, wait } = withClock();
+    const checkout = await placeCod(source);
+    wait(10 * 60);
+    const response = await answerVerifyCode(
+      post('/api/orders/verify', { code: '123456' }, checkout),
+      source,
+      OPTIONS,
+    );
+    expect(response.status).toBe(422);
+    expect((await problemOf(response)).code).toBe('shop_code_expired');
+    expect(response.headers.getSetCookie()).toEqual([]);
+  });
+
   it('answers 404 without a cookie, or with one it never made', async () => {
     const { source } = withClock();
     for (const cookie of [
       undefined,
       'shop_checkout=not-a-token',
+      `shop_checkout=${'a'.repeat(22)}`,
+      // Step 27a: a cookie in 26c's old shape (64 hex digits) is not the API's token
       `shop_checkout=${'a'.repeat(64)}`,
     ]) {
       const response = await answerVerifyCode(
@@ -310,6 +377,30 @@ describe('POST /api/orders/resend', () => {
     expect(await sent.json()).toEqual({ resendInSeconds: 45 });
   });
 
+  // Step 27a: the first code and two more
+  it('refuses a fourth code and keeps the order', async () => {
+    const { source, wait } = withClock();
+    const checkout = await placeCod(source);
+    for (let send = 0; send < 2; send += 1) {
+      wait(45);
+      const sent = await answerResendCode(
+        post('/api/orders/resend', {}, checkout),
+        source,
+        OPTIONS,
+      );
+      expect(sent.status).toBe(200);
+    }
+    wait(45);
+    const fourth = await answerResendCode(
+      post('/api/orders/resend', {}, checkout),
+      source,
+      OPTIONS,
+    );
+    expect(fourth.status).toBe(422);
+    expect((await problemOf(fourth)).code).toBe('shop_code_sends_used');
+    expect(fourth.headers.getSetCookie()).toEqual([]);
+  });
+
   it('answers 404 and clears the cookie for an order that stopped waiting', async () => {
     const { source, wait } = withClock();
     const checkout = await placeCod(source);
@@ -325,7 +416,7 @@ describe('POST /api/orders/resend', () => {
 });
 
 describe('the orders cookie', () => {
-  const token = (n: number) => String(n).padStart(64, '0');
+  const token = (n: number) => String(n).padStart(22, '0');
 
   it('keeps the newest 20 orders', () => {
     let cookie = '';

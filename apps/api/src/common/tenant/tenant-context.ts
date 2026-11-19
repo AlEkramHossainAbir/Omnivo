@@ -35,6 +35,14 @@ export function currentPrincipal(): Principal {
   return principal;
 }
 
+// Step 27b: who did the work, for the created_by / updated_by columns: the signed-in member, or
+// null for work the system does by itself (the worker making a shop order's sales order, 27b's
+// decision 20). Only code that both a route and a background job reach uses this; everything a
+// route alone reaches keeps currentPrincipal(), whose throw catches a route left public by mistake
+export function currentActorId(): string | null {
+  return tenantStorage.getStore()?.principal?.userId ?? null;
+}
+
 // Step 18b: run one pushed command as the device's work. The tenant and the person stay as they
 // are; only the device is added, so every audit row the command's services write names it without
 // each service passing it on.

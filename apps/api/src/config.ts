@@ -1,3 +1,5 @@
+import { hkdfSync } from 'node:crypto';
+
 import { z } from 'zod';
 
 // Both processes (API and worker) read the same .env, but each checks only what it uses. So the
@@ -46,6 +48,11 @@ const envSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
   // shop"). In dev the shop's server has its own port (apps/shop runs on 4321); behind a proxy the
   // address has none. Left out: 4321 outside production, none in production
   SHOP_PUBLIC_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+  // Step 27a: the key the shop's server sends in X-Shop-Key on the order routes (27a's decision
+  // 13); the shop's own SHOP_API_KEY has the same value. Long and random, like the JWT secret
+  // (openssl rand -base64 32). Left out: the order routes answer 401 to everyone, so a shop with
+  // no key set can show its pages but take no orders, and nothing else in the API changes
+  STOREFRONT_SHOP_KEY: z.string().min(32).optional(),
 });
 
 const workerEnvSchema = sharedEnvSchema.extend(storageEnvSchema.shape).extend({
@@ -100,6 +107,14 @@ function storefrontMediaUrl(e: z.output<typeof envSchema>): string {
   return url;
 }
 
+// Step 27a: the key of the phone code's HMAC (storefront/orders/order-secrets.ts), derived from
+// JWT_SECRET with HKDF instead of being one more secret to set. HKDF with its own label gives a key
+// that tells nothing about the JWT secret, and that no JWT can be signed with. Changing JWT_SECRET
+// signs everyone out anyway; here it only spoils the codes of the next 10 minutes
+function phoneCodeKey(jwtSecret: string): Buffer {
+  return Buffer.from(hkdfSync('sha256', jwtSecret, '', 'omnivo storefront phone code', 32));
+}
+
 export function loadConfig(env: Record<string, string | undefined>) {
   const e = parseEnv(envSchema, env);
   return {
@@ -122,6 +137,9 @@ export function loadConfig(env: Record<string, string | undefined>) {
       // production, where the browser would refuse a shop on plain http anyway
       shopScheme: e.NODE_ENV === 'production' ? 'https' : 'http',
       shopPort: e.SHOP_PUBLIC_PORT ?? (e.NODE_ENV === 'production' ? null : 4321),
+      // Step 27a: null = no shop server may call the order routes (STOREFRONT_SHOP_KEY above)
+      shopKey: e.STOREFRONT_SHOP_KEY ?? null,
+      codeKey: phoneCodeKey(e.JWT_SECRET),
     },
     auth: {
       betterAuthSecret: e.BETTER_AUTH_SECRET,

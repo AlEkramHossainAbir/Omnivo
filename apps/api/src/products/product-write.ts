@@ -296,7 +296,8 @@ export function barcodeRows(
 export async function insertProducts(
   tx: Transaction,
   prepared: readonly PreparedProduct[],
-  userId: string,
+  // null: made by the system (step 27b's "Delivery charge"), not by a member
+  userId: string | null,
 ): Promise<string[]> {
   const tenantId = getTenantId();
   const ids: string[] = [];

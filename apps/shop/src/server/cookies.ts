@@ -1,3 +1,5 @@
+import { shopOrderTokenSchema } from '@omnivo/contracts';
+
 // Step 26c: the shop's two cookies. Both hold secret tokens and nothing else: no name, no phone, no
 // cart. Both are httpOnly, so no script on the page can read them (an injected script could not
 // steal an order), SameSite=Lax, so another site's form or script never sends them, and Secure in
@@ -16,13 +18,17 @@ const CHECKOUT_MAX_AGE = 60 * 60;
 // Long enough to come back to "View Order Details" from the SMS a few days later. After that, the
 // shopper uses /track with the phone and the number (26d)
 const ORDERS_MAX_AGE = 30 * 24 * 60 * 60;
-// About 2 KB with today's tokens, well under the 4 KB a browser keeps for one cookie. The oldest
-// order is forgotten first
+// About 640 bytes with 22-character tokens, well under the 4 KB a browser keeps for one cookie.
+// The oldest order is forgotten first
 const ORDERS_KEPT = 20;
 
-// A token is what a source made (64 hex digits in the mock). The pattern is looser, for the real
-// API's tokens, but it still refuses anything that could break the cookie: ; , = and spaces
-const TOKEN = /^[A-Za-z0-9_-]{32,128}$/;
+// Step 27a: a token has one shape for both sources, the API's (shopOrderTokenSchema: 22 base64url
+// characters; the mock makes the same). 26c's looser pattern (32 to 128 characters, for "the real
+// API's tokens" not yet known) refused the API's 22: every checkout would have lost its cookie.
+// The shape also keeps out anything that could break the cookie: ; , = and spaces
+function isToken(value: string): boolean {
+  return shopOrderTokenSchema.safeParse(value).success;
+}
 const ORDER_NO = /^[A-Za-z0-9-]{1,32}$/;
 
 export interface CookieOptions {
@@ -52,7 +58,7 @@ export function readCookie(request: Request, name: string): string | null {
 // is never passed on to the source)
 export function checkoutToken(request: Request): string | null {
   const value = readCookie(request, CHECKOUT_COOKIE);
-  return value !== null && TOKEN.test(value) ? value : null;
+  return value !== null && isToken(value) ? value : null;
 }
 
 export function checkoutCookie(token: string, options: CookieOptions): string {
@@ -72,7 +78,7 @@ export function orderTokens(request: Request): Map<string, string> {
     const at = pair.indexOf(':');
     const orderNo = pair.slice(0, at);
     const token = pair.slice(at + 1);
-    if (at > 0 && ORDER_NO.test(orderNo) && TOKEN.test(token)) tokens.set(orderNo, token);
+    if (at > 0 && ORDER_NO.test(orderNo) && isToken(token)) tokens.set(orderNo, token);
   }
   return tokens;
 }

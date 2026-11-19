@@ -120,6 +120,8 @@ export const shopEn = {
     applying: 'Applying…',
     removeCoupon: 'Remove the code',
     couponApplied: '{{code}} applied: {{off}} off',
+    // Step 27c: a percent coupon with a most it takes off ("10%, up to ৳200")
+    couponAppliedUpTo: '{{code}} applied: {{off}} off, up to {{upTo}}',
     payment: 'Payment Method',
     cod: 'Cash on Delivery',
     online: 'Mobile Banking',

@@ -14,7 +14,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // the drawer draws and links to, so a broken answer shows "Try again", never "undefined" or a
 // link to somewhere else.
 const MONEY = /^\d+(\.\d{1,4})?$/;
-const LINK = /^(\/(?!\/)|https:\/\/)/;
+// Step 27a.6: the contract's own rule for a picture (imageUrlSchema in @omnivo/contracts): a path,
+// an https address, or plain http on this computer. Step 26f let the API send MinIO's
+// http://localhost:9000 address in dev, and this copy kept only https, so with SHOP_SOURCE=api the
+// drawer refused every quote in dev and showed "Try again". Production still has https only: the
+// API refuses to start with an http STOREFRONT_MEDIA_URL (config.ts)
+const IMAGE_URL = /^(\/(?!\/)|https:\/\/|http:\/\/(localhost|127\.0\.0\.1)(:\d{1,5})?\/)/;
 
 function isMoney(value: unknown): value is string {
   return typeof value === 'string' && MONEY.test(value);
@@ -32,7 +37,7 @@ function isQuoteLine(value: unknown): value is ShopCartQuoteLine {
     typeof packSize === 'string' &&
     isRecord(image) &&
     typeof image.url === 'string' &&
-    LINK.test(image.url) &&
+    IMAGE_URL.test(image.url) &&
     typeof image.alt === 'string' &&
     typeof quantity === 'number' &&
     Number.isInteger(quantity);

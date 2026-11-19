@@ -51,6 +51,9 @@ export default defineConfig({
         default: 'mock',
       }),
       SHOP_API_URL: envField.string({ context: 'server', access: 'secret', optional: true }),
+      // Step 27a: the key for the order routes (src/data/config.ts). This one is a secret in both
+      // senses: anyone who has it can place orders and send SMS in any shop's name
+      SHOP_API_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
     },
   },
 });

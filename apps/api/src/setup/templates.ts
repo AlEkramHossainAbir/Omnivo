@@ -194,6 +194,9 @@ const SCHEDULING_REPORTS = ['core.report.schedule'] as const;
 // run a shop, the retail shop manager and the general manager; the distributors and makers sell
 // to businesses, and their owner can give it to a role when they open a shop
 const RUNNING_THE_SHOP = ['storefront.manage'] as const;
+// Step 27a: the shop's orders, for the same two roles (27a's decision 11). Apart from
+// storefront.manage, so an owner can give a packer the orders without the shop's prices
+const SHOP_ORDERS = ['storefront.order.read', 'storefront.order.manage'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -762,6 +765,7 @@ export const INDUSTRY_TEMPLATES = {
           ...STOCK_REPORTS,
           ...SCHEDULING_REPORTS,
           ...RUNNING_THE_SHOP,
+          ...SHOP_ORDERS,
         ],
       },
       {
@@ -841,6 +845,7 @@ export const INDUSTRY_TEMPLATES = {
           ...STOCK_REPORTS,
           ...SCHEDULING_REPORTS,
           ...RUNNING_THE_SHOP,
+          ...SHOP_ORDERS,
         ],
       },
     ],
