@@ -4,6 +4,7 @@ import {
   Delete02Icon,
   Facebook01Icon,
   Globe02Icon,
+  InformationCircleIcon,
   Instagram,
   LanguageSkillIcon,
   Linkedin01Icon,
@@ -23,6 +24,7 @@ import {
   routes,
   SHOP_PAYMENT_METHODS,
   STOREFRONT_ZONES_MAX,
+  type StorefrontPaymentGateway,
   type StorefrontSettings,
   type StorefrontSetup,
   todayIn,
@@ -54,6 +56,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Controller, type Path, useFieldArray, useForm } from 'react-hook-form';
 
 import { DocumentNotice } from '../components/document-notice';
+import { GatewayCard } from '../components/storefront-gateway-card';
 import {
   SaveBar,
   ShopLine,
@@ -65,7 +68,11 @@ import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { rowPath } from '../lib/products';
 import { warehousesQuery } from '../lib/queries';
-import { settingsFormValues, storefrontSetupQuery } from '../lib/storefront';
+import {
+  settingsFormValues,
+  storefrontPaymentSetupQuery,
+  storefrontSetupQuery,
+} from '../lib/storefront';
 import { useOnline } from '../lib/use-online';
 import { useTenantId, useTimeZone } from '../lib/workspace';
 
@@ -91,10 +98,14 @@ function fieldNames(zoneCount: number): Path<SettingsValues>[] {
 
 function SettingsForm({
   setup,
+  onlineReady,
   onSaved,
   onDirtyChange,
 }: {
   setup: StorefrontSetup;
+  // Step 27d (decision 4): whether the Online payment card is saved with both accounts. Until it
+  // is, "Pay online" cannot be ticked (the API refuses it too: storefront_online_not_ready)
+  onlineReady: boolean;
   onSaved: (saved: StorefrontSettings) => void;
   // The checklist beside the form waits while the form has changes
   onDirtyChange: (dirty: boolean) => void;
@@ -169,9 +180,13 @@ function SettingsForm({
     })),
   ];
   const languageOptions = LANGUAGES.map((item) => ({ value: item.code, label: item.label }));
+  const ticked = watch('paymentMethods');
+  // A box already ticked stays enabled even when the gateway is not ready (an account archived
+  // since): the member must be able to untick it. The API checks only a newly ticked one
   const paymentOptions = SHOP_PAYMENT_METHODS.map((method) => ({
     value: method,
     label: t(`storefront.payments.${method}`),
+    disabled: method === 'online' && !onlineReady && !ticked.includes('online'),
   }));
 
   return (
@@ -414,6 +429,17 @@ function SettingsForm({
               />
             )}
           />
+          {!onlineReady && (
+            <p className="mt-2 flex items-start gap-1.5 text-label text-ink-3">
+              <HugeiconsIcon
+                icon={InformationCircleIcon}
+                size={15}
+                strokeWidth={1.5}
+                className="mt-0.5 shrink-0"
+              />
+              {t('storefront.settings.paymentsOnlineNotReady')}
+            </p>
+          )}
         </div>
       </Card>
 
@@ -634,6 +660,12 @@ export function StorefrontSettingsPage() {
   const queryClient = useQueryClient();
   const refresh = useStorefrontRefresh();
   const { data: setup, isError } = useQuery({ ...storefrontSetupQuery(tenantId), enabled: online });
+  // Step 27d: the Online payment card, once the shop is set up (decision 51): before that there is
+  // no shop to take money for, and the first save has enough boxes of its own
+  const payment = useQuery({
+    ...storefrontPaymentSetupQuery(tenantId),
+    enabled: online && setup?.shop != null,
+  });
   // Whether the form has changes, for the checklist (the form reports it)
   const [formDirty, setFormDirty] = useState(false);
   const shop = setup?.shop ?? null;
@@ -644,6 +676,15 @@ export function StorefrontSettingsPage() {
     }
     // The catalog's stock column and the checklist depend on the warehouse and the zones
     void refresh();
+  };
+
+  const gatewaySaved = (gateway: StorefrontPaymentGateway) => {
+    if (payment.data) {
+      queryClient.setQueryData(storefrontPaymentSetupQuery(tenantId).queryKey, {
+        ...payment.data,
+        gateway,
+      });
+    }
   };
 
   return (
@@ -670,12 +711,26 @@ export function StorefrontSettingsPage() {
           <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
             {/* key: a new version (the first save, the launch) starts the form again from it, so
                 the next save sends that version */}
-            <SettingsForm
-              key={`${tenantId}-${String(shop?.version ?? 0)}`}
-              setup={setup}
-              onSaved={saved}
-              onDirtyChange={setFormDirty}
-            />
+            <div className="grid min-w-0 gap-5">
+              <SettingsForm
+                key={`${tenantId}-${String(shop?.version ?? 0)}`}
+                setup={setup}
+                onlineReady={payment.data?.gateway?.ready === true}
+                onSaved={saved}
+                onDirtyChange={setFormDirty}
+              />
+              {payment.isError && (
+                <p className="text-body-sm text-crit">{t('storefront.gateway.loadFailed')}</p>
+              )}
+              {/* key: a new version (a save, a test) starts the card again from what is saved */}
+              {payment.data && (
+                <GatewayCard
+                  key={`${tenantId}-${String(payment.data.gateway?.version ?? 0)}-${payment.data.gateway?.lastTest?.at ?? ''}`}
+                  setup={payment.data}
+                  onSaved={gatewaySaved}
+                />
+              )}
+            </div>
             <div className="grid gap-5 lg:sticky lg:top-5">
               {shop?.launchedAt != null ? (
                 <OpenCard shop={shop} />

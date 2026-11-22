@@ -13,6 +13,10 @@ import type {
   ShopOrder,
   ShopOrderConfirmed,
   ShopOrderRequest,
+  ShopPaymentRetry,
+  ShopPaymentSettled,
+  ShopPaymentSettleRequest,
+  ShopPaymentWait,
   ShopProductPage,
   ShopTextPage,
   ShopTextPageSlug,
@@ -37,7 +41,22 @@ export type ShopRefusalCode =
   | 'shop_code_expired'
   | 'shop_code_sends_used'
   // Step 27c: a once-per-mobile-number coupon this phone has an order with (27c's decision 3)
-  | 'shop_coupon_used_by_phone';
+  | 'shop_coupon_used_by_phone'
+  // Step 27d: "Try again" and "Pay on delivery" on /checkout/paid. shop_payment_unavailable above
+  // is reused: the shop stopped taking the method the button asks for
+  | 'shop_payment_no_order'
+  | 'shop_payment_tries_used'
+  | 'shop_payment_settled';
+
+// Step 27d: what the two buttons on /checkout/paid may be refused with. Their own lists, as for
+// verifyCode(): "Pay on delivery" never uses up tries, so it has no reason to get that refusal
+export type ShopRetryRefusal =
+  | 'shop_payment_no_order'
+  | 'shop_payment_tries_used'
+  | 'shop_payment_settled'
+  | 'shop_payment_unavailable';
+export type ShopPayOnDeliveryRefusal =
+  'shop_payment_no_order' | 'shop_payment_settled' | 'shop_payment_unavailable';
 
 // Step 27a: the /track form's refusals. Their own list, not ShopRefusalCode: the form is a page,
 // not one of the order routes, and draws them itself (server/track.ts), so they need no status in
@@ -89,8 +108,15 @@ export interface ShopSource {
   // Step 26c: the checkout. The routes check every request with its schema first, as for quote()
   checkoutSettings(): Promise<ShopCheckoutSettings>;
   // Step 27a: `address` is the shopper's own (Astro's clientAddress). The API counts the orders
-  // from one connection with it (SHOP_ORDERS_PER_ADDRESS); the mock has no such limit
-  placeOrder(request: ShopOrderRequest, address: string): Promise<SourceResult<PlacedOrder>>;
+  // from one connection with it (SHOP_ORDERS_PER_ADDRESS); the mock has no such limit.
+  // Step 27d: `origin` is this shop's own address as the shopper's browser sees it (Astro.url's
+  // origin, behind the proxy too). Only the mock reads it, to build its fake gateway page's whole
+  // address (shopPaymentUrlSchema); the API builds that address from its own settings
+  placeOrder(
+    request: ShopOrderRequest,
+    address: string,
+    origin: string,
+  ): Promise<SourceResult<PlacedOrder>>;
   // The order that waits for its phone code, found by the token from the cookie. null: none
   // waits (never placed, confirmed already, dropped, or past its hour). Step 27a: the type is the
   // API's answer (shopCodeWaitSchema), so the verify page draws exactly what the API sends
@@ -103,6 +129,22 @@ export interface ShopSource {
   // The code a test shop takes, which the verify page shows because no SMS is sent. null for a real
   // shop: its code goes only to the phone
   readonly testCode: string | null;
+
+  // Step 27d: paying online. The gateway came back with a try's ids (the return path or the
+  // notice); the source asks the gateway and records the answer. null: no try of this shop has the
+  // transaction id (a made-up post, or an order dropped since)
+  settlePayment(request: ShopPaymentSettleRequest): Promise<ShopPaymentSettled | null>;
+  // /checkout/paid, by the checkout cookie's token. null: no online order waits in this browser
+  // (it became Cash on Delivery, was dropped, or the cookie names none)
+  paymentWait(token: string): Promise<ShopPaymentWait | null>;
+  // "Try again": a new payment page for the same order and hold
+  retryPayment(
+    token: string,
+    origin: string,
+  ): Promise<SourceResult<ShopPaymentRetry, ShopRetryRefusal>>;
+  // "Pay on delivery instead": the order becomes Cash on Delivery and gets its phone code. The
+  // answer is the verify page's (codeWait's)
+  payOnDelivery(token: string): Promise<SourceResult<ShopCodeWait, ShopPayOnDeliveryRefusal>>;
 
   // Step 26e: tracking. The order a tracking link names, or null for "no such order", never an
   // error: an old link is normal traffic, like an unknown slug in product(). The page checks the

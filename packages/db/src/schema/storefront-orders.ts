@@ -170,13 +170,16 @@ export const storefrontOrders = pgTable(
         AND (${table.trackingTokenHash} IS NULL OR ${table.trackingTokenHash} ~ '${sql.raw(HASH_PATTERN)}')
         AND (${table.codeHash} IS NULL OR ${table.codeHash} ~ '${sql.raw(HASH_PATTERN)}')`,
     ),
-    // Two exact cases. Pending: every code column, and no number, no tracking token, no
-    // confirmed_at. Anything after it: the other way round. So a confirmed order can never still
-    // answer a code, and a pending one can never be tracked
+    // Two exact cases. Pending: no number, no tracking token, no confirmed_at, and every code
+    // column when it waits for its phone code (Cash on Delivery), none when it waits for its
+    // payment (step 27d: an online order skips the code). Anything after it: no code column and
+    // all three of the others. So a confirmed order can never still answer a code, and a pending
+    // one can never be tracked
     check(
       'storefront_orders_pending_check',
       sql`(${table.status} = 'pending'
-          AND num_nonnulls(${table.codeHash}, ${table.codeExpiresAt}, ${table.codeSentAt}, ${table.codeSends}, ${table.codeTriesLeft}) = 5
+          AND num_nonnulls(${table.codeHash}, ${table.codeExpiresAt}, ${table.codeSentAt}, ${table.codeSends}, ${table.codeTriesLeft})
+            = CASE ${table.paymentMethod} WHEN 'cod' THEN 5 ELSE 0 END
           AND num_nonnulls(${table.orderNo}, ${table.trackingTokenHash}, ${table.confirmedAt}) = 0)
         OR (${table.status} <> 'pending'
           AND num_nonnulls(${table.codeHash}, ${table.codeExpiresAt}, ${table.codeSentAt}, ${table.codeSends}, ${table.codeTriesLeft}) = 0

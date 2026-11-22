@@ -37,6 +37,7 @@ import { MockProblem } from './mock';
 import { pageOf } from './sales-document-data';
 import { balancesOf, findVariant } from './stock-data';
 import { checkDeliveryService, deliveryChoicesOf } from './storefront-order-data';
+import { checkOnline } from './storefront-payment-data';
 import {
   type MockCategory,
   type MockListing,
@@ -210,6 +211,8 @@ export function createShop(
   assertWarehouse(data, input.defaultWarehouseId);
   assertSubdomainFree(input.subdomain);
   checkDeliveryService(data, input.deliveryVariantId);
+  // Step 27d: Pay online needs the Online payment card ready
+  checkOnline(data, input.paymentMethods, []);
   const shop: MockShop = {
     ...fieldsOf(input, []),
     launchedAt: null,
@@ -242,6 +245,7 @@ export function updateShop(
   }
   if (input.subdomain !== before.subdomain) assertSubdomainFree(input.subdomain);
   checkDeliveryService(data, input.deliveryVariantId);
+  checkOnline(data, input.paymentMethods, before.paymentMethods);
   const after: MockShop = {
     ...before,
     ...fieldsOf(input, before.deliveryZones),

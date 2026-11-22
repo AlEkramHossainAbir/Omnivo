@@ -69,15 +69,29 @@ export function createMockSource(
     // The order is priced again here from its own lines, zone and coupon, never from anything the
     // browser says it costs (decision 10). The shopper's address is not used: the mock has no order
     // limits (data/mock/orders.ts)
-    placeOrder: (request) =>
+    placeOrder: (request, _address, origin) =>
       Promise.resolve(
-        orders.place(request, quoteCart(request, context()), mockCheckoutSettings, mockCoupons),
+        orders.place(
+          request,
+          quoteCart(request, context()),
+          mockCheckoutSettings,
+          mockCoupons,
+          origin,
+        ),
       ),
     codeWait: (token) => Promise.resolve(orders.codeWait(token)),
     verifyCode: (token, code) => Promise.resolve(orders.verify(token, code)),
     resendCode: (token) => Promise.resolve(orders.resend(token)),
     order: (orderNo, token) => Promise.resolve(orders.find(orderNo, token)),
     testCode: MOCK_CODE,
+
+    // Step 27d: paying online, against the fake gateway (decision 8). The shop's settings decide
+    // which buttons /checkout/paid offers, as the API's do
+    settlePayment: (request) => Promise.resolve(orders.settle(request)),
+    paymentWait: (token) => Promise.resolve(orders.paymentWait(token, mockCheckoutSettings)),
+    retryPayment: (token, origin) =>
+      Promise.resolve(orders.retry(token, mockCheckoutSettings, origin)),
+    payOnDelivery: (token) => Promise.resolve(orders.payOnDelivery(token, mockCheckoutSettings)),
 
     // Step 26e
     tracking: (token) => Promise.resolve(orders.trackByLink(token)),

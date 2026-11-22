@@ -5236,7 +5236,13 @@ export const en = {
     needsConnection: 'The shop’s menu works on the server. Connect to the internet to use it.',
     statuses: { published: 'In the shop', draft: 'Draft' },
     badges: { most_picked: 'Most Picked', new: 'New', buy_one_get_one: 'Buy 1 Get 1' },
-    payments: { cod: 'Cash on Delivery', online: 'Mobile Banking' },
+    // Step 27d (decision 9): "Pay online" in place of Figma's "Mobile Banking", because
+    // SSLCommerz's page takes cards and internet banking too. The checkbox in Shop settings
+    // says what the shopper is offered
+    payments: { cod: 'Cash on Delivery', online: 'Pay online' },
+    // Step 27d: how an order that is placed was paid (the orders list's column, the order
+    // page). An online order is confirmed only once its money arrives, so it is always paid
+    orderPayments: { cod: 'Cash on Delivery', online: 'Paid online' },
     moveUp: 'Move up',
     moveDown: 'Move down',
     // Step 26g.6: the save bar under a long form, while it has changes (the mockup's bar)
@@ -5375,7 +5381,11 @@ export const en = {
       deliveryProductOption: '{{name}} · {{sku}}',
       paymentTitle: 'Payment',
       payments: 'Ways to pay',
-      paymentsHint: 'Mobile Banking is bKash or Nagad, paid before the parcel leaves.',
+      paymentsHint:
+        'Pay online sends the shopper to your SSLCommerz store’s page: bKash, Nagad, a card or internet banking. The order is confirmed when the money arrives.',
+      // Step 27d (decision 4): the Pay online box stays disabled until the gateway is ready
+      paymentsOnlineNotReady:
+        'To offer Pay online, save the Online payment card with both of its accounts.',
       create: 'Set up the shop',
       created: 'Shop set up. Open it when the checklist is done.',
       updated: 'Shop settings saved',
@@ -5406,6 +5416,61 @@ export const en = {
       openTitle: 'The shop is open',
       // date = the launch day in the workspace's time zone
       openSince: 'Open since {{date}} at {{url}}',
+    },
+    // Step 27d: Shop settings → Online payment (decisions 4 and 15), the tenant's own SSLCommerz
+    // store. Its own form with its own footer, beside the settings form. The password never
+    // comes back from the API
+    gateway: {
+      title: 'Online payment',
+      description:
+        'Your SSLCommerz store. Shoppers pay on its page, and the money goes to your SSLCommerz account.',
+      // The card's pill: nothing saved, ready, or an account that no longer fits (ready: false)
+      statuses: { notSaved: 'Not set up', ready: 'Ready', notReady: 'Needs an account' },
+      notReady:
+        'One of the two accounts is archived or no longer fits. Pick another one and save. Until then the checkout does not offer Pay online.',
+      provider: 'Gateway',
+      providers: { sslcommerz: 'SSLCommerz' },
+      mode: 'Store',
+      modes: { sandbox: 'Sandbox', live: 'Live' },
+      modeHint:
+        'A sandbox store takes test cards and moves no real money. Switch to live with the live store’s ID and password once SSLCommerz approves your shop.',
+      storeId: 'Store ID',
+      storeIdPlaceholder: 'nirvo67412bc0d9f1e',
+      storeIdHint: 'From the email SSLCommerz sent when it opened your store.',
+      password: 'Store password',
+      passwordHint:
+        'The API password from the same email, not the one you sign in to SSLCommerz with.',
+      // A saved gateway: the box starts empty, and an empty box keeps the saved password
+      passwordSavedPlaceholder: 'Saved',
+      passwordSavedHint:
+        'A password is saved and never shown. Leave this empty to keep it, or type a new one.',
+      moneyAccount: 'Account the money goes into',
+      moneyAccountPlaceholder: 'Pick an account',
+      moneyAccountHint:
+        'An account that holds money, like “SSLCommerz balance” under your bank accounts. SSLCommerz pays your bank later, in one transfer.',
+      feeAccount: 'Gateway fee account',
+      feeAccountPlaceholder: 'Pick an expense account',
+      feeAccountHint:
+        'SSLCommerz keeps its fee from each payment. The fee is posted here, so the money account shows what SSLCommerz will pay you.',
+      // code · name, like the other account selects
+      accountOption: '{{code}} · {{name}}',
+      noMoneyAccounts:
+        'No active account holds money yet. Add one under the bank accounts in the chart of accounts.',
+      noFeeAccounts: 'No active expense account yet. Add one in the chart of accounts.',
+      test: 'Test connection',
+      testing: 'Testing…',
+      // Decision 15: the test uses what is saved, so it waits while the form has changes
+      testSaveFirst: 'Save your changes first. The test uses what is saved.',
+      // The last test's line (lastTest). date = the date and time in the workspace's time zone
+      neverTested: 'Not tested yet.',
+      testWorked: 'SSLCommerz accepted the store. Tested {{date}}.',
+      testRejected:
+        'SSLCommerz refused the store ID or the password, or the store is not active. Check them, and that the store is Sandbox or Live as SSLCommerz says. Tested {{date}}.',
+      testUnreachable: 'SSLCommerz did not answer. Try again in a few minutes. Tested {{date}}.',
+      create: 'Save gateway',
+      created: 'Payment gateway saved. Tick Pay online under Payment to offer it.',
+      updated: 'Payment gateway saved',
+      loadFailed: "Couldn't load the payment gateway. Refresh the page to try again.",
     },
     categories: {
       title: 'Shop categories',
@@ -5847,7 +5912,7 @@ export const en = {
     // pages show storefront.needsConnection, like the rest of the menu
     orders: {
       title: 'Shop orders',
-      description: 'Orders from your online shop, from the phone code to the shopper’s door',
+      description: 'Orders from your online shop, from the checkout to the shopper’s door',
       searchLabel: 'Search the orders',
       searchPlaceholder: 'Order number, name or phone',
       view: 'Show',
@@ -5935,6 +6000,19 @@ export const en = {
           'The invoice waits for its money. Record the cash when the rider brings it back.',
       },
       recordPayment: 'Record payment',
+      // Step 27d (decision 6): a delivered order paid online. The invoice took its receipt
+      deliveredPaid: 'The invoice is paid: it took the online payment’s money receipt.',
+      // Step 27d (decision 7): money the shop has to give back. Each notice ends with "Record
+      // refund", a new refund for the order's customer. amount = one payment try's amount
+      paidCancelled:
+        'The shopper paid {{amount}} online for this order. Pay it back from your SSLCommerz panel, then record the refund.',
+      // Two paid tries: the shopper paid in two tabs. Both tries are for the same total
+      paidTwice:
+        'The shopper paid online twice, {{amount}} each time. Pay one back from your SSLCommerz panel, then record the refund.',
+      // A cash on delivery order with a paid try: the shopper paid, then chose to pay on delivery
+      paidOnCod:
+        'The shopper paid {{amount}} online too, then chose cash on delivery. Tell the rider to take no cash. If the rider took it as well, pay one back.',
+      recordRefund: 'Record refund',
       // Decision 1: the crit notice. reason = the error's own words (errors.*), a whole sentence
       documentError: 'The sales order could not be made. {{reason}}',
       // Decision 29: an order confirmed before 27b has no sales order and no error
@@ -5983,6 +6061,8 @@ export const en = {
       history: {
         pending: 'Placed in the shop',
         confirmed: 'Confirmed with the phone code',
+        // Step 27d: an online order is confirmed by its payment, not by a code
+        confirmedOnline: 'Confirmed when the payment arrived',
         packed: 'Packed',
         shipped: 'Shipped',
         delivered: 'Delivered',
@@ -5991,6 +6071,38 @@ export const en = {
       },
       // Under the cancelled step: what the member typed (decision 19, staff only)
       cancelReason: 'Why: {{reason}}',
+      // Step 27d: the Payments card, one row per try, oldest first (storefrontOrderPaymentSchema).
+      // Only for an order with a try: a cash on delivery order that never tried has no card
+      payments: {
+        title: 'Payments',
+        description:
+          'Each visit to the SSLCommerz page. Its own panel finds one by the transaction ID.',
+        // number = the try's place, from 1
+        try: 'Try {{number}}',
+        // The pill (SHOP_PAYMENT_STATUSES)
+        statuses: {
+          started: 'Started',
+          not_opened: 'Page did not open',
+          paid: 'Paid',
+          failed: 'Failed',
+          cancelled: 'Cancelled',
+        },
+        tranId: 'Transaction ID',
+        started: 'Started {{date}}',
+        settled: 'Answered {{date}}',
+        amount: 'Amount',
+        // As SSLCommerz writes them: "BKASH-BKash", and the wallet's or the bank's own number
+        cardType: 'Paid with',
+        bankTranId: 'Bank’s transaction ID',
+        // fee = amount − storeAmount, worked out by the page
+        fee: 'Gateway fee',
+        storeAmount: 'SSLCommerz pays out',
+        receipt: 'Money receipt',
+        // reason = the error's own words (errors.*), a whole sentence
+        receiptError: 'The money receipt could not be made. {{reason}}',
+        makeReceipt: 'Make the receipt',
+        receiptMade: 'Money receipt {{receipt}} made',
+      },
       // Decision 35: Delivered posts an invoice, so it asks first. Shipped does not
       deliverTitle: 'Mark {{number}} delivered?',
       deliverBody:
@@ -6785,6 +6897,7 @@ export const en = {
       storefront_collection: 'Shop collections',
       storefront_order: 'Shop orders',
       storefront_coupon: 'Shop coupons',
+      storefront_payment_gateway: 'Shop payment gateway',
     },
     columns: {
       when: 'When',
@@ -7158,6 +7271,12 @@ export const en = {
         archived: 'Archived a shop coupon',
         restored: 'Gave an archived shop coupon back to the shop',
       },
+      // Step 27d
+      storefront_payment_gateway: {
+        created: 'Saved the shop’s payment gateway',
+        updated: 'Changed the shop’s payment gateway',
+        tested: 'Tested the shop’s payment gateway',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -7401,6 +7520,13 @@ export const en = {
       terms: 'Terms & Condition',
       about: 'About Us',
       contact: 'Contact Us',
+      // Step 27d: the shop's payment gateway. The password's change says only "changed"
+      storeId: 'Store ID',
+      mode: 'Sandbox or live',
+      moneyAccount: 'Account the money goes into',
+      feeAccount: 'Gateway fee account',
+      password: 'Password',
+      testResult: 'Test result',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -8334,6 +8460,26 @@ export const en = {
     storefront_coupon_up_to: 'Only a percent coupon has an “up to” amount. Leave it empty.',
     storefront_coupon_limit_format:
       'Type a whole number of orders from 1 to 1,000,000, or leave it empty for no limit.',
+    // Step 27d
+    shop_payment_no_order: 'No order is waiting for a payment. Place the order again.',
+    shop_payment_tries_used:
+      'This order has used its three tries to pay online. Pay on delivery, or place the order again.',
+    shop_payment_settled: 'This order is paid already, or it is now cash on delivery.',
+    storefront_gateway_store_id_format:
+      'Type the store ID as SSLCommerz sent it: letters and digits, with no spaces.',
+    storefront_gateway_password_required: 'Type the store password SSLCommerz sent you.',
+    storefront_gateway_money_account_invalid:
+      'Pick an active account that holds money, like a bank account for SSLCommerz.',
+    storefront_gateway_fee_account_invalid: 'Pick an active expense account for the gateway’s fee.',
+    storefront_gateway_set_up_already:
+      'The payment gateway is saved already. Reload the page to change it.',
+    storefront_gateway_not_set_up: 'Save the payment gateway first.',
+    storefront_online_not_ready:
+      'Save the Online payment card with both of its accounts before you tick Pay online.',
+    storefront_gateway_key_missing:
+      'This server cannot keep a gateway password yet. Ask whoever runs Omnivo for you to set CREDENTIALS_KEY.',
+    account_used_by_shop:
+      'The shop’s online payments use this account. Choose another one in Shop settings → Online payment first, or archive it.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

@@ -1156,6 +1156,21 @@ storefront_coupons                 ← ধাপ ২৭c: পুরো কার
    pending শুধু hold-এর ৬০ মিনিটের ভেতরে; omnivo_public archived কুপন দেখে না, omnivo_shop শুধু
    first_ordered_at বদলাতে পারে, যেটা কুপনের রো lock করার উপায়)
 
+storefront_payment_gateways        ← ধাপ ২৭d: টেন্যান্টের নিজের SSLCommerz store, টেন্যান্ট-প্রতি একটা রো (PK tenant_id)
+  provider (sslcommerz), mode (sandbox | live), store_id
+  password_sealed (bytea), key_version  ← AES-256-GCM, `CREDENTIALS_KEY` দিয়ে; পাসওয়ার্ড কখনো API থেকে ফেরত যায় না
+  money_account_id, fee_account_id ← টাকা যে অ্যাকাউন্টে ঢোকে আর গেটওয়ের ফি যে খরচের অ্যাকাউন্টে, দুটো আলাদা (CHECK)
+  last_tested_at, last_test_problem (rejected | unreachable), version
+  (শুধু omnivo_app পড়ে; omnivo_public আর omnivo_shop-এর কোনো grant নেই। শপ শুধু
+   `storefront_online_ready()` SECURITY DEFINER ফাংশন থেকে হ্যাঁ/না জানে)
+
+storefront_payments                ← ধাপ ২৭d: একটা অর্ডারের প্রতিটা পেমেন্টের চেষ্টা (try), সর্বোচ্চ ৩টা
+  tenant_id, order_id, try_no (১–৩, UNIQUE per order), tran_id (আমাদের নিজের random ২০ অক্ষর, UNIQUE per tenant)
+  provider, mode, status (started | not_opened | paid | failed | cancelled), amount
+  started_at, settled_at, val_id, card_type, bank_tran_id, store_amount  ← গেটওয়ে নিজে যা বলেছে, ব্রাউজার না
+  receipt_id, receipt_error        ← paid try-এর posted money receipt, বা সেটা না হওয়ার error code
+  (guard trigger: paid চূড়ান্ত, আর paid try থাকা অর্ডার CASCADE-এ মোছা যায় না; online অর্ডারে ফোন কোডের কলাম খালি)
+
 courier_accounts                   ← টেন্যান্টের নিজের কুরিয়ার অ্যাকাউন্ট
   tenant_id, courier_code (pathao | steadfast | redx | ecourier | paperfly | manual)
   credentials (encrypted), store_id, is_default, enabled, webhook_secret
@@ -1218,10 +1233,15 @@ sequenceDiagram
     S->>PG: order (pending) + স্টক reserve + outbox
     S-->>C: "অর্ডার পেয়েছি" + OTP/কল ভেরিফিকেশন
     Note over S,PG: OTP বা সেলস টিম কনফার্ম করলে → confirmed
-  else অনলাইন পেমেন্ট
-    S->>GW: পেমেন্ট শুরু (amount সার্ভার থেকে)
-    GW-->>S: webhook: paid (idempotent)
-    S->>PG: order confirmed + payment_status = paid
+  else অনলাইন পেমেন্ট (ধাপ ২৭d)
+    S->>PG: order (pending) + স্টক hold + try ১ (tran_id)
+    S->>GW: পেমেন্ট পেজ চাওয়া (commit-এর পরে, amount সার্ভার থেকে)
+    S-->>C: পেমেন্ট পেজের ঠিকানা, ফোন কোড নেই
+    C->>GW: পেমেন্ট
+    GW-->>S: ব্রাউজারের POST (শপ হয়ে) + IPN: শুধু tran_id, val_id
+    S->>GW: validation / transaction query
+    S->>PG: try lock করে paid + order confirmed + outbox (idempotent)
+    PG-->>W: outbox: storefront.payment_paid → money receipt (advance) + ফি
   end
   PG-->>W: outbox event: OrderConfirmed
   W->>PG: Sales Order + স্টক মুভমেন্ট + জার্নাল
@@ -1245,7 +1265,7 @@ sequenceDiagram
 | **Catalog** | কোন প্রোডাক্ট শপে দেখাবে, ছবি, বর্ণনা, SEO, ক্যাটাগরি, সাজানোর ক্রম, শপ-এর জন্য আলাদা দাম বা অফার |
 | **Appearance** | লোগো, রং, ব্যানার, হোমপেজ সেকশন, বাংলা/ইংরেজি |
 | **Delivery** | এলাকাভিত্তিক ডেলিভারি চার্জ, ফ্রি ডেলিভারির সীমা, কোন এলাকায় ডেলিভারি হবে |
-| **Payments** | COD চালু/বন্ধ, অনলাইন গেটওয়ে কী, ন্যূনতম অর্ডার |
+| **Payments** | COD আর Pay online চালু/বন্ধ, Online payment কার্ডে SSLCommerz store আর দুটো অ্যাকাউন্ট (ধাপ ২৭d), ন্যূনতম অর্ডার |
 | **Couriers** | কুরিয়ার অ্যাকাউন্ট যোগ করা, ডিফল্ট কুরিয়ার, **অটো-কনসাইনমেন্ট নীতি** (বন্ধ / কনফার্মে / পেমেন্টে) |
 | **Coupons** | কুপন কোড: percent বা টাকা, ন্যূনতম অর্ডার, শুরু-শেষ দিন, মোট ব্যবহার, এক নম্বরে একবার (ধাপ ২৭c) |
 | **Orders** | অর্ডার বোর্ড (pending → confirmed → packed → shipped → delivered), বাল্ক লেবেল প্রিন্ট, বাল্ক কনসাইনমেন্ট, বাতিল ও রিটার্ন |
@@ -1306,7 +1326,7 @@ sequenceDiagram
   সব API-র ৭টা `auth: 'shop'` রুটে। মক source একই কোডের নিয়ম রাখে (১০ মিনিট, ৩টা কোড), অর্ডারের limit না, তাই
   `pnpm dev` আর Playwright আগের মতো চলে।
 - নতুন অর্ডারের bell ("New shop order W-000123 for ৳578.") ধাপ ২৭a-তে Overview খুলত; ধাপ ২৭b থেকে অর্ডারের পেজ।
-- অনলাইন পেমেন্ট ধাপ ২৭d পর্যন্ত চেকআউটে দেখায় না (শুধু সেটাই শপের একমাত্র মেথড হলে দেখায়, আর অর্ডার
+- অনলাইন পেমেন্ট ধাপ ২৭d পর্যন্ত চেকআউটে দেখাত না (শুধু সেটাই শপের একমাত্র মেথড হলে দেখায়, আর অর্ডার
   `shop_payment_unavailable`)। কুপন ধাপ ২৭c পর্যন্ত "unknown" ছিল।
 
 **ধাপ ২৭b-তে যা তৈরি হয়েছে** (উপরের টেবিলের Orders, বোর্ডের বদলে status tab সহ লিস্ট):
@@ -1361,6 +1381,46 @@ sequenceDiagram
   error code (unknown, expired, used up, minimum, used by phone)।
 - **এখনো না:** SSLCommerz আর অনলাইন পেমেন্ট (ধাপ ২৭d), নির্দিষ্ট প্রোডাক্ট বা ক্যাটাগরির কুপন, ফ্রি ডেলিভারি কুপন,
   এক অর্ডারে একাধিক কুপন, কুপন-প্রতি রিপোর্ট।
+
+**ধাপ ২৭d-তে যা তৈরি হয়েছে** (অনলাইন পেমেন্ট, SSLCommerz; উপরের টেবিলের Payments আর §১৪.৪-এর অনলাইন ধারা):
+
+- **গেটওয়ে টেন্যান্টের নিজের:** Shop settings-এ Online payment কার্ড (নিজের form, নিজের রুট আর version,
+  `storefront.manage`): store ID, sandbox বা live, write-only পাসওয়ার্ড, টাকার অ্যাকাউন্ট আর ফির খরচের অ্যাকাউন্ট।
+  পাসওয়ার্ড AES-256-GCM-এ sealed, `CREDENTIALS_KEY` (৩২ byte, `api` আর `worker`-এ একই) আর key version সহ; key না
+  থাকলে `storefront_gateway_key_missing`। "Test connection" সেভ করা মান দিয়ে SSLCommerz-এর transaction query করে,
+  তাই পাসওয়ার্ড টেস্টের জন্য আবার পাঠাতে হয় না। audit log-এ (`storefront_payment_gateway.created` / `updated` /
+  `tested`) পাসওয়ার্ড কখনো থাকে না, শুধু "changed"। কার্ড আর দুটো অ্যাকাউন্ট ঠিক থাকলেই Pay online টিক দেওয়া যায়
+  (`storefront_online_not_ready`); টিক তুলে দিলে শপের এক মিনিটের cache-এর মধ্যে চেকআউট থেকে যায়, পথে থাকা পেমেন্ট
+  তবুও settle হয়। শপের ব্যবহার করা অ্যাকাউন্ট মোছা যায় না (`account_used_by_shop`), archive করা যায়।
+- **গেটওয়ের কোড** `apps/api/src/payments/`-এ (interface, `SslcommerzGateway`, `FakeGateway`), যাতে ধাপ ২৪-এর
+  subscription billing-ও এটা নিতে পারে। `PAYMENT_GATEWAY=fake|sslcommerz`: production-এর বাইরে fake, production-এ
+  fake চলে না। SSLCommerz-এর sandbox account এখনো নেই, তাই `SslcommerzGateway` শুধু ডকুমেন্টেশনের উত্তর দিয়ে
+  যাচাই করা; বাকি সব fake gateway দিয়ে। প্রথম live শপের আগে একবার sandbox store দিয়ে চালাতে হবে।
+- **অর্ডার:** online অর্ডার pending হয়, স্টক hold করে আর try ১ বানায়; commit-এর পরে API গেটওয়ের কাছে পেজ চায়
+  আর `next: 'pay'` দিয়ে তার ঠিকানা পাঠায় (পেজ না খুললে `paymentUrl: null`, অর্ডার আর hold থাকে)। ফোন কোড নেই:
+  পেমেন্টই অর্ডার confirm করে।
+- **ফিরে আসা:** SSLCommerz শপে ব্রাউজারকে POST করে (`/checkout/pay/return`) আর নিজে IPN পাঠায়
+  (`/api/payments/notice`)। শপ শুধু `tran_id` আর `val_id` পড়ে, একটা `auth: 'shop'` রুট (`/public/v1/payments/settle`)
+  গেটওয়েকে নিজে জিজ্ঞেস করে (`val_id` দিয়ে, না থাকলে `tran_id` দিয়ে) আর status, amount, currency আর try মিলিয়ে
+  দেখে, try-এর রো lock করে, তাই দ্বিতীয় ডাক কিছু বদলায় না। Astro-র `checkOrigin` বন্ধ, middleware একই চেক
+  করে শুধু এই দুটো পথ ছাড়া, আর `same-site`-ও ফেরায় (অন্য টেন্যান্টের শপ একই site)। ফিরে আসার পথ সবসময় 303 দিয়ে
+  `/checkout/paid`-এ পাঠায়, যেখানে `SameSite=Lax` cookie কাজ করে।
+- **না হলে:** "Try again" (একই অর্ডার আর hold-এ নতুন try, মোট ৩টা) বা "Pay on delivery" (অর্ডার COD হয়ে ফোন কোড
+  পায়)। শুধু paid চূড়ান্ত, তাই failed বা cancelled-এর পরে গেটওয়ে paid বললে সেটাই গণ্য। hold শেষ হওয়ার পরে টাকা
+  এলেও অর্ডার confirm হয়, স্টক আবার Packed-এ দেখা হয়; sweep pending online অর্ডার মোছার আগে গেটওয়েকে জিজ্ঞেস করে
+  (+১ ঘণ্টা সময়)।
+- **হিসাব:** paid try-এ worker (outbox `storefront.payment_paid`) একটা posted money receipt বানায় (advance), কার্ডের
+  টাকার অ্যাকাউন্টে, reference-এ `bank_tran_id` আর `card_type`। SSLCommerz-এর ফি (`amount − store_amount`) সেই
+  receipt-এর entry-তে নিজের লাইনে ফির অ্যাকাউন্টে যায়: Dr টাকা (store_amount), Dr ফি, Cr receivable। Delivered-এ
+  invoice এই advance নেয়, তাই invoice paid হয়। receipt না হলে error try-এ থাকে, "Make the receipt" আবার চেষ্টা করে।
+- **ERP-র স্ক্রিন:** অর্ডারের পেজে Payments কার্ড (প্রতিটা try, transaction ID, ফি, receipt), টাকা ফেরত দেওয়ার
+  দরকার হলে notice আর "Record refund" (ধাপ ১৫d-র refund, receipt থেকে): বাতিল হওয়া paid অর্ডার, দুইবার paid, বা
+  paid-এর পরে COD। লিস্টে "Paid online"; timeline-এ "Confirmed when the payment arrived"।
+- **শপ:** চেকআউটে "Pay online" ("Mobile Banking"-এর বদলে), `/checkout/paid` (paid, checking, unpaid), আর fake
+  gateway-এর নিজের পেজ `/checkout/fake-gateway` (Pay, Fail, Cancel; development, CI আর মক শপে)।
+- **এখনো না:** SSLCommerz-এর refund API দিয়ে টাকা ফেরত (ধাপ ২৮), sandbox store দিয়ে আসল যাচাই, bKash-এর নিজের
+  API, নিজের ডোমেইনের শপ। স্টেজিং production mode-এ চলে, তাই সেখানে `CREDENTIALS_KEY` সেট না করা পর্যন্ত কার্ড
+  সেভ হয় না; স্টেজিং শপ এখনো মক।
 
 - **Omnivo Admin Panel** এখানে শুধু একটা জায়গায় আসে: Storefront কোন প্ল্যানে থাকবে, সেটা `feature.storefront` entitlement দিয়ে ঠিক হবে (§১৩.২)। অর্থাৎ Storefront বিক্রি হবে Growth প্ল্যানের ফিচার বা আলাদা অ্যাড-অন হিসেবে, আর কোডে কখনো `if (plan === 'growth')` লেখা হবে না।
 - ⚠️ থিম কাস্টমাইজেশনের চাপ আসবেই। উত্তর হলো **কনফিগারেশন ও কয়েকটা রেডিমেড থিম**, টেন্যান্ট-ভিত্তিক কাস্টম কোড না (§৪.৮)।

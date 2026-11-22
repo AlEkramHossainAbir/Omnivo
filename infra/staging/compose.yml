@@ -218,7 +218,9 @@ services:
   # <subdomain>.<SHOP_BASE_DOMAIN>, and staging has one fixed SHOP_HOST. Switching to the API needs a
   # wildcard host (DNS, the tunnel and Caddy) first, then SHOP_SOURCE=api, SHOP_API_URL, SHOP_API_KEY
   # and the API's SHOP_BASE_DOMAIN and STOREFRONT_SHOP_KEY (the same value as SHOP_API_KEY; step
-  # 27a). It needs nothing else in the stack. `web` does not wait for it either:
+  # 27a). Paying online (step 27d) also needs CREDENTIALS_KEY on api and worker: production uses
+  # SSLCommerz (PAYMENT_GATEWAY), and without the key the Online payment card cannot save a store.
+  # It needs nothing else in the stack. `web` does not wait for it either:
   # if the shop fails, the ERP app keeps working and only the shop's address answers 502.
   shop:
     image: ${REGISTRY}/omnivo-shop:${IMAGE_TAG}

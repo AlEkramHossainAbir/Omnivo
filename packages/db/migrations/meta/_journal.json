@@ -526,6 +526,20 @@
       "when": 1795063653913,
       "tag": "0074_storefront-coupons-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1795320519480,
+      "tag": "0075_storefront-payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1795320520963,
+      "tag": "0076_storefront-payments-rules",
+      "breakpoints": true
     }
   ]
 }

@@ -15,6 +15,8 @@ const NEEM = 'lst-himalaya-purifying-neem-face-wash-150ml'; // ৳229
 const OPTIONS = { secure: false };
 // The shopper's address, which the route passes on to the source (the API counts orders by it)
 const ADDRESS = '203.0.113.7';
+// Step 27d: the shop's own address, for the mock's fake gateway page (ShopSource.placeOrder)
+const ORIGIN = 'http://shop.test';
 
 // What the checkout sends: the phone as the shopper typed it
 const ORDER: ShopOrderRequestInput = {
@@ -68,7 +70,13 @@ function withClock() {
 
 // Places a Cash on Delivery order and gives back the cookie the browser keeps
 async function placeCod(source: ShopSource): Promise<string> {
-  const response = await answerPlaceOrder(post('/api/orders', ORDER), source, ADDRESS, OPTIONS);
+  const response = await answerPlaceOrder(
+    post('/api/orders', ORDER),
+    source,
+    ADDRESS,
+    ORIGIN,
+    OPTIONS,
+  );
   expect(response.status).toBe(201);
   return sentBack(cookiesOf(response).get('shop_checkout'));
 }
@@ -76,7 +84,13 @@ async function placeCod(source: ShopSource): Promise<string> {
 describe('POST /api/orders', () => {
   it('places a Cash on Delivery order and keeps its token out of reach of scripts', async () => {
     const { source } = withClock();
-    const response = await answerPlaceOrder(post('/api/orders', ORDER), source, ADDRESS, OPTIONS);
+    const response = await answerPlaceOrder(
+      post('/api/orders', ORDER),
+      source,
+      ADDRESS,
+      ORIGIN,
+      OPTIONS,
+    );
     expect(response.status).toBe(201);
     expect(response.headers.get('Cache-Control')).toBe('no-store');
 
@@ -97,32 +111,33 @@ describe('POST /api/orders', () => {
 
   it('marks the cookies Secure in production', async () => {
     const { source } = withClock();
-    const response = await answerPlaceOrder(post('/api/orders', ORDER), source, ADDRESS, {
+    const response = await answerPlaceOrder(post('/api/orders', ORDER), source, ADDRESS, ORIGIN, {
       secure: true,
     });
     expect(cookiesOf(response).get('shop_checkout')).toMatch(/; Secure$/);
   });
 
-  it('confirms Mobile Banking at once and remembers the order in this browser', async () => {
+  // Step 27d: Pay online waits for its payment, as Cash on Delivery waits for its code
+  it('sends Pay online to the payment page, with the order in the checkout cookie', async () => {
     const { source } = withClock();
     const response = await answerPlaceOrder(
       post('/api/orders', { ...ORDER, paymentMethod: 'online' }),
       source,
       ADDRESS,
+      ORIGIN,
       OPTIONS,
     );
     expect(response.status).toBe(201);
-    expect(await response.json()).toEqual({
-      next: 'confirmed',
-      orderNo: 'W-000001',
-      phone: '01786120356',
-    });
-    const cookies = cookiesOf(response);
-    expect(cookies.get('shop_orders')).toMatch(
-      /^shop_orders=W-000001:[A-Za-z0-9_-]{22}; Path=\/; Max-Age=2592000;/,
+    const answer = shopOrderPlacedSchema.parse(await response.json());
+    if (answer.next !== 'pay') throw new Error(`The order answered ${answer.next}`);
+    // On this shop's own address (ORIGIN), as the API's fake gateway puts it
+    expect(answer.paymentUrl).toMatch(
+      /^http:\/\/shop\.test\/checkout\/fake-gateway\?tranId=[A-Z0-9]{20}&/,
     );
-    // A code that was still waiting from an earlier try is forgotten
-    expect(cookies.get('shop_checkout')).toMatch(/^shop_checkout=; Path=\/; Max-Age=0;/);
+    const cookies = cookiesOf(response);
+    expect(cookies.get('shop_checkout')).toMatch(/^shop_checkout=[A-Za-z0-9_-]{22}; Path=\//);
+    // Not this browser's order yet: /order/<no> opens only once it is paid
+    expect(cookies.has('shop_orders')).toBe(false);
   });
 
   it('names the fields the shopper must fix', async () => {
@@ -136,6 +151,7 @@ describe('POST /api/orders', () => {
       }),
       source,
       ADDRESS,
+      ORIGIN,
       OPTIONS,
     );
     expect(response.status).toBe(400);
@@ -154,7 +170,7 @@ describe('POST /api/orders', () => {
       headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify(ORDER),
     });
-    const response = await answerPlaceOrder(request, source, ADDRESS, OPTIONS);
+    const response = await answerPlaceOrder(request, source, ADDRESS, ORIGIN, OPTIONS);
     expect(response.status).toBe(400);
     expect((await problemOf(response)).code).toBe('malformed_request');
   });
@@ -165,6 +181,7 @@ describe('POST /api/orders', () => {
       post('/api/orders', { ...ORDER, expectedTotal: '700' }),
       source,
       ADDRESS,
+      ORIGIN,
       OPTIONS,
     );
     expect(response.status).toBe(409);
@@ -181,6 +198,7 @@ describe('POST /api/orders', () => {
       }),
       source,
       ADDRESS,
+      ORIGIN,
       OPTIONS,
     );
     expect(response.status).toBe(422);
@@ -194,12 +212,12 @@ describe('POST /api/orders', () => {
     const addresses: string[] = [];
     const watched: ShopSource = {
       ...source,
-      placeOrder: (request, address) => {
+      placeOrder: (request, address, origin) => {
         addresses.push(address);
-        return source.placeOrder(request, address);
+        return source.placeOrder(request, address, origin);
       },
     };
-    await answerPlaceOrder(post('/api/orders', ORDER), watched, ADDRESS, OPTIONS);
+    await answerPlaceOrder(post('/api/orders', ORDER), watched, ADDRESS, ORIGIN, OPTIONS);
     expect(addresses).toEqual([ADDRESS]);
   });
 
@@ -209,7 +227,13 @@ describe('POST /api/orders', () => {
       placeOrder: () =>
         Promise.resolve({ ok: false, code: 'shop_order_limit', params: { minutes: 12 } }),
     };
-    const response = await answerPlaceOrder(post('/api/orders', ORDER), limited, ADDRESS, OPTIONS);
+    const response = await answerPlaceOrder(
+      post('/api/orders', ORDER),
+      limited,
+      ADDRESS,
+      ORIGIN,
+      OPTIONS,
+    );
     expect(response.status).toBe(429);
     // Retry-After is in seconds; the words say minutes
     expect(response.headers.get('Retry-After')).toBe('720');
@@ -224,8 +248,14 @@ describe('POST /api/orders', () => {
     const source = createMockSource();
     // ৳687 − 10% (৳68.70) + ৳80. The first order holds the use while it waits for its code
     const welcome = { ...ORDER, couponCode: 'WELCOME10', expectedTotal: '698.30' };
-    await answerPlaceOrder(post('/api/orders', welcome), source, ADDRESS, OPTIONS);
-    const response = await answerPlaceOrder(post('/api/orders', welcome), source, ADDRESS, OPTIONS);
+    await answerPlaceOrder(post('/api/orders', welcome), source, ADDRESS, ORIGIN, OPTIONS);
+    const response = await answerPlaceOrder(
+      post('/api/orders', welcome),
+      source,
+      ADDRESS,
+      ORIGIN,
+      OPTIONS,
+    );
     expect(response.status).toBe(422);
     expect(await problemOf(response)).toMatchObject({ code: 'shop_coupon_used_by_phone' });
   });
@@ -238,7 +268,13 @@ describe('POST /api/orders', () => {
     const quiet = console.error;
     console.error = () => undefined;
     try {
-      const response = await answerPlaceOrder(post('/api/orders', ORDER), down, ADDRESS, OPTIONS);
+      const response = await answerPlaceOrder(
+        post('/api/orders', ORDER),
+        down,
+        ADDRESS,
+        ORIGIN,
+        OPTIONS,
+      );
       expect(response.status).toBe(500);
       expect(JSON.stringify(await problemOf(response))).not.toContain('10.0.0.5');
     } finally {

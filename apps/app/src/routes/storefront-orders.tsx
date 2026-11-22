@@ -138,10 +138,10 @@ export function StorefrontOrdersPage() {
         column.accessor('paymentMethod', {
           header: t('storefront.orders.columns.payment'),
           enableSorting: false,
-          // No meta.card, so not on a phone's card: every order is Cash on Delivery until step 27c
-          // brings online payment, and the line would say the same on every card (27b.7)
+          // No meta.card, so not on a phone's card (the user's choice in 27b.7). Step 27d: the
+          // list's own words, "Paid online", since an online order is only listed once it is paid
           cell: ({ getValue }) => (
-            <span className="text-ink-2">{t(`storefront.payments.${getValue()}`)}</span>
+            <span className="text-ink-2">{t(`storefront.orderPayments.${getValue()}`)}</span>
           ),
         }),
         column.accessor('total', {

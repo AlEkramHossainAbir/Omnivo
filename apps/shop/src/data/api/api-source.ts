@@ -131,6 +131,37 @@ export function createApiSource(api: ShopApi): ShopSource {
     // A real shop's code goes only to the phone, by SMS
     testCode: null,
 
+    // Step 27d. not_found: no try of this shop has the transaction id (ShopSource.settlePayment)
+    async settlePayment(request) {
+      return orNull(await api.post(routes.settlePayment, request), 'not_found', 'settle payment');
+    },
+    async paymentWait(token) {
+      return orNull(
+        await api.post(routes.paymentWait, { token }),
+        'shop_payment_no_order',
+        'payment wait',
+      );
+    },
+    async retryPayment(token) {
+      return answerOf(
+        await api.post(routes.retryPayment, { token }),
+        [
+          'shop_payment_no_order',
+          'shop_payment_tries_used',
+          'shop_payment_settled',
+          'shop_payment_unavailable',
+        ],
+        'retry payment',
+      );
+    },
+    async payOnDelivery(token) {
+      return answerOf(
+        await api.post(routes.payOnDelivery, { token }),
+        ['shop_payment_no_order', 'shop_payment_settled', 'shop_payment_unavailable'],
+        'pay on delivery',
+      );
+    },
+
     async tracking(token) {
       return orNull(await api.post(routes.tracking, { token }), 'not_found', 'tracking');
     },

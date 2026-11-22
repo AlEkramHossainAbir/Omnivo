@@ -1,11 +1,14 @@
 import {
   compareMoney,
   maskPhone,
+  readFakeValId,
   SHOP_CODE_RESEND_SECONDS,
   SHOP_CODE_SENDS,
   SHOP_CODE_TRIES,
   SHOP_CODE_VALID_MINUTES,
+  SHOP_FAKE_GATEWAY_PATH,
   SHOP_ORDER_HOLD_MINUTES,
+  SHOP_PAYMENT_TRIES,
   type ShopCartQuote,
   type ShopCheckoutSettings,
   type ShopCodeResent,
@@ -15,12 +18,22 @@ import {
   type ShopOrderConfirmed,
   type ShopOrderLine,
   type ShopOrderRequest,
+  type ShopPaymentRetry,
+  type ShopPaymentSettled,
+  type ShopPaymentSettleRequest,
+  type ShopPaymentStatus,
+  type ShopPaymentWait,
   type ShopShipment,
   type ShopTracking,
   type ShopTrackRequest,
 } from '@omnivo/contracts';
 
-import type { PlacedOrder, SourceResult } from '../types';
+import type {
+  PlacedOrder,
+  ShopPayOnDeliveryRefusal,
+  ShopRetryRefusal,
+  SourceResult,
+} from '../types';
 
 // Step 26c: the mock's orders, kept in memory (decision 3). Everything here is what step 26's API
 // will do with tables; the shape of the answers is the same, so the pages never change.
@@ -38,6 +51,16 @@ export const MOCK_CODE = '123456';
 const WAIT_MS = SHOP_ORDER_HOLD_MINUTES * 60 * 1000;
 const CODE_MS = SHOP_CODE_VALID_MINUTES * 60 * 1000;
 
+// Step 27d: one visit to the payment page of an online order, as the API's storefront_payments row
+// keeps it. The mock's gateway is the fake one (decision 8): its page is the shop's own
+// (SHOP_FAKE_GATEWAY_PATH), and the val_id it posts back says what happened, so the mock keeps no
+// more than this
+interface MockPayment {
+  tranId: string;
+  status: ShopPaymentStatus;
+  amount: string;
+}
+
 interface MockOrder {
   token: string;
   order: ShopOrder;
@@ -52,6 +75,8 @@ interface MockOrder {
   // order gets 3 at most
   codeExpiresAt: number;
   codeSends: number;
+  // Step 27d: an online order's tries, oldest first. Empty for Cash on Delivery
+  payments: MockPayment[];
 }
 
 // Step 26e: an order the mock starts with (demo-orders.ts), so a tracking link and the /track form
@@ -90,6 +115,24 @@ function newToken(): string {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
+// Step 27d: a try's transaction id, in the API's shape (shopPaymentTranIdSchema): 20 upper-case
+// letters and digits. 2^32 is not a multiple of 36, so the first letters come up a little more
+// often than the last; for a mock id nobody pays with, that does not matter
+const TRAN_ID_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+function newTranId(): string {
+  const numbers = crypto.getRandomValues(new Uint32Array(20));
+  return Array.from(numbers, (value) => TRAN_ID_LETTERS[value % 36] ?? 'A').join('');
+}
+
+// Step 27d: the fake gateway's page for one try, on the shop the browser is on (`origin`, from the
+// route), as the API's FakeGateway puts it on the shop's own address. A whole address, because the
+// contract wants one (shopPaymentUrlSchema), and the checkout checks the answer with it
+function fakePage(origin: string, tranId: string, amount: string): string {
+  const url = new URL(SHOP_FAKE_GATEWAY_PATH, origin);
+  url.search = new URLSearchParams({ tranId, amount }).toString();
+  return url.toString();
+}
+
 // W-000123: W for web, so a shop order is never mistaken for an ERP sales order (decision 3)
 function orderNumber(sequence: number): string {
   return `W-${String(sequence).padStart(6, '0')}`;
@@ -121,6 +164,7 @@ export function createOrderBook(
       expiresAt: 0,
       codeExpiresAt: 0,
       codeSends: 0,
+      payments: [],
     });
     byTrackingToken.set(trackingToken, key);
   }
@@ -143,6 +187,34 @@ export function createOrderBook(
       return null;
     }
     return entry;
+  }
+
+  // Step 27d: a waiting order that has a phone code: Cash on Delivery only. An online order waits
+  // for its payment and has no code, so the code's routes do not know it, as in the API (where its
+  // code columns are empty, 27d.2). Without this, the mock's 123456 would confirm an unpaid order
+  function waitingForCode(token: string): MockOrder | null {
+    const entry = waiting(token);
+    return entry?.order.paymentMethod === 'cod' ? entry : null;
+  }
+
+  // Step 27d: the order and try a transaction id names, in any status. Not through waiting(): a
+  // payment that arrives after the hour still confirms the order (decision 5)
+  function byTranId(tranId: string): { entry: MockOrder; payment: MockPayment } | null {
+    for (const entry of byToken.values()) {
+      const payment = entry.payments.find((candidate) => candidate.tranId === tranId);
+      if (payment !== undefined) return { entry, payment };
+    }
+    return null;
+  }
+
+  // The verify page's answer for an order that has its code
+  function codeWaitOf(entry: MockOrder): ShopCodeWait {
+    return {
+      next: 'verify',
+      maskedPhone: maskPhone(entry.order.phone),
+      resendInSeconds: secondsUntil(entry.resendAt),
+      listingIds: entry.order.lines.map((line) => line.listingId),
+    };
   }
 
   // Step 27c: an order that holds a use of its coupon now (27c's decision 3): every order but a
@@ -180,6 +252,7 @@ export function createOrderBook(
       quote: ShopCartQuote,
       settings: ShopCheckoutSettings,
       coupons: readonly ShopCouponRule[],
+      origin: string,
     ): SourceResult<PlacedOrder> {
       const zone = settings.zones.find((candidate) => candidate.id === request.zoneId);
       if (!zone) return { ok: false, code: 'shop_zone_unknown' };
@@ -273,16 +346,26 @@ export function createOrderBook(
         expiresAt: placedAt.getTime() + WAIT_MS,
         codeExpiresAt: placedAt.getTime() + CODE_MS,
         codeSends: 1,
+        payments: [],
       };
       byToken.set(token, entry);
 
-      // Mobile Banking needs no code in the mock (decision 4): confirmed at once. Its number is in
-      // the answer; a Cash on Delivery order's is not, as in the API, where it has none yet. (The
-      // mock numbers an order when it is placed, which the shopper never sees: a dropped order
-      // only leaves a gap in a book that is forgotten at the next restart)
+      // Step 27d: Pay online waits for its payment, with no code (27c's decision 8), as in the API.
+      // Its first try starts now, and the browser goes to the fake gateway's page. 26c's "confirmed
+      // at once" is gone: an unpaid order is never confirmed. (The mock numbers an order when it
+      // is placed, which the shopper never sees: a dropped order only leaves a gap in a book that
+      // is forgotten at the next restart)
       if (request.paymentMethod === 'online') {
-        const confirmed = confirm(entry);
-        return { ok: true, value: { answer: { next: 'confirmed', ...confirmed }, token } };
+        entry.codeSends = 0;
+        const tranId = newTranId();
+        entry.payments.push({ tranId, status: 'started', amount: order.total });
+        return {
+          ok: true,
+          value: {
+            answer: { next: 'pay', paymentUrl: fakePage(origin, tranId, order.total) },
+            token,
+          },
+        };
       }
       return {
         ok: true,
@@ -298,18 +381,12 @@ export function createOrderBook(
     },
 
     codeWait(token: string): ShopCodeWait | null {
-      const entry = waiting(token);
-      if (!entry) return null;
-      return {
-        next: 'verify',
-        maskedPhone: maskPhone(entry.order.phone),
-        resendInSeconds: secondsUntil(entry.resendAt),
-        listingIds: entry.order.lines.map((line) => line.listingId),
-      };
+      const entry = waitingForCode(token);
+      return entry === null ? null : codeWaitOf(entry);
     },
 
     verify(token: string, code: string): SourceResult<ShopOrderConfirmed> {
-      const entry = waiting(token);
+      const entry = waitingForCode(token);
       if (!entry) return { ok: false, code: 'shop_code_no_order' };
       // Step 27a: a code past its 10 minutes is refused before it is compared, as the API does: it
       // cannot be right any more, so it costs no try
@@ -331,7 +408,7 @@ export function createOrderBook(
     },
 
     resend(token: string): SourceResult<ShopCodeResent> {
-      const entry = waiting(token);
+      const entry = waitingForCode(token);
       if (!entry) return { ok: false, code: 'shop_code_no_order' };
       // Step 27a: the third code was the last, before any wait: waiting would not help
       if (entry.codeSends >= SHOP_CODE_SENDS) return { ok: false, code: 'shop_code_sends_used' };
@@ -346,6 +423,107 @@ export function createOrderBook(
       entry.codeExpiresAt = now().getTime() + CODE_MS;
       // The wrong codes are not forgiven: a new SMS must not give a guesser five more tries
       return { ok: true, value: { resendInSeconds: SHOP_CODE_RESEND_SECONDS } };
+    },
+
+    // Step 27d: the gateway came back. The fake gateway's val_id says what happened, so this is
+    // what the API's FakeGateway and settleLocked do together (apps/api/src/storefront/orders/
+    // payment-settle.ts): paid is final, a paid answer for another try or another amount is not
+    // believed, and "no val_id" is "the gateway knows no payment", which changes nothing
+    settle({ tranId, valId }: ShopPaymentSettleRequest): ShopPaymentSettled | null {
+      const found = byTranId(tranId);
+      if (found === null) return null;
+      const { entry, payment } = found;
+      if (payment.status === 'paid') return { status: 'paid' };
+      const answer = valId === null ? null : readFakeValId(valId);
+      // No answer, or one for another try
+      if (answer?.tranId !== tranId) return { status: payment.status };
+      if (answer.outcome !== 'paid') {
+        payment.status = answer.outcome;
+        return { status: payment.status };
+      }
+      if (compareMoney(answer.amount, payment.amount) !== 0) return { status: payment.status };
+      payment.status = 'paid';
+      // Still waiting: this payment confirms it, as an online order, even when the shopper had
+      // switched to Cash on Delivery in the meantime. An order confirmed already keeps its status:
+      // the money is one more payment, which the ERP's order page says to refund
+      if (entry.order.status === 'pending') {
+        entry.order.paymentMethod = 'online';
+        confirm(entry);
+      }
+      return { status: 'paid' };
+    },
+
+    // Step 27d: /checkout/paid. The fake gateway answers at once, so the mock is never "checking"
+    paymentWait(token: string, settings: ShopCheckoutSettings): ShopPaymentWait | null {
+      const entry = byToken.get(token);
+      if (entry === undefined) return null;
+      const { order } = entry;
+      if (order.status !== 'pending') {
+        // Confirmed by a payment: "Order Confirmed". One confirmed by its phone code is the verify
+        // page's
+        if (!entry.payments.some((payment) => payment.status === 'paid')) return null;
+        return {
+          state: 'paid',
+          orderNo: order.orderNo,
+          phone: order.phone,
+          listingIds: order.lines.map((line) => line.listingId),
+        };
+      }
+      // Cash on Delivery now, or past its hour (waiting() drops it then)
+      if (order.paymentMethod !== 'online' || waiting(token) === null) return null;
+      const last = entry.payments.at(-1)?.status ?? 'started';
+      return {
+        state: 'unpaid',
+        // A try that is still started has no answer from the fake gateway: the shopper came back
+        // without pressing a button there
+        problem: last === 'started' || last === 'paid' ? 'not_finished' : last,
+        triesLeft: Math.max(0, SHOP_PAYMENT_TRIES - entry.payments.length),
+        payOnDelivery: settings.paymentMethods.includes('cod'),
+        total: order.total,
+      };
+    },
+
+    // Step 27d: "Try again", with the API's refusals in the API's order
+    retry(
+      token: string,
+      settings: ShopCheckoutSettings,
+      origin: string,
+    ): SourceResult<ShopPaymentRetry, ShopRetryRefusal> {
+      const entry = waiting(token);
+      if (entry === null) return { ok: false, code: 'shop_payment_no_order' };
+      if (entry.order.paymentMethod !== 'online')
+        return { ok: false, code: 'shop_payment_settled' };
+      if (entry.payments.length >= SHOP_PAYMENT_TRIES) {
+        return { ok: false, code: 'shop_payment_tries_used' };
+      }
+      if (!settings.paymentMethods.includes('online')) {
+        return { ok: false, code: 'shop_payment_unavailable' };
+      }
+      const tranId = newTranId();
+      entry.payments.push({ tranId, status: 'started', amount: entry.order.total });
+      return { ok: true, value: { paymentUrl: fakePage(origin, tranId, entry.order.total) } };
+    },
+
+    // Step 27d: "Pay on delivery instead". A second press (a double click, the Back button) gets
+    // the verify page's answer again, with no new code, as in the API
+    payOnDelivery(
+      token: string,
+      settings: ShopCheckoutSettings,
+    ): SourceResult<ShopCodeWait, ShopPayOnDeliveryRefusal> {
+      const entry = waiting(token);
+      if (entry === null) return { ok: false, code: 'shop_payment_no_order' };
+      if (entry.order.paymentMethod === 'cod') return { ok: true, value: codeWaitOf(entry) };
+      if (!settings.paymentMethods.includes('cod')) {
+        return { ok: false, code: 'shop_payment_unavailable' };
+      }
+      // The code is "sent" now: its 45 seconds, its 10 minutes, its five tries start here
+      const at = now().getTime();
+      entry.order.paymentMethod = 'cod';
+      entry.codeSends = 1;
+      entry.wrongCodes = 0;
+      entry.resendAt = at + SHOP_CODE_RESEND_SECONDS * 1000;
+      entry.codeExpiresAt = at + CODE_MS;
+      return { ok: true, value: codeWaitOf(entry) };
     },
 
     // Decision 5: the number and the token must belong together, and only a confirmed order is

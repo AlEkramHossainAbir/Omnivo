@@ -52,6 +52,7 @@ import {
 } from './listing-sql.js';
 import { quotedCoupon } from './coupon-sql.js';
 import { shopImage, type StorefrontImageSize } from './media.js';
+import { onlineReady } from './online-ready.js';
 import { quoteCart, type QuotedListing } from './quote.js';
 import { ShopDb, type ShopScope, storefrontNotFound } from './shop-db.js';
 
@@ -414,17 +415,21 @@ export async function checkoutSettingsOf(
     // A launched shop has one to six (storefront_settings_launch_check and zones_check); each
     // zone's shape is checked here, because jsonb holds whatever was written
     zones: z.array(shopDeliveryZoneSchema).parse(settings.zones),
-    paymentMethods: offeredMethods(settings.paymentMethods),
+    paymentMethods: offeredMethods(settings.paymentMethods, await onlineReady(tx)),
     freeDeliveryFrom: settings.freeDeliveryFrom,
     minimumOrder: settings.minimumOrder,
   };
 }
 
-// Step 27a: the payment methods the checkout offers. Mobile Banking needs the shop's own gateway,
-// which step 27c connects; until then an online order would only fail, so the checkout does not
-// show it. A shop that ticked Mobile Banking alone keeps it (the contract needs at least one
-// method), and placing such an order is refused as shop_payment_unavailable, which is true
-export function offeredMethods(methods: readonly ShopPaymentMethod[]): ShopPaymentMethod[] {
-  const working = methods.filter((method) => method !== 'online');
+// Step 27a: the payment methods the checkout offers. Step 27d: Pay online only while the shop's
+// gateway is ready (storefront_online_ready(): saved, and both accounts still fit), so unticking it
+// or archiving one of its accounts takes it off the checkout within the shop's one-minute cache. A
+// shop that ticked Pay online alone keeps it (the contract needs at least one method), and placing
+// such an order is refused as shop_payment_unavailable, which is true
+export function offeredMethods(
+  methods: readonly ShopPaymentMethod[],
+  onlineReady: boolean,
+): ShopPaymentMethod[] {
+  const working = methods.filter((method) => method !== 'online' || onlineReady);
   return working.length > 0 ? working : [...methods];
 }

@@ -71,11 +71,15 @@ describe('shop imports', () => {
     // may import that one module, like an API route. Named page by page, not "any page": a page
     // has <script>s too, and the rule should stay as narrow as what needs it
     // Step 26f.5: the middleware answers /api/* for a host with no shop with problem JSON, like
-    // the routes, so it may import server/problem.ts. It runs only on the server
+    // the routes, so it may import server/problem.ts. It runs only on the server.
+    // Step 27d: the middleware runs the origin check (server/origin-check.ts), and the gateway's
+    // return path is a route outside pages/api/ (it is SHOP_PAYMENT_RETURN_PATH, on /checkout)
     const pageMay = (path: string, name: string) =>
       (path.startsWith('./pages/') && name.endsWith('/server/cookies')) ||
       (path === './pages/track.astro' && name.endsWith('/server/track')) ||
-      (path === './middleware.ts' && name.endsWith('/server/problem'));
+      (path === './middleware.ts' && name.endsWith('/server/problem')) ||
+      (path === './middleware.ts' && name.endsWith('/server/origin-check')) ||
+      (path === './pages/checkout/pay/return.ts' && name.endsWith('/server/payments'));
     const offenders = Object.entries(files)
       .filter(([path]) => !path.startsWith('./pages/api/') && !path.startsWith('./server/'))
       .filter(([path, source]) =>

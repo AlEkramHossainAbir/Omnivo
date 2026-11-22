@@ -15,6 +15,7 @@ import { getTenantId } from '../../common/tenant/tenant-context.js';
 import type { WithTenant } from '../../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../../infra/tokens.js';
 import { notify } from '../../notifications/notify.js';
+import { ShopPaymentReceipts } from './payment-receipts.js';
 import { ShopSalesOrderMaker } from './sales-order-maker.js';
 
 // Step 27a: "New shop order W-000123 for ৳578" in the bell of the owners and of everyone who may
@@ -27,10 +28,16 @@ export class OrderConfirmedHandler implements EventHandler<'storefront.order_con
   constructor(
     @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
     private readonly maker: ShopSalesOrderMaker,
+    private readonly paymentReceipts: ShopPaymentReceipts,
   ) {}
 
   async handle(event: OutboxEvent<'storefront.order_confirmed'>): Promise<void> {
     await this.makeSalesOrder(event.payload.orderId);
+    // Step 27d: then the money receipts of its paid tries, which need the sales order's customer.
+    // The payment_paid job may have run before the sales order was made and done nothing; this
+    // one comes after it, so a paid order always gets its receipt (makeAll skips a try that has
+    // one already)
+    await this.paymentReceipts.makeAll(event.payload.orderId);
     await this.ring(event);
   }
 

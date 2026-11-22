@@ -299,6 +299,61 @@ test('warns before an open shop moves to a new address', async ({ page }) => {
   await expect(page.getByText(/at http:\/\/rahman-outlet\.localhost:4321$/)).toBeVisible();
 });
 
+// Step 27d: the Online payment card (mocks/storefront-payment-data.ts). The test shop takes Cash on
+// Delivery only until the card is saved; its "Test connection" answers like the API's fake gateway
+// (fake_rejected is refused, any other store id works)
+test('connects an SSLCommerz store, tests it, then offers Pay online', async ({ page }) => {
+  await start(page);
+  await openFromNav(page, 'Shop settings');
+  const card = page.getByRole('form', { name: 'Online payment' });
+  await expect(card.getByText('Not set up')).toBeVisible();
+  const online = page.getByRole('checkbox', { name: 'Pay online' });
+  await expect(online).toBeDisabled();
+  await expect(
+    page.getByText('To offer Pay online, save the Online payment card with both of its accounts.'),
+  ).toBeVisible();
+  await expectNoSideScroll(page);
+
+  await card.getByRole('textbox', { name: 'Store ID' }).fill('fake_rejected');
+  await card.getByLabel('Store password').fill('rahman@ssl');
+  await card.getByLabel('Account the money goes into').selectOption({
+    label: '1121 · Dutch-Bangla Bank CD A/C 1234',
+  });
+  await card.getByLabel('Gateway fee account').selectOption({ label: '5410 · Bank charges' });
+  await card.getByRole('button', { name: 'Save gateway' }).click();
+  await toastShown(page, 'Payment gateway saved. Tick Pay online under Payment to offer it.');
+  await expect(card.getByText('Ready', { exact: true })).toBeVisible();
+  await expect(card.getByText('Not tested yet.')).toBeVisible();
+  // The password is never shown again: the box starts empty, and empty keeps it
+  await expect(card.getByLabel('Store password')).toHaveValue('');
+
+  await card.getByRole('button', { name: 'Test connection' }).click();
+  await expect(card.getByText(/^SSLCommerz refused the store ID or the password/)).toBeVisible();
+
+  // The test uses what is saved: while the form has changes, it waits
+  await card.getByRole('textbox', { name: 'Store ID' }).fill('rahmanfashion_sandbox');
+  await expect(
+    card.getByText('Save your changes first. The test uses what is saved.'),
+  ).toBeVisible();
+  await expect(card.getByRole('button', { name: 'Test connection' })).toBeDisabled();
+  await card.getByRole('button', { name: 'Save changes' }).click();
+  await toastShown(page, 'Payment gateway saved');
+  // A new store id makes the old test say nothing
+  await expect(card.getByText('Not tested yet.')).toBeVisible();
+  await card.getByRole('button', { name: 'Test connection' }).click();
+  await expect(card.getByText(/^SSLCommerz accepted the store\. Tested /)).toBeVisible();
+
+  await expect(online).toBeEnabled();
+  await online.check();
+  // The shop's settings are their own form: the card's button is gone (nothing changed there)
+  await expect(card.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  await toastShown(page, 'Shop settings saved');
+  // The answer is the saved settings: the box stays ticked, with nothing left to save
+  await expect(online).toBeChecked();
+  await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0);
+});
+
 test('hides the Storefront menu from a role without storefront.manage', async ({ page }) => {
   await actAs(page, { name: 'Store keeper', permissions: ['inventory.stock.adjust'] });
   await start(page);

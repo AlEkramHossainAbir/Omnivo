@@ -28,6 +28,9 @@ export const OUTBOX_EVENT_TYPES = [
   // Step 27a: a shop order got its right phone code. The worker rings the bell of the members who
   // read the orders; 27b also makes the customer and the sales order from it
   'storefront.order_confirmed',
+  // Step 27d: a payment try of a shop order was paid. The worker makes its money receipt (and the
+  // gateway's fee) once the order has its sales order (27d.2's mine 26)
+  'storefront.payment_paid',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

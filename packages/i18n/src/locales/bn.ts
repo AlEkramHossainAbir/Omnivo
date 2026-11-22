@@ -4882,7 +4882,8 @@ export const bn: Messages = {
     needsConnection: 'শপের মেনু সার্ভারে চলে। ব্যবহার করতে ইন্টারনেটে যুক্ত হন।',
     statuses: { published: 'শপে আছে', draft: 'ড্রাফট' },
     badges: { most_picked: 'সবচেয়ে জনপ্রিয়', new: 'নতুন', buy_one_get_one: '১টি কিনলে ১টি ফ্রি' },
-    payments: { cod: 'ক্যাশ অন ডেলিভারি', online: 'মোবাইল ব্যাংকিং' },
+    payments: { cod: 'ক্যাশ অন ডেলিভারি', online: 'অনলাইনে পেমেন্ট' },
+    orderPayments: { cod: 'ক্যাশ অন ডেলিভারি', online: 'অনলাইনে পেমেন্ট হয়েছে' },
     moveUp: 'উপরে সরান',
     moveDown: 'নিচে সরান',
     unsaved: 'পরিবর্তন এখনো সেভ হয়নি',
@@ -5001,7 +5002,10 @@ export const bn: Messages = {
       deliveryProductOption: '{{name}} · {{sku}}',
       paymentTitle: 'পেমেন্ট',
       payments: 'পেমেন্টের উপায়',
-      paymentsHint: 'মোবাইল ব্যাংকিং মানে bKash বা Nagad, পার্সেল রওনা হওয়ার আগে পেমেন্ট।',
+      paymentsHint:
+        'অনলাইনে পেমেন্ট ক্রেতাকে আপনার SSLCommerz স্টোরের পেজে পাঠায়: bKash, Nagad, কার্ড বা ইন্টারনেট ব্যাংকিং। টাকা এলে অর্ডার নিশ্চিত হয়।',
+      paymentsOnlineNotReady:
+        'অনলাইনে পেমেন্ট দিতে চাইলে আগে দুটো অ্যাকাউন্টসহ অনলাইন পেমেন্ট কার্ডটা সেভ করুন।',
       create: 'শপ সেট আপ করুন',
       created: 'শপ সেট আপ হয়েছে। চেকলিস্ট শেষ হলে খুলুন।',
       updated: 'শপের সেটিংস সেভ হয়েছে',
@@ -5028,6 +5032,53 @@ export const bn: Messages = {
       opened: '{{name}} খোলা হয়েছে',
       openTitle: 'শপ খোলা আছে',
       openSince: '{{date}} থেকে {{url}}-এ খোলা',
+    },
+    gateway: {
+      title: 'অনলাইন পেমেন্ট',
+      description:
+        'আপনার SSLCommerz স্টোর। ক্রেতা এর পেজে টাকা দেন, আর টাকা যায় আপনার SSLCommerz অ্যাকাউন্টে।',
+      statuses: { notSaved: 'সেট আপ হয়নি', ready: 'প্রস্তুত', notReady: 'অ্যাকাউন্ট দরকার' },
+      notReady:
+        'দুটো অ্যাকাউন্টের একটা আর্কাইভ করা, অথবা আর খাটে না। অন্য একটা বেছে সেভ করুন। ততক্ষণ চেকআউটে অনলাইনে পেমেন্ট থাকবে না।',
+      provider: 'গেটওয়ে',
+      providers: { sslcommerz: 'SSLCommerz' },
+      mode: 'স্টোর',
+      modes: { sandbox: 'স্যান্ডবক্স', live: 'লাইভ' },
+      modeHint:
+        'স্যান্ডবক্স স্টোর টেস্ট কার্ড নেয়, আসল টাকা নড়ে না। SSLCommerz আপনার শপ অনুমোদন করলে লাইভ স্টোরের আইডি আর পাসওয়ার্ড দিয়ে লাইভে যান।',
+      storeId: 'স্টোর আইডি',
+      storeIdPlaceholder: 'nirvo67412bc0d9f1e',
+      storeIdHint: 'SSLCommerz আপনার স্টোর খোলার সময় যে ইমেইল পাঠিয়েছে, সেখান থেকে।',
+      password: 'স্টোর পাসওয়ার্ড',
+      passwordHint: 'একই ইমেইলের API পাসওয়ার্ড, SSLCommerz-এ সাইন ইন করার পাসওয়ার্ড নয়।',
+      passwordSavedPlaceholder: 'সেভ করা আছে',
+      passwordSavedHint:
+        'একটা পাসওয়ার্ড সেভ করা আছে, সেটা কখনো দেখানো হয় না। রেখে দিতে বক্স খালি রাখুন, বদলাতে নতুনটা লিখুন।',
+      moneyAccount: 'টাকা যে অ্যাকাউন্টে যায়',
+      moneyAccountPlaceholder: 'একটা অ্যাকাউন্ট বাছুন',
+      moneyAccountHint:
+        'টাকা রাখা হয় এমন একটা অ্যাকাউন্ট, যেমন ব্যাংক অ্যাকাউন্টের নিচে “SSLCommerz ব্যালান্স”। SSLCommerz পরে একবারে আপনার ব্যাংকে টাকা পাঠায়।',
+      feeAccount: 'গেটওয়ের ফি-এর অ্যাকাউন্ট',
+      feeAccountPlaceholder: 'একটা খরচের অ্যাকাউন্ট বাছুন',
+      feeAccountHint:
+        'প্রতিটা পেমেন্ট থেকে SSLCommerz তার ফি রেখে দেয়। ফি এখানে পোস্ট হয়, তাই টাকার অ্যাকাউন্ট দেখায় SSLCommerz আপনাকে কত দেবে।',
+      accountOption: '{{code}} · {{name}}',
+      noMoneyAccounts:
+        'টাকা রাখা হয় এমন কোনো চালু অ্যাকাউন্ট এখনো নেই। চার্ট অব অ্যাকাউন্টসে ব্যাংক অ্যাকাউন্টের নিচে একটা যোগ করুন।',
+      noFeeAccounts: 'কোনো চালু খরচের অ্যাকাউন্ট এখনো নেই। চার্ট অব অ্যাকাউন্টসে একটা যোগ করুন।',
+      test: 'কানেকশন পরীক্ষা করুন',
+      testing: 'পরীক্ষা হচ্ছে…',
+      testSaveFirst: 'আগে বদলগুলো সেভ করুন। পরীক্ষা হয় যা সেভ করা আছে তা দিয়ে।',
+      neverTested: 'এখনো পরীক্ষা হয়নি।',
+      testWorked: 'SSLCommerz স্টোরটা মেনে নিয়েছে। পরীক্ষা: {{date}}।',
+      testRejected:
+        'SSLCommerz স্টোর আইডি বা পাসওয়ার্ড মানেনি, অথবা স্টোরটা চালু নেই। এগুলো দেখুন, আর SSLCommerz যেমন বলেছে স্টোরটা স্যান্ডবক্স না লাইভ, তা মিলিয়ে নিন। পরীক্ষা: {{date}}।',
+      testUnreachable:
+        'SSLCommerz কোনো উত্তর দেয়নি। কয়েক মিনিট পরে আবার চেষ্টা করুন। পরীক্ষা: {{date}}।',
+      create: 'গেটওয়ে সেভ করুন',
+      created: 'পেমেন্ট গেটওয়ে সেভ হয়েছে। দিতে চাইলে পেমেন্টের নিচে অনলাইনে পেমেন্টে টিক দিন।',
+      updated: 'পেমেন্ট গেটওয়ে সেভ হয়েছে',
+      loadFailed: 'পেমেন্ট গেটওয়ে আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
     },
     categories: {
       title: 'শপের ক্যাটাগরি',
@@ -5418,7 +5469,7 @@ export const bn: Messages = {
     // ধাপ ২৭b: শপের অর্ডার (/storefront/orders, সিদ্ধান্ত ১০)
     orders: {
       title: 'শপের অর্ডার',
-      description: 'অনলাইন শপের অর্ডার, ফোনের কোড থেকে ক্রেতার দরজা পর্যন্ত',
+      description: 'অনলাইন শপের অর্ডার, চেকআউট থেকে ক্রেতার দরজা পর্যন্ত',
       searchLabel: 'অর্ডার খুঁজুন',
       searchPlaceholder: 'অর্ডার নম্বর, নাম বা ফোন',
       view: 'দেখান',
@@ -5494,6 +5545,14 @@ export const bn: Messages = {
         delivered: 'ইনভয়েসটা টাকার অপেক্ষায়। রাইডার টাকা নিয়ে ফিরলে সেটা লিখে রাখুন।',
       },
       recordPayment: 'টাকা জমা লিখুন',
+      deliveredPaid: 'ইনভয়েসের টাকা শোধ হয়েছে: অনলাইন পেমেন্টের মানি রিসিট এতে ধরা হয়েছে।',
+      paidCancelled:
+        'ক্রেতা এই অর্ডারের জন্য অনলাইনে {{amount}} দিয়েছেন। আপনার SSLCommerz প্যানেল থেকে টাকাটা ফেরত দিন, তারপর রিফান্ড লিখুন।',
+      paidTwice:
+        'ক্রেতা অনলাইনে দুবার টাকা দিয়েছেন, প্রতিবার {{amount}}। আপনার SSLCommerz প্যানেল থেকে একটা ফেরত দিন, তারপর রিফান্ড লিখুন।',
+      paidOnCod:
+        'ক্রেতা অনলাইনেও {{amount}} দিয়েছেন, তারপর ক্যাশ অন ডেলিভারি বেছেছেন। রাইডারকে নগদ না নিতে বলুন। রাইডার নগদও নিয়ে থাকলে একটা ফেরত দিন।',
+      recordRefund: 'রিফান্ড লিখুন',
       documentError: 'সেলস অর্ডার বানানো যায়নি। {{reason}}',
       noSalesOrder: 'এই অর্ডারের এখনো সেলস অর্ডার নেই। মাল প্যাকের আগে বানান।',
       linesTitle: 'পণ্য',
@@ -5530,6 +5589,7 @@ export const bn: Messages = {
       history: {
         pending: 'শপে অর্ডার দেওয়া হয়েছে',
         confirmed: 'ফোনের কোডে কনফার্ম হয়েছে',
+        confirmedOnline: 'পেমেন্ট আসার পর কনফার্ম হয়েছে',
         packed: 'প্যাক হয়েছে',
         shipped: 'পাঠানো হয়েছে',
         delivered: 'পৌঁছেছে',
@@ -5537,6 +5597,31 @@ export const bn: Messages = {
         returned: 'ফেরত এসেছে',
       },
       cancelReason: 'কারণ: {{reason}}',
+      payments: {
+        title: 'পেমেন্ট',
+        description:
+          'SSLCommerz-এর পেজে প্রতিবার যাওয়া। এর নিজের প্যানেল ট্রানজ্যাকশন আইডি দিয়ে খুঁজে পায়।',
+        try: '{{number}} নম্বর চেষ্টা',
+        statuses: {
+          started: 'শুরু হয়েছে',
+          not_opened: 'পেজ খোলেনি',
+          paid: 'টাকা এসেছে',
+          failed: 'ব্যর্থ',
+          cancelled: 'বাতিল',
+        },
+        tranId: 'ট্রানজ্যাকশন আইডি',
+        started: '{{date}} শুরু',
+        settled: '{{date}} উত্তর এসেছে',
+        amount: 'পরিমাণ',
+        cardType: 'যেভাবে দিয়েছেন',
+        bankTranId: 'ব্যাংকের ট্রানজ্যাকশন আইডি',
+        fee: 'গেটওয়ের ফি',
+        storeAmount: 'SSLCommerz দেবে',
+        receipt: 'মানি রিসিট',
+        receiptError: 'মানি রিসিট বানানো যায়নি। {{reason}}',
+        makeReceipt: 'রিসিট বানান',
+        receiptMade: 'মানি রিসিট {{receipt}} বানানো হয়েছে',
+      },
       deliverTitle: '{{number}} পৌঁছেছে বলে চিহ্ন দেবেন?',
       deliverBody:
         'এতে আজকের তারিখে {{total}}-এর একটা ইনভয়েস পোস্ট হবে। টাকা জমা না লেখা পর্যন্ত এটা বাকি থাকে।',
@@ -6275,6 +6360,7 @@ export const bn: Messages = {
       storefront_collection: 'শপের কালেকশন',
       storefront_order: 'শপের অর্ডার',
       storefront_coupon: 'শপের কুপন',
+      storefront_payment_gateway: 'শপের পেমেন্ট গেটওয়ে',
     },
     columns: {
       when: 'কখন',
@@ -6636,6 +6722,12 @@ export const bn: Messages = {
         archived: 'শপের কুপন আর্কাইভ করেছেন',
         restored: 'আর্কাইভ করা কুপন আবার শপে দিয়েছেন',
       },
+      // Step 27d
+      storefront_payment_gateway: {
+        created: 'শপের পেমেন্ট গেটওয়ে সেভ করেছেন',
+        updated: 'শপের পেমেন্ট গেটওয়ে বদলেছেন',
+        tested: 'শপের পেমেন্ট গেটওয়ে পরীক্ষা করেছেন',
+      },
     },
     fields: {
       name: 'নাম',
@@ -6870,6 +6962,13 @@ export const bn: Messages = {
       terms: 'শর্তাবলি',
       about: 'আমাদের সম্পর্কে',
       contact: 'যোগাযোগ',
+      // Step 27d: the shop's payment gateway. The password's change says only "changed"
+      storeId: 'স্টোর আইডি',
+      mode: 'স্যান্ডবক্স না লাইভ',
+      moneyAccount: 'টাকা যে অ্যাকাউন্টে যায়',
+      feeAccount: 'গেটওয়ের ফি-এর অ্যাকাউন্ট',
+      password: 'পাসওয়ার্ড',
+      testResult: 'পরীক্ষার ফল',
     },
     loadFailed: 'অডিট লগ আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
   },
@@ -7756,6 +7855,26 @@ export const bn: Messages = {
     storefront_coupon_up_to: '“সর্বোচ্চ” শুধু শতাংশের কুপনে থাকে। ঘরটা ফাঁকা রাখুন।',
     storefront_coupon_limit_format:
       '১ থেকে ১০,০০,০০০-এর মধ্যে অর্ডারের একটা পূর্ণ সংখ্যা লিখুন, অথবা কোনো সীমা না চাইলে ফাঁকা রাখুন।',
+    // Step 27d
+    shop_payment_no_order: 'কোনো অর্ডার পেমেন্টের অপেক্ষায় নেই। আবার অর্ডার দিন।',
+    shop_payment_tries_used:
+      'এই অর্ডারে অনলাইনে পেমেন্টের তিনটা চেষ্টাই শেষ। ডেলিভারির সময় টাকা দিন, অথবা আবার অর্ডার দিন।',
+    shop_payment_settled: 'এই অর্ডারের পেমেন্ট হয়ে গেছে, অথবা এটা এখন ক্যাশ অন ডেলিভারি।',
+    storefront_gateway_store_id_format:
+      'SSLCommerz যেভাবে পাঠিয়েছে সেভাবে স্টোর আইডি লিখুন: অক্ষর আর অঙ্ক, কোনো স্পেস ছাড়া।',
+    storefront_gateway_password_required: 'SSLCommerz-এর পাঠানো স্টোর পাসওয়ার্ড লিখুন।',
+    storefront_gateway_money_account_invalid:
+      'টাকা রাখা হয় এমন একটা চালু অ্যাকাউন্ট বাছুন, যেমন SSLCommerz-এর জন্য একটা ব্যাংক অ্যাকাউন্ট।',
+    storefront_gateway_fee_account_invalid: 'গেটওয়ের ফি-এর জন্য একটা চালু খরচের অ্যাকাউন্ট বাছুন।',
+    storefront_gateway_set_up_already:
+      'পেমেন্ট গেটওয়ে আগেই সেভ করা আছে। বদলাতে পেজটা আবার লোড করুন।',
+    storefront_gateway_not_set_up: 'আগে পেমেন্ট গেটওয়ে সেভ করুন।',
+    storefront_online_not_ready:
+      'অনলাইনে পেমেন্টে টিক দেওয়ার আগে দুটো অ্যাকাউন্টসহ অনলাইন পেমেন্ট কার্ডটা সেভ করুন।',
+    storefront_gateway_key_missing:
+      'এই সার্ভার এখনো পেমেন্ট গেটওয়ের পাসওয়ার্ড রাখতে পারে না। যিনি আপনার Omnivo চালান, তাঁকে CREDENTIALS_KEY সেট করতে বলুন।',
+    account_used_by_shop:
+      'শপের অনলাইন পেমেন্ট এই অ্যাকাউন্ট ব্যবহার করে। আগে শপের সেটিংস → অনলাইন পেমেন্ট থেকে অন্য একটা বাছুন, অথবা এটা আর্কাইভ করুন।',
   },
   ui: {
     dataTable: {

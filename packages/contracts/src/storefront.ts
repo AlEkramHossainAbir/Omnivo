@@ -373,8 +373,10 @@ export type ShopCouponResult = z.infer<typeof shopCouponResultSchema>;
 // Step 26c: checkout, the phone code and the order.
 
 // How the shopper pays. The system design's payment_method is cod | online; "online" is the
-// tenant's own gateway (SSLCommerz, bKash), which step 27 connects. The checkout calls it
-// "Mobile Banking", as Figma does.
+// tenant's own gateway account (SSLCommerz), which step 27d connects. Figma calls it "Mobile
+// Banking"; the shop says "Pay online" (step 27d's decision 9), because SSLCommerz's page takes
+// cards and internet banking as well as bKash and Nagad. The value stays `online`: it is saved on
+// every order already, and it never was the words.
 export const SHOP_PAYMENT_METHODS = ['cod', 'online'] as const;
 
 // A delivery zone the shop delivers to, with its charge ("Inside Dhaka — ৳80")
@@ -472,12 +474,24 @@ export function maskPhone(phone: string): string {
   return `+880 ${phone.slice(1, 3)}•• ••• ${phone.slice(-3)}`;
 }
 
+// Step 27d: the payment page the shopper is sent to. SSLCommerz's own page (GatewayPageURL, always
+// https), or in development and CI the shop's fake gateway page (SHOP_FAKE_GATEWAY_PATH), which is
+// http on localhost. Only http and https: the shop puts it in `location`, and a `javascript:`
+// address there would run on the shop's page
+export const shopPaymentUrlSchema = z.url({ protocol: /^https?$/ });
+
 // What Confirm Order answers. Which page comes next depends on the payment method:
 // - verify: Cash on Delivery. The order waits for the phone code; the browser goes to
 //   /checkout/verify, which says where the code went ("+880 17•• ••• 356": the middle is hidden, so
 //   a screenshot of the page does not give away the number)
-// - confirmed: the order needs no code (Mobile Banking in the mock; in the API from step 27c, once
-//   the shop's gateway says it is paid). The checkout opens the "Order Confirmed" dialog
+// - pay (step 27d): Pay online. The order waits for its payment, with no phone code (27c's
+//   decision 8: a card or a wallet proves more than an SMS). The browser goes to the gateway's
+//   page. paymentUrl is null when the gateway did not open a page (it was down, or it refused the
+//   shop's account): the order still exists and holds its stock, and the browser goes to
+//   /checkout/paid, which offers "Try again" and "Pay on delivery"
+// - confirmed: the order needs no code and is paid already. Only the mock answered it (26c); the
+//   API never does now, because an online order is confirmed when its payment arrives. Kept, so
+//   the checkout's dialog code stays the one place that opens "Order Confirmed"
 // The order's secret token is not in the body: the route sets it as an httpOnly cookie, so no
 // script on the page can read it (decisions 4 and 5).
 export const shopOrderPlacedSchema = z.discriminatedUnion('next', [
@@ -485,6 +499,10 @@ export const shopOrderPlacedSchema = z.discriminatedUnion('next', [
     next: z.literal('verify'),
     maskedPhone: z.string().min(1),
     resendInSeconds: z.number().int().min(0),
+  }),
+  z.object({
+    next: z.literal('pay'),
+    paymentUrl: shopPaymentUrlSchema.nullable(),
   }),
   z.object({
     next: z.literal('confirmed'),
@@ -523,6 +541,158 @@ export const shopCodeWaitSchema = z.object({
   resendInSeconds: z.number().int().min(0),
   listingIds: z.array(listingIdSchema).min(1).max(SHOP_CART_MAX_LINES),
 });
+
+// ---------------------------------------------------------------------------------------------
+// Step 27d: paying online. An online order is placed like any other (pending, holding its stock),
+// then waits for its payment instead of a phone code. Each visit to the gateway's page is one try
+// (a payment row in the API, with its own transaction id); the first one starts at Confirm Order.
+
+// A payment try's life:
+// - started: the gateway opened its page and the shopper is (or was) on it
+// - not_opened: the gateway did not open a page (down, or it refused the shop's account)
+// - paid: the gateway said, when the API asked it, that the money arrived in full. Final: no later
+//   answer moves it back
+// - failed, cancelled: the gateway said the bank refused it, or the shopper pressed Cancel there.
+//   Not final: a payment the gateway confirms later still makes it paid (decision 5: money that
+//   arrived is never left unrecorded)
+export const SHOP_PAYMENT_STATUSES = [
+  'started',
+  'not_opened',
+  'paid',
+  'failed',
+  'cancelled',
+] as const;
+
+// An order gets at most 3 tries, like its 3 phone codes: each one is a page the gateway makes, and
+// someone pressing "Try again" all evening is not paying. After the third the shopper can still pay
+// on delivery (when the shop takes it) or place the order again
+export const SHOP_PAYMENT_TRIES = 3;
+
+// The transaction id the API gives each try, and the gateway sends back (SSLCommerz's tran_id).
+// Not the order's number: a pending order has none yet (27a's decision 20). 20 upper-case letters
+// and digits, random: SSLCommerz takes up to 30 alphanumeric characters, and an id nobody can
+// guess means a made-up post to the return path names no try. The API never trusts what the post
+// says about it either way; it asks the gateway (shopGatewayPostSchema)
+export const shopPaymentTranIdSchema = z.string().regex(/^[A-Z0-9]{20}$/);
+
+// Where the gateway sends the shopper and its own server back to, on the shop's address. The API
+// builds the gateway's URLs from these when it opens a payment page (the success, fail and cancel
+// URLs all go to the return path; the server-to-server notice, SSLCommerz's IPN, to the notice
+// path), and the shop's middleware lets only these two take a POST from another site (decision 2)
+export const SHOP_PAYMENT_RETURN_PATH = '/checkout/pay/return';
+export const SHOP_PAYMENT_NOTICE_PATH = '/api/payments/notice';
+
+// What the gateway posts to both paths, as form fields with SSLCommerz's own names. Only the two
+// ids are read. Everything else in the post (status, amount, card_type) is what the browser or a
+// stranger sent, so the API asks the gateway itself, by val_id when there is one (a paid try) and
+// by tran_id when there is not (a failed or cancelled one). An empty val_id is none
+export const shopGatewayPostSchema = z.object({
+  tran_id: shopPaymentTranIdSchema,
+  val_id: z
+    .string()
+    .max(64)
+    .optional()
+    .transform((value) => (value === undefined || value.trim() === '' ? null : value.trim())),
+});
+
+// The shop's server passes the two ids on, from either path. The API answers the try's status
+// after it asked the gateway; the return path then sends the browser to /checkout/paid, and the
+// notice path answers the gateway 200
+export const shopPaymentSettleRequestSchema = z.object({
+  tranId: shopPaymentTranIdSchema,
+  valId: z.string().min(1).max(64).nullable(),
+});
+export const shopPaymentSettledSchema = z.object({
+  status: z.enum(SHOP_PAYMENT_STATUSES),
+});
+
+// Why the last try did not pay, in the shopper's words on /checkout/paid:
+// - failed, cancelled: the gateway's answer
+// - not_opened: the payment page did not open
+// - not_finished: the try was started, and the gateway knows no payment for it: the shopper came
+//   back without paying (the browser's Back button), or the page is still open in another tab
+export const SHOP_PAYMENT_PROBLEMS = ['failed', 'cancelled', 'not_opened', 'not_finished'] as const;
+
+// What /checkout/paid draws for this browser's online order (by the cookie's token, like the
+// verify page):
+// - paid: the order is confirmed. The page takes its listings out of the cart (as a right phone
+//   code does) and opens "Order Confirmed"
+// - checking: the gateway could not be asked just now, or says the payment is still being
+//   processed. The page asks again after a few seconds
+// - unpaid: the last try did not pay. "Try again" while tries are left, "Pay on delivery" when the
+//   shop takes it now. The total is the one the shopper agreed to; it never changes on this page
+export const shopPaymentWaitSchema = z.discriminatedUnion('state', [
+  z.object({
+    state: z.literal('paid'),
+    orderNo: z.string().min(1),
+    phone: z.string().min(1),
+    listingIds: z.array(listingIdSchema).min(1).max(SHOP_CART_MAX_LINES),
+  }),
+  z.object({
+    state: z.literal('checking'),
+  }),
+  z.object({
+    state: z.literal('unpaid'),
+    problem: z.enum(SHOP_PAYMENT_PROBLEMS),
+    triesLeft: z
+      .number()
+      .int()
+      .min(0)
+      .max(SHOP_PAYMENT_TRIES - 1),
+    payOnDelivery: z.boolean(),
+    total: shopMoneySchema,
+  }),
+]);
+
+// "Try again" answers the new try's page, null when the gateway did not open one (the page then
+// says so, and the try counts: it is a row the API keeps)
+export const shopPaymentRetrySchema = z.object({
+  paymentUrl: shopPaymentUrlSchema.nullable(),
+});
+
+// Development and CI: the fake gateway (PAYMENT_GATEWAY=fake in the API, and the shop's mock
+// source) opens this page on the shop instead of SSLCommerz's. It shows the amount and three
+// buttons, and posts what SSLCommerz posts to SHOP_PAYMENT_RETURN_PATH. Its val_id carries the
+// try and what happened: the amount it says was paid (so a test can pay a wrong amount by changing
+// the address), or that the bank refused it or the shopper cancelled. The API refuses
+// PAYMENT_GATEWAY=fake in production, and the real gateway asks SSLCommerz about a val_id, so one
+// of these typed into a live shop pays nothing
+export const SHOP_FAKE_GATEWAY_PATH = '/checkout/fake-gateway';
+export const FAKE_GATEWAY_OUTCOMES = ['paid', 'failed', 'cancelled'] as const;
+
+export const fakeGatewayParamsSchema = z.object({
+  tranId: shopPaymentTranIdSchema,
+  amount: shopMoneySchema,
+});
+
+// What one press on the fake page says. Step 27d.3: failed and cancelled are in the val_id too.
+// SSLCommerz says them in its own answer to the API; the fake gateway keeps no table, so without
+// this the API could not tell "the bank refused it" from "the shopper never paid"
+export type FakeGatewayAnswer =
+  | { tranId: string; outcome: 'paid'; amount: string }
+  | { tranId: string; outcome: 'failed' | 'cancelled' };
+
+const FAKE_REFUSALS = { failed: 'FAILED', cancelled: 'CANCELLED' } as const;
+
+export function fakeValId(
+  tranId: string,
+  answer: { outcome: 'paid'; amount: string } | { outcome: 'failed' | 'cancelled' },
+): string {
+  return answer.outcome === 'paid'
+    ? `FAKE_${tranId}_${answer.amount}`
+    : `FAKE_${tranId}_${FAKE_REFUSALS[answer.outcome]}`;
+}
+
+// The try and the answer a fake val_id names, or null for anything else (a real SSLCommerz val_id)
+export function readFakeValId(valId: string): FakeGatewayAnswer | null {
+  const match = /^FAKE_([A-Z0-9]{20})_(\d{1,12}(?:\.\d{1,4})?|FAILED|CANCELLED)$/.exec(valId);
+  const tranId = match?.[1];
+  const said = match?.[2];
+  if (tranId === undefined || said === undefined) return null;
+  if (said === FAKE_REFUSALS.failed) return { tranId, outcome: 'failed' };
+  if (said === FAKE_REFUSALS.cancelled) return { tranId, outcome: 'cancelled' };
+  return { tranId, outcome: 'paid', amount: said };
+}
 
 // An order's life (system design §14.3 storefront_orders.status). Cancelled and returned end it
 export const SHOP_ORDER_STATUSES = [
@@ -580,6 +750,15 @@ export type ShopCodeWait = z.infer<typeof shopCodeWaitSchema>;
 export type ShopOrderStatus = (typeof SHOP_ORDER_STATUSES)[number];
 export type ShopOrderLine = z.infer<typeof shopOrderLineSchema>;
 export type ShopOrder = z.infer<typeof shopOrderSchema>;
+export type ShopPaymentStatus = (typeof SHOP_PAYMENT_STATUSES)[number];
+export type ShopPaymentProblem = (typeof SHOP_PAYMENT_PROBLEMS)[number];
+export type ShopGatewayPost = z.infer<typeof shopGatewayPostSchema>;
+export type ShopPaymentSettleRequest = z.infer<typeof shopPaymentSettleRequestSchema>;
+export type ShopPaymentSettled = z.infer<typeof shopPaymentSettledSchema>;
+export type ShopPaymentWait = z.infer<typeof shopPaymentWaitSchema>;
+export type ShopPaymentRetry = z.infer<typeof shopPaymentRetrySchema>;
+export type FakeGatewayOutcome = (typeof FAKE_GATEWAY_OUTCOMES)[number];
+export type FakeGatewayParams = z.infer<typeof fakeGatewayParamsSchema>;
 
 // ---------------------------------------------------------------------------------------------
 // Step 26d: the category and search pages (/c/<slug>, /search).
@@ -1066,5 +1245,54 @@ export const publicStorefrontRoutes = {
     status: 200,
     body: shopTrackRequestSchema,
     response: shopTrackingSchema,
+  }),
+
+  // Step 27d. The gateway came back (the shopper's browser on the return path, or the gateway's
+  // own server on the notice path): the API asks the gateway and settles the try. The same call
+  // twice, or the browser and the notice at once, settle it once. 404 not_found for a transaction
+  // id that is not this shop's
+  settlePayment: defineRoute({
+    method: 'POST',
+    path: '/public/v1/payments/settle',
+    summary: 'Ask the gateway about a payment try and record what it says (shop server only)',
+    auth: 'shop',
+    status: 200,
+    body: shopPaymentSettleRequestSchema,
+    response: shopPaymentSettledSchema,
+  }),
+  // /checkout/paid, by the cookie's token. 404 shop_payment_no_order when no online order waits
+  // in this browser (it was dropped after its hour, or the cookie is gone)
+  paymentWait: defineRoute({
+    method: 'POST',
+    path: '/public/v1/orders/payment',
+    summary: "This browser's online order and where its payment is (shop server only)",
+    auth: 'shop',
+    status: 200,
+    body: orderTokenBodySchema,
+    response: shopPaymentWaitSchema,
+  }),
+  // "Try again". 422 shop_payment_tries_used after SHOP_PAYMENT_TRIES; 409 shop_payment_settled
+  // when it is paid already, or moved to cash on delivery
+  retryPayment: defineRoute({
+    method: 'POST',
+    path: '/public/v1/orders/payment/retry',
+    summary: 'Open a new payment page for the online order (shop server only)',
+    auth: 'shop',
+    status: 200,
+    body: orderTokenBodySchema,
+    response: shopPaymentRetrySchema,
+  }),
+  // "Pay on delivery": the order becomes Cash on Delivery and gets its phone code, then goes on as
+  // any such order does (/checkout/verify). 422 shop_payment_unavailable when the shop does not
+  // take it; 409 shop_payment_settled when it is paid already
+  payOnDelivery: defineRoute({
+    method: 'POST',
+    path: '/public/v1/orders/payment/cod',
+    summary:
+      'Turn the online order into cash on delivery and send its phone code (shop server only)',
+    auth: 'shop',
+    status: 200,
+    body: orderTokenBodySchema,
+    response: shopCodeWaitSchema,
   }),
 };

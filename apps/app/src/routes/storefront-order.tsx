@@ -3,6 +3,7 @@ import {
   AlertCircleIcon,
   ArrowLeft01Icon,
   CancelCircleIcon,
+  CreditCardAcceptIcon,
   DeliveryTruck01Icon,
   Image01Icon,
   PackageDeliveredIcon,
@@ -45,6 +46,12 @@ import { useForm } from 'react-hook-form';
 import { CancelDraftDialog } from '../components/cancel-draft-dialog';
 import { DocumentNotice } from '../components/document-notice';
 import { NeedsAttentionPill, OrderStatusPill } from '../components/storefront-order-pills';
+import {
+  invoiceTookPayment,
+  PaymentsCard,
+  refundCase,
+  RefundNotice,
+} from '../components/storefront-order-payments';
 import { StorefrontOffline, useShopMoney } from '../components/storefront-parts';
 import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
@@ -82,6 +89,14 @@ const STEP_ICONS = {
   cancelled: CancelCircleIcon,
   returned: PackageReceiveIcon,
 } as const satisfies Record<ShopOrderStatus, IconSvgElement>;
+
+// Step 27d: an online order is confirmed by its payment, not by a code. A cash on delivery order
+// keeps the phone's step even when a try was paid later (the code confirmed it)
+function stepOf(order: StorefrontOrder, status: ShopOrderStatus) {
+  return status === 'confirmed' && order.paymentMethod === 'online'
+    ? ({ word: 'confirmedOnline', icon: CreditCardAcceptIcon } as const)
+    : { word: status, icon: STEP_ICONS[status] };
+}
 
 const STEP_BUTTONS = {
   makeSalesOrder: Agreement01Icon,
@@ -243,7 +258,7 @@ function ShopperCard({ order }: { order: StorefrontOrder }) {
         <div className="grid grid-cols-2 gap-4">
           <Fact label={t('storefront.order.zone')}>{order.zoneName}</Fact>
           <Fact label={t('storefront.order.payment')}>
-            {t(`storefront.payments.${order.paymentMethod}`)}
+            {t(`storefront.orderPayments.${order.paymentMethod}`)}
           </Fact>
         </div>
         <Fact label={t('storefront.order.customer')}>
@@ -365,44 +380,47 @@ function TimelineCard({ order }: { order: StorefrontOrder }) {
     <Card>
       <CardHeader title={t('storefront.order.timelineTitle')} />
       <ol className="grid px-5 pt-4 pb-5">
-        {order.history.map((step, index) => (
-          <li
-            key={`${step.status}-${step.at}`}
-            className="relative grid grid-cols-[24px_minmax(0,1fr)] gap-x-3 pb-4 last:pb-0"
-          >
-            {/* The line down to the next step, behind the dots; none after the last one */}
-            {index < last && (
+        {order.history.map((step, index) => {
+          const shown = stepOf(order, step.status);
+          return (
+            <li
+              key={`${step.status}-${step.at}`}
+              className="relative grid grid-cols-[24px_minmax(0,1fr)] gap-x-3 pb-4 last:pb-0"
+            >
+              {/* The line down to the next step, behind the dots; none after the last one */}
+              {index < last && (
+                <span
+                  aria-hidden="true"
+                  className="absolute top-7 bottom-1 left-[11.5px] w-px bg-line"
+                />
+              )}
+              {/* The step the order is at is brand; the earlier ones are done and step back */}
               <span
                 aria-hidden="true"
-                className="absolute top-7 bottom-1 left-[11.5px] w-px bg-line"
-              />
-            )}
-            {/* The step the order is at is brand; the earlier ones are done and step back */}
-            <span
-              aria-hidden="true"
-              className={cn(
-                'grid size-6 place-items-center rounded-full',
-                index === last ? 'bg-brand-soft text-brand' : 'bg-subtle text-ink-3',
-              )}
-            >
-              <HugeiconsIcon icon={STEP_ICONS[step.status]} size={14} strokeWidth={1.5} />
-            </span>
-            <span className="grid min-w-0">
-              <span className="text-body-sm font-medium text-ink">
-                {t(`storefront.order.history.${step.status}`)}
+                className={cn(
+                  'grid size-6 place-items-center rounded-full',
+                  index === last ? 'bg-brand-soft text-brand' : 'bg-subtle text-ink-3',
+                )}
+              >
+                <HugeiconsIcon icon={shown.icon} size={14} strokeWidth={1.5} />
               </span>
-              <span className="text-caption text-ink-3 tabular-nums">
-                {format.dateTime(new Date(step.at), timeZone)}
-              </span>
-              {/* Decision 19: the staff's reason, under the step it explains */}
-              {step.status === 'cancelled' && order.cancelReason !== null && (
-                <span className="mt-1 text-body-sm text-ink-2">
-                  {t('storefront.order.cancelReason', { reason: order.cancelReason })}
+              <span className="grid min-w-0">
+                <span className="text-body-sm font-medium text-ink">
+                  {t(`storefront.order.history.${shown.word}`)}
                 </span>
-              )}
-            </span>
-          </li>
-        ))}
+                <span className="text-caption text-ink-3 tabular-nums">
+                  {format.dateTime(new Date(step.at), timeZone)}
+                </span>
+                {/* Decision 19: the staff's reason, under the step it explains */}
+                {step.status === 'cancelled' && order.cancelReason !== null && (
+                  <span className="mt-1 text-body-sm text-ink-2">
+                    {t('storefront.order.cancelReason', { reason: order.cancelReason })}
+                  </span>
+                )}
+              </span>
+            </li>
+          );
+        })}
       </ol>
     </Card>
   );
@@ -555,7 +573,20 @@ function OrderView({ order }: { order: StorefrontOrder }) {
         {t('storefront.order.noSalesOrder')}
       </DocumentNotice>,
     );
-  } else if (canManage && order.status !== 'cancelled' && order.status !== 'returned') {
+  }
+  // Step 27d (decision 7): money to give back. For every reader: the one who packs needs to know
+  // the rider takes no cash too
+  if (refundCase(order) !== null) notices.push(<RefundNotice key="refund" order={order} />);
+  // The two notices above say what comes first; the step's own line only after them
+  const blocked = order.documentError !== null || step === 'makeSalesOrder';
+  if (!blocked && invoiceTookPayment(order)) {
+    // Step 27d (decision 6): nothing to record, the invoice took the online payment's receipt
+    notices.push(
+      <DocumentNotice key="next" tone="neutral">
+        {t('storefront.order.deliveredPaid')}
+      </DocumentNotice>,
+    );
+  } else if (!blocked && canManage && order.status !== 'cancelled' && order.status !== 'returned') {
     // Decision 7: a delivered order's money comes in as an ordinary receipt for its invoice, for
     // someone who may write one
     const receipt = order.status === 'delivered' &&
@@ -644,15 +675,22 @@ function OrderView({ order }: { order: StorefrontOrder }) {
           <div className="order-1">
             <LinesCard order={order} />
           </div>
-          <div className="order-4">
+          {/* Step 27d: under the lines, the gateway's visits (none: no card, and the empty
+              wrapper takes no gap, being `contents` on a phone and empty in the xl grid) */}
+          {order.payments.length > 0 && (
+            <div className="order-2">
+              <PaymentsCard order={order} onMade={applyMove} />
+            </div>
+          )}
+          <div className="order-5">
             <TimelineCard order={order} />
           </div>
         </div>
         <div className="contents xl:grid xl:gap-5">
-          <div className="order-2">
+          <div className="order-3">
             <ShopperCard order={order} />
           </div>
-          <div className="order-3">
+          <div className="order-4">
             <DocumentsCard order={order} />
           </div>
         </div>

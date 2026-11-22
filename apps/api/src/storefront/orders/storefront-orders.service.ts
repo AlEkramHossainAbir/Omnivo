@@ -30,6 +30,7 @@ import {
   parties,
   products,
   productVariants,
+  receipts,
   salesOrderLines,
   salesOrders,
   salesReturns,
@@ -37,6 +38,7 @@ import {
   storefrontImages,
   storefrontOrderLines,
   storefrontOrders,
+  storefrontPayments,
   storefrontSettings,
   storefrontStockHolds,
   tenantSettings,
@@ -63,6 +65,7 @@ import { SmsQueue } from '../../sms/sms-queue.js';
 import { isoText } from '../listing-sql.js';
 import { shopImage } from '../media.js';
 import { historyOf, type OrderLineRow, type OrderRow } from './order-view.js';
+import { ShopPaymentReceipts } from './payment-receipts.js';
 import { ShopSalesOrderMaker } from './sales-order-maker.js';
 
 type Query = z.output<typeof storefrontOrderQuerySchema>;
@@ -207,6 +210,7 @@ export class StorefrontOrdersService {
     private readonly invoices: InvoicesService,
     private readonly salesReturns: SalesReturnsService,
     private readonly sms: SmsQueue,
+    private readonly paymentReceipts: ShopPaymentReceipts,
   ) {
     this.mediaUrl = config.storefront.mediaUrl;
   }
@@ -274,15 +278,63 @@ export class StorefrontOrdersService {
   // the answer is the refusal itself, so the page shows what is still wrong
   async makeSalesOrder(id: string, version: number): Promise<StorefrontOrder> {
     try {
-      return await this.withTenant(async (tx) => {
+      await this.withTenant(async (tx) => {
         const order = await this.lock(tx, id, version);
         if (order.status !== 'confirmed' || order.salesOrderId !== null) throw stepInvalid();
         await this.maker.make(tx, order);
-        return this.read(tx, id);
       });
     } catch (error) {
       if (error instanceof AppError && error.code !== 'storefront_order_step_invalid') {
         await this.keepError(id, error.code);
+      }
+      throw error;
+    }
+    // Step 27d: the paid tries' receipts waited for the customer the sales order names. Each in
+    // its own transaction, after the sales order's commit: a refused receipt keeps its error on
+    // its try and leaves the sales order made
+    await this.paymentReceipts.makeAll(id);
+    return this.get(id);
+  }
+
+  // Step 27d: "Make the receipt", after a paid try's receipt was refused (receiptError). The same
+  // receipt the worker makes, in this request's transaction, by the member who pressed it
+  async makePaymentReceipt(
+    id: string,
+    paymentId: string,
+    version: number,
+  ): Promise<StorefrontOrder> {
+    try {
+      return await this.withTenant(async (tx) => {
+        const order = await this.lock(tx, id, version);
+        const locked = await this.paymentReceipts.lock(tx, id, paymentId);
+        if (locked === null) throw notFound('Payment');
+        const { payment } = locked;
+        // Not paid, made already (the worker's retry won), or no sales order to name the customer
+        if (
+          payment.status !== 'paid' ||
+          payment.receiptId !== null ||
+          order.salesOrderId === null
+        ) {
+          throw stepInvalid();
+        }
+        await this.paymentReceipts.makeIn(tx, order, payment);
+        // The page's version moves on, so another tab that still shows the error reloads first
+        await tx
+          .update(storefrontOrders)
+          .set({
+            version: sql`${storefrontOrders.version} + 1`,
+            updatedBy: currentPrincipal().userId,
+          })
+          .where(and(eq(storefrontOrders.tenantId, getTenantId()), eq(storefrontOrders.id, id)));
+        return this.read(tx, id);
+      });
+    } catch (error) {
+      // The receipt's own refusal is kept, as the worker keeps it; a stale page or a wrong id is not
+      if (
+        error instanceof AppError &&
+        !['storefront_order_step_invalid', 'version_conflict', 'not_found'].includes(error.code)
+      ) {
+        await this.paymentReceipts.keepError(paymentId, error.code);
       }
       throw error;
     }
@@ -510,6 +562,8 @@ export class StorefrontOrdersService {
         // moves the amount from "on order" to "owed" and adds nothing (CreditService.check)
         overrideCreditLimit: false,
       });
+      // Step 27d (decision 6): a paid online order's advance pays its invoice at once
+      await this.paymentReceipts.applyToInvoice(tx, order.id, invoiceId);
       await this.move(tx, order, { status: 'delivered', deliveredAt: new Date(), invoiceId });
       return this.read(tx, id);
     });
@@ -897,6 +951,19 @@ export class StorefrontOrdersService {
       return row ?? null;
     };
     const documentError = order.documentError;
+    // Step 27d: every try, oldest first, with the number of the receipt a paid one made
+    const payments = await tx
+      .select({ payment: storefrontPayments, receiptNumber: receipts.number })
+      .from(storefrontPayments)
+      .leftJoin(
+        receipts,
+        and(
+          eq(receipts.tenantId, storefrontPayments.tenantId),
+          eq(receipts.id, storefrontPayments.receiptId),
+        ),
+      )
+      .where(and(eq(storefrontPayments.tenantId, tenantId), eq(storefrontPayments.orderId, id)))
+      .orderBy(asc(storefrontPayments.tryNo));
     return {
       ...summaryOf(
         order,
@@ -940,6 +1007,26 @@ export class StorefrontOrdersService {
       // Stored only as an error code (storefront_orders_document_error_check); one this API no
       // longer knows reads as none rather than breaking the page
       documentError: isErrorCode(documentError) ? documentError : null,
+      payments: payments.map(({ payment, receiptNumber }) => ({
+        id: payment.id,
+        tranId: payment.tranId,
+        status: payment.status,
+        amount: payment.amount,
+        startedAt: payment.startedAt.toISOString(),
+        settledAt: payment.settledAt?.toISOString() ?? null,
+        cardType: payment.cardType,
+        bankTranId: payment.bankTranId,
+        storeAmount: payment.storeAmount,
+        receipt:
+          payment.receiptId === null || receiptNumber === null
+            ? null
+            : { id: payment.receiptId, number: receiptNumber },
+        // Kept as a code only (storefront_payments_receipt_error_check), read like documentError
+        receiptError:
+          payment.receiptError !== null && isErrorCode(payment.receiptError)
+            ? payment.receiptError
+            : null,
+      })),
       version: order.version,
       updatedAt: order.updatedAt.toISOString(),
     };

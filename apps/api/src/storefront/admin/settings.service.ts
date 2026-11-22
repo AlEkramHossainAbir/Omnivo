@@ -5,6 +5,7 @@ import {
   type CreateStorefrontSettingsInput,
   defaultLineDescription,
   type ShopDeliveryZone,
+  type ShopPaymentMethod,
   type StorefrontReadiness,
   type StorefrontSettings,
   type StorefrontSetup,
@@ -28,6 +29,7 @@ import { currentPrincipal, getTenantId } from '../../common/tenant/tenant-contex
 import type { Transaction, WithTenant } from '../../common/tenant/with-tenant.js';
 import type { Config } from '../../config.js';
 import { CONFIG, WITH_TENANT } from '../../infra/tokens.js';
+import { onlineReady } from '../online-ready.js';
 import { shopUrl } from '../shop-url.js';
 
 type SettingsRow = typeof storefrontSettings.$inferSelect;
@@ -128,6 +130,24 @@ function snapshot(row: SettingsRow) {
   };
 }
 
+// Step 27d (decision 4): Pay online can be newly ticked only while the gateway is ready. One that
+// was ticked already and is not ready now (an account archived since) stays as it is: the checkout
+// hides it by itself (offeredMethods), and a save of the shop's other settings is not refused for it
+async function checkOnline(
+  tx: Transaction,
+  methods: readonly ShopPaymentMethod[],
+  before: readonly ShopPaymentMethod[],
+): Promise<void> {
+  if (!methods.includes('online') || before.includes('online')) return;
+  if (await onlineReady(tx)) return;
+  throw new AppError(
+    422,
+    'storefront_online_not_ready',
+    'Save the payment gateway with its two accounts first.',
+    { fieldErrors: { paymentMethods: ['storefront_online_not_ready'] } },
+  );
+}
+
 // Step 26g: the shop's settings and its launch (decision 1). One row per workspace: the first
 // save makes it (POST), later saves change it (PUT, with the version), and "Open the shop" sets
 // launched_at once. Nothing here closes a shop again (step 26e: a shop is always open).
@@ -175,6 +195,7 @@ export class StorefrontSettingsService {
       return await this.withTenant(async (tx) => {
         await this.checkWarehouse(tx, input.defaultWarehouseId);
         const delivery = await this.checkDelivery(tx, input.deliveryVariantId, null);
+        await checkOnline(tx, input.paymentMethods, []);
         const [row] = await tx
           .insert(storefrontSettings)
           .values({
@@ -225,6 +246,7 @@ export class StorefrontSettingsService {
           await this.checkWarehouse(tx, input.defaultWarehouseId);
         }
         const delivery = await this.checkDelivery(tx, input.deliveryVariantId, before);
+        await checkOnline(tx, input.paymentMethods, before.paymentMethods);
         const [after] = await tx
           .update(storefrontSettings)
           .set({

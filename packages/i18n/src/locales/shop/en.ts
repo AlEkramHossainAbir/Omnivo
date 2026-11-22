@@ -124,13 +124,18 @@ export const shopEn = {
     couponAppliedUpTo: '{{code}} applied: {{off}} off, up to {{upTo}}',
     payment: 'Payment Method',
     cod: 'Cash on Delivery',
-    online: 'Mobile Banking',
+    // Step 27d (decision 9): SSLCommerz's page takes cards and internet banking too
+    online: 'Pay online',
+    // Under the two cards while Pay online is picked
+    onlineHint: 'You pay on SSLCommerz’s page with bKash, Nagad, a card or internet banking.',
     // Three parts, because the link sits inside the sentence and Bangla puts it first
     termsBefore: 'I agree with the ',
     termsLink: 'Terms and Conditions',
     termsAfter: '',
     confirm: 'Confirm Order',
     placing: 'Placing the order…',
+    // Step 27d: the button's words while an online order goes to the payment page
+    openingPayment: 'Opening the payment page…',
     // No answer from the server: the order may not have reached it
     orderFailed: 'The order was not sent. Check the connection, then try again.',
     belowMinimum: 'Orders start at {{minimum}}. Add {{more}} more to order.',
@@ -167,6 +172,8 @@ export const shopEn = {
   },
   // Step 26c: /order/<no>
   order: {
+    // Step 27d: how a placed order was paid. An online order is confirmed only once it is paid
+    paymentMethods: { cod: 'Cash on Delivery', online: 'Paid online' },
     title: 'Order Details',
     // The browser tab: the number, then the shop
     pageTitle: 'Order {{orderNo}} | {{shop}}',
@@ -188,6 +195,57 @@ export const shopEn = {
     subtotal: 'Subtotal',
     // The Delivery Charge row of an order that went out for free
     free: 'Free',
+  },
+  // Step 27d: /checkout/paid, where the gateway sends the shopper back (found by the order's
+  // cookie). Paid opens the "Order Confirmed" dialog (`confirmed`); these are the other states
+  paid: {
+    pageTitle: 'Payment | {{shop}}',
+    checkingTitle: 'Checking your payment',
+    checkingText:
+      'SSLCommerz is telling us about your payment. This page looks again by itself in a few seconds.',
+    // Without a script the page cannot look again by itself, so it has a link to itself
+    checkAgain: 'Check again',
+    // The unpaid state's title and line, by why the last try did not pay (SHOP_PAYMENT_PROBLEMS)
+    titles: {
+      failed: 'The payment did not go through',
+      cancelled: 'The payment was cancelled',
+      not_opened: 'The payment page did not open',
+      not_finished: 'The payment is not finished',
+    },
+    texts: {
+      failed: 'SSLCommerz says your bank or wallet refused the payment.',
+      cancelled: 'You cancelled on the payment page, so nothing was paid.',
+      not_opened: 'SSLCommerz did not answer just now, so nothing was paid.',
+      not_finished:
+        'SSLCommerz has no payment for this order yet. If its page is still open in another tab, finish there.',
+    },
+    // total = the order's total, which never changes on this page
+    kept: 'Your order for {{total}} is still here, and its items are set aside for you.',
+    triesLeft_one: 'You can try {{count}} more time.',
+    triesLeft_other: 'You can try {{count}} more times.',
+    noTriesLeft: 'You have used all three tries to pay online.',
+    tryAgain: 'Try again',
+    opening: 'Opening the payment page…',
+    // Decision 3: the order becomes cash on delivery and gets its phone code
+    payOnDelivery: 'Pay on delivery instead',
+    payOnDeliveryHint: 'We send a code to your phone, and you pay the rider in cash.',
+    sendingCode: 'Sending the code…',
+    // Nothing left to press: no tries, and the shop does not take cash on delivery now
+    startAgain: 'Back to checkout',
+    // No answer from the server: the press may not have reached it
+    failed: 'That did not reach the shop. Check the connection, then try again.',
+  },
+  // Step 27d: the fake gateway's page (SHOP_FAKE_GATEWAY_PATH) in development, CI and the demo
+  // shop (decision 8). It stands where SSLCommerz's page stands, so it says plainly what it is
+  fakeGateway: {
+    pageTitle: 'Test payment | {{shop}}',
+    title: 'Test payment',
+    notice: 'This is a test page, not SSLCommerz. No money moves, whichever button you press.',
+    amount: 'Amount',
+    tranId: 'Transaction',
+    pay: 'Pay {{amount}}',
+    fail: 'Fail the payment',
+    cancel: 'Cancel the payment',
   },
   // Step 26e: tracking. The /track form, and the view it shares with a tracking link (/t/<token>)
   track: {
@@ -212,7 +270,7 @@ export const shopEn = {
     total: 'Total',
     // Cash on Delivery, until it is delivered: what to keep ready for the rider
     payOnDelivery: 'Keep {{amount}} ready in cash for the rider.',
-    paidOnline: 'Paid with Mobile Banking.',
+    paidOnline: 'Paid online.',
     parcel: 'Parcel',
     // "Steadfast · SFR2611120042"
     courierLine: '{{courier}} · {{code}}',

@@ -71,6 +71,17 @@ export class StorefrontOrdersController {
     return this.orders.deliver(params.id, body.version);
   }
 
+  // Step 27d: "Make the receipt" on the Payments card
+  @Endpoint(routes.storefrontOrders.makePaymentReceipt)
+  makePaymentReceipt({
+    params,
+    body,
+  }: RouteInput<Routes['makePaymentReceipt']>): Promise<
+    RouteResponse<Routes['makePaymentReceipt']>
+  > {
+    return this.orders.makePaymentReceipt(params.id, params.paymentId, body.version);
+  }
+
   @Endpoint(routes.storefrontOrders.cancelOrder)
   cancelOrder({
     params,

@@ -95,6 +95,8 @@ export default function CheckoutForm({
   });
   const zoneId = useWatch({ control, name: 'zoneId' });
   const termsAccepted = useWatch({ control, name: 'termsAccepted' });
+  // Step 27d: the hint under the payment cards, and the button's words on the way to the gateway
+  const paymentMethod = useWatch({ control, name: 'paymentMethod' });
 
   const cart = useCart();
   // The promo box's text, and the code sent with every quote since Apply (decision 2)
@@ -105,8 +107,9 @@ export default function CheckoutForm({
   // The quote the shopper saw when Confirm Order was refused with shop_order_changed
   const [refusedQuote, setRefusedQuote] = useState<ShopCartQuote | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  // Going to /checkout/verify: the button keeps saying "Placing the order…" until the page goes
-  const [leaving, setLeaving] = useState(false);
+  // Going to /checkout/verify (step 27d: or to the payment page): the button keeps saying what is
+  // happening until the page goes, so a second press cannot place a second order
+  const [leaving, setLeaving] = useState<'verify' | 'pay' | null>(null);
 
   // No more quotes once the order is placed: the cart is empty then, and the screen stays as it was
   const { state, pricing, retry, refresh } = useCheckoutQuote(
@@ -142,7 +145,7 @@ export default function CheckoutForm({
       ? quote.coupon
       : null;
   const applying = couponCode !== undefined && couponResult === null && state.status !== 'failed';
-  const busy = isSubmitting || leaving;
+  const busy = isSubmitting || leaving !== null;
   // Confirm Order waits for an answer for this exact cart, zone and code. Every reason it is
   // disabled is on screen: the terms box, the grey amounts, the out-of-stock line, the minimum
   const canOrder =
@@ -217,12 +220,21 @@ export default function CheckoutForm({
     if (answer.next === 'verify') {
       // Cash on Delivery: the order waits for its code. The cart stays until the code is right,
       // so a shopper who gives up on the code still has it
-      setLeaving(true);
+      setLeaving('verify');
       window.location.assign('/checkout/verify');
       return;
     }
-    // Confirmed at once (Mobile Banking in the mock): the screen stays as it is, the ordered
-    // lines leave the cart, and the "Order Confirmed" dialog (26c.5) hears the event
+    if (answer.next === 'pay') {
+      // Step 27d: Pay online. The browser goes to the gateway's page, or, when none opened, to
+      // /checkout/paid, which says so and offers "Try again". The cart stays until the payment
+      // arrives, for the same reason as above. The address came from the API through the shop's
+      // own route and was checked there (shopPaymentUrlSchema: http or https only)
+      setLeaving('pay');
+      window.location.assign(answer.paymentUrl ?? '/checkout/paid');
+      return;
+    }
+    // Confirmed at once (only the mock did this, before step 27d): the screen stays as it is, the
+    // ordered lines leave the cart, and the "Order Confirmed" dialog (26c.5) hears the event
     setPlaced({ quote, lines });
     removeFromCart(new Set(lines.map((line) => line.listingId)));
     announceOrderConfirmed({ orderNo: answer.orderNo, phone: answer.phone });
@@ -357,6 +369,12 @@ export default function CheckoutForm({
             choices={payments}
             field={register('paymentMethod')}
             error={errorOf(errors.paymentMethod?.message)}
+            // Step 27d: where the shopper pays, before they press the button that takes them there
+            hint={
+              paymentMethod === 'online' && (
+                <p className="trim-text mt-3 text-sf-small text-muted">{words.onlineHint}</p>
+              )
+            }
           />
         </div>
 
@@ -401,7 +419,7 @@ export default function CheckoutForm({
               disabled={!canOrder}
               className="h-16 w-full rounded-sm bg-accent text-[18px] font-semibold transition-colors duration-150 not-disabled:hover:bg-brand not-disabled:hover:text-accent disabled:bg-canvas disabled:text-muted"
             >
-              {busy ? words.placing : words.confirm}
+              {leaving === 'pay' ? words.openingPayment : busy ? words.placing : words.confirm}
             </button>
           </div>
         </div>

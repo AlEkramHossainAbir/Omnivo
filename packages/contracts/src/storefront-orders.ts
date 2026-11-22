@@ -14,6 +14,8 @@ import {
   SHOP_CART_MAX_QUANTITY,
   SHOP_ORDER_STATUSES,
   SHOP_PAYMENT_METHODS,
+  SHOP_PAYMENT_STATUSES,
+  SHOP_PAYMENT_TRIES,
 } from './storefront.js';
 
 // Step 27b: the ERP's side of the shop's orders. storefront.ts is what the shop's server sends and
@@ -109,6 +111,34 @@ export const storefrontOrderLineSchema = z.object({
 });
 export type StorefrontOrderLine = z.infer<typeof storefrontOrderLineSchema>;
 
+// Step 27d: one payment try of an online order, for the order page's Payments card. Every try is
+// listed, the ones that did not pay too: when a shopper says "I paid", the staff see each visit to
+// the gateway with its transaction id, which SSLCommerz's own panel searches by
+export const storefrontOrderPaymentSchema = z.object({
+  id: z.uuid(),
+  // Our id for the try, sent to the gateway as tran_id (shopPaymentTranIdSchema)
+  tranId: z.string(),
+  status: z.enum(SHOP_PAYMENT_STATUSES),
+  // The order's total when the try started: what the gateway was asked to take
+  amount: z.string(),
+  startedAt: z.iso.datetime(),
+  // When the gateway's answer was recorded (paid, failed or cancelled). null while started
+  settledAt: z.iso.datetime().nullable(),
+  // What the gateway said about a paid try: the way the shopper paid ("BKASH-BKash",
+  // "VISA-Dutch Bangla"), the bank's or wallet's own transaction number, and what the gateway pays
+  // out after its fee (the fee is amount − storeAmount). null until it is paid
+  cardType: z.string().nullable(),
+  bankTranId: z.string().nullable(),
+  storeAmount: z.string().nullable(),
+  // The money receipt a paid try made (decision 6: posted, an advance until the invoice takes it
+  // at Delivered). null before it is paid, or while it could not be made
+  receipt: documentRefSchema.nullable(),
+  // Why the receipt could not be made ("receipt_account_invalid": the money account was archived
+  // after the gateway was saved). The page shows it with "Make the receipt", which tries again
+  receiptError: z.enum(ERROR_CODES).nullable(),
+});
+export type StorefrontOrderPayment = z.infer<typeof storefrontOrderPaymentSchema>;
+
 export const storefrontOrderSchema = storefrontOrderSummarySchema.extend({
   address: z.string(),
   // When each step happened, oldest first, the shop's timeline's shape (shopOrderSchema.history).
@@ -132,6 +162,10 @@ export const storefrontOrderSchema = storefrontOrderSummarySchema.extend({
   // Why the sales order could not be made (decision 1): the error the sales order's own rules
   // gave ("sales_variant_archived"). The page shows it with "Make the sales order"
   documentError: z.enum(ERROR_CODES).nullable(),
+  // Step 27d: the payment tries, oldest first. Empty for a Cash on Delivery order that never tried
+  // to pay online. A paid online order has one paid try; two paid ones mean the shopper paid twice
+  // (a second tab), and the page says one of them is to be refunded
+  payments: z.array(storefrontOrderPaymentSchema).max(SHOP_PAYMENT_TRIES),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),
 });
@@ -255,6 +289,7 @@ export type CancelStorefrontOrderFormValues = z.input<typeof cancelStorefrontOrd
 // Routes
 
 const idParamsSchema = z.object({ id: z.uuid() });
+const paymentParamsSchema = z.object({ id: z.uuid(), paymentId: z.uuid() });
 
 export const storefrontOrderRoutes = {
   listOrders: defineRoute({
@@ -339,6 +374,18 @@ export const storefrontOrderRoutes = {
     permission: 'storefront.order.manage',
     status: 200,
     params: idParamsSchema,
+    body: storefrontOrderVersionInputSchema,
+    response: storefrontOrderSchema,
+  }),
+  // Step 27d: "Make the receipt", after the receipt of a paid try could not be made
+  makePaymentReceipt: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/payments/:paymentId/receipt',
+    summary: 'Make the money receipt of a paid online payment again, after it failed',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: paymentParamsSchema,
     body: storefrontOrderVersionInputSchema,
     response: storefrontOrderSchema,
   }),

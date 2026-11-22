@@ -290,3 +290,57 @@ test('picks the service the delivery charge is billed as', async ({ page }) => {
   await expect(page.getByText('Changes not saved yet')).toBeHidden();
   await expect(select.locator('option:checked')).toHaveText('Logo embroidery · SVC-EMB');
 });
+
+// Step 27d: the Payments card and the refund notices of the seeded online orders
+// (mocks/storefront-order-data.ts → seedTries)
+test('shows each online payment, the refund to make, and makes a failed receipt', async ({
+  page,
+}) => {
+  await start(page);
+  await showTab(page, 'All');
+  await openOrder(page, 'W-000001');
+  // How it was paid, in the shopper's card (the list's Payment column is not on a phone's card)
+  await expect(page.getByText('Paid online', { exact: true })).toBeVisible();
+  const payments = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'Payments' }) });
+  await expect(payments.getByRole('listitem')).toHaveCount(1);
+  await expect(payments).toContainText('BKASH-BKash');
+  await expect(payments).toContainText('BK7XQ2M4PL');
+  await expect(
+    page.getByText('The invoice is paid: it took the online payment’s money receipt.'),
+  ).toBeVisible();
+  // The timeline says the payment confirmed it, not a phone code
+  await expect(page.getByText('Confirmed when the payment arrived')).toBeVisible();
+  await expectNoSideScroll(page);
+
+  // Cancelled after it was paid: the money goes back, and the link opens the refund of its receipt
+  await backToList(page);
+  await showTab(page, 'All');
+  await openOrder(page, 'W-000002');
+  await expect(payments.getByRole('listitem')).toHaveCount(2);
+  await expect(payments.getByRole('listitem').first()).toContainText('Failed');
+  await expect(page.getByText(/^The shopper paid ৳[\d,]+ online for this order\./)).toBeVisible();
+  await page.getByRole('link', { name: 'Record refund' }).click();
+  await expect(page).toHaveURL(/\/refunds\/new\?receiptId=/);
+
+  // Paid twice: the second receipt failed, and "Make the receipt" makes it now
+  await page.goto('/');
+  await openFromNav(page, 'Shop orders');
+  await openOrder(page, 'W-000006');
+  await expect(page.getByText(/^The shopper paid online twice, ৳[\d,]+ each time\./)).toBeVisible();
+  const second = payments.getByRole('listitem').nth(1);
+  await expect(second.getByText(/^The money receipt could not be made\./)).toBeVisible();
+  await second.getByRole('button', { name: 'Make the receipt' }).click();
+  await toastShown(page, /^Money receipt .+ made$/);
+  await expect(second.getByText(/^The money receipt could not be made\./)).toHaveCount(0);
+
+  // Cash on Delivery with a paid try: the rider takes no cash
+  await backToList(page);
+  await showTab(page, 'All');
+  await openOrder(page, 'W-000004');
+  await expect(
+    page.getByText(/^The shopper paid ৳[\d,]+ online too, then chose cash on delivery\./),
+  ).toBeVisible();
+  await expect(page.getByText('Confirmed with the phone code')).toBeVisible();
+});

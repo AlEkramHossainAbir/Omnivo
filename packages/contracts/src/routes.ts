@@ -23,6 +23,7 @@ import { storefrontRoutes } from './storefront-admin.js';
 import { storefrontAppearanceRoutes } from './storefront-appearance.js';
 import { storefrontCouponRoutes } from './storefront-coupons.js';
 import { storefrontOrderRoutes } from './storefront-orders.js';
+import { storefrontPaymentRoutes } from './storefront-payments.js';
 import { publicStorefrontRoutes } from './storefront.js';
 import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
@@ -81,9 +82,99 @@ export const healthRoutes = {
   }),
 };
 
+// The type is written out, one `typeof` per group, because TypeScript would otherwise spell every
+// route's whole type into the declaration file, and since step 27d that is longer than it agrees
+// to write (TS7056). Each line names its group, so the declaration stays small and the type is the
+// same as the one TypeScript worked out. A new group needs its line here and in the object below:
+// leaving one out of either is a type error. Not an interface: the API and the OpenAPI writer take
+// `routes` as a Record of groups, and an interface fits a Record only with an index signature,
+// which would let `routes.storefrnt` type-check. Readonly, because nothing ever replaces a group
+type Routes = Readonly<{
+  health: typeof healthRoutes;
+  auth: typeof authRoutes;
+  me: typeof meRoutes;
+  members: typeof memberRoutes;
+  invitations: typeof invitationRoutes;
+  roles: typeof roleRoutes;
+  settings: typeof settingsRoutes;
+  branches: typeof branchRoutes;
+  numberSeries: typeof numberSeriesRoutes;
+  audit: typeof auditRoutes;
+  attachments: typeof attachmentRoutes;
+  setup: typeof setupRoutes;
+  notifications: typeof notificationRoutes;
+  accounts: typeof accountRoutes;
+  journal: typeof journalRoutes;
+  ledger: typeof ledgerRoutes;
+  openingBalances: typeof openingBalanceRoutes;
+  periodLock: typeof periodLockRoutes;
+  reports: typeof reportRoutes;
+  fiscalYears: typeof fiscalYearRoutes;
+  reportExports: typeof reportExportRoutes;
+  dashboard: typeof dashboardRoutes;
+  tradeReports: typeof tradeReportRoutes;
+  aging: typeof agingRoutes;
+  vatReport: typeof vatReportRoutes;
+  stockMovementReport: typeof stockMovementReportRoutes;
+  reportSchedules: typeof reportScheduleRoutes;
+  units: typeof unitRoutes;
+  productCategories: typeof productCategoryRoutes;
+  customFields: typeof customFieldRoutes;
+  products: typeof productRoutes;
+  productImports: typeof productImportRoutes;
+  warehouses: typeof warehouseRoutes;
+  stock: typeof stockRoutes;
+  stockAdjustments: typeof stockAdjustmentRoutes;
+  stockTransfers: typeof stockTransferRoutes;
+  stockRevaluations: typeof stockRevaluationRoutes;
+  stockAccounts: typeof stockAccountRoutes;
+  taxRates: typeof taxRateRoutes;
+  customers: typeof customerRoutes;
+  customerGroups: typeof customerGroupRoutes;
+  priceLists: typeof priceListRoutes;
+  salesPrices: typeof salesPriceRoutes;
+  quotations: typeof quotationRoutes;
+  salesOrders: typeof salesOrderRoutes;
+  deliveries: typeof deliveryRoutes;
+  invoices: typeof invoiceRoutes;
+  receipts: typeof receiptRoutes;
+  salesReturns: typeof salesReturnRoutes;
+  creditNotes: typeof creditNoteRoutes;
+  refunds: typeof refundRoutes;
+  salesAccounts: typeof salesAccountRoutes;
+  documentOutput: typeof documentOutputRoutes;
+  publicDocuments: typeof publicDocumentRoutes;
+  suppliers: typeof supplierRoutes;
+  supplierGroups: typeof supplierGroupRoutes;
+  approvalRules: typeof approvalRuleRoutes;
+  approvals: typeof approvalRoutes;
+  purchaseCosts: typeof purchaseCostRoutes;
+  requisitions: typeof requisitionRoutes;
+  requisitionLines: typeof requisitionLineRoutes;
+  purchaseOrders: typeof purchaseOrderRoutes;
+  goodsReceipts: typeof goodsReceiptRoutes;
+  bills: typeof billRoutes;
+  supplierPayments: typeof supplierPaymentRoutes;
+  purchaseAccounts: typeof purchaseAccountRoutes;
+  purchaseReturns: typeof purchaseReturnRoutes;
+  debitNotes: typeof debitNoteRoutes;
+  supplierRefunds: typeof supplierRefundRoutes;
+  sync: typeof syncRoutes;
+  devices: typeof deviceRoutes;
+  pos: typeof posRoutes;
+  posShifts: typeof posShiftRoutes;
+  posReturns: typeof posReturnRoutes;
+  publicStorefront: typeof publicStorefrontRoutes;
+  storefront: typeof storefrontRoutes;
+  storefrontAppearance: typeof storefrontAppearanceRoutes;
+  storefrontOrders: typeof storefrontOrderRoutes;
+  storefrontCoupons: typeof storefrontCouponRoutes;
+  storefrontPayments: typeof storefrontPaymentRoutes;
+}>;
+
 // API-র প্রতিটা endpoint এখানে। নতুন মডিউল = এখানে এক লাইন; API-র টেস্ট দেখে যে Nest-এর রুট আর
 // এই তালিকা হুবহু মেলে, আর OpenAPI স্পেক এই তালিকা থেকেই লেখা হয়
-export const routes = {
+export const routes: Routes = {
   health: healthRoutes,
   auth: authRoutes,
   me: meRoutes,
@@ -163,4 +254,5 @@ export const routes = {
   storefrontAppearance: storefrontAppearanceRoutes,
   storefrontOrders: storefrontOrderRoutes,
   storefrontCoupons: storefrontCouponRoutes,
+  storefrontPayments: storefrontPaymentRoutes,
 };

@@ -5,6 +5,7 @@ import {
   cancelStorefrontOrderInputSchema,
   packStorefrontOrderInputSchema,
   STOREFRONT_ORDER_STATUSES,
+  storefrontOrderPaymentSchema,
   storefrontOrderQuerySchema,
   storefrontOrderRoutes,
   type PackStorefrontOrderFormValues,
@@ -120,6 +121,35 @@ describe('Cancel', () => {
     expect(cancelStorefrontOrderInputSchema.parse({ version: 2, reason: '  ' }).reason).toBeNull();
     expect(
       cancelStorefrontOrderInputSchema.safeParse({ version: 2, reason: 'x'.repeat(201) }).success,
+    ).toBe(false);
+  });
+});
+
+// Step 27d
+describe('a payment try', () => {
+  const PAID = {
+    id: '9f2e3d4c-5b6a-4798-8a1b-2c3d4e5f6a7b',
+    tranId: 'K7Q2M4X9B1C3D5E6F8G0',
+    status: 'paid',
+    amount: '1199.0000',
+    startedAt: '2026-11-22T04:10:00.000Z',
+    settledAt: '2026-11-22T04:12:30.000Z',
+    cardType: 'BKASH-BKash',
+    bankTranId: '2611220412BK7XQ2M4',
+    storeAmount: '1169.0300',
+    receipt: { id: '0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d', number: 'MR-2026-27-0042' },
+    receiptError: null,
+  };
+
+  it("keeps the gateway's answer and the receipt it made", () => {
+    expect(storefrontOrderPaymentSchema.parse(PAID)).toEqual(PAID);
+  });
+
+  it('says why the receipt could not be made, with an error code', () => {
+    const failed = { ...PAID, receipt: null, receiptError: 'receipt_account_invalid' };
+    expect(storefrontOrderPaymentSchema.parse(failed).receiptError).toBe('receipt_account_invalid');
+    expect(
+      storefrontOrderPaymentSchema.safeParse({ ...failed, receiptError: 'no such code' }).success,
     ).toBe(false);
   });
 });

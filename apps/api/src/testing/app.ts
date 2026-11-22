@@ -10,6 +10,10 @@ import { WorkerModule } from '../worker/worker.module.js';
 // Step 27a: the shop server's key in the tests, sent in X-Shop-Key on the order routes
 export const TEST_SHOP_KEY = 'test-shop-key-that-is-at-least-32-bytes';
 
+// Step 27d: the key that seals gateway passwords in the tests (32 bytes, base64). The gateway is
+// the fake one (PAYMENT_GATEWAY's default outside production)
+export const TEST_CREDENTIALS_KEY = Buffer.alloc(32, 27).toString('base64');
+
 // .env না পড়ে টেস্টের নিজস্ব মান — loadConfig দিয়ে গেলে production-এর একই যাচাই চলে
 // storageUrl না দিলে অচল ঠিকানা — যে টেস্ট ফাইল ছোঁয় না তার জন্য MinIO container তুলতে হয় না
 export function testConfig(urls: {
@@ -29,6 +33,7 @@ export function testConfig(urls: {
     S3_ACCESS_KEY_ID: 'omnivo',
     S3_SECRET_ACCESS_KEY: 'omnivo-dev-secret',
     STOREFRONT_SHOP_KEY: TEST_SHOP_KEY,
+    CREDENTIALS_KEY: TEST_CREDENTIALS_KEY,
   });
 }
 
@@ -65,6 +70,7 @@ export function testWorkerConfig(urls: {
     S3_ENDPOINT: urls.storageUrl ?? 'http://127.0.0.1:1',
     S3_ACCESS_KEY_ID: 'omnivo',
     S3_SECRET_ACCESS_KEY: 'omnivo-dev-secret',
+    CREDENTIALS_KEY: TEST_CREDENTIALS_KEY,
   });
   return {
     ...config,

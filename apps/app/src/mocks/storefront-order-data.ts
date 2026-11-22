@@ -12,6 +12,7 @@ import {
   productInputSchema,
   type SalesLineInput,
   type ShopDeliveryZone,
+  type ShopPaymentMethod,
   type StorefrontImage,
   type StorefrontOrder,
   type StorefrontOrderCounts,
@@ -45,6 +46,14 @@ import {
   saveDelivery,
 } from './sales-document-data';
 import { balancesOf, branchOf, findVariant, postAdjustment, saveAdjustment } from './stock-data';
+import {
+  applyPaymentsToInvoice,
+  makePaymentReceipts,
+  retryPaymentReceipt,
+  seedGateway,
+  seedTry,
+  toPayment,
+} from './storefront-payment-data';
 import {
   type MockCategory,
   type MockListing,
@@ -221,6 +230,8 @@ export function toShopOrder(data: WorkspaceData, order: MockShopOrder): Storefro
     invoice: refOf(data.billing.invoices.find((item) => item.id === order.invoiceId)),
     salesReturn: refOf(data.returns.salesReturns.find((item) => item.id === order.salesReturnId)),
     documentError: order.documentError,
+    // Step 27d
+    payments: order.payments.map((payment) => toPayment(data, payment)),
     version: order.version,
     updatedAt: order.updatedAt,
   };
@@ -422,6 +433,8 @@ export function makeShopSalesOrder(
     version: order.version + 1,
     updatedAt: at,
   });
+  // Step 27d: the paid tries' receipts need the sales order's customer (the API's makeAll)
+  makePaymentReceipts(data, order, at);
   return {
     salesOrder,
     customerId: customer.id,
@@ -429,6 +442,21 @@ export function makeShopSalesOrder(
     deliveryProductId,
     overridden,
   };
+}
+
+// Step 27d: "Make the receipt" on a paid try whose receipt failed. The version moves on, so another
+// tab that still shows the error reloads first. The handler calls it outside transaction(): the
+// try's error must stay when the receipt is refused again
+export function makeShopPaymentReceipt(
+  data: WorkspaceData,
+  id: string,
+  paymentId: string,
+  version: number,
+): { order: MockShopOrder; receiptId: string } {
+  const order = lockShopOrder(data, id, version);
+  const receiptId = retryPaymentReceipt(data, order, paymentId);
+  Object.assign(order, { version: order.version + 1, updatedAt: now() });
+  return { order, receiptId };
 }
 
 // "Make the sales order" (decision 1's retry): a refusal is kept on the order, as the handler
@@ -690,6 +718,8 @@ export function deliverShopOrder(
   // Never over the limit: it moves the amount from "on order" to "owed" and adds nothing
   postInvoice(data, draft, false);
   move(order, 'delivered', at, { invoiceId: draft.id });
+  // Step 27d (decision 6): the invoice takes the advances of the paid tries
+  applyPaymentsToInvoice(data, order, draft.id);
   return { order, invoiceId: draft.id };
 }
 
@@ -812,6 +842,8 @@ interface OrderSpec {
   lines: { listing: MockListing; quantity: number }[];
   // Minutes ago the code confirmed it; the shopper placed it two minutes before
   confirmed: number;
+  // Step 27d: Cash on Delivery unless it says so
+  paymentMethod?: ShopPaymentMethod;
 }
 
 // The shop's price now (the listing's own, or the variant's, less a running sale)
@@ -863,7 +895,7 @@ function placeOrder(
     phone: spec.phone,
     address: spec.address,
     zoneName: spec.zone.name,
-    paymentMethod: 'cod',
+    paymentMethod: spec.paymentMethod ?? 'cod',
     lines,
     subtotal,
     discount: '0.0000',
@@ -877,6 +909,7 @@ function placeOrder(
     invoiceId: null,
     salesReturnId: null,
     documentError: null,
+    payments: [],
     version: 1,
     updatedAt: confirmed,
   };
@@ -1041,6 +1074,60 @@ function seedAccessories(data: WorkspaceData, warehouseId: string): MockListing[
   ];
 }
 
+// Step 27d: the online tries of the seeded orders, as the API leaves them, so the order page shows
+// each of the Payments card's cases:
+// - W-000001 (delivered): paid with bKash; its receipt was the advance its invoice took
+// - W-000002 (cancelled): a card refused, then paid by Visa; the money has to go back
+// - W-000004 (packed, Cash on Delivery): paid with Nagad after the phone code confirmed it, so the
+//   rider must collect nothing and one of the two is refunded
+// - W-000006 (new): paid twice in two tabs; the second receipt failed (the money account was
+//   archived for a moment) and waits for "Make the receipt"
+function seedTries(
+  delivered: MockShopOrder,
+  cancelled: MockShopOrder,
+  packed: MockShopOrder,
+  twice: MockShopOrder,
+): void {
+  const placed = (order: MockShopOrder) => order.history[0]?.at ?? now();
+  const later = (at: string, minutes: number) =>
+    new Date(Date.parse(at) + minutes * 60_000).toISOString();
+  seedTry(delivered, placed(delivered), {
+    status: 'paid',
+    cardType: 'BKASH-BKash',
+    bankTranId: 'BK7XQ2M4PL',
+    settledAt: confirmedAt(delivered),
+  });
+  seedTry(cancelled, placed(cancelled), {
+    status: 'failed',
+    settledAt: later(placed(cancelled), 1),
+  });
+  seedTry(cancelled, later(placed(cancelled), 1), {
+    status: 'paid',
+    cardType: 'VISA-Dutch Bangla',
+    bankTranId: '2611120042VD',
+    settledAt: confirmedAt(cancelled),
+  });
+  seedTry(packed, placed(packed), {
+    status: 'paid',
+    cardType: 'NAGAD-Nagad',
+    bankTranId: 'NG73LQ9X0A',
+    settledAt: later(confirmedAt(packed), 30),
+  });
+  seedTry(twice, placed(twice), {
+    status: 'paid',
+    cardType: 'BKASH-BKash',
+    bankTranId: 'BK9TR4C2ZE',
+    settledAt: confirmedAt(twice),
+  });
+  const second = seedTry(twice, placed(twice), {
+    status: 'paid',
+    cardType: 'BKASH-BKash',
+    bankTranId: 'BK9TR4C3WD',
+    settledAt: confirmedAt(twice),
+  });
+  second.receiptError = 'receipt_account_invalid';
+}
+
 // Rahman Fashion's orders: one delivered (its invoice waits for the rider's cash), one cancelled
 // before packing, one on its way, one packed, and three new ones. Of the new ones, W-000005 has a
 // line of each kind for the Packed dialog (a batch, a serial, an untracked polo), W-000006 is a
@@ -1052,6 +1139,9 @@ export function seedShopOrders(data: WorkspaceData): void {
   const warehouseId = shop?.defaultWarehouseId ?? null;
   const [inside, outside] = shop?.deliveryZones ?? [];
   if (shop === null || warehouseId === null || !inside || !outside) return;
+  // Step 27d: the shop was paid online, so its SSLCommerz store is saved (before the orders: their
+  // receipts go to its money account)
+  seedGateway(data, minutesAgo(13 * 24 * 60));
   const [attar, watch] = seedAccessories(data, warehouseId);
   const bySlug = (slug: string) => data.storefront.listings.find((item) => item.slug === slug);
   const poloM = bySlug('pique-polo-navy-m');
@@ -1067,7 +1157,13 @@ export function seedShopOrders(data: WorkspaceData): void {
   const hours = (count: number) => count * 60;
   const days = (count: number) => count * 24 * 60;
   const specs: OrderSpec[] = [
-    { ...farhana, zone: inside, lines: [{ listing: poloM, quantity: 2 }], confirmed: days(9) },
+    {
+      ...farhana,
+      zone: inside,
+      lines: [{ listing: poloM, quantity: 2 }],
+      confirmed: days(9),
+      paymentMethod: 'online',
+    },
     {
       name: 'Sabbir Hossain',
       phone: '01819556677',
@@ -1075,6 +1171,7 @@ export function seedShopOrders(data: WorkspaceData): void {
       zone: inside,
       lines: [{ listing: tee, quantity: 1 }],
       confirmed: days(7),
+      paymentMethod: 'online',
     },
     {
       name: 'Tanvir Ahmed',
@@ -1112,6 +1209,7 @@ export function seedShopOrders(data: WorkspaceData): void {
       zone: outside,
       lines: [{ listing: poloL, quantity: 1 }],
       confirmed: 50,
+      paymentMethod: 'online',
     },
     {
       name: 'Shirin Sultana',
@@ -1123,8 +1221,9 @@ export function seedShopOrders(data: WorkspaceData): void {
     },
   ];
   const orders = specs.map((spec, index) => placeOrder(data, index + 1, spec, warehouseId));
-  const [delivered, cancelled, shipped, packed, , , refused] = orders;
-  if (!delivered || !cancelled || !shipped || !packed || !refused) return;
+  const [delivered, cancelled, shipped, packed, , twice, refused] = orders;
+  if (!delivered || !cancelled || !shipped || !packed || !twice || !refused) return;
+  seedTries(delivered, cancelled, packed, twice);
   // The handler made each sales order when the code confirmed the order, except W-000007's
   for (const order of orders) {
     if (order === refused) continue;

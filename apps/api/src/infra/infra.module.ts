@@ -13,7 +13,18 @@ import { createWithTenant } from '../common/tenant/with-tenant.js';
 import { createWithUser } from '../common/tenant/with-user.js';
 import type { Config } from '../config.js';
 import { StorageService } from '../storage/storage.service.js';
-import { AUTH, CONFIG, DB, REDIS, STORAGE_CONFIG, WITH_TENANT, WITH_USER } from './tokens.js';
+import { createGateway } from '../payments/create-gateway.js';
+import {
+  AUTH,
+  CONFIG,
+  DB,
+  PAYMENT_GATEWAY,
+  PAYMENTS_CONFIG,
+  REDIS,
+  STORAGE_CONFIG,
+  WITH_TENANT,
+  WITH_USER,
+} from './tokens.js';
 
 function createRedis(url: string): Redis {
   const redis = new Redis(url, {
@@ -52,8 +63,21 @@ export class InfraModule implements OnApplicationShutdown {
         { provide: AUTH, inject: [DB], useFactory: (db: Db) => createAuth({ db, ...config.auth }) },
         { provide: STORAGE_CONFIG, useValue: config.storage },
         StorageService,
+        // Step 27d: the gateway for the shop's payments and the Payment card's test
+        { provide: PAYMENTS_CONFIG, useValue: config.payments },
+        { provide: PAYMENT_GATEWAY, useFactory: () => createGateway(config.payments) },
       ],
-      exports: [CONFIG, DB, WITH_TENANT, WITH_USER, REDIS, AUTH, StorageService],
+      exports: [
+        CONFIG,
+        DB,
+        WITH_TENANT,
+        WITH_USER,
+        REDIS,
+        AUTH,
+        StorageService,
+        PAYMENTS_CONFIG,
+        PAYMENT_GATEWAY,
+      ],
     };
   }
 

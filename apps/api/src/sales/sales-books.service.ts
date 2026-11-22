@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { type EntryRef, isZeroMoney, type SalesJournalSource } from '@omnivo/contracts';
+import {
+  type EntryRef,
+  isZeroMoney,
+  type SalesJournalSource,
+  subtractMoney,
+} from '@omnivo/contracts';
 import { journalEntries, journalLines, ledgerAccounts, tenantSettings } from '@omnivo/db';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 
@@ -72,14 +77,32 @@ export class SalesBooksService {
   // A money receipt: Dr the cash, bank or wallet account / Cr Accounts receivable (the customer),
   // both with the receipt's branch. The receivable comes down whether or not the money is applied
   // to an invoice: what the customer owes is the books' number, not the invoices'.
+  // Step 27d: a shop's online payment keeps the gateway's fee out of the money (decision 6). The
+  // fee is a second debit, to the fee account, in the receipt's own entry: Dr the money account for
+  // what the gateway pays out / Dr the fee account for its fee / Cr Accounts receivable for the
+  // whole amount. One entry, so voiding the receipt reverses the fee with it, and the receipt's
+  // source stays sales_receipt
   async receipt(
     tx: Transaction,
     document: DocumentRef,
-    input: { customerId: string; branchId: string; accountId: string; amount: string },
+    input: {
+      customerId: string;
+      branchId: string;
+      accountId: string;
+      amount: string;
+      fee?: { accountId: string; amount: string } | null;
+    },
   ): Promise<EntryRef> {
     const accounts = await this.accounts(tx);
+    const fee = input.fee == null || isZeroMoney(input.fee.amount) ? null : input.fee;
     return this.write(tx, document, 'sales_receipt', `Money receipt ${document.number}`, [
-      debit(input.accountId, input.branchId, null, input.amount),
+      debit(
+        input.accountId,
+        input.branchId,
+        null,
+        fee === null ? input.amount : subtractMoney(input.amount, fee.amount),
+      ),
+      ...(fee === null ? [] : [debit(fee.accountId, input.branchId, null, fee.amount)]),
       credit(accounts.receivable, input.branchId, input.customerId, input.amount),
     ]);
   }

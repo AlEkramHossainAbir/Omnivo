@@ -223,6 +223,7 @@ import {
   deliverShopOrder,
   findShopOrder,
   type MadeSalesOrder,
+  makeShopPaymentReceipt,
   packPlanOf,
   packShopOrder,
   retrySalesOrder,
@@ -231,6 +232,14 @@ import {
   shopOrderPage,
   toShopOrder,
 } from './storefront-order-data';
+import {
+  createGateway,
+  gatewaySetup,
+  gatewaySnapshot,
+  testGateway,
+  toGateway,
+  updateGateway,
+} from './storefront-payment-data';
 import {
   findProduct,
   IMPORT_DELAY_MS,
@@ -6230,6 +6239,88 @@ export const handlers = [
       if (salesOrderId !== null) record(data, 'sales_order.cancelled', 'sales_order', salesOrderId);
       recordShopMove(data, 'storefront_order.cancelled', order, before);
       return reply(routes.storefrontOrders.cancelOrder, toShopOrder(data, order));
+    }),
+  ),
+
+  // Step 27d: "Make the receipt". Not in transaction(): a refusal is kept on the try (its
+  // receiptError) and still answered, as for "Make the sales order"
+  mock(
+    routes.storefrontOrders.makePaymentReceipt,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontOrders.makePaymentReceipt.permission);
+      const { id, paymentId } = routes.storefrontOrders.makePaymentReceipt.params.parse(params);
+      const { version } = await readBody(routes.storefrontOrders.makePaymentReceipt.body, request);
+      const { order, receiptId } = makeShopPaymentReceipt(data, id, paymentId, version);
+      record(data, 'receipt.created', 'receipt', receiptId);
+      return reply(routes.storefrontOrders.makePaymentReceipt, toShopOrder(data, order));
+    }),
+  ),
+
+  // --- Step 27d: the Online payment card (storefront-payment-data.ts) ---------------------------
+  // storefront.manage, like the shop's settings. The audit rows never hold the password: a new
+  // one is written as "changed" (the API's snapshot)
+
+  mock(
+    routes.storefrontPayments.getPaymentGateway,
+    guarded(async () => {
+      const data = shopData();
+      await delay();
+      return reply(routes.storefrontPayments.getPaymentGateway, gatewaySetup(data));
+    }),
+  ),
+
+  mock(
+    routes.storefrontPayments.createPaymentGateway,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontPayments.createPaymentGateway.body, request);
+      const gateway = createGateway(data, body);
+      record(
+        data,
+        'storefront_payment_gateway.created',
+        'storefront_payment_gateway',
+        workspace.tenantId,
+        diff({}, { ...gatewaySnapshot(gateway), password: 'changed' }),
+      );
+      return reply(routes.storefrontPayments.createPaymentGateway, toGateway(data, gateway));
+    }),
+  ),
+
+  mock(
+    routes.storefrontPayments.updatePaymentGateway,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.storefrontPayments.updatePaymentGateway.body, request);
+      const { before, after, passwordChanged } = updateGateway(data, body);
+      record(
+        data,
+        'storefront_payment_gateway.updated',
+        'storefront_payment_gateway',
+        workspace.tenantId,
+        {
+          ...diff(gatewaySnapshot(before), gatewaySnapshot(after)),
+          ...(passwordChanged ? { password: { from: null, to: 'changed' } } : {}),
+        },
+      );
+      return reply(routes.storefrontPayments.updatePaymentGateway, toGateway(data, after));
+    }),
+  ),
+
+  mock(
+    routes.storefrontPayments.testPaymentGateway,
+    guarded(async () => {
+      const data = shopData();
+      // A real test waits for SSLCommerz; the button's "Testing…" shows for a moment
+      await delay();
+      const gateway = testGateway(data);
+      record(
+        data,
+        'storefront_payment_gateway.tested',
+        'storefront_payment_gateway',
+        workspace.tenantId,
+        diff({}, { testResult: gateway.lastTest?.problem ?? 'ok' }),
+      );
+      return reply(routes.storefrontPayments.testPaymentGateway, toGateway(data, gateway));
     }),
   ),
 

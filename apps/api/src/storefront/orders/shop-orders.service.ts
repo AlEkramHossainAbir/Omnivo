@@ -19,9 +19,9 @@ import {
   type ShopTrackRequest,
 } from '@omnivo/contracts';
 import {
-  storefrontOrderCounters,
   storefrontOrderLines,
   storefrontOrders,
+  storefrontPayments,
   storefrontSettings,
   storefrontStockHolds,
   storefrontListings,
@@ -30,44 +30,41 @@ import { and, asc, eq, gt, inArray, ne, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { AppError, notFound } from '../../common/http/app-error.js';
-import { emit } from '../../common/outbox/outbox.js';
 import type { Transaction } from '../../common/tenant/with-tenant.js';
 import type { Config } from '../../config.js';
 import { CONFIG } from '../../infra/tokens.js';
 import { codeSms, confirmedSms } from '../../sms/shop-sms.js';
 import { SmsQueue } from '../../sms/sms-queue.js';
 import { lockedCoupon, markOrdered, usedByPhone } from '../coupon-sql.js';
+import { GatewayAccounts } from '../gateway-accounts.js';
 import { checkoutSettingsOf, quotedListings } from '../public-storefront.service.js';
 import { quoteCart } from '../quote.js';
 import { ShopDb, type ShopScope } from '../shop-db.js';
 import { shopUrl } from '../shop-url.js';
+import { confirmPendingOrder } from './confirm-order.js';
 import { codeHash, codeMatches, newCode, newToken, tokenHash } from './order-secrets.js';
 import { orderOf, type OrderRow, trackingOf } from './order-view.js';
+import { PaymentPages, tryValues } from './payment-pages.js';
 import { ShopLimits } from './shop-limits.js';
 
 const MINUTE_MS = 60 * 1000;
 
 const uuidSchema = z.uuid();
 
-function minutesAfter(at: Date, minutes: number): Date {
+export function minutesAfter(at: Date, minutes: number): Date {
   return new Date(at.getTime() + minutes * MINUTE_MS);
 }
 
 // Whole seconds from now until `at`, 0 once it has passed. Rounded up: "wait 0 seconds" would let
 // the next try in a moment too early
-function secondsUntil(at: Date, now: Date): number {
+export function secondsUntil(at: Date, now: Date): number {
   return Math.max(0, Math.ceil((at.getTime() - now.getTime()) / 1000));
-}
-
-// W-000123: W for web (26c's decision 3), counted per shop (27a's decision 20)
-function orderNumber(value: number): string {
-  return `W-${String(value).padStart(6, '0')}`;
 }
 
 // The answers a shopper can get wrong. Each status as the shop's mock answered it (26c's
 // server/orders.ts), so the shop's pages need no change: 409 for "look again, something
 // changed", 422 for "this cannot be done", 429 for "wait"
-function refused(
+export function refused(
   status: 404 | 409 | 422 | 429,
   code: ErrorCode,
   detail: string,
@@ -81,12 +78,12 @@ function noOrder(): AppError {
 }
 
 // What the shop's SMS need to know about the shop: its name and language
-interface ShopWords {
+export interface ShopWords {
   name: string;
   language: LanguageCode;
 }
 
-async function shopWords(tx: Transaction, shop: ShopScope): Promise<ShopWords> {
+export async function shopWords(tx: Transaction, shop: ShopScope): Promise<ShopWords> {
   const [settings] = await tx
     .select({ name: storefrontSettings.name, language: storefrontSettings.language })
     .from(storefrontSettings)
@@ -101,7 +98,7 @@ async function shopWords(tx: Transaction, shop: ShopScope): Promise<ShopWords> {
 // again by then (the holds' expires_at), so it can no longer be confirmed. `lock` takes the row for
 // this transaction (FOR UPDATE), so two codes typed at once are checked one after the other, and
 // five wrong ones cannot become six
-async function waitingOrder(
+export async function waitingOrder(
   tx: Transaction,
   shop: ShopScope,
   token: string,
@@ -157,12 +154,15 @@ export class ShopOrdersService {
     private readonly shopDb: ShopDb,
     private readonly sms: SmsQueue,
     private readonly limits: ShopLimits,
+    private readonly accounts: GatewayAccounts,
+    private readonly pages: PaymentPages,
     @Inject(CONFIG) private readonly config: Config,
   ) {
     this.mediaUrl = config.storefront.mediaUrl;
   }
 
-  // Confirm Order (27a's decision 2: Cash on Delivery waits for the phone code)
+  // Confirm Order (27a's decision 2: Cash on Delivery waits for the phone code). Step 27d: Pay
+  // online waits for its payment instead, on the gateway's page
   async place(
     host: string | undefined,
     client: string,
@@ -179,17 +179,26 @@ export class ShopOrdersService {
     const token = newToken();
     const orderTokenHash = tokenHash(token);
     const code = newCode();
+    const online = request.paymentMethod === 'online';
+    // Step 27d: the gateway account, before the order's transaction. It is read as omnivo_app (the
+    // shop's role may not), and the try's row copies its provider and mode. null: online payment
+    // cannot be taken now, which the transaction below refuses
+    const account = online
+      ? await this.shopDb
+          .read(host, (_tx, scope) => Promise.resolve(scope.tenantId))
+          .then((tenantId) => this.accounts.open(tenantId))
+      : null;
 
-    const shop = await this.shopDb.orders(host, async (tx, scope) => {
+    const placed = await this.shopDb.orders(host, async (tx, scope) => {
       const settings = await checkoutSettingsOf(tx, scope);
       const zone = settings.zones.find((candidate) => candidate.id === request.zoneId);
       if (!zone)
         throw refused(422, 'shop_zone_unknown', 'The delivery zone is not one the shop has.');
-      // Mobile Banking waits for step 27c's gateway; checkoutSettingsOf may still list it for a
-      // shop that ticked only that (offeredMethods)
+      // Step 27d: Pay online once the gateway is ready (offeredMethods) and its password opens.
+      // checkoutSettingsOf may still list it for a shop that ticked only that
       if (
-        request.paymentMethod === 'online' ||
-        !settings.paymentMethods.includes(request.paymentMethod)
+        !settings.paymentMethods.includes(request.paymentMethod) ||
+        (online && account === null)
       ) {
         throw refused(
           422,
@@ -286,11 +295,17 @@ export class ShopOrdersService {
           deliveryCharge: quote.deliveryCharge ?? '0',
           total: quote.total,
           orderTokenHash,
-          codeHash: codeHash(this.config.storefront.codeKey, orderTokenHash, code),
-          codeSentAt: scope.now,
-          codeExpiresAt: minutesAfter(scope.now, SHOP_CODE_VALID_MINUTES),
-          codeSends: 1,
-          codeTriesLeft: SHOP_CODE_TRIES,
+          // Step 27d: an online order waits for its payment, not for a code, so it has none of the
+          // five code columns (storefront_orders_pending_check, 27d.2)
+          ...(online
+            ? {}
+            : {
+                codeHash: codeHash(this.config.storefront.codeKey, orderTokenHash, code),
+                codeSentAt: scope.now,
+                codeExpiresAt: minutesAfter(scope.now, SHOP_CODE_VALID_MINUTES),
+                codeSends: 1,
+                codeTriesLeft: SHOP_CODE_TRIES,
+              }),
         })
         .returning({ id: storefrontOrders.id });
       // INSERT … RETURNING always gives the row it wrote; the check is for TypeScript
@@ -339,11 +354,41 @@ export class ShopOrdersService {
           expiresAt: until,
         })),
       );
-      return shopWords(tx, scope);
+      // Step 27d: the first payment try, in the same transaction as its order: an online order
+      // without one could never be paid
+      const [payment] =
+        account === null
+          ? []
+          : await tx
+              .insert(storefrontPayments)
+              .values(tryValues(scope.tenantId, order.id, 1, quote.total, account, scope.now))
+              .returning();
+      return {
+        words: await shopWords(tx, scope),
+        payment,
+        subdomain: scope.subdomain,
+        items: sold.reduce((sum, line) => sum + line.quantity, 0),
+        zoneName: zone.name,
+      };
     });
+    const shop = placed.words;
 
-    // Committed: now it counts, and now the code goes out
+    // Committed: now it counts
     await this.limits.countOrder(request.phone, client);
+    if (placed.payment !== undefined && account !== null) {
+      // Pay online: the gateway's page, asked for only now (decision 1). null when it did not
+      // open: the shop sends the browser to /checkout/paid, which offers "Try again"
+      const paymentUrl = await this.pages.open(host, placed.subdomain, account, placed.payment, {
+        customerName: request.name,
+        phone: request.phone,
+        address: request.address,
+        zoneName: placed.zoneName,
+        items: placed.items,
+        shopName: shop.name,
+      });
+      return { answer: { next: 'pay', paymentUrl }, token };
+    }
+    // Cash on Delivery: now the code goes out
     await this.sms.send({ to: request.phone, text: codeSms(shop.language, shop.name, code) });
     return {
       answer: {
@@ -449,50 +494,12 @@ export class ShopOrdersService {
       };
     }
 
-    // The shop's next number. INSERT … ON CONFLICT: the first order of a shop makes its counter
-    // row. The row's lock holds until this transaction ends, so two confirms in one shop take
-    // turns, and a confirm that rolls back gives its number back (27a's decision 20)
-    const [counter] = await tx
-      .insert(storefrontOrderCounters)
-      .values({ tenantId: shop.tenantId, lastValue: 1 })
-      .onConflictDoUpdate({
-        target: storefrontOrderCounters.tenantId,
-        set: { lastValue: sql`${storefrontOrderCounters.lastValue} + 1` },
-      })
-      .returning({ value: storefrontOrderCounters.lastValue });
-    if (counter === undefined) throw new Error('The order counter was not written');
-    const orderNo = orderNumber(counter.value);
-
-    // The tracking link's token is made now (27a's decision 9): a pending order is never tracked.
-    // Every code column is emptied in the same UPDATE (storefront_orders_pending_check)
-    const trackingToken = newToken();
-    await tx
-      .update(storefrontOrders)
-      .set({
-        status: 'confirmed',
-        orderNo,
-        trackingTokenHash: tokenHash(trackingToken),
-        confirmedAt: shop.now,
-        codeHash: null,
-        codeExpiresAt: null,
-        codeSentAt: null,
-        codeSends: null,
-        codeTriesLeft: null,
-        version: sql`${storefrontOrders.version} + 1`,
-      })
-      .where(where);
-    // The stock stays held, now with no end, until 27b's challan takes it out for real
-    await tx
-      .update(storefrontStockHolds)
-      .set({ expiresAt: null })
-      .where(
-        and(
-          eq(storefrontStockHolds.tenantId, shop.tenantId),
-          eq(storefrontStockHolds.orderId, order.id),
-        ),
-      );
-    // In the same transaction (common/outbox): the bell now, and 27b's sales order
-    await emit(tx, 'storefront.order_confirmed', { orderId: order.id });
+    const { orderNo, trackingToken } = await confirmPendingOrder(
+      tx,
+      shop.tenantId,
+      order.id,
+      shop.now,
+    );
 
     return {
       ok: true,

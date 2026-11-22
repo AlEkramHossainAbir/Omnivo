@@ -630,7 +630,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   warehouse select, up to 6 delivery zones as rows of a name, a 180px money input and a remove icon button, "Add
   zone" secondary `sm`, then free delivery from and minimum order, empty = none, and the "Delivery charge’s service"
   select (the workspace's active services, "name · SKU"; empty = "Made by the first order with a charge", and it
-  can't be emptied again once an order used one); Payment: a checkbox group) beside a
+  can't be emptied again once an order used one); Payment: a checkbox group of Cash on Delivery and Pay online, where
+  Pay online is disabled while it is unticked and the Online payment card is not ready, with an `InformationCircle`
+  line under the group that says to save that card first; a ticked box stays enabled so it can be unticked) beside a
   340px column, sticky from `lg`. Before the first save the form starts from the company's details under a neutral
   document notice, and "Set up the shop" is the primary button; after it, the save bar. The column is the "Open
   the shop" checklist: three rows with 1px `line` rules, each a 22px circle (`good-bg` with a `good` `Tick02` when
@@ -640,6 +642,20 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   can't be closed again. Once open, the card is "The shop is open": a 40px `good-bg` `StoreVerified01` tile, "Open
   since 16 Nov 2026 at …", a `good` "Open" pill and a full-width "View shop". Changing an open shop's address asks
   first: the old address stops working and nothing sends shoppers on.
+- **Online payment card (Shop settings):** `storefront-gateway-card.tsx`, a card of its own with its own form and
+  footer under the settings form (never inside it), shown only once the shop is set up. "Online payment", "Your
+  SSLCommerz store…", and a pill at the header's right: neutral "Not set up" (`MinusSignCircle`), `good` "Ready"
+  (`CheckmarkCircle02`) or `warn` "Needs an account" (`Alert02`, with a `warn` document notice that the checkout does
+  not offer Pay online until an account is picked again). Inside, two columns from `sm`: Gateway as a fact ("SSLCommerz",
+  not a select), Store as a Sandbox / Live segmented control in a `Field`, Store ID (`Store01`), Store password
+  (`LockKeyhole`, `type="password"`, `autocomplete="new-password"`, write-only: it starts empty, "Saved" as the
+  placeholder once saved, and empty keeps it), "Account the money goes into" (`Wallet01`, active accounts that hold
+  money, `code · name`) and "Gateway fee account" (`Coins01`, active expense accounts). A saved account that is no
+  longer offered starts empty with its error shown at once. The footer (1px `line` rule): on the left the last test's
+  line (`good` `CheckmarkCircle02` accepted, `crit` `Alert02` refused, `warn` `Alert02` no answer, `ink-3`
+  `InformationCircle` "Not tested yet." or, while the form has changes, "Save your changes first…"); on the right
+  "Save gateway" alone before the first save, then "Test connection" (secondary, `Plug01`, disabled while the form
+  has changes; it tests what is saved), and "Discard changes" and "Save changes" only with changes.
 - **Shop coupons (`/storefront/coupons`):** works before the shop is set up (a coupon can wait for it), so "View shop"
   shows only once it is, and there is no "Changes show in the shop" line (the shop's price check is not cached, so a
   coupon acts at once). The page header with "Add coupon" (primary, `PlusSign`), a search box ("Code", max 320px, in
@@ -781,12 +797,12 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   its text, like Delivery and Returns.") and the save bar. The first save puts it in the shop ("Terms & Condition is
   in the shop"); a page always keeps at least one section, so taking it out is Delete.
 - **Shop orders (`/storefront/orders`, `storefront.order.read`):** the page header ("Orders from your online shop,
-  from the phone code to the shopper’s door"; "View shop" only with `storefront.manage`, and no "Changes show in
+  from the checkout to the shopper’s door"; "View shop" only with `storefront.manage`, and no "Changes show in
   the shop" line), a search box ("Order number, name or phone", max 320px, inside the tab only), a segmented control
   New / Packed / Shipped / Delivered / Cancelled / All (the tab is in the address, `?view=packed`; New, the default,
   has none), then a data table sorted on the server and paged: order (number in `Geist Mono`, "3 items" under it),
   confirmed (date and time, newest first at first, sortable), shopper (name, phone under it), delivery zone,
-  payment, total (sortable) and status (the status pill, plus a `crit` "Needs attention" pill). A row click opens the
+  payment ("Cash on Delivery" or "Paid online"), total (sortable) and status (the status pill, plus a `crit` "Needs attention" pill). A row click opens the
   order. On a phone the card leaves out Payment. A pending order (waiting for its phone code) never shows. Empty: "No
   shop orders yet" on All, the tab's own line on the others, and "No order matches" with "Search every order" (moves
   to All, keeps the search). Online only.
@@ -797,16 +813,31 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (`PackageDelivered`, asks first: it posts an invoice). On a phone the two buttons share a row. One notice under
   the header: `crit` "The sales order could not be made." with the error's own words, else neutral "This order has
   no sales order yet…", else what the next step does (a delivered order's ends with a "Record payment" link to a new
-  money receipt for that invoice, with `sales.receipt.manage`). Without `storefront.order.manage`, no buttons and a
+  money receipt for that invoice, with `sales.receipt.manage`; a delivered order paid online says "The invoice is
+  paid: it took the online payment’s money receipt." with no link). A paid order that must give money back (cancelled
+  after it was paid, paid twice, or paid online and then switched to cash on delivery) also has a `warn` notice
+  (`MoneyRemove01`) with the amount and a "Record refund" link (with `sales.refund.manage`, a new refund of the last
+  paid try's receipt); it comes after the sales order's error and before the step's line. Without `storefront.order.manage`, no buttons and a
   neutral notice that says which permission moves orders. From `xl` two columns: Items (a 40px photo, name, "SKU ·
   150ml", "2 pcs × ৳229", the amount; then Subtotal, Discount only when there is one, Delivery charge or "Free", and
-  the Total at 500, all on `subtle`) and Timeline (oldest first, 24px round icons on `subtle`, the step it is at on
+  the Total at 500, all on `subtle`), the Payments card under it (only when the order has a payment try) and Timeline (oldest first, 24px round icons on `subtle`, the step it is at on
   `brand-soft`/`brand`, a 1px `line` between them, the time in 12px `ink-3`, and "Why: …" under Cancelled), beside a
-  340px column of Deliver to (name, mobile number, address with its line breaks, zone, payment, "Customer in Omnivo"
+  340px column of Deliver to (name, mobile number, address with its line breaks, zone, payment ("Paid online"), "Customer in Omnivo"
   or "Found by the phone with the sales order") and Documents (sales order, challan, invoice, sales return; each
   number a link, or when it comes: "When it is packed"; a cancelled order lists only what it made). On a phone the
-  cards are Items, Deliver to, Documents, Timeline. Amounts like the shop (paisa only when there is some). Online
+  cards are Items, Payments, Deliver to, Documents, Timeline. Amounts like the shop (paisa only when there is some). Online
   only.
+- **Payments card (shop order page):** `storefront-order-payments.tsx`, "Payments", "Each visit to the SSLCommerz
+  page…", one row per try, oldest first, with 1px `line` rules: "Try 2" (13.5px/500), its pill and the amount on the
+  right, "Started …" and "Answered …" in 12px `ink-3`, then a grid of facts with caption labels (two columns on a
+  phone, three from `sm`): Transaction ID in `Geist Mono`, and for a paid try Paid with ("BKASH-BKash"), Bank’s
+  transaction ID (`Geist Mono`, `break-words`), Gateway fee (amount − what SSLCommerz pays out), SSLCommerz pays out,
+  and Money receipt as a link. A try that did not pay shows only its transaction ID. A paid try whose receipt could
+  not be made has a `subtle` box with the error in `crit` with `Alert02` and, with `storefront.order.manage`, "Make
+  the receipt" (secondary `sm`, sends the order's version).
+- **Shop payment try statuses:** Started (`brand`, `Clock01`), Page did not open (neutral, `Unlink04`), Paid (`good`,
+  `CheckmarkCircle02`), Failed (neutral, `CreditCardNotAccept`), Cancelled (neutral, `CancelCircle`). Failed is not
+  `crit`: a refused card is the shop's normal day. Only Paid is final; a later Paid replaces a Failed or a Cancelled.
 - **Packed dialog:** the dialog at 560px, "Pack W-000123", "The challan takes these goods out of Main warehouse…".
   One block per line in a 1px `line` box (radius 10px): the name and "Needs 3 pcs"; an untracked product says "No
   batch or serial number to pick."; a batch product has rows of a batch select ("AT-2408 · expires 30 Nov 2026 · 12
@@ -821,7 +852,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Shop order statuses:** New (`brand`, `Clock01`), Packed (`brand`, `Package`), Shipped (`brand`,
   `DeliveryTruck01`), Delivered (`good`, `PackageDelivered`), Cancelled (neutral, `CancelCircle`), Returned (neutral,
   `PackageReceive`, step 28), plus a second `crit` "Needs attention" pill (`Alert02`) while its sales order could
-  not be made. The timeline's icons: placed `ShoppingCart01`, confirmed `SmartPhone01`, then the pills' icons.
+  not be made. The timeline's icons: placed `ShoppingCart01`, confirmed `SmartPhone01` ("Confirmed with the phone
+  code") or, on an order paid online, `CreditCardAccept` ("Confirmed when the payment arrived"), then the pills'
+  icons.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
   selected chip is inverted (`ink` background, `bg` text). The selected segment uses a
   `subtle` background. With more options than fit (a sales order has six statuses), the control scrolls inside
@@ -1201,7 +1234,8 @@ and `home_page_mobile` (138:234) at 393px. The frames on the `draft` page are ol
 (33:2748, "britflow") is a reference from another site, not our design. Every screen must match Figma: sizes,
 spacing, radius, colors, icons and copy, at 1440px and (for what the mobile frame shows) at 393px. The only
 intended differences are the ones written below: the font, the contrast fixes, the cart icon, the logo, the
-menu button on the phone, the "All Categories" and "Offer" chips without a chevron, the payment section, the removed Reviews tab, no emoji, one badge style on every screen size, banners as images, and
+menu button on the phone, the "All Categories" and "Offer" chips without a chevron, the payment section ("Pay
+online" in place of Figma's "Mobile Banking"), the removed Reviews tab, no emoji, one badge style on every screen size, banners as images, and
 the confirmation's SMS wording.
 
 What still applies from the rest of this file: HugeIcons Stroke Rounded only, no `any`, every string through
@@ -1214,12 +1248,23 @@ its data from `Astro.locals.source`, which `src/middleware.ts` sets for each req
 `SHOP_SOURCE=mock`) or the ERP's `/public/v1` for the shop the host names (`SHOP_SOURCE=api` plus `SHOP_API_URL`).
 Only the middleware imports `data/source.ts`. The API reads a shop only inside `ShopDb.read`, a read-only
 transaction as the `omnivo_public` role, so a table or column the shop needs is granted to that role in a migration.
-The order routes (place an order, the phone code, `/order/<no>`, the tracking link, `/track`) are `auth: 'shop'`:
+The order routes (place an order, the phone code, the payment's settle, wait, retry and pay on delivery,
+`/order/<no>`, the tracking link, `/track`) are `auth: 'shop'`:
 only the shop's server may call them, with `x-shop-key` (the shop's `SHOP_API_KEY`, required with `SHOP_SOURCE=api`,
 equal to the API's `STOREFRONT_SHOP_KEY`) and the shopper's address in `x-shop-client-address`; every token goes in
 a POST body, never in an address. The API writes them only inside `ShopDb.orders`, a transaction as `omnivo_shop`
 (the public reads plus the order tables, nothing else). A text to the shopper goes through `SmsSender` on its own
 `sms` queue, never through the outbox; in development and CI it is an email to `<phone>@sms.invalid` in Mailpit.
+Astro's own `checkOrigin` is off: `src/middleware.ts` runs the same check first, with exactly two exceptions (the
+gateway's return and notice paths), and refuses `same-site` too, because another tenant's shop is the same site.
+Online payment goes through `apps/api/src/payments/` (`SslcommerzGateway`, `FakeGateway`): `PAYMENT_GATEWAY` is
+`fake` outside production and `sslcommerz` in it (fake is refused in production), and the API never believes the
+browser's post: it asks the gateway (by `val_id`, else by `tran_id`) and checks status, amount, currency and try
+with the try's row locked. The tenant's store password is sealed with AES-256-GCM under `CREDENTIALS_KEY` (32 random
+bytes, base64, the same on `api` and `worker`, with a key version) in `storefront_payment_gateways`, which only
+`omnivo_app` reads, never the shop's roles; without the key the card answers `storefront_gateway_key_missing`. A
+paid try gets a posted money receipt (an advance) from the worker, with the fee (`amount − store_amount`) on its own
+line to the fee account, and the invoice takes it at Delivered.
 A shop photo comes from the ERP's Storefront menu as a `storefront_image` upload; the worker's `sharp` job writes
 `storefront/<id>/small.webp`, `large.webp` and `wide.webp`, and only that `storefront/` folder of the storage is
 public. The original stays private, and the shop never links to it.
@@ -1440,12 +1485,14 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   20px 30px, a 24px radio (`brand` ring, `brand` dot when checked) plus 16px/600 `brand`, 4px apart; the whole
   card is the label. Groups: "Delivery Location" (Inside Dhaka — ৳80, Outside Dhaka — ৳120; the zones come
   from the shop's settings; no location is picked at first: until one is, the Delivery Charge row says "Pick a
-  location" in `muted`) and "Payment Method" (Cash on Delivery, Mobile Banking), each two cards side by
-  side, 16px apart. Free delivery is not a choice: when the order reaches the shop's threshold, the Delivery
+  location" in `muted`) and "Payment Method" (Cash on Delivery, Pay online; Figma says "Mobile Banking", but
+  SSLCommerz's page takes cards and internet banking too), each two cards side by side, 16px apart. While Pay online
+  is picked, a 14px `muted` line under the cards says the shopper pays on SSLCommerz's page. Free delivery is not a choice: when the order reaches the shop's threshold, the Delivery
   Charge row says "Free", and a 14px `muted` line under Delivery Location says "Free delivery on orders over
-  ৳1,000". The form is `inert` until its island has run, so nothing a shopper types before then is lost. On the
-  API, Mobile Banking is not offered until step 27d connects a gateway (unless it is the shop's only method, and
-  then the order is refused). Too many orders (5 per phone or 20 per connection in an hour) is the form's error with
+  ৳1,000". The form is `inert` until its island has run, so nothing a shopper types before then is lost. Pay online
+  is offered only while the shop ticks it and its Online payment card is ready (`storefront_online_ready()`); an
+  online order gets no phone code: Confirm Order says "Opening the payment page…" and the browser goes to the
+  gateway's page (or to `/checkout/paid` when no page opened; the order and its stock stay). Too many orders (5 per phone or 20 per connection in an hour) is the form's error with
   the minutes to wait, in the shop's digits.
 - **Checkout lines:** per line, a 155×130 `canvas` image box (radius 8), 20px gap, then the name (`sf-subtitle`,
   `brand`, max 288px) and 20px below it the stepper (the name and the stepper centered beside the image): minus and plus 40px `cream` buttons (radius 5,
@@ -1467,7 +1514,7 @@ phone hero headline is 28px/700 and its line under it 14px/400.
   line, and under the shop's minimum order (a `promo` line under Total says how much more to add). Below `md` the card fills the width, its body padding is 20px,
   and every two-card row is one column.
 - **Order confirmed dialog (Figma `confirmation_status`):** after the order is placed (after the phone code for
-  Cash on Delivery), over the checkout page with `overlay` behind it. 440px wide (the screen minus 32px on a
+  Cash on Delivery, on `/checkout/paid` once the online payment arrived), over the checkout page with `overlay` behind it. 440px wide (the screen minus 32px on a
   phone), `card`, radius 16, padding 64px 48px 48px, centered content. A 24px close icon button (`Cancel01`,
   `muted`) 16px from the top right. The illustration: Figma's two-tone `tick-double-03` (`accent` and `brand`),
   100px, as an SVG file from Figma (a two-tone drawing is not a Stroke Rounded icon). 48px down "Order
@@ -1528,6 +1575,26 @@ These follow the same tokens and components. Use them exactly as written here un
   gets its code is deleted after 60 minutes, with the stock it held. The page finds its order by an httpOnly cookie,
   never by the number, and with no order waiting it goes to `/checkout`. The mock shows its test code in a line under
   the sentence; on the API the code comes only by SMS.
+- **Back from the payment (`/checkout/paid`):** SSLCommerz posts the shopper back to `/checkout/pay/return` (and calls
+  `/api/payments/notice` on its own); the shop reads only `tran_id` and `val_id`, asks the API to settle the try, and
+  always answers 303 to this GET page, where the `SameSite=Lax` checkout cookie works. It finds the order by that
+  cookie (none: `/checkout`; an order that waits for its code: `/checkout/verify`). The checkout card at 560px, the
+  title in its `cream` header, by state. Paid: the confirmed dialog's sentence, "View Order Details" (`cream`), the
+  dialog over it, the order moved into this browser's orders cookie and the checkout cookie gone. Checking: "Checking
+  your payment" (`role="status"`), a "Check again" link, and the page looks again after 4 seconds with
+  `location.replace()`. Unpaid: the title and line of why ("The payment did not go through", "…was cancelled", "…did
+  not open", "…is not finished"), "Your order for ৳578 is still here…", the tries left ("You can try 2 more
+  times.", a try is three at most), an `Alert02` `promo` error line in a `role="alert"` block, then "Try again"
+  (primary, the Confirm Order look, while tries are left) and "Pay on delivery instead" (`cream`, or primary with no
+  tries left; it makes the order cash on delivery and sends the phone code) with its 14px `muted` hint; "Back to
+  checkout" only when neither button is there. Both buttons are POST routes; while one waits, both are
+  `aria-disabled`.
+- **Test payment page (`/checkout/fake-gateway`):** the fake gateway's page, on every shop (with SSLCommerz behind
+  the API, a fake `val_id` pays nothing). `noindex`, `no-store`, 404 for an address that is not a try's. The checkout
+  card at 560px, "Test payment", a `canvas` notice with `InformationCircle` ("This is a test page, not SSLCommerz. No
+  money moves…"), Amount (`price`) and Transaction (`Geist Mono`, `break-all`), then one form with three submit
+  buttons: "Pay ৳538" (the Confirm Order look), "Fail the payment" and "Cancel the payment" (`cream`, 44px). It posts
+  to the return path like SSLCommerz, with no script.
 - **Order details (`/order/[no]`, from "View Order Details"):** the checkout card at 848px: header "Order
   Details", the order number in `Geist Mono` `sf-title` `brand`, the status timeline of the track page, the
   delivery details (name, phone, address, area) in 16px `body`, and the lines and totals as in checkout,
@@ -1538,7 +1605,7 @@ These follow the same tokens and components. Use them exactly as written here un
   "Track Order", body padding 36px (20px on phones), 32px between blocks: the order number (`Geist Mono`
   `sf-title`, never broken) with "Placed on …" under it; a `canvas` box (radius 8, padding 20px) with "3 items"
   and the total in `price`, and "Keep ৳578 ready in cash for the rider." (Cash on Delivery, until delivered) or
-  "Paid with Mobile Banking."; the order's timeline: 24px dots (done: `brand` fill with an `accent` tick; current:
+  "Paid online."; the order's timeline: 24px dots (done: `brand` fill with an `accent` tick; current:
   2px `accent` ring on `brand`; later: 1px `rule` ring), 2px connecting line, 16px/600 `brand` status and a 14px
   `muted` date; then one section per parcel (at most 5), newest first: "Parcel" (an older one "Earlier parcel"),
   "Steadfast · SFR2611120042" in 14px `muted` `tabular-nums`, an optional "See it on the Steadfast site" link

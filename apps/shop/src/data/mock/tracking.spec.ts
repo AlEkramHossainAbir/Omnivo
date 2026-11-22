@@ -12,6 +12,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { mockDemoOrders } from './demo-orders';
+import { payPlaced } from './fake-payment';
 import { createMockSource } from './mock-source';
 
 // Step 26e: the demo orders, tracking by link and by the form, and the text pages
@@ -28,6 +29,8 @@ const asked = (phone: string, orderNo: string) => shopTrackRequestSchema.parse({
 
 // Step 27a: the shopper's address, which the mock counts misses under
 const ADDRESS = '203.0.113.7';
+// Step 27d: the shop's own address, for the mock's fake gateway page (ShopSource.placeOrder)
+const ORIGIN = 'http://shop.test';
 
 // Two face washes, inside Dhaka: ৳458 + ৳80, over the shop's ৳300 minimum
 function order(paymentMethod: ShopOrderRequest['paymentMethod']): ShopOrderRequest {
@@ -113,9 +116,10 @@ describe('tracking in the mock', () => {
 
   it('numbers new orders after the demo ones, and tracks them with no parcel', async () => {
     const source = demoSource();
-    const placed = await source.placeOrder(order('online'), ADDRESS);
+    const placed = await source.placeOrder(order('online'), ADDRESS, ORIGIN);
     if (!placed.ok) throw new Error(placed.code);
-    expect(placed.value.answer).toMatchObject({ next: 'confirmed', orderNo: 'W-000124' });
+    // Step 27d: confirmed once it is paid on the fake gateway's page
+    expect(await payPlaced(source, placed.value)).toBe('W-000124');
 
     const tracked = await source.track(asked('01786120356', 'W-000124'), ADDRESS);
     expect(tracked).toMatchObject({ ok: true, value: { status: 'confirmed', shipments: [] } });
@@ -123,7 +127,7 @@ describe('tracking in the mock', () => {
 
   it('does not track an order that waits for its code', async () => {
     const source = demoSource();
-    const placed = await source.placeOrder(order('cod'), ADDRESS);
+    const placed = await source.placeOrder(order('cod'), ADDRESS, ORIGIN);
     if (!placed.ok) throw new Error(placed.code);
     // The mock numbers its orders as they are placed: the next one after the demo orders
     expect(await source.track(asked('01786120356', 'W-000124'), ADDRESS)).toMatchObject({

@@ -731,6 +731,30 @@ export const ERROR_CODES = [
   'storefront_coupon_dates',
   'storefront_coupon_up_to',
   'storefront_coupon_limit_format',
+  // Step 27d: paying online. In the shop: no online order waits for its payment in this browser
+  // (dropped after its hour, or the cookie is gone), all three tries of an order used, and "Try
+  // again" or "Pay on delivery" on an order that is paid already or moved to cash on delivery
+  'shop_payment_no_order',
+  'shop_payment_tries_used',
+  'shop_payment_settled',
+  // In the ERP's Payment card: a store id with other characters, the first save without a
+  // password, a money account that does not hold money (or is not this workspace's active one), a
+  // fee account that is not an active expense account, a second first save, a change or a test
+  // before the first save; and "Pay online" ticked in the shop's settings while the gateway is not
+  // saved or one of its accounts no longer fits
+  'storefront_gateway_store_id_format',
+  'storefront_gateway_password_required',
+  'storefront_gateway_money_account_invalid',
+  'storefront_gateway_fee_account_invalid',
+  'storefront_gateway_set_up_already',
+  'storefront_gateway_not_set_up',
+  'storefront_online_not_ready',
+  // Step 27d.3: the server has no CREDENTIALS_KEY, so it cannot seal a gateway password (or open
+  // one). Said on the Payment card instead of failing with a 500
+  'storefront_gateway_key_missing',
+  // Step 27d.4: a delete refused because the account is chosen on the shop's Payment card (the
+  // money or the fee account). Archiving it is allowed: Pay online then leaves the checkout
+  'account_used_by_shop',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

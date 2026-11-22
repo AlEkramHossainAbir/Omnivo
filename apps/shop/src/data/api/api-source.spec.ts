@@ -8,6 +8,7 @@ import {
   shopOrderNoSchema,
   shopOrderRequestSchema,
   shopOrderTokenSchema,
+  shopPaymentSettleRequestSchema,
   shopTrackingTokenSchema,
   shopTrackRequestSchema,
   shopVerifyCodeRequestSchema,
@@ -17,6 +18,7 @@ import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import { mockDemoOrders } from '../mock/demo-orders';
+import { fakePageOf, pressOnFakePage } from '../mock/fake-payment';
 import { mockHome } from '../mock/home';
 import { createMockSource } from '../mock/mock-source';
 import { MOCK_CODE } from '../mock/orders';
@@ -34,6 +36,8 @@ const API = 'http://api.test';
 // Step 27a: the shop server's key (SHOP_API_KEY) and the shopper's address
 const KEY = 'test-shop-key-0123456789abcdef0123456789';
 const ADDRESS = '203.0.113.7';
+// Step 27d: the shop's own address, for the mock's fake gateway page (ShopSource.placeOrder)
+const ORIGIN = 'http://shop.test';
 const STEVIA = 'lst-zero-cal-stevia-30-sachets';
 const NEEM = 'himalaya-purifying-neem-face-wash-150ml';
 
@@ -53,6 +57,9 @@ const STATUS: Record<string, number> = {
   shop_track_too_many: 429,
   shop_code_no_order: 404,
   shop_track_not_found: 404,
+  // Step 27d (shop-payments.service.ts)
+  shop_payment_no_order: 404,
+  shop_payment_settled: 409,
 };
 
 function answered<T>(result: SourceResult<T, string>, status = 200): Response {
@@ -78,7 +85,10 @@ function fakeApi(data: ShopSource = createMockSource()) {
     }
     // Step 27a: the order routes, behind the key like the API's ShopKeyGuard. The mock behind them
     // keeps the API's rules for the code (data/mock/orders.ts)
-    if (request.method === 'POST' && /^\/(?:orders|tracking|track)(?:\/|$)/.test(path)) {
+    if (
+      request.method === 'POST' &&
+      /^\/(?:orders|tracking|track|payments\/settle)(?:\/|$)/.test(path)
+    ) {
       if (request.headers.get(SHOP_KEY_HEADER) !== KEY) {
         return problem(401, 'storefront_shop_key_invalid');
       }
@@ -110,7 +120,24 @@ function fakeApi(data: ShopSource = createMockSource()) {
     const address = request.headers.get(SHOP_CLIENT_ADDRESS_HEADER) ?? 'no address';
     switch (path) {
       case '/orders':
-        return answered(await data.placeOrder(shopOrderRequestSchema.parse(json), address), 201);
+        // Step 27d: the API builds the fake gateway's page on the shop's address; so does the mock
+        return answered(
+          await data.placeOrder(shopOrderRequestSchema.parse(json), address, `http://${HOST}`),
+          201,
+        );
+      // Step 27d
+      case '/payments/settle': {
+        const settled = await data.settlePayment(shopPaymentSettleRequestSchema.parse(json));
+        return settled === null ? problem(404, 'not_found') : Response.json(settled);
+      }
+      case '/orders/payment': {
+        const wait = await data.paymentWait(tokenBody.parse(json).token);
+        return wait === null ? problem(404, 'shop_payment_no_order') : Response.json(wait);
+      }
+      case '/orders/payment/retry':
+        return answered(await data.retryPayment(tokenBody.parse(json).token, `http://${HOST}`));
+      case '/orders/payment/cod':
+        return answered(await data.payOnDelivery(tokenBody.parse(json).token));
       case '/orders/code-wait': {
         const wait = await data.codeWait(tokenBody.parse(json).token);
         return wait === null ? problem(404, 'shop_code_no_order') : Response.json(wait);
@@ -337,6 +364,7 @@ describe('orders on the API source', () => {
     const placed = await source.placeOrder(
       { ...order, expectedTotal: await expectedTotal() },
       ADDRESS,
+      ORIGIN,
     );
     if (!placed.ok) throw new Error(`refused: ${placed.code}`);
     return placed.value;
@@ -390,12 +418,64 @@ describe('orders on the API source', () => {
     expect(api.paths().some((path) => path.includes(token))).toBe(false);
   });
 
+  // Step 27d: the four payment routes, with the token in the body as for the code
+  it('pays online through the API, and turns an order into Cash on Delivery', async () => {
+    const { source, api } = setup();
+    const placed = await source.placeOrder(
+      { ...order, paymentMethod: 'online', expectedTotal: await expectedTotal() },
+      ADDRESS,
+      ORIGIN,
+    );
+    if (!placed.ok || placed.value.answer.next !== 'pay') throw new Error('not an online order');
+    const { token } = placed.value;
+    const { paymentUrl } = placed.value.answer;
+    expect(paymentUrl).toMatch(/^http:\/\/nirvor\.omnivo\.test\/checkout\/fake-gateway\?/);
+    expect(await source.paymentWait(token)).toMatchObject({ state: 'unpaid', triesLeft: 2 });
+
+    const second = await source.retryPayment(token, ORIGIN);
+    if (!second.ok) throw new Error(second.code);
+    expect(await pressOnFakePage(source, second.value.paymentUrl, 'failed')).toEqual({
+      status: 'failed',
+    });
+    expect(await source.paymentWait(token)).toMatchObject({ problem: 'failed', triesLeft: 1 });
+    expect(await pressOnFakePage(source, paymentUrl)).toEqual({ status: 'paid' });
+    expect(await source.paymentWait(token)).toMatchObject({ state: 'paid', orderNo: 'W-000001' });
+    expect(await source.retryPayment(token, ORIGIN)).toEqual({
+      ok: false,
+      code: 'shop_payment_no_order',
+    });
+    // An id no try has is null, not an error: a made-up post is normal traffic
+    expect(await source.settlePayment({ tranId: 'Z'.repeat(20), valId: null })).toBeNull();
+    expect(sentTo(api, '/payments/settle')[0]?.headers.get(SHOP_KEY_HEADER)).toBe(KEY);
+
+    const other = await source.placeOrder(
+      { ...order, paymentMethod: 'online', expectedTotal: await expectedTotal() },
+      ADDRESS,
+      ORIGIN,
+    );
+    if (!other.ok) throw new Error(other.code);
+    expect(await source.payOnDelivery(other.value.token)).toMatchObject({
+      ok: true,
+      value: { next: 'verify', listingIds: [STEVIA] },
+    });
+    expect(await source.retryPayment(other.value.token, ORIGIN)).toEqual({
+      ok: false,
+      code: 'shop_payment_settled',
+    });
+    expect(await source.paymentWait(other.value.token)).toBeNull();
+    // The tokens went in bodies only
+    expect(api.paths().some((path) => path.includes(token))).toBe(false);
+    expect(fakePageOf(paymentUrl).amount).toBe(await expectedTotal());
+  });
+
   it('passes on the refusals the pages know, with their params', async () => {
     const { source, api } = setup();
-    expect(await source.placeOrder({ ...order, expectedTotal: '1.0000' }, ADDRESS)).toEqual({
-      ok: false,
-      code: 'shop_order_changed',
-    });
+    expect(await source.placeOrder({ ...order, expectedTotal: '1.0000' }, ADDRESS, ORIGIN)).toEqual(
+      {
+        ok: false,
+        code: 'shop_order_changed',
+      },
+    );
     const { token } = await place(source);
     expect(await source.verifyCode(token, '000000')).toEqual({
       ok: false,
@@ -408,7 +488,7 @@ describe('orders on the API source', () => {
       params: { seconds: 45 },
     });
     api.failWith(problem(429, 'shop_order_limit', { minutes: 12 }));
-    expect(await source.placeOrder({ ...order, expectedTotal: '1' }, ADDRESS)).toEqual({
+    expect(await source.placeOrder({ ...order, expectedTotal: '1' }, ADDRESS, ORIGIN)).toEqual({
       ok: false,
       code: 'shop_order_limit',
       params: { minutes: 12 },
@@ -430,8 +510,8 @@ describe('orders on the API source', () => {
         })
       ).total,
     };
-    expect((await source.placeOrder(welcome, ADDRESS)).ok).toBe(true);
-    expect(await source.placeOrder(welcome, ADDRESS)).toEqual({
+    expect((await source.placeOrder(welcome, ADDRESS, ORIGIN)).ok).toBe(true);
+    expect(await source.placeOrder(welcome, ADDRESS, ORIGIN)).toEqual({
       ok: false,
       code: 'shop_coupon_used_by_phone',
     });
@@ -448,7 +528,7 @@ describe('orders on the API source', () => {
   it('names the setting to fix when the API refuses the key', async () => {
     const { source } = setup({ key: 'not-the-api-key-0123456789abcdef01234' });
     await expect(
-      source.placeOrder({ ...order, expectedTotal: await expectedTotal() }, ADDRESS),
+      source.placeOrder({ ...order, expectedTotal: await expectedTotal() }, ADDRESS, ORIGIN),
     ).rejects.toThrow(/SHOP_API_KEY/);
     // The read routes need no key, so the shop's pages still work
     expect(await source.shop()).toEqual(mockShop);

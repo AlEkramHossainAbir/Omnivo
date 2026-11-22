@@ -100,7 +100,7 @@ function demoOrder(input: DemoInput): MockDemoOrder {
 }
 
 export const mockDemoOrders: readonly MockDemoOrder[] = [
-  // Delivered in Dhaka, paid with Mobile Banking. The first booking (RedX) was cancelled before its
+  // Delivered in Dhaka, paid online. The first booking (RedX) was cancelled before its
   // rider came, and the shop booked Pathao instead: the page's "Earlier parcel". Over ৳1,000, so
   // the delivery was free. Step 27c: with EID100's only use (৳100 off), so that code answers
   // "used up" in the shop from the start

@@ -7,7 +7,18 @@ import { DocumentEmailHandler } from '../documents/email.handler.js';
 import { DocumentFileHandler } from '../documents/file.handler.js';
 import { DocumentFileMaker } from '../documents/file-maker.js';
 import type { WorkerConfig } from '../config.js';
-import { CONFIG, DB, REDIS, RELAY_DB, STORAGE_CONFIG, WITH_TENANT } from '../infra/tokens.js';
+import {
+  CONFIG,
+  DB,
+  PAYMENT_GATEWAY,
+  PAYMENTS_CONFIG,
+  REDIS,
+  RELAY_DB,
+  STORAGE_CONFIG,
+  WITH_TENANT,
+} from '../infra/tokens.js';
+import { PostingService } from '../journal/posting.service.js';
+import { createGateway } from '../payments/create-gateway.js';
 import { LowStockHandler } from '../inventory/low-stock.handler.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
@@ -25,6 +36,8 @@ import { ReportScheduleSweep } from '../reports/report-schedule-sweep.js';
 import { BalanceAccess } from '../sales/balance-access.js';
 import { CreditService } from '../sales/credit.service.js';
 import { CustomersService } from '../sales/customers.service.js';
+import { ReceiptsService } from '../sales/receipts.service.js';
+import { SalesBooksService } from '../sales/sales-books.service.js';
 import { SalesOrdersService } from '../sales/sales-orders.service.js';
 import { CatalogHandler } from '../setup/catalog.handler.js';
 import { ChartHandler } from '../setup/chart.handler.js';
@@ -35,7 +48,10 @@ import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 import { StorageService } from '../storage/storage.service.js';
 import { SMS_SENDER, MailSmsSender } from '../sms/sms-sender.js';
 import { StorefrontImageHandler } from '../storefront/image.handler.js';
+import { GatewayAccounts } from '../storefront/gateway-accounts.js';
 import { OrderConfirmedHandler } from '../storefront/orders/order-confirmed.handler.js';
+import { PaymentPaidHandler } from '../storefront/orders/payment-paid.handler.js';
+import { ShopPaymentReceipts } from '../storefront/orders/payment-receipts.js';
 import { PendingOrderSweep } from '../storefront/orders/pending-order-sweep.js';
 import { ShopSalesOrderMaker } from '../storefront/orders/sales-order-maker.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
@@ -123,6 +139,16 @@ export class WorkerModule implements OnApplicationShutdown {
         CreditService,
         BalanceAccess,
         PermissionService,
+        // Step 27d: the money receipt of a paid try, and the sweep's look at the gateway before it
+        // drops an unpaid online order
+        { provide: PAYMENTS_CONFIG, useValue: config.payments },
+        { provide: PAYMENT_GATEWAY, useFactory: () => createGateway(config.payments) },
+        GatewayAccounts,
+        PaymentPaidHandler,
+        ShopPaymentReceipts,
+        ReceiptsService,
+        SalesBooksService,
+        PostingService,
         { provide: REDIS, useFactory: () => new Redis(config.redisUrl, { lazyConnect: true }) },
       ],
     };

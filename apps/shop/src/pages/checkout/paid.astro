@@ -1,0 +1,352 @@
+---
+import { Alert02Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { numberLocale } from '@omnivo/i18n';
+
+import OrderConfirmedDialog from '../../components/OrderConfirmedDialog.astro';
+import ShopLayout from '../../layouts/ShopLayout.astro';
+import { shopLocale } from '../../lib/locale';
+import { spacedPhone } from '../../lib/phone';
+import { checkoutToken, clearCheckoutCookie, ordersCookie } from '../../server/cookies';
+
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
+
+// Step 27d: where an online order's payment is, for this browser's checkout cookie, like the
+// verify page. The shopper lands here from the gateway (the return path's 303), from "Try again"
+// when no page opened, and from a reload. The cookie came with this GET even after SSLCommerz's
+// cross-site post: a SameSite=Lax cookie is sent on a top-level GET from another site, only not on
+// its POST (decision 2)
+const options = { secure: import.meta.env.PROD };
+const token = checkoutToken(Astro.request);
+// No checkout cookie: nothing was placed in this browser, or the order is done (a reload after
+// the dialog, whose answer cleared it below)
+if (token === null) return Astro.redirect('/checkout');
+const wait = await source.paymentWait(token);
+// No online order waits. The usual reason is "Pay on delivery" (in this tab or another): the same
+// cookie now names an order that waits for its phone code, and the verify page finds it. The verify
+// page sends the browser on to /checkout when nothing waits there either
+if (wait === null) return Astro.redirect('/checkout/verify');
+
+// Step 26d.4: the categories for the header's drawer
+const [shop, categories] = await Promise.all([source.shop(), source.categories()]);
+const locale = await shopLocale(shop.language);
+const { t, money } = locale;
+const numbers = new Intl.NumberFormat(numberLocale(locale.language));
+
+if (wait.state === 'paid') {
+  // The order is confirmed: it moves from "waiting" to this browser's orders, as a right phone
+  // code moves it (server/orders.ts → answerVerifyCode), so "View Order Details" opens it. The
+  // checkout cookie goes, so a reload of this page goes to /checkout and the dialog does not open
+  // twice. Two Set-Cookie lines: Headers.append keeps both
+  Astro.response.headers.append(
+    'Set-Cookie',
+    ordersCookie(Astro.request, wait.orderNo, token, options),
+  );
+  Astro.response.headers.append('Set-Cookie', clearCheckoutCookie(options));
+}
+// The page is this shopper's own (their cookie), so no cache may keep it
+Astro.response.headers.set('Cache-Control', 'no-store');
+
+const title =
+  wait.state === 'paid'
+    ? t('shop.confirmed.title')
+    : wait.state === 'checking'
+      ? t('shop.paid.checkingTitle')
+      : t(`shop.paid.titles.${wait.problem}`);
+
+// The words of the two buttons while they wait, and the line for a press that failed. Only what
+// the script writes; the rest is drawn here
+const words = {
+  tryAgain: t('shop.paid.tryAgain'),
+  opening: t('shop.paid.opening'),
+  payOnDelivery: t('shop.paid.payOnDelivery'),
+  sendingCode: t('shop.paid.sendingCode'),
+  failed: t('shop.paid.failed'),
+};
+
+const button =
+  'flex items-center justify-center rounded-sm font-semibold transition-colors duration-150';
+const primary = `${button} h-16 w-full bg-accent text-[18px] not-aria-disabled:hover:bg-brand not-aria-disabled:hover:text-accent aria-disabled:bg-canvas aria-disabled:text-muted`;
+const secondary = `${button} h-11 w-full bg-cream not-aria-disabled:hover:bg-accent aria-disabled:text-muted`;
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.paid.pageTitle', { shop: shop.name })}
+  categories={categories}
+>
+  <payment-wait
+    data-state={wait.state}
+    data-words={JSON.stringify(words)}
+    data-listing-ids={wait.state === 'paid' ? JSON.stringify(wait.listingIds) : undefined}
+    data-order-no={wait.state === 'paid' ? wait.orderNo : undefined}
+    data-phone={wait.state === 'paid' ? wait.phone : undefined}
+  >
+    {/* The verify page's card: 560px, the checkout's 4px glass frame and its 160px to the footer */}
+    <div class="mx-auto mt-4 max-w-[560px] rounded-2xl bg-card-glass p-1 md:mt-9 md:mb-40">
+      <div class="rounded-t-xl bg-cream p-6 text-center">
+        <h1 class="trim-text text-sf-title font-semibold">{title}</h1>
+      </div>
+      <div class="flex flex-col gap-8 p-5 md:p-9">
+        {wait.state === 'paid' && (
+          // What the dialog says, for a page without its script and for after the dialog is
+          // closed by "View Order Details" in another tab. The dialog opens over it
+          <>
+            <p class="text-body">
+              {t('shop.confirmed.textBefore')}
+              <span class="font-medium whitespace-nowrap tabular-nums">
+                {spacedPhone(wait.phone)}
+              </span>
+              {t('shop.confirmed.textAfter')}
+            </p>
+            <a href={`/order/${encodeURIComponent(wait.orderNo)}`} class={secondary}>
+              {t('shop.confirmed.details')}
+            </a>
+          </>
+        )}
+
+        {wait.state === 'checking' && (
+          <>
+            {/* role="status": the script reloads the page by itself; this says why it waits */}
+            <p role="status" class="text-body">
+              {t('shop.paid.checkingText')}
+            </p>
+            {/* A link to this page: it works without the script too */}
+            <a href="/checkout/paid" class={secondary}>
+              {t('shop.paid.checkAgain')}
+            </a>
+          </>
+        )}
+
+        {wait.state === 'unpaid' && (
+          <>
+            <div class="flex flex-col gap-3">
+              <p class="text-body">{t(`shop.paid.texts.${wait.problem}`)}</p>
+              <p class="text-body">{t('shop.paid.kept', { total: money(wait.total) })}</p>
+              {/* The count in the shop's digits ("১ বার" in Bangla): `replace` writes the
+                    formatted number where {{count}} goes, `count` still picks _one or _other */}
+              <p class="font-semibold">
+                {wait.triesLeft > 0
+                  ? t('shop.paid.triesLeft', {
+                      count: wait.triesLeft,
+                      replace: { count: numbers.format(wait.triesLeft) },
+                    })
+                  : t('shop.paid.noTriesLeft')}
+              </p>
+            </div>
+
+            <div class="flex flex-col">
+              {/* role="alert": the shopper pressed a button and waits. In the page from the
+                    start, so a screen reader hears the line when it shows; 24px above the buttons
+                    only then, like the verify page's error line */}
+              <div role="alert" class="has-[>p:not([hidden])]:pb-6">
+                <p
+                  data-error
+                  hidden
+                  class="flex items-start gap-1.5 text-sf-small font-medium text-promo"
+                >
+                  <HugeiconsIcon
+                    icon={Alert02Icon}
+                    size={16}
+                    strokeWidth={1.5}
+                    className="mt-1 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span data-error-text />
+                </p>
+              </div>
+              <div class="flex flex-col gap-6">
+                {/* aria-disabled while a press waits, not disabled: a disabled button loses the
+                    focus. The first button the shopper can press is the one to press: a new try */}
+                {wait.triesLeft > 0 && (
+                  <button type="button" data-retry class={primary}>
+                    {words.tryAgain}
+                  </button>
+                )}
+                {wait.payOnDelivery && (
+                  <div class="flex flex-col gap-3">
+                    <button
+                      type="button"
+                      data-cod
+                      aria-describedby="paid-cod-hint"
+                      class={wait.triesLeft > 0 ? secondary : primary}
+                    >
+                      {words.payOnDelivery}
+                    </button>
+                    <p id="paid-cod-hint" class="text-center text-sf-small text-muted">
+                      {t('shop.paid.payOnDeliveryHint')}
+                    </p>
+                  </div>
+                )}
+                {/* Nothing left to press: the cart is still in this browser, so a new order is a
+                    tap away. The order here is dropped after its hour, with its stock */}
+                {wait.triesLeft === 0 && !wait.payOnDelivery && (
+                  <a href="/checkout" class={secondary}>
+                    {t('shop.paid.startAgain')}
+                  </a>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  </payment-wait>
+
+  {wait.state === 'paid' && <OrderConfirmedDialog locale={locale} />}
+</ShopLayout>
+
+<script>
+  import { removeFromCart } from '../../lib/cart';
+  import { announceOrderConfirmed } from '../../lib/order-events';
+  import { isCodeWait, paymentUrlOf } from '../../lib/payment';
+
+  const WORD_KEYS = ['tryAgain', 'opening', 'payOnDelivery', 'sendingCode', 'failed'] as const;
+  type WordKey = (typeof WORD_KEYS)[number];
+
+  // How long "checking" waits before it asks again. Long enough not to ask the gateway in a loop,
+  // short enough that a shopper who just paid is not left looking at it
+  const CHECK_AGAIN_MS = 4000;
+
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  async function bodyOf(response: Response): Promise<unknown> {
+    try {
+      return await response.json();
+    } catch {
+      return null;
+    }
+  }
+
+  class PaymentWait extends HTMLElement {
+    private words: Record<string, unknown> = {};
+    private busy = false;
+    private timer: number | undefined;
+
+    connectedCallback(): void {
+      const words: unknown = JSON.parse(this.dataset.words ?? '{}');
+      this.words = isRecord(words) ? words : {};
+      // Every word is read once now, so a missing one fails when the page opens
+      for (const key of WORD_KEYS) this.word(key);
+
+      const state = this.dataset.state;
+      if (state === 'paid') this.paid();
+      if (state === 'checking') {
+        // replace(), not reload(): the address stays /checkout/paid, and the Back button does not
+        // walk through every look
+        this.timer = window.setTimeout(() => {
+          window.location.replace('/checkout/paid');
+        }, CHECK_AGAIN_MS);
+      }
+      this.querySelector('[data-retry]')?.addEventListener('click', () => {
+        void this.retry();
+      });
+      this.querySelector('[data-cod]')?.addEventListener('click', () => {
+        void this.payOnDelivery();
+      });
+    }
+
+    disconnectedCallback(): void {
+      window.clearTimeout(this.timer);
+    }
+
+    private word(key: WordKey): string {
+      const word = this.words[key];
+      if (typeof word !== 'string') throw new Error(`payment wait: word ${key} is missing`);
+      return word;
+    }
+
+    // The order is real now: its lines leave this browser's cart (as after a right phone code),
+    // and the dialog opens over the page
+    private paid(): void {
+      const ids: unknown = JSON.parse(this.dataset.listingIds ?? '[]');
+      removeFromCart(
+        new Set(Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []),
+      );
+      const { orderNo, phone } = this.dataset;
+      if (orderNo !== undefined && phone !== undefined) announceOrderConfirmed({ orderNo, phone });
+    }
+
+    private buttons(): HTMLButtonElement[] {
+      return [...this.querySelectorAll<HTMLButtonElement>('[data-retry], [data-cod]')];
+    }
+
+    // One press at a time: both buttons wait, and the one pressed says what it does
+    private setBusy(pressed: HTMLButtonElement | null, text: string | null): void {
+      this.busy = pressed !== null;
+      for (const button of this.buttons()) {
+        button.setAttribute('aria-disabled', String(this.busy));
+      }
+      if (pressed !== null && text !== null) pressed.textContent = text;
+    }
+
+    private showError(): void {
+      const line = this.querySelector<HTMLElement>('[data-error]');
+      const text = this.querySelector('[data-error-text]');
+      if (line === null || text === null) return;
+      text.textContent = this.word('failed');
+      line.hidden = false;
+    }
+
+    // The press reached the server and was refused, or answered something unexpected: the page is
+    // drawn again from the server's own state (paid meanwhile, Cash on Delivery in another tab, no
+    // tries left), which says more than any message here could
+    private redraw(): void {
+      window.location.replace('/checkout/paid');
+    }
+
+    private async post(url: string): Promise<{ response: Response; body: unknown } | null> {
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        });
+        return { response, body: await bodyOf(response) };
+      } catch (error) {
+        console.error(error);
+        return null;
+      }
+    }
+
+    private async retry(): Promise<void> {
+      const button = this.querySelector<HTMLButtonElement>('[data-retry]');
+      if (this.busy || button === null) return;
+      this.setBusy(button, this.word('opening'));
+      const answer = await this.post('/api/payments/retry');
+      if (answer === null) {
+        // No answer: the press may not have reached the shop. The buttons work again
+        this.setBusy(null, null);
+        button.textContent = this.word('tryAgain');
+        this.showError();
+        return;
+      }
+      const url = answer.response.ok ? paymentUrlOf(answer.body) : undefined;
+      // The gateway's page. The button keeps "Opening the payment page…" until it opens
+      if (typeof url === 'string') window.location.assign(url);
+      // null: no page opened (the try counts); anything else: see redraw()
+      else this.redraw();
+    }
+
+    private async payOnDelivery(): Promise<void> {
+      const button = this.querySelector<HTMLButtonElement>('[data-cod]');
+      if (this.busy || button === null) return;
+      this.setBusy(button, this.word('sendingCode'));
+      const answer = await this.post('/api/payments/cod');
+      if (answer === null) {
+        this.setBusy(null, null);
+        button.textContent = this.word('payOnDelivery');
+        this.showError();
+        return;
+      }
+      // The order waits for its code now, with the same cookie
+      if (answer.response.ok && isCodeWait(answer.body)) window.location.assign('/checkout/verify');
+      else this.redraw();
+    }
+  }
+
+  customElements.define('payment-wait', PaymentWait);
+</script>

@@ -192,19 +192,6 @@ test('the code page says when a code expired and when no more codes can come', a
   await expect(page.getByRole('link', { name: 'Back to checkout' })).toBeVisible();
 });
 
-test('Mobile Banking needs no phone code in the test shop', async ({ page }) => {
-  await page.goto(`/p/${SHAMPOO.slug}`);
-  await page.getByRole('button', { name: 'Add to cart', exact: true }).click();
-  await page.goto('/checkout');
-  await page.getByRole('button', { name: `One more ${SHAMPOO.name}` }).click();
-  await fillDetails(page);
-  await page.getByText('Mobile Banking', { exact: true }).click();
-  await page.getByRole('button', { name: 'Confirm Order' }).click();
-  // Straight to the dialog, over the checkout page: the mock asks no code for Mobile Banking
-  await expect(page.getByRole('dialog', { name: 'Order Confirmed' })).toBeVisible();
-  await expect(page).toHaveURL('/checkout');
-});
-
 test('nothing typed into the checkout before its script runs is lost', async ({ page }) => {
   await page.goto(`/p/${SHAMPOO.slug}`);
   await page.getByRole('button', { name: 'Add to cart', exact: true }).click();

@@ -50,6 +50,9 @@ export function checkoutWords({ t, money }: ShopLocale, settings: ShopCheckoutSe
       upTo: '{{upTo}}',
     }),
     payment: t('shop.checkout.payment'),
+    // Step 27d: Pay online's hint under the cards, and the button on the way to the gateway
+    onlineHint: t('shop.checkout.onlineHint'),
+    openingPayment: t('shop.checkout.openingPayment'),
     termsBefore: t('shop.checkout.termsBefore'),
     termsLink: t('shop.checkout.termsLink'),
     termsAfter: t('shop.checkout.termsAfter'),

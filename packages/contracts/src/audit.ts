@@ -295,6 +295,13 @@ export const AUDIT_ACTIONS = [
   'storefront_coupon.updated',
   'storefront_coupon.archived',
   'storefront_coupon.restored',
+  // Step 27d: the shop's payment gateway account (entity = storefront_payment_gateway, entityId =
+  // the tenant's id: a workspace has one). The password is never in the changes, only that it
+  // changed. A payment writes nothing here: the money receipt it makes writes its own entry, with
+  // the order's number in its changes
+  'storefront_payment_gateway.created',
+  'storefront_payment_gateway.updated',
+  'storefront_payment_gateway.tested',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -360,6 +367,7 @@ export const AUDIT_ENTITY_TYPES = [
   'storefront_collection',
   'storefront_order',
   'storefront_coupon',
+  'storefront_payment_gateway',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

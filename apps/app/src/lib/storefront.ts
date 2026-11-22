@@ -41,6 +41,15 @@ export function storefrontSetupQuery(tenantId: string) {
   });
 }
 
+// Step 27d: the Online payment card's read (the saved gateway, never its password, and the two
+// account selects' choices). Under the same ['storefront', tenantId] key, so a save refreshes it
+export function storefrontPaymentSetupQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['storefront', tenantId, 'payment-gateway'],
+    queryFn: () => call(routes.storefrontPayments.getPaymentGateway),
+  });
+}
+
 export function storefrontCategoriesQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['storefront', tenantId, 'categories'],

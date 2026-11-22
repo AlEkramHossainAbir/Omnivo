@@ -100,3 +100,30 @@ describe('order keys', () => {
     expect(other.storefront.codeKey.equals(codeKey)).toBe(false);
   });
 });
+
+// Step 27d.3: the gateway and the key that seals its passwords
+describe('payment config', () => {
+  const production = { NODE_ENV: 'production', STOREFRONT_MEDIA_URL: 'https://files.example.com' };
+  const key = Buffer.alloc(32, 7).toString('base64');
+
+  it('uses the fake gateway outside production and SSLCommerz in production', () => {
+    expect(loadConfig(env({})).payments.gateway).toBe('fake');
+    expect(loadConfig(env(production)).payments.gateway).toBe('sslcommerz');
+    expect(loadConfig(env({ PAYMENT_GATEWAY: 'sslcommerz' })).payments.gateway).toBe('sslcommerz');
+  });
+
+  it('refuses the fake gateway in production', () => {
+    expect(() => loadConfig(env({ ...production, PAYMENT_GATEWAY: 'fake' }))).toThrow(
+      /PAYMENT_GATEWAY=fake/,
+    );
+  });
+
+  it('has no key until one is set, and takes only 32 bytes', () => {
+    expect(loadConfig(env({})).payments.credentialsKey).toBeNull();
+    const { credentialsKey } = loadConfig(env({ CREDENTIALS_KEY: key })).payments;
+    expect(credentialsKey?.version).toBe(1);
+    expect(credentialsKey?.key.equals(Buffer.alloc(32, 7))).toBe(true);
+    const short = Buffer.alloc(16, 7).toString('base64');
+    expect(() => loadConfig(env({ CREDENTIALS_KEY: short }))).toThrow(/Invalid environment/);
+  });
+});

@@ -5,8 +5,8 @@ import { HugeiconsIcon } from '@hugeicons/react';
 import type { ShopLocale } from '../lib/locale';
 
 // Step 26c: "Order Confirmed" (Figma confirmation_status 41:4066; CLAUDE.md → Order confirmed
-// dialog). It opens over the page that confirmed the order: the checkout (Mobile Banking) or the
-// verify page (a right code). Neither page opens it: they send the shop:order-confirmed event, and
+// dialog). It opens over the page that confirmed the order: the verify page (a right code) or
+// (step 27d) /checkout/paid (the payment arrived). Neither page opens it: they send the shop:order-confirmed event, and
 // this listens on the document (decision 24). Only those two pages draw it.
 // A native <dialog> in a custom element, like the cart drawer: showModal() gives the focus trap,
 // Escape, the inert page and the backdrop, with a few lines of script and no React.

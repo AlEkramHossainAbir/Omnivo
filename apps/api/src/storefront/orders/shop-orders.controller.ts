@@ -5,6 +5,7 @@ import { Endpoint } from '../../common/http/endpoint.js';
 import { ShopClient } from '../shop-client.decorator.js';
 import { ShopHost } from '../shop-host.decorator.js';
 import { ShopOrdersService } from './shop-orders.service.js';
+import { ShopPaymentsService } from './shop-payments.service.js';
 
 type Routes = typeof routes.publicStorefront;
 
@@ -14,7 +15,10 @@ type Routes = typeof routes.publicStorefront;
 // an order or a tracking answer in a shared cache would be one buyer's details given to another.
 @Controller()
 export class ShopOrdersController {
-  constructor(private readonly orders: ShopOrdersService) {}
+  constructor(
+    private readonly orders: ShopOrdersService,
+    private readonly payments: ShopPaymentsService,
+  ) {}
 
   @Endpoint(routes.publicStorefront.placeOrder)
   @Header('Cache-Control', 'no-store')
@@ -79,5 +83,43 @@ export class ShopOrdersController {
     @ShopClient() client: string,
   ): Promise<RouteResponse<Routes['track']>> {
     return this.orders.track(host, client, body);
+  }
+
+  // Step 27d: paying online. The gateway's return and notice (settle), /checkout/paid (wait),
+  // "Try again" and "Pay on delivery"
+  @Endpoint(routes.publicStorefront.settlePayment)
+  @Header('Cache-Control', 'no-store')
+  settlePayment(
+    { body }: RouteInput<Routes['settlePayment']>,
+    @ShopHost() host: string | undefined,
+  ): Promise<RouteResponse<Routes['settlePayment']>> {
+    return this.payments.settle(host, body);
+  }
+
+  @Endpoint(routes.publicStorefront.paymentWait)
+  @Header('Cache-Control', 'no-store')
+  paymentWait(
+    { body }: RouteInput<Routes['paymentWait']>,
+    @ShopHost() host: string | undefined,
+  ): Promise<RouteResponse<Routes['paymentWait']>> {
+    return this.payments.wait(host, body.token);
+  }
+
+  @Endpoint(routes.publicStorefront.retryPayment)
+  @Header('Cache-Control', 'no-store')
+  retryPayment(
+    { body }: RouteInput<Routes['retryPayment']>,
+    @ShopHost() host: string | undefined,
+  ): Promise<RouteResponse<Routes['retryPayment']>> {
+    return this.payments.retry(host, body.token);
+  }
+
+  @Endpoint(routes.publicStorefront.payOnDelivery)
+  @Header('Cache-Control', 'no-store')
+  payOnDelivery(
+    { body }: RouteInput<Routes['payOnDelivery']>,
+    @ShopHost() host: string | undefined,
+  ): Promise<RouteResponse<Routes['payOnDelivery']>> {
+    return this.payments.payOnDelivery(host, body.token);
   }
 }

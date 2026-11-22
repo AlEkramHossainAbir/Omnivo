@@ -187,7 +187,9 @@ const settingsFieldsSchema = z.object({
     .max(STOREFRONT_ZONES_MAX, errorCode('too_long')),
   freeDeliveryFrom: optionalAmountSchema,
   minimumOrder: optionalAmountSchema,
-  // At least one way to pay, or no order can be placed. Ticked twice is once
+  // At least one way to pay, or no order can be placed. Ticked twice is once. Step 27d: `online`
+  // only once the payment gateway is saved with accounts that fit (storefront_online_not_ready);
+  // only the API knows that, so it checks
   paymentMethods: z
     .array(z.enum(SHOP_PAYMENT_METHODS))
     .min(1, errorCode('storefront_payment_required'))
