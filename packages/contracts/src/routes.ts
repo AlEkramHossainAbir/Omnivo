@@ -22,7 +22,7 @@ import { stockMovementReportRoutes } from './stock-movement-report.js';
 import { storefrontRoutes } from './storefront-admin.js';
 import { storefrontAppearanceRoutes } from './storefront-appearance.js';
 import { storefrontCouponRoutes } from './storefront-coupons.js';
-import { storefrontOrderRoutes } from './storefront-orders.js';
+import { storefrontOrderDeliveryRoutes, storefrontOrderRoutes } from './storefront-orders.js';
 import { shippingRoutes } from './shipping.js';
 import { storefrontPaymentRoutes } from './storefront-payments.js';
 import { publicStorefrontRoutes } from './storefront.js';
@@ -169,6 +169,7 @@ type Routes = Readonly<{
   storefront: typeof storefrontRoutes;
   storefrontAppearance: typeof storefrontAppearanceRoutes;
   storefrontOrders: typeof storefrontOrderRoutes;
+  storefrontOrderDeliveries: typeof storefrontOrderDeliveryRoutes;
   storefrontCoupons: typeof storefrontCouponRoutes;
   storefrontPayments: typeof storefrontPaymentRoutes;
   shipping: typeof shippingRoutes;
@@ -255,6 +256,7 @@ export const routes: Routes = {
   storefront: storefrontRoutes,
   storefrontAppearance: storefrontAppearanceRoutes,
   storefrontOrders: storefrontOrderRoutes,
+  storefrontOrderDeliveries: storefrontOrderDeliveryRoutes,
   storefrontCoupons: storefrontCouponRoutes,
   storefrontPayments: storefrontPaymentRoutes,
   shipping: shippingRoutes,

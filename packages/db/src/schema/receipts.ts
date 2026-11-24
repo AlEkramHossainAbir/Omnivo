@@ -1,4 +1,4 @@
-import { PAYMENT_METHODS, RECEIPT_STATUSES } from '@omnivo/contracts';
+import { RECEIPT_METHODS, RECEIPT_STATUSES } from '@omnivo/contracts';
 import { sql } from 'drizzle-orm';
 import {
   check,
@@ -43,7 +43,9 @@ export const receipts = pgTable(
     refunded: numeric('refunded', { precision: 19, scale: 4 }).notNull().default('0'),
     // The cash, bank or wallet account it went into (a money account: the API checks that)
     accountId: uuid('account_id').notNull(),
-    method: text('method', { enum: PAYMENT_METHODS }).notNull(),
+    // Step 28b: RECEIPT_METHODS, so a shop order's COD receipt can say `courier` (mine 13). A type
+    // only: the column has no check, as before, and the receipt form still offers PAYMENT_METHODS
+    method: text('method', { enum: RECEIPT_METHODS }).notNull(),
     reference: text('reference'),
     branchId: uuid('branch_id').notNull(),
     note: text('note'),

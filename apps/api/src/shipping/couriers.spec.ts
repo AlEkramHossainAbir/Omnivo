@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { stepStatusOf } from '../storefront/shipping/shipment-news.js';
 import { bearerOf } from '../storefront/shipping/courier-webhooks.js';
 import { invoiceOf } from '../storefront/shipping/shipments.js';
-import { courierId, courierText, eventKeyOf, type ParcelRequest } from './courier.js';
+import { courierId, courierMoney, courierText, eventKeyOf, type ParcelRequest } from './courier.js';
 import { FAKE_REFUSED_PHONE, FakeCourier } from './fake-courier.js';
 import { SteadfastAdapter, steadfastTime } from './steadfast-adapter.js';
 
@@ -181,6 +181,24 @@ describe('Steadfast adapter (step 28a.3)', () => {
       status: 'delivered',
       note: 'Delivered to the customer',
       at: new Date('2026-11-23T08:05:09.000Z'),
+      // Step 28b: what the rider collected and Steadfast's charge, as our money text
+      collected: '578.00',
+      charge: '80.00',
+    });
+    // Step 28b: a sum Steadfast sent as a string, and one we cannot read, which is no sum
+    expect(
+      adapter.readNotice({
+        notification_type: 'delivery_status',
+        invoice: 'W-000123',
+        status: 'partial_delivered',
+        cod_amount: '300.5',
+        delivery_charge: 'N/A',
+      }),
+    ).toMatchObject({
+      kind: 'status',
+      status: 'partly_delivered',
+      collected: '300.5',
+      charge: null,
     });
     expect(
       adapter.readNotice({
@@ -298,5 +316,28 @@ describe('courier helpers (step 28a.3)', () => {
     expect(bearerOf('Basic abc')).toBeNull();
     expect(bearerOf('Bearer a b')).toBeNull();
     expect(bearerOf(undefined)).toBeNull();
+  });
+});
+
+describe('courierMoney (step 28b)', () => {
+  it('reads a courier’s sum to the paisa, or not at all', () => {
+    expect(courierMoney(578)).toBe('578.00');
+    expect(courierMoney(1500.5)).toBe('1500.50');
+    expect(courierMoney(0)).toBe('0.00');
+    // A float's noise is not paisa
+    expect(courierMoney(0.1 + 0.2)).toBe('0.30');
+    expect(courierMoney(' 578.50 ')).toBe('578.50');
+    expect(courierMoney('578')).toBe('578');
+    // A minus, a third decimal, words, nothing: no sum
+    expect(courierMoney(-1)).toBeNull();
+    expect(courierMoney(578.555)).toBeNull();
+    expect(courierMoney('578.555')).toBeNull();
+    expect(courierMoney('-578')).toBeNull();
+    expect(courierMoney('N/A')).toBeNull();
+    expect(courierMoney(Number.NaN)).toBeNull();
+    expect(courierMoney(Number.POSITIVE_INFINITY)).toBeNull();
+    expect(courierMoney(null)).toBeNull();
+    expect(courierMoney(undefined)).toBeNull();
+    expect(courierMoney({ amount: 578 })).toBeNull();
   });
 });

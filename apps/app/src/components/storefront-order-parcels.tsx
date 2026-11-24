@@ -40,7 +40,8 @@ import {
   TextField,
 } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { Link } from '@tanstack/react-router';
+import { type ReactNode, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { useForm, useWatch } from 'react-hook-form';
 
@@ -49,6 +50,7 @@ import { applyApiError } from '../lib/field-errors';
 import { settingsQuery } from '../lib/queries';
 import { parcelsNewestFirst, storefrontCourierChoicesQuery } from '../lib/storefront-orders';
 import { useTenantId, useTimeZone } from '../lib/workspace';
+import { useShopMoney } from './storefront-parts';
 
 // Step 28a.6: a shop order's parcels on its page (approved with the mockup), the Book courier
 // dialog and the parcel's label. A file of its own, loaded with the order page: the list never
@@ -98,7 +100,7 @@ function useCollect(): (amount: string) => string {
   };
 }
 
-function Fact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+function Fact({ label, value, mono = false }: { label: string; value: ReactNode; mono?: boolean }) {
   return (
     <div className="grid min-w-0 gap-0.5">
       <dt className="text-caption text-ink-3">{label}</dt>
@@ -126,6 +128,7 @@ function ParcelCard({
   const { t, format, errorText } = useLocale();
   const timeZone = useTimeZone();
   const collect = useCollect();
+  const money = useShopMoney();
   const when = (iso: string) => format.dateTime(new Date(iso), timeZone);
   const byApi = parcel.account.provider !== 'manual';
   const courier = t(`storefront.couriers.names.${parcel.courier}`);
@@ -133,7 +136,7 @@ function ParcelCard({
   // Only an API parcel has news; a manual one moves with the order's buttons
   const events = [...parcel.events].reverse();
 
-  const facts: { label: string; value: string; mono?: boolean }[] = [];
+  const facts: { label: string; value: ReactNode; mono?: boolean }[] = [];
   if (parcel.trackingCode !== null) {
     facts.push({ label: t('storefront.order.parcels.courier'), value: courier });
     facts.push({
@@ -150,6 +153,33 @@ function ParcelCard({
     });
   }
   facts.push({ label: t('storefront.order.parcels.cod'), value: collect(parcel.codAmount) });
+  // Step 28b (decision 5, approved with the mockup): what the courier's notice said, or what the
+  // member typed at Delivered, beside what the rider was to collect. As the shop writes money
+  // (paisa only when there is some); zero is real (nothing collected), so money(), not collect()
+  if (parcel.collectedAmount !== null) {
+    facts.push({
+      label: t('storefront.order.parcels.collected'),
+      value: money(parcel.collectedAmount),
+    });
+  }
+  if (parcel.courierCharge !== null) {
+    facts.push({ label: t('storefront.order.parcels.charge'), value: money(parcel.courierCharge) });
+  }
+  // Decision 4: the COD receipt, as a link (every member reads the sales documents)
+  if (parcel.receipt !== null) {
+    facts.push({
+      label: t('storefront.order.parcels.receipt'),
+      value: (
+        <Link
+          to="/receipts/$receiptId"
+          params={{ receiptId: parcel.receipt.id }}
+          className="font-mono text-[13px] font-medium text-brand underline-offset-3 hover:underline"
+        >
+          {parcel.receipt.number ?? '—'}
+        </Link>
+      ),
+    });
+  }
   if (parcel.bookedAt !== null) {
     facts.push({ label: t('storefront.order.parcels.bookedAt'), value: when(parcel.bookedAt) });
     if (byApi) {
@@ -224,6 +254,18 @@ function ParcelCard({
               {parcel.errorDetail !== null
                 ? t('storefront.order.parcels.courierSaid', { detail: parcel.errorDetail })
                 : errorText(parcel.error ?? 'unknown_error')}
+            </span>
+          </p>
+        )}
+        {/* Step 28b (mine 14, approved with the mockup): the COD receipt's error sits on its
+            parcel. The button is in the page's notice ("Make the receipt"), as Book again is */}
+        {parcel.receiptError !== null && (
+          <p className="flex items-start gap-1.5 text-label text-crit">
+            <HugeiconsIcon icon={Alert02Icon} size={15} strokeWidth={1.5} className="mt-0.5" />
+            <span>
+              {t('storefront.order.parcels.receiptError', {
+                reason: errorText(parcel.receiptError),
+              })}
             </span>
           </p>
         )}

@@ -115,6 +115,9 @@ export class ShipmentPoll {
                 // time also keeps its key apart from an earlier step with the same status (in
                 // transit, on hold, in transit again)
                 at: new Date(),
+                // Step 28b: a status answer names no money; the webhook's notice brings it
+                collected: null,
+                charge: null,
               },
             ];
       const sms = await this.withTenant((tx) => this.news.apply(tx, parcel.id, news, 'poll'));

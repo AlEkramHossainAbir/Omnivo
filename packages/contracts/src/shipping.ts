@@ -3,8 +3,11 @@ import { z } from 'zod';
 import { ERROR_CODES, errorCode } from './errors.js';
 import { versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
+import { priceSchema } from './money.js';
+import { documentRefSchema } from './sales.js';
 import { optionalIdSchema } from './stock.js';
 import { SHOP_COURIERS, SHOP_SHIPMENT_STATUSES } from './storefront.js';
+import { accountChoiceSchema } from './storefront-payments.js';
 
 // Step 28a: couriers (system design §14.6). The shop's own courier accounts, as the ERP's
 // Storefront → Shop couriers page reads and saves them, and the parcels a shop order is sent in.
@@ -55,15 +58,30 @@ const courierKeySchema = z
   .max(200, errorCode('too_long'))
   .regex(/^[A-Za-z0-9_-]*$/, errorCode('courier_key_format'));
 
+// Step 28b: the two accounts of the courier's money, the same for both providers (a courier booked
+// by hand collects COD too):
+// - codAccountId (decision 2): where the rider's cash waits until the courier pays it out, an
+//   account that holds money ("Cash with Steadfast", under the current assets). Delivered posts a
+//   money receipt into it, so its balance is what this courier owes the shop. '' = none: the cash
+//   is a money receipt typed by hand, as before 28b
+// - chargeAccountId (decision 3): the expense account the courier's charges go to when it pays out
+//   (step 28c). '' = none yet; nothing in 28b posts to it
+// Whether each is an active account of the right kind only the API knows (the chart is not in the
+// form): courier_cod_account_invalid and courier_charge_account_invalid
+const courierMoneyFieldsSchema = z.object({
+  codAccountId: optionalIdSchema,
+  chargeAccountId: optionalIdSchema,
+});
+
 // The first save needs both keys; a later one keeps a saved key when its box is empty. The form
 // of a manual account has no keys at all: there is nothing to call
-const steadfastCreateSchema = z.object({
+const steadfastCreateSchema = courierMoneyFieldsSchema.extend({
   provider: z.literal('steadfast'),
   name: accountNameSchema,
   apiKey: courierKeySchema.min(1, errorCode('courier_key_required')),
   secretKey: courierKeySchema.min(1, errorCode('courier_key_required')),
 });
-const manualCreateSchema = z.object({
+const manualCreateSchema = courierMoneyFieldsSchema.extend({
   provider: z.literal('manual'),
   name: accountNameSchema,
   // Whose website the shop books on. The select's "Pick a courier" sends '', which is this error
@@ -118,6 +136,17 @@ export const courierAccountSchema = z.object({
       problem: z.enum(COURIER_TEST_PROBLEMS).nullable(),
     })
     .nullable(),
+  // Step 28b: the two accounts above, as saved. A saved one may have been archived since: the
+  // form then starts its select empty with the error shown, like the payment gateway's card
+  codAccountId: z.uuid().nullable(),
+  chargeAccountId: z.uuid().nullable(),
+  // Step 28b (decision 12): what this courier holds of the shop's money now, the page's "Holds
+  // ৳45,200 · 18 parcels": the parcels whose COD receipt went into the COD account and that no
+  // payout has taken yet (28c). The sum of what the riders collected, with paisa
+  holds: z.object({
+    amount: z.string(),
+    parcels: z.number().int().min(0),
+  }),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),
 });
@@ -135,9 +164,14 @@ export type CourierAccountSaved = z.infer<typeof courierAccountSavedSchema>;
 // The page's one read: every account, archived ones too (the page has an Active / Archived
 // control), and the default. The default is what the Packed dialog starts with (decision 2): with
 // none, it starts at "Don't book now", so a shop with its own riders works as before
+// Step 28b: and what the two account selects offer, here for the same reason as the payment
+// gateway's (storefront.manage does not read the chart of accounts): the active accounts that hold
+// money, and the active expense accounts, neither a group, "1160 · Cash with Steadfast"
 export const courierSetupSchema = z.object({
   accounts: z.array(courierAccountSchema),
   defaultAccountId: z.uuid().nullable(),
+  codAccounts: z.array(accountChoiceSchema),
+  chargeAccounts: z.array(accountChoiceSchema),
 });
 export type CourierSetup = z.infer<typeof courierSetupSchema>;
 
@@ -192,12 +226,25 @@ export const shipmentEventSchema = z.object({
   note: z.string().nullable(),
 });
 
+// Step 28b: what the rider collected, as the courier says it (Steadfast's cod_amount) or a member
+// types it at Delivered: a shop amount, so whole paisa. '' = not typed: the API takes what the
+// courier said, else the parcel's codAmount. Zero is real: a shopper who paid nothing at the door
+// (a partial delivery of what was paid online, say). At most the parcel's codAmount, which only
+// the API knows (storefront_order_collected_over)
+export const collectedAmountSchema = priceSchema.refine(
+  (value) => value === null || /^\d+(?:\.\d{1,2})?$/.test(value),
+  errorCode('money_format'),
+);
+
 export const storefrontShipmentSchema = z.object({
   id: z.uuid(),
   account: z.object({
     id: z.uuid(),
     name: z.string(),
     provider: z.enum(COURIER_PROVIDERS),
+    // Step 28b: the account has a COD account, so Delivered makes the COD receipt (decision 4).
+    // The Delivered and partly delivered dialogs ask what the rider collected only then
+    hasCodAccount: z.boolean(),
   }),
   courier: z.enum(SHOP_COURIERS),
   status: z.enum(SHIPMENT_STATUSES),
@@ -208,6 +255,18 @@ export const storefrontShipmentSchema = z.object({
   // What the rider collects: the order's total less what was paid online, fixed when it was
   // booked (the courier was told this amount)
   codAmount: z.string(),
+  // Step 28b (decision 5): what the rider really collected and what the courier charges for the
+  // parcel, as its notice said (Steadfast's cod_amount and delivery_charge), with paisa. A partial
+  // delivery collects less than codAmount. null until the courier says, or for a manual parcel
+  // until Delivered (collected) and the payout (the charge, step 28c)
+  collectedAmount: z.string().nullable(),
+  courierCharge: z.string().nullable(),
+  // Step 28b (decision 4): the COD receipt Delivered made for collectedAmount, into the account's
+  // COD account. null before Delivered, with no COD account, for nothing collected, or while it
+  // could not be made: then receiptError says why ("receipt_account_invalid": the COD account was
+  // archived since), the order needs attention, and the page has "Make the receipt"
+  receipt: documentRefSchema.nullable(),
+  receiptError: z.enum(ERROR_CODES).nullable(),
   // When the courier gave it a tracking code. null while booking
   bookedAt: z.iso.datetime().nullable(),
   // Calls made to book it, and why the last one failed (courier_rejected_parcel: the courier said
@@ -287,6 +346,11 @@ export const steadfastWebhookSchema = z.looseObject({
   consignment_id: z.union([z.string(), z.number()]).optional(),
   invoice: z.string().optional(),
   status: z.string().optional(),
+  // Step 28b: on delivery_status, what the rider collected and Steadfast's charge for the parcel
+  // (decision 5). Numbers in Steadfast's documentation ("cod_amount": 1500.00); a string too, since
+  // a courier's JSON is not ours to trust. The adapter reads them as money or not at all
+  cod_amount: z.union([z.number(), z.string()]).optional(),
+  delivery_charge: z.union([z.number(), z.string()]).optional(),
   tracking_message: z.string().optional(),
   updated_at: z.string().optional(),
 });

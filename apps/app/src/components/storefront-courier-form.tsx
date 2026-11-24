@@ -1,10 +1,12 @@
 import {
+  Coins01Icon,
   Edit02Icon,
   Key01Icon,
   LockKeyholeIcon,
   Plug01Icon,
   ShippingTruck01Icon,
   Tag01Icon,
+  Wallet01Icon,
 } from '@hugeicons/core-free-icons';
 import {
   contractErrorMap,
@@ -14,6 +16,7 @@ import {
   createCourierAccountInputSchema,
   routes,
   SHOP_COURIERS,
+  type StorefrontAccountChoice,
   updateCourierAccountInputSchema,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
@@ -28,6 +31,7 @@ import {
   TextField,
   toast,
 } from '@omnivo/ui';
+import { useEffect } from 'react';
 import { type Resolver, useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
@@ -46,24 +50,45 @@ interface AccountForm {
   secretKey: string;
   // '' = "Pick a courier" (courier_pick_one)
   courier: string;
+  // Step 28b (decisions 2 and 3): '' = none, a real choice whose option says what it means
+  codAccountId: string;
+  chargeAccountId: string;
   version: number;
 }
 
-const FIELDS = ['provider', 'name', 'apiKey', 'secretKey', 'courier'] as const;
+const FIELDS = [
+  'provider',
+  'name',
+  'apiKey',
+  'secretKey',
+  'courier',
+  'codAccountId',
+  'chargeAccountId',
+] as const;
 
 // The union's body for the provider picked. unknown: the schema below checks it (an empty courier
-// is its error, not a type error here)
+// is its error, not a type error here). Step 28b: the two accounts go with both providers, always
+// (mine 20: the schema has no default, so a body without them is refused instead of clearing them)
 function bodyOf(values: AccountForm, isNew: boolean): unknown {
   const version = isNew ? {} : { version: values.version };
+  const money = { codAccountId: values.codAccountId, chargeAccountId: values.chargeAccountId };
   return values.provider === 'manual'
-    ? { provider: 'manual', name: values.name, courier: values.courier, ...version }
+    ? { provider: 'manual', name: values.name, courier: values.courier, ...money, ...version }
     : {
         provider: values.provider,
         name: values.name,
         apiKey: values.apiKey,
         secretKey: values.secretKey,
+        ...money,
         ...version,
       };
+}
+
+// A saved account that is no longer offered (archived since, or no longer of its kind) starts
+// empty, and the form says so under its box at once (the payment gateway card's way): sending the
+// old id would only be refused
+function choiceOrEmpty(id: string | null, choices: readonly StorefrontAccountChoice[]): string {
+  return id !== null && choices.some((choice) => choice.id === id) ? id : '';
 }
 
 function schemaOf(isNew: boolean) {
@@ -85,10 +110,17 @@ function resolverOf(isNew: boolean): Resolver<AccountForm> {
   };
 }
 
+interface AccountChoices {
+  codAccounts: readonly StorefrontAccountChoice[];
+  chargeAccounts: readonly StorefrontAccountChoice[];
+}
+
 function AccountForm({
   account,
+  codAccounts,
+  chargeAccounts,
   onSaved,
-}: {
+}: AccountChoices & {
   account: CourierAccount | null;
   onSaved: (saved: CourierAccountSaved) => Promise<void>;
 }) {
@@ -111,10 +143,43 @@ function AccountForm({
       apiKey: '',
       secretKey: '',
       courier: account?.provider === 'manual' ? account.courier : '',
+      codAccountId: choiceOrEmpty(account?.codAccountId ?? null, codAccounts),
+      chargeAccountId: choiceOrEmpty(account?.chargeAccountId ?? null, chargeAccounts),
       version: account?.version ?? 0,
     },
   });
   const provider = useWatch({ control, name: 'provider' });
+
+  // The saved account that started empty above: its error under the box at once, in the words the
+  // API would answer on the save. Once, on open (the dialog is keyed by the account)
+  useEffect(() => {
+    if (account === null) return;
+    if (account.codAccountId !== null && choiceOrEmpty(account.codAccountId, codAccounts) === '') {
+      setError('codAccountId', { message: 'courier_cod_account_invalid' });
+    }
+    if (
+      account.chargeAccountId !== null &&
+      choiceOrEmpty(account.chargeAccountId, chargeAccounts) === ''
+    ) {
+      setError('chargeAccountId', { message: 'courier_charge_account_invalid' });
+    }
+  }, [account, codAccounts, chargeAccounts, setError]);
+
+  const accountOptions = (choices: readonly StorefrontAccountChoice[], none: string) => [
+    { value: '', label: none },
+    ...choices.map((choice) => ({
+      value: choice.id,
+      label: t('storefront.couriers.form.accountOption', { code: choice.code, name: choice.name }),
+    })),
+  ];
+  // The COD box's hint: where to add an account when there is none to pick; on an account that
+  // has one, that a change counts for the next receipts only (the receipts made stay put)
+  const codHint =
+    codAccounts.length === 0
+      ? t('storefront.couriers.form.noCodAccounts')
+      : account !== null && account.codAccountId !== null
+        ? t('storefront.couriers.form.codAccountSavedHint')
+        : t('storefront.couriers.form.codAccountHint');
 
   const onSubmit = handleSubmit(async (values) => {
     try {
@@ -266,6 +331,28 @@ function AccountForm({
             />
           </>
         )}
+        {/* Step 28b (approved with the mockup): after the keys or the courier, for both
+            providers. Native selects: a short list of the workspace's accounts, "code · name" */}
+        <SelectField
+          label={t('storefront.couriers.form.codAccount')}
+          icon={Wallet01Icon}
+          options={accountOptions(codAccounts, t('storefront.couriers.form.codAccountNone'))}
+          hint={codHint}
+          {...register('codAccountId')}
+          error={errors.codAccountId?.message}
+        />
+        <SelectField
+          label={t('storefront.couriers.form.chargeAccount')}
+          icon={Coins01Icon}
+          options={accountOptions(chargeAccounts, t('storefront.couriers.form.chargeAccountNone'))}
+          hint={
+            chargeAccounts.length === 0
+              ? t('storefront.couriers.form.noChargeAccounts')
+              : t('storefront.couriers.form.chargeAccountHint')
+          }
+          {...register('chargeAccountId')}
+          error={errors.chargeAccountId?.message}
+        />
       </form>
     </DialogContent>
   );
@@ -273,9 +360,11 @@ function AccountForm({
 
 export function AccountDialog({
   account,
+  codAccounts,
+  chargeAccounts,
   onClose,
   onSaved,
-}: {
+}: AccountChoices & {
   account: CourierAccount | null;
   onClose: () => void;
   onSaved: (saved: CourierAccountSaved) => Promise<void>;
@@ -287,7 +376,13 @@ export function AccountDialog({
         if (!open) onClose();
       }}
     >
-      <AccountForm key={account?.id ?? 'new'} account={account} onSaved={onSaved} />
+      <AccountForm
+        key={account?.id ?? 'new'}
+        account={account}
+        codAccounts={codAccounts}
+        chargeAccounts={chargeAccounts}
+        onSaved={onSaved}
+      />
     </Dialog>
   );
 }

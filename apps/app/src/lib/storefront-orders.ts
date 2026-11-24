@@ -3,8 +3,10 @@ import {
   type CourierExportRow,
   isOpenShipment,
   isQuantity,
+  isZeroMoney,
   type PackStorefrontOrderFormValues,
   routes,
+  type ShipmentStatus,
   type StorefrontOrder,
   type StorefrontOrderSort,
   type StorefrontOrderView,
@@ -77,6 +79,18 @@ export function storefrontCourierChoicesQuery(tenantId: string) {
     queryKey: ['storefront', tenantId, 'orders', 'courier-choices'],
     queryFn: () => call(routes.storefrontOrders.courierChoices),
     staleTime: 0,
+  });
+}
+
+// Step 28b: what the "Record what came back" dialog opens with, asked each time it opens like the
+// pack plan (the challan does not change, but an order moved in another tab would answer 409)
+export function storefrontReturnPlanQuery(tenantId: string, orderId: string) {
+  return queryOptions({
+    queryKey: ['storefront', tenantId, 'orders', 'return-plan', orderId],
+    queryFn: () =>
+      call(routes.storefrontOrderDeliveries.getReturnPlan, { params: { id: orderId } }),
+    staleTime: 0,
+    gcTime: 0,
   });
 }
 
@@ -228,6 +242,57 @@ export function parcelFailed(order: StorefrontOrder): StorefrontShipment | null 
 // was cancelled). The API refuses the rest with storefront_order_not_bookable
 export function canBook(order: StorefrontOrder): boolean {
   return order.status === 'packed' && openParcel(order) === null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28b: the parcel at the shopper's door
+
+// The parcel the courier took to the door, by the API's own rule (cod-receipts.ts doorParcel): the
+// newest one that is not still booking or failed (the courier never had it), not a cancelled
+// booking, and not one received back. Delivered asks what its rider collected, and its COD receipt
+// is the one the page talks about
+export function doorParcel(order: StorefrontOrder): StorefrontShipment | null {
+  const skip: readonly ShipmentStatus[] = ['booking', 'booking_failed', 'cancelled', 'returned'];
+  return parcelsNewestFirst(order).find((parcel) => !skip.includes(parcel.status)) ?? null;
+}
+
+// Whether Delivered (and Record what came back) asks what the rider collected: only when a COD
+// receipt will be made, so the parcel's account has a COD account and the rider had something to
+// collect (an order paid online has codAmount 0)
+export function asksCollected(parcel: StorefrontShipment | null): parcel is StorefrontShipment {
+  return parcel !== null && parcel.account.hasCodAccount && !isZeroMoney(parcel.codAmount);
+}
+
+// What the amount box starts with: what the courier said the rider collected, else what the rider
+// was to collect. Shown as the shop writes money ("538", "247.50"): the API keeps four decimals
+export function collectedStart(parcel: StorefrontShipment): string {
+  return plainMoney(parcel.collectedAmount ?? parcel.codAmount);
+}
+
+// "538.0000" → "538", "247.5000" → "247.50": what a person would type in a money box
+export function plainMoney(amount: string): string {
+  const [whole = '0', fraction = ''] = amount.split('.');
+  const paisa = fraction.padEnd(2, '0').slice(0, 2);
+  return paisa === '00' ? whole : `${whole}.${paisa}`;
+}
+
+// The three moves of a shipped order (approved with the mockup), and which one is the primary
+// button: the one the newest parcel asks for. The courier said part of it came back → Record what
+// came back; it is bringing it back (or says it is back) → Receive the return; else Mark delivered.
+// A manual parcel never says, so the three are always there
+export type DoorMove = 'cameBack' | 'receive' | 'deliver';
+
+export function primaryDoorMove(order: StorefrontOrder): DoorMove {
+  const status = order.shipments.at(-1)?.status;
+  if (status === 'partly_delivered') return 'cameBack';
+  if (status === 'returning' || status === 'returned') return 'receive';
+  return 'deliver';
+}
+
+// A delivered parcel whose COD receipt could not be made (mine 14: the error sits on the parcel).
+// The newest one: "Make the receipt" fixes one at a time
+export function receiptFailed(order: StorefrontOrder): StorefrontShipment | null {
+  return parcelsNewestFirst(order).find((parcel) => parcel.receiptError !== null) ?? null;
 }
 
 // ---------------------------------------------------------------------------------------------

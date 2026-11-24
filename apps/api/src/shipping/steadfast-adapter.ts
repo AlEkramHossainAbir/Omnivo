@@ -7,6 +7,7 @@ import {
   type CourierAdapter,
   courierId,
   type CourierKeys,
+  courierMoney,
   type CourierNotice,
   type CourierProblem,
   courierText,
@@ -223,7 +224,18 @@ export class SteadfastAdapter implements CourierAdapter {
     const status = statusOf(notice.status);
     return status === null
       ? { ...ids, kind: 'unread' }
-      : { ...ids, kind: 'status', status, note, at };
+      : {
+          ...ids,
+          kind: 'status',
+          status,
+          note,
+          at,
+          // Step 28b (decision 5): Steadfast's two sums. On a delivered or partly delivered
+          // notice cod_amount is what the rider collected; on the others it is what is still to
+          // collect, which the shop's code leaves alone
+          collected: courierMoney(notice.cod_amount),
+          charge: courierMoney(notice.delivery_charge),
+        };
   }
 
   // Steadfast's balance: it reads, changes nothing, and needs both keys

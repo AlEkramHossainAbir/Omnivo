@@ -5,11 +5,13 @@ import {
   isErrorCode,
   isOpenShipment,
   OPEN_SHIPMENT_STATUSES,
+  type ShipmentStatus,
   type ShopShipmentStatus,
   type StorefrontShipment,
 } from '@omnivo/contracts';
 import {
   courierAccounts,
+  receipts,
   storefrontOrders,
   storefrontPayments,
   storefrontShipmentEvents,
@@ -90,8 +92,9 @@ async function parcelsOf(tx: Transaction, orderId: string, lock: boolean): Promi
 }
 
 // One step a member took for a parcel (a manual parcel's booking, a cancel): the same row the
-// courier's news writes, so the order page and the tracking page draw it the same way
-async function memberEvent(
+// courier's news writes, so the order page and the tracking page draw it the same way. Step 28b:
+// exported for Delivered and what came back (cod-receipts.ts, the return)
+export async function memberEvent(
   tx: Transaction,
   shipmentId: string,
   status: ShopShipmentStatus,
@@ -279,14 +282,15 @@ export async function cancelShipments(tx: Transaction, order: OrderRow): Promise
   await memberEvent(tx, open.id, 'cancelled', now);
 }
 
-// Mark shipped and Mark delivered on an order whose parcel was booked by hand (decision 5: a
-// manual parcel keeps the buttons): the parcel follows, so the tracking page shows the step too.
-// An API parcel is moved by its courier only; the buttons still move its order (a courier whose
-// news stopped), and the courier's later news adds its own steps
+// Mark shipped on an order whose parcel was booked by hand (decision 5: a manual parcel keeps the
+// buttons): the parcel follows, so the tracking page shows the step too. An API parcel is moved by
+// its courier only; the button still moves its order (a courier whose news stopped), and the
+// courier's later news adds its own steps. Step 28b: Mark delivered moves the parcel itself
+// (cod-receipts.ts), an API parcel too, because its COD receipt needs a delivered parcel (mine 27)
 export async function followOrder(
   tx: Transaction,
   orderId: string,
-  status: 'picked_up' | 'delivered',
+  status: 'picked_up',
 ): Promise<void> {
   const [open] = await tx
     .select({ id: storefrontShipments.id })
@@ -328,6 +332,9 @@ export async function shipmentsOf(tx: Transaction, orderId: string): Promise<Sto
       parcel: storefrontShipments,
       accountName: courierAccounts.name,
       provider: courierAccounts.provider,
+      codAccountId: courierAccounts.codAccountId,
+      // Step 28b: the COD receipt's number, for the parcel card's link
+      receiptNumber: receipts.number,
     })
     .from(storefrontShipments)
     .innerJoin(
@@ -335,6 +342,13 @@ export async function shipmentsOf(tx: Transaction, orderId: string): Promise<Sto
       and(
         eq(courierAccounts.tenantId, storefrontShipments.tenantId),
         eq(courierAccounts.id, storefrontShipments.courierAccountId),
+      ),
+    )
+    .leftJoin(
+      receipts,
+      and(
+        eq(receipts.tenantId, storefrontShipments.tenantId),
+        eq(receipts.id, storefrontShipments.receiptId),
       ),
     )
     .where(
@@ -361,14 +375,28 @@ export async function shipmentsOf(tx: Transaction, orderId: string): Promise<Sto
       ),
     )
     .orderBy(asc(storefrontShipmentEvents.occurredAt), asc(storefrontShipmentEvents.receivedAt));
-  return rows.map(({ parcel, accountName, provider }) => ({
+  return rows.map(({ parcel, accountName, provider, codAccountId, receiptNumber }) => ({
     id: parcel.id,
-    account: { id: parcel.courierAccountId, name: accountName, provider },
+    account: {
+      id: parcel.courierAccountId,
+      name: accountName,
+      provider,
+      hasCodAccount: codAccountId !== null,
+    },
     courier: parcel.courier,
     status: parcel.status,
     consignmentId: parcel.consignmentId,
     trackingCode: parcel.trackingCode,
     codAmount: parcel.codAmount,
+    // Step 28b (decisions 4 and 5)
+    collectedAmount: parcel.collectedAmount,
+    courierCharge: parcel.courierCharge,
+    receipt:
+      parcel.receiptId === null || receiptNumber === null
+        ? null
+        : { id: parcel.receiptId, number: receiptNumber },
+    receiptError:
+      parcel.receiptError !== null && isErrorCode(parcel.receiptError) ? parcel.receiptError : null,
     bookedAt: parcel.bookedAt?.toISOString() ?? null,
     attempts: parcel.attempts,
     error: parcel.error !== null && isErrorCode(parcel.error) ? parcel.error : null,
@@ -389,8 +417,9 @@ export async function shipmentsOf(tx: Transaction, orderId: string): Promise<Sto
 // The list's "Needs attention" (28a.1): a packed order whose last parcel failed to book. A
 // correlated EXISTS over the order's few parcels (storefront_shipments_parcel_key finds them).
 // storefront_orders is written out, as 27b's itemCount does: in a select's fields Drizzle writes a
-// column without its table, and an unqualified "tenant_id" in the subquery would be its own row's
-export const parcelNeedsAttention = sql<boolean>`(storefront_orders.status = 'packed' AND EXISTS (
+// column without its table, and an unqualified "tenant_id" in the subquery would be its own row's.
+// Step 28b: or a parcel of any status whose COD receipt could not be made (decision 4)
+export const parcelNeedsAttention = sql<boolean>`((storefront_orders.status = 'packed' AND EXISTS (
   SELECT 1 FROM storefront_shipments s
   WHERE s.tenant_id = storefront_orders.tenant_id AND s.order_id = storefront_orders.id
     AND s.status = 'booking_failed'
@@ -398,7 +427,19 @@ export const parcelNeedsAttention = sql<boolean>`(storefront_orders.status = 'pa
       SELECT 1 FROM storefront_shipments t
       WHERE t.tenant_id = s.tenant_id AND t.order_id = s.order_id AND t.parcel_no > s.parcel_no
     )
+)) OR EXISTS (
+  SELECT 1 FROM storefront_shipments c
+  WHERE c.tenant_id = storefront_orders.tenant_id AND c.order_id = storefront_orders.id
+    AND c.receipt_error IS NOT NULL
 ))`;
+
+// Step 28b (mine 18): the list's parcelStatus, the status of the order's newest parcel, or NULL.
+// Written out like parcelNeedsAttention. The column's check keeps it one of SHIPMENT_STATUSES
+export const newestParcelStatus = sql<ShipmentStatus | null>`(
+  SELECT s.status FROM storefront_shipments s
+  WHERE s.tenant_id = storefront_orders.tenant_id AND s.order_id = storefront_orders.id
+  ORDER BY s.parcel_no DESC LIMIT 1
+)`;
 
 // Step 28a.6: what the Packed dialog and Book courier offer (courierChoicesSchema). Active
 // accounts only, by name. The default comes from the same rows: 28a.2's check keeps it an active

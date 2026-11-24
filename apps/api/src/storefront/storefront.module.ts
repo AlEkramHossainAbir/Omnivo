@@ -30,6 +30,7 @@ import { StorefrontOrdersService } from './orders/storefront-orders.service.js';
 import { PublicStorefrontController } from './public-storefront.controller.js';
 import { PublicStorefrontService } from './public-storefront.service.js';
 import { ShopOrderMoves } from './orders/order-moves.js';
+import { ShopCodReceipts } from './shipping/cod-receipts.js';
 import { CourierAccountsController } from './shipping/courier-accounts.controller.js';
 import { CourierAccountsService } from './shipping/courier-accounts.service.js';
 import { CourierWebhooks } from './shipping/courier-webhooks.js';
@@ -88,6 +89,8 @@ import { ShopDb } from './shop-db.js';
     ShopPaymentReceipts,
     StorefrontPaymentGatewayService,
     ShopOrderMoves,
+    // Step 28b: Delivered's COD receipt (ShopOrderMoves needs it)
+    ShopCodReceipts,
     CourierAccountsService,
     CourierWebhooks,
     ShipmentNews,

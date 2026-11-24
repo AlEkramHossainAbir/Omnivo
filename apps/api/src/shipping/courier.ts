@@ -84,7 +84,12 @@ export type StatusAnswer =
 
 // One webhook body, read. The courier names the parcel by its own id or by our invoice (or both);
 // the caller finds it with either, only inside the account's own workspace
-//  - status: the parcel moved, with the courier's note and time when it gave them
+//  - status: the parcel moved, with the courier's note and time when it gave them. Step 28b: and
+//    the money it named, as decimal strings to the paisa, or null when it named none (the poll's
+//    answer never does): `collected`, what the notice says the rider collected (Steadfast's
+//    cod_amount), and `charge`, the courier's charge for the parcel (its delivery_charge). The
+//    adapter only reads them; the shop's code decides what they mean (shipment-news.ts: a
+//    collected amount counts only on a delivered or partly delivered step)
 //  - note: words about the parcel with no new status ("Received at Sylhet hub")
 //  - unread: a body this adapter cannot read. Kept raw on the parcel (decision 22), never refused
 export type CourierNotice = {
@@ -92,7 +97,14 @@ export type CourierNotice = {
   invoice: string | null;
   raw: Record<string, unknown>;
 } & (
-  | { kind: 'status'; status: ShopShipmentStatus | null; note: string | null; at: Date | null }
+  | {
+      kind: 'status';
+      status: ShopShipmentStatus | null;
+      note: string | null;
+      at: Date | null;
+      collected: string | null;
+      charge: string | null;
+    }
   | { kind: 'note'; note: string; at: Date | null }
   | { kind: 'unread' }
 );
@@ -124,6 +136,25 @@ export function courierText(value: unknown): string | null {
 export function courierId(value: unknown): string | null {
   const text = typeof value === 'number' && Number.isSafeInteger(value) ? String(value) : value;
   return typeof text === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(text.trim()) ? text.trim() : null;
+}
+
+// Step 28b: an amount a courier sent, as our money text: a number (Steadfast's JSON has 1500.00 as
+// 1500) or a numeric string, zero or more, to the paisa at most ("578", "578.50"). null for
+// anything else (a minus, a third decimal, "N/A"): a sum we cannot read is no sum, and the raw
+// body still has it. A number goes through toFixed(2) first, so 0.1 + 0.2's float noise never
+// reaches the books; a number with real paisa beyond two places is refused like the string
+export function courierMoney(value: unknown): string | null {
+  let text: string;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value < 0 || value >= 1e13) return null;
+    text = value.toFixed(2);
+    if (Math.abs(Number(text) - value) > 1e-6) return null;
+  } else if (typeof value === 'string') {
+    text = value.trim();
+  } else {
+    return null;
+  }
+  return /^\d{1,13}(?:\.\d{1,2})?$/.test(text) ? text : null;
 }
 
 // The API's own key for one step of a parcel (28a.2's mine 26): the same status, time and note is

@@ -65,6 +65,7 @@ import { PendingOrderSweep } from '../storefront/orders/pending-order-sweep.js';
 import { ShopSalesOrderMaker } from '../storefront/orders/sales-order-maker.js';
 import { ShopOrderMoves } from '../storefront/orders/order-moves.js';
 import { ShipmentBookingHandler } from '../storefront/shipping/booking.handler.js';
+import { ShopCodReceipts } from '../storefront/shipping/cod-receipts.js';
 import { ShipmentNews } from '../storefront/shipping/shipment-news.js';
 import { ShipmentPoll } from '../storefront/shipping/shipment-poll.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
@@ -173,6 +174,8 @@ export class WorkerModule implements OnApplicationShutdown {
         ShipmentPoll,
         ShipmentNews,
         ShopOrderMoves,
+        // Step 28b: the courier's "delivered" makes the rider's COD receipt too
+        ShopCodReceipts,
         InvoicesService,
         DeliveriesService,
         StockPostingService,

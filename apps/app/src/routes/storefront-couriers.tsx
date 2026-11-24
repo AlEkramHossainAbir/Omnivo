@@ -447,6 +447,42 @@ export function StorefrontCouriersPage() {
           );
         },
       }),
+      // Step 28b (decision 12, approved with the mockup): what the courier holds of the shop's
+      // money, right after the account, because it is what a person comes here to check. Whole
+      // taka, as a list shows money. Posted COD receipts only (the API's holdsOf): a voided one
+      // drops out. Without a COD account the rider's cash is typed by hand, so there is nothing
+      // to count
+      column.accessor('holds', {
+        header: t('storefront.couriers.columns.holds'),
+        enableSorting: false,
+        meta: { card: 'detail' },
+        cell: ({ row }) => {
+          const account = row.original;
+          if (account.codAccountId === null) {
+            return (
+              <span className="text-body-sm text-ink-3">
+                {t('storefront.couriers.holdsNoAccount')}
+              </span>
+            );
+          }
+          if (account.holds.parcels === 0) {
+            return (
+              <span className="text-body-sm text-ink-3">
+                {t('storefront.couriers.holdsNothing')}
+              </span>
+            );
+          }
+          return (
+            <span className="text-body-sm whitespace-nowrap text-ink tabular-nums">
+              {t('storefront.couriers.holds', {
+                amount: format.money(account.holds.amount, { decimals: 0 }),
+                count: account.holds.parcels,
+                formatted: format.number(account.holds.parcels),
+              })}
+            </span>
+          );
+        },
+      }),
       column.accessor('lastWebhookAt', {
         header: t('storefront.couriers.columns.news'),
         enableSorting: false,
@@ -707,6 +743,10 @@ export function StorefrontCouriersPage() {
         <Suspense fallback={null}>
           <AccountDialog
             account={acting.kind === 'new' ? null : acting.account}
+            // Step 28b: what the two account selects offer (the page's own read; a member with
+            // storefront.manage may not read the chart of accounts)
+            codAccounts={setup?.codAccounts ?? []}
+            chargeAccounts={setup?.chargeAccounts ?? []}
             onClose={close}
             onSaved={async (saved) => {
               await refresh();

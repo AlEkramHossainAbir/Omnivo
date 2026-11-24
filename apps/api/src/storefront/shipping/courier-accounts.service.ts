@@ -6,11 +6,12 @@ import {
   type CourierSetup,
   type CourierTestProblem,
   type CreateCourierAccountInput,
+  type ErrorCode,
   routes,
   type UpdateCourierAccountInput,
 } from '@omnivo/contracts';
-import { courierAccounts } from '@omnivo/db';
-import { and, asc, eq, or, sql } from 'drizzle-orm';
+import { courierAccounts, receipts, storefrontShipments } from '@omnivo/db';
+import { and, asc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../../common/audit/audit.js';
 import { isCheckViolation } from '../../common/db/pg-errors.js';
@@ -25,6 +26,7 @@ import {
   type CourierAdapters,
   isApiProvider,
 } from '../../shipping/courier.js';
+import { chartOf } from '../admin/payment-gateway.service.js';
 import { newToken, tokenHash } from '../orders/order-secrets.js';
 import { openKeys, sealKeys } from './courier-keys.js';
 
@@ -54,15 +56,27 @@ function notBookable(field: string): AppError {
 }
 
 // The audit's view: plain values, never a key or a token. A change of keys or token is written as
-// the word "changed" under its own field, like the gateway's password (27d)
-function snapshot(row: AccountRow) {
+// the word "changed" under its own field, like the gateway's password (27d). Step 28b: the two
+// accounts by their codes, as the gateway's audit names its accounts
+function snapshot(row: AccountRow, codes: ReadonlyMap<string, string>) {
+  const code = (id: string | null) => (id === null ? null : (codes.get(id) ?? id));
   return {
     name: row.name,
     provider: row.provider,
     courier: row.courier,
     status: row.archivedAt === null ? 'active' : 'archived',
+    codAccount: code(row.codAccountId),
+    chargeAccount: code(row.chargeAccountId),
   };
 }
+
+function accountError(field: 'codAccountId' | 'chargeAccountId', code: ErrorCode): AppError {
+  return new AppError(422, code, 'Pick another account.', { fieldErrors: { [field]: [code] } });
+}
+
+// What a courier holds (decision 12), per account: none yet
+const NOTHING_HELD = { amount: '0.0000', parcels: 0 };
+type Holds = ReadonlyMap<string, { amount: string; parcels: number }>;
 
 // Step 28a: Storefront → Shop couriers (decisions 7, 8, 13 and 14). storefront.manage on every
 // route (the contract says so and the guard checks it). An API account's keys are sealed here and
@@ -89,6 +103,7 @@ export class CourierAccountsService {
     return this.withTenant(async (tx) => {
       const tenantId = getTenantId();
       const userId = currentPrincipal().userId;
+      const codes = await this.checkAccounts(tx, input);
       // The token is made with the account (28a.2's secrets check wants its hash at once)
       const token = input.provider === 'manual' ? null : newToken();
       const values =
@@ -103,7 +118,14 @@ export class CourierAccountsService {
             };
       const [row] = await tx
         .insert(courierAccounts)
-        .values({ tenantId, ...values, createdBy: userId, updatedBy: userId })
+        .values({
+          tenantId,
+          ...values,
+          codAccountId: input.codAccountId,
+          chargeAccountId: input.chargeAccountId,
+          createdBy: userId,
+          updatedBy: userId,
+        })
         .returning();
       if (row === undefined) throw new Error('Courier account insert returned no row');
       await audit(tx, {
@@ -111,11 +133,12 @@ export class CourierAccountsService {
         entityType: 'courier_account',
         entityId: row.id,
         changes: created({
-          ...snapshot(row),
+          ...snapshot(row, codes),
           ...(row.provider === 'manual' ? {} : { keys: 'changed', webhookToken: 'changed' }),
         }),
       });
-      return { account: this.toAccount(row), webhookToken: token };
+      // A new account holds nothing yet
+      return { account: this.toAccount(row, new Map()), webhookToken: token };
     });
   }
 
@@ -134,6 +157,7 @@ export class CourierAccountsService {
           'A courier account keeps its provider. Add a new account for another one.',
         );
       }
+      const codes = await this.checkAccounts(tx, input);
       let keys: { keysSealed: Buffer; keyVersion: number } | null = null;
       if (input.provider !== 'manual' && key !== null) {
         // One box for both keys: a box with one new key needs the other one from the saved box
@@ -157,6 +181,8 @@ export class CourierAccountsService {
         .set({
           name: input.name,
           ...(input.provider === 'manual' ? { courier: input.courier } : {}),
+          codAccountId: input.codAccountId,
+          chargeAccountId: input.chargeAccountId,
           // The last test said something about the old keys only
           ...(keys === null ? {} : { ...keys, lastTestedAt: null, lastTestProblem: null }),
           version: sql`${courierAccounts.version} + 1`,
@@ -170,11 +196,11 @@ export class CourierAccountsService {
         entityType: 'courier_account',
         entityId: id,
         changes: {
-          ...diff(snapshot(before), snapshot(after)),
+          ...diff(snapshot(before, codes), snapshot(after, codes)),
           ...(keys === null ? {} : { keys: { from: null, to: 'changed' } }),
         },
       });
-      return this.toAccount(after);
+      return this.toAccount(after, await holdsOf(tx, [id]));
     });
   }
 
@@ -204,7 +230,7 @@ export class CourierAccountsService {
         entityId: id,
         changes: created({ testResult: problem ?? 'ok' }),
       });
-      return this.toAccount(after);
+      return this.toAccount(after, await holdsOf(tx, [id]));
     });
   }
 
@@ -231,7 +257,7 @@ export class CourierAccountsService {
         entityId: id,
         changes: { webhookToken: { from: null, to: 'changed' } },
       });
-      return { account: this.toAccount(after), webhookToken: token };
+      return { account: this.toAccount(after, await holdsOf(tx, [id])), webhookToken: token };
     });
   }
 
@@ -302,7 +328,9 @@ export class CourierAccountsService {
     return this.withTenant(async (tx) => {
       const before = await this.lock(tx, id, version);
       // Already as asked: no change, no audit row (a second tab's click)
-      if ((before.archivedAt !== null) === archive) return this.toAccount(before);
+      if ((before.archivedAt !== null) === archive) {
+        return this.toAccount(before, await holdsOf(tx, [id]));
+      }
       const [after] = await tx
         .update(courierAccounts)
         .set({
@@ -318,13 +346,15 @@ export class CourierAccountsService {
         action: archive ? 'courier_account.archived' : 'courier_account.restored',
         entityType: 'courier_account',
         entityId: id,
-        changes: diff(snapshot(before), snapshot(after)),
+        // Only the status changes here, so the accounts need no codes
+        changes: diff(snapshot(before, new Map()), snapshot(after, new Map())),
       });
-      return this.toAccount(after);
+      return this.toAccount(after, await holdsOf(tx, [id]));
     });
   }
 
-  // Active ones first, then by name: the page's two tabs read one list
+  // Active ones first, then by name: the page's two tabs read one list. Step 28b: with what each
+  // holds, and the two selects' choices (decisions 2, 3 and 12)
   private async read(tx: Transaction): Promise<CourierSetup> {
     const rows = await tx
       .select()
@@ -335,10 +365,38 @@ export class CourierAccountsService {
         asc(courierAccounts.name),
         asc(courierAccounts.id),
       );
+    const holds = await holdsOf(
+      tx,
+      rows.map((row) => row.id),
+    );
+    const chart = await chartOf(tx);
     return {
-      accounts: rows.map((row) => this.toAccount(row)),
+      accounts: rows.map((row) => this.toAccount(row, holds)),
       defaultAccountId: rows.find((row) => row.isDefault)?.id ?? null,
+      codAccounts: chart.moneyAccounts,
+      chargeAccounts: chart.feeAccounts,
     };
+  }
+
+  // Step 28b: the COD account must be an active posting account that holds money, the charge
+  // account an active expense posting account, each when given (decisions 2 and 3): the same two
+  // lists the selects offer, read the payment gateway's way. Checked on every save, a saved one
+  // too: an account archived since is no place for new money (the form then starts it empty, with
+  // this error). The two lists never share an account, so one account for both is refused here
+  // too (0080's courier_accounts_money_accounts_check is the last word). The codes go to the audit
+  private async checkAccounts(
+    tx: Transaction,
+    input: { codAccountId: string | null; chargeAccountId: string | null },
+  ): Promise<ReadonlyMap<string, string>> {
+    const chart = await chartOf(tx);
+    const { codAccountId, chargeAccountId } = input;
+    if (codAccountId !== null && !chart.moneyAccounts.some((row) => row.id === codAccountId)) {
+      throw accountError('codAccountId', 'courier_cod_account_invalid');
+    }
+    if (chargeAccountId !== null && !chart.feeAccounts.some((row) => row.id === chargeAccountId)) {
+      throw accountError('chargeAccountId', 'courier_charge_account_invalid');
+    }
+    return chart.codeOf;
   }
 
   private sealed(
@@ -385,7 +443,7 @@ export class CourierAccountsService {
     return row;
   }
 
-  private toAccount(row: AccountRow): CourierAccount {
+  private toAccount(row: AccountRow, holds: Holds): CourierAccount {
     const base = this.config.apiBaseUrl.replace(/\/+$/, '');
     return {
       id: row.id,
@@ -402,8 +460,43 @@ export class CourierAccountsService {
         row.lastTestedAt === null
           ? null
           : { at: row.lastTestedAt.toISOString(), problem: row.lastTestProblem },
+      codAccountId: row.codAccountId,
+      chargeAccountId: row.chargeAccountId,
+      holds: holds.get(row.id) ?? NOTHING_HELD,
       version: row.version,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
+}
+
+// Step 28b (decision 12, mine 26): what each courier holds of the shop's money, the page's "Holds
+// ৳45,200 · 18 parcels": the parcels whose COD receipt is posted (a voided one stays linked and
+// counts no more). storefront_shipments_cod_idx finds them per account. Step 28c's payout takes
+// its parcels out of this sum
+async function holdsOf(tx: Transaction, accountIds: readonly string[]): Promise<Holds> {
+  if (accountIds.length === 0) return new Map();
+  const rows = await tx
+    .select({
+      accountId: storefrontShipments.courierAccountId,
+      amount: sql<string>`coalesce(sum(${storefrontShipments.collectedAmount}), 0)::text`,
+      parcels: sql<number>`count(*)::int`,
+    })
+    .from(storefrontShipments)
+    .innerJoin(
+      receipts,
+      and(
+        eq(receipts.tenantId, storefrontShipments.tenantId),
+        eq(receipts.id, storefrontShipments.receiptId),
+      ),
+    )
+    .where(
+      and(
+        eq(storefrontShipments.tenantId, getTenantId()),
+        inArray(storefrontShipments.courierAccountId, [...accountIds]),
+        isNotNull(storefrontShipments.receiptId),
+        eq(receipts.status, 'posted'),
+      ),
+    )
+    .groupBy(storefrontShipments.courierAccountId);
+  return new Map(rows.map((row) => [row.accountId, { amount: row.amount, parcels: row.parcels }]));
 }

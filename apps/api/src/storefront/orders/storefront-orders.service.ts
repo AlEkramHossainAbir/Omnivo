@@ -1,13 +1,18 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  billableQuantity,
   type BookShipmentInput,
   compareQuantity,
+  type DeliverStorefrontOrderInput,
   type CourierChoices,
   type CourierExport,
   type DocumentRef,
   type ErrorCode,
   isErrorCode,
   type PackStorefrontOrderInput,
+  type PartlyDeliverStorefrontOrderInput,
+  type ReturnStorefrontOrderInput,
+  type ShipmentStatus,
   type StorefrontOrder,
   type StorefrontOrderCounts,
   type StorefrontOrderPage,
@@ -17,6 +22,7 @@ import {
   type StorefrontOrderStatus,
   type StorefrontOrderSummary,
   type StorefrontPackPlan,
+  type StorefrontReturnPlan,
   storefrontImageSchema,
   sumQuantity,
   subtractQuantity,
@@ -31,6 +37,7 @@ import {
   productVariants,
   receipts,
   salesOrders,
+  salesOrderLines,
   salesReturns,
   stockBalances,
   courierAccounts,
@@ -39,13 +46,27 @@ import {
   storefrontOrders,
   storefrontPayments,
   storefrontSettings,
+  storefrontShipments,
   storefrontStockHolds,
   units,
   warehouses,
 } from '@omnivo/db';
-import { and, asc, eq, gt, inArray, ne, type SQL, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNull,
+  ne,
+  notInArray,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
 import { z } from 'zod';
 
+import { audit, created } from '../../common/audit/audit.js';
 import { containsPattern } from '../../common/db/search.js';
 import { AppError, notFound, versionConflict } from '../../common/http/app-error.js';
 import { decodeCursor, toPage } from '../../common/pagination/cursor.js';
@@ -56,7 +77,7 @@ import { CONFIG, WITH_TENANT } from '../../infra/tokens.js';
 import { DeliveriesService } from '../../sales/deliveries.service.js';
 import { SalesOrdersService } from '../../sales/sales-orders.service.js';
 import { SalesReturnsService } from '../../sales/sales-returns.service.js';
-import { cancelledSms } from '../../sms/shop-sms.js';
+import { cancelledSms, returnedSms } from '../../sms/shop-sms.js';
 import { SmsQueue } from '../../sms/sms-queue.js';
 import { isoText } from '../listing-sql.js';
 import { shopImage } from '../media.js';
@@ -71,11 +92,14 @@ import {
   stepInvalid,
 } from './order-moves.js';
 import { codAmountOf, historyOf, type OrderRow } from './order-view.js';
+import { ShopCodReceipts } from '../shipping/cod-receipts.js';
 import {
   cancelShipments,
   courierChoicesOf,
   courierExportRows,
   followOrder,
+  memberEvent,
+  newestParcelStatus,
   parcelNeedsAttention,
   retryShipment,
   shipmentsOf,
@@ -153,11 +177,13 @@ function numberOf(order: OrderRow): string {
 }
 
 // Step 28a: parcelAttention is the parcel's half of "Needs attention" (its last booking failed),
-// worked out by the caller: in SQL for the list, from the parcels for the order page
+// worked out by the caller: in SQL for the list, from the parcels for the order page. Step 28b:
+// parcelStatus, the newest parcel's status (or null), the same way
 function summaryOf(
   order: OrderRow,
   items: number,
   parcelAttention: boolean,
+  parcelStatus: ShipmentStatus | null,
 ): StorefrontOrderSummary {
   return {
     id: order.id,
@@ -172,6 +198,7 @@ function summaryOf(
     itemCount: items,
     total: order.total,
     needsAttention: order.documentError !== null || parcelAttention,
+    parcelStatus,
   };
 }
 
@@ -225,6 +252,7 @@ export class StorefrontOrdersService {
     private readonly sms: SmsQueue,
     private readonly paymentReceipts: ShopPaymentReceipts,
     private readonly moves: ShopOrderMoves,
+    private readonly codReceipts: ShopCodReceipts,
   ) {
     this.mediaUrl = config.storefront.mediaUrl;
   }
@@ -259,6 +287,7 @@ export class StorefrontOrdersService {
           items: itemCount,
           sortKey: sort.text,
           parcelAttention: parcelNeedsAttention,
+          parcelStatus: newestParcelStatus,
         })
         .from(storefrontOrders)
         .where(and(...filters))
@@ -266,7 +295,9 @@ export class StorefrontOrdersService {
         .limit(q.limit + 1);
       const page = toPage(rows, q.limit, (last) => [q.sort, last.sortKey, last.order.id]);
       return {
-        items: page.items.map((row) => summaryOf(row.order, row.items, row.parcelAttention)),
+        items: page.items.map((row) =>
+          summaryOf(row.order, row.items, row.parcelAttention, row.parcelStatus),
+        ),
         nextCursor: page.nextCursor,
       };
     });
@@ -540,14 +571,231 @@ export class StorefrontOrdersService {
     });
   }
 
-  // Decision 7: the invoice (order-moves.ts)
-  deliver(id: string, version: number): Promise<StorefrontOrder> {
+  // Decision 7: the invoice (order-moves.ts). Step 28b: and the rider's COD receipt for what the
+  // member typed (decision 5); the parcel follows inside (cod-receipts.ts), so no followOrder
+  deliver(id: string, input: DeliverStorefrontOrderInput): Promise<StorefrontOrder> {
     return this.withTenant(async (tx) => {
-      const order = await this.lock(tx, id, version);
-      await this.moves.deliver(tx, order);
-      await followOrder(tx, id, 'delivered');
+      const order = await this.lock(tx, id, input.version);
+      await this.moves.deliver(tx, order, input.collectedAmount);
       return this.read(tx, id);
     });
+  }
+
+  // Step 28b: what "Record what came back" opens with: the challan's lines, one per batch, with
+  // what each took and, for a serial product, its pieces. Like packPlan, a read behind
+  // storefront.order.manage
+  returnPlan(id: string): Promise<StorefrontReturnPlan> {
+    return this.withTenant(async (tx) => {
+      const order = await this.find(tx, id);
+      if (order.status !== 'shipped' || order.deliveryId === null) throw stepInvalid();
+      const [warehouse] = await tx
+        .select({ id: warehouses.id, name: warehouses.name })
+        .from(deliveries)
+        .innerJoin(
+          warehouses,
+          and(
+            eq(warehouses.tenantId, deliveries.tenantId),
+            eq(warehouses.id, deliveries.warehouseId),
+          ),
+        )
+        .where(and(eq(deliveries.tenantId, getTenantId()), eq(deliveries.id, order.deliveryId)));
+      if (!warehouse) throw new Error(`Challan ${order.deliveryId} is missing`);
+      const lines = await this.challanLinesOf(tx, order);
+      return {
+        warehouse,
+        // The plan's own fields only: the ids the return needs stay in the API
+        lines: lines.map((line) => ({
+          deliveryLineId: line.deliveryLineId,
+          position: line.position,
+          name: line.name,
+          packSize: line.packSize,
+          sku: line.sku,
+          unitCode: line.unitCode,
+          quantity: line.quantity,
+          tracking: line.tracking,
+          batch: line.batch,
+          serialNumbers: line.serialNumbers,
+        })),
+      };
+    });
+  }
+
+  // Step 28b (decision 6): the shopper kept part of the parcel. In one transaction: a posted sales
+  // return of what came back (before the invoice, so 15d's rule bills only what was kept), the
+  // invoice of the rest and the delivery charge, the COD receipt for what the rider collected,
+  // then the sales order closed (the return opened it again for goods that will not go out). The
+  // order is Delivered, with its return
+  partlyDeliver(id: string, input: PartlyDeliverStorefrontOrderInput): Promise<StorefrontOrder> {
+    return this.withTenant(async (tx) => {
+      const order = await this.lock(tx, id, input.version);
+      if (order.status !== 'shipped' || order.deliveryId === null) throw stepInvalid();
+      const challan = await this.challanLinesOf(tx, order);
+      const byId = new Map(challan.map((line) => [line.deliveryLineId, line]));
+      // Only the challan's own lines (the return's rules would say the same as
+      // return_delivery_line_invalid, but under its own line numbers; here it is the dialog's)
+      const fieldErrors: Record<string, ErrorCode[]> = {};
+      input.lines.forEach((line, index) => {
+        if (!byId.has(line.deliveryLineId)) {
+          fieldErrors[`lines.${String(index)}.deliveryLineId`] = ['storefront_order_line_missing'];
+        }
+      });
+      const [first] = Object.values(fieldErrors);
+      if (first?.[0] !== undefined) throw linesError(first[0], fieldErrors);
+      // Every piece back is Receive the return (mine 16): that order is Returned, not Delivered
+      const back = new Map(input.lines.map((line) => [line.deliveryLineId, line.quantity]));
+      if (
+        challan.every(
+          (line) => compareQuantity(back.get(line.deliveryLineId) ?? '0', line.quantity) >= 0,
+        )
+      ) {
+        throw new AppError(
+          409,
+          'storefront_order_return_everything',
+          'Every piece came back. Use Receive the return instead.',
+        );
+      }
+      const salesReturnId = await this.salesReturns.createIn(tx, {
+        customerId: (await salesOrderOf(tx, order)).customerId,
+        date: await shopToday(tx),
+        warehouseId: (await this.challanWarehouse(tx, order.deliveryId)).id,
+        reason: 'other',
+        note: input.reason,
+        // In the dialog's order, so the return's own field errors (a quantity over what the line
+        // took, a serial number that was not in the box) land under the dialog's rows
+        lines: input.lines.map((line) => {
+          const from = byId.get(line.deliveryLineId);
+          if (from === undefined) throw new Error(`Challan line ${line.deliveryLineId} is missing`);
+          return {
+            variantId: from.variantId,
+            unitId: from.unitId,
+            quantity: line.quantity,
+            batchId: from.batchId,
+            serialNumbers: line.serialNumbers,
+            deliveryLineId: line.deliveryLineId,
+          };
+        }),
+        post: true,
+      });
+      await this.moves.deliver(tx, order, input.collectedAmount, {
+        salesReturnId,
+        changes: { cameBack: input.lines.length, reason: input.reason },
+      });
+      if (order.salesOrderId !== null) {
+        await this.salesOrders.closeIn(tx, order.salesOrderId, null);
+      }
+      return this.read(tx, id);
+    });
+  }
+
+  // Step 28b (decision 7): the whole parcel is back on the shelf. A posted sales return of the
+  // whole challan, the sales order cancelled (mine 29: after the return it has nothing delivered,
+  // which the sales rules call a cancel), the parcel returned, the order Returned, and the
+  // shopper's SMS once it has committed. Never on the courier's word alone: the member presses it
+  async returnOrder(id: string, input: ReturnStorefrontOrderInput): Promise<StorefrontOrder> {
+    const { order, sms } = await this.withTenant(async (tx) => {
+      const before = await this.lock(tx, id, input.version);
+      if (before.status !== 'shipped') throw stepInvalid();
+      const salesReturnId = await this.returnChallan(tx, before, input.reason);
+      if (before.salesOrderId !== null) {
+        await this.salesOrders.cancelIn(tx, before.salesOrderId, null);
+      }
+      // The parcel the courier had, unless the courier said returned already. A delivered one
+      // the courier was wrong about comes back too (0078's guard lets it); its COD receipt, if
+      // any, stays: the money was posted and is voided by hand (mine 26)
+      const [parcel] = await tx
+        .select({ id: storefrontShipments.id, status: storefrontShipments.status })
+        .from(storefrontShipments)
+        .where(
+          and(
+            eq(storefrontShipments.tenantId, getTenantId()),
+            eq(storefrontShipments.orderId, id),
+            notInArray(storefrontShipments.status, ['booking', 'booking_failed', 'cancelled']),
+          ),
+        )
+        .orderBy(desc(storefrontShipments.parcelNo))
+        .limit(1)
+        .for('update');
+      if (parcel !== undefined && parcel.status !== 'returned') {
+        const now = new Date();
+        await tx
+          .update(storefrontShipments)
+          .set({ status: 'returned', updatedAt: now })
+          .where(
+            and(
+              eq(storefrontShipments.tenantId, getTenantId()),
+              eq(storefrontShipments.id, parcel.id),
+            ),
+          );
+        await memberEvent(tx, parcel.id, 'returned', now);
+      }
+      await moveOrder(
+        tx,
+        before,
+        { status: 'returned', returnedAt: new Date(), salesReturnId },
+        { changes: { reason: input.reason } },
+      );
+      const [shop] = await tx
+        .select({
+          language: storefrontSettings.language,
+          name: storefrontSettings.name,
+          hotline: storefrontSettings.hotline,
+        })
+        .from(storefrontSettings)
+        .where(eq(storefrontSettings.tenantId, getTenantId()));
+      return {
+        order: await this.read(tx, id),
+        sms:
+          shop === undefined
+            ? null
+            : {
+                to: before.phone,
+                text: returnedSms(shop.language, shop.name, numberOf(before), shop.hotline),
+              },
+      };
+    });
+    // After the commit, as for a cancel
+    if (sms !== null) await this.sms.send(sms);
+    return order;
+  }
+
+  // Step 28b: "Make the receipt" on a parcel whose COD receipt was refused (decision 4). The same
+  // receipt Delivered makes, in this request's transaction; a refusal is kept on the parcel again,
+  // in its own transaction (this one rolls back), as makePaymentReceipt keeps a payment's
+  async makeCodReceipt(id: string, shipmentId: string, version: number): Promise<StorefrontOrder> {
+    try {
+      return await this.withTenant(async (tx) => {
+        const order = await this.lock(tx, id, version);
+        await this.codReceipts.retry(tx, order, shipmentId);
+        // The version moves on, so another tab that still shows the error reloads first
+        await tx
+          .update(storefrontOrders)
+          .set({
+            version: sql`${storefrontOrders.version} + 1`,
+            updatedBy: currentPrincipal().userId,
+          })
+          .where(and(eq(storefrontOrders.tenantId, getTenantId()), eq(storefrontOrders.id, id)));
+        await audit(tx, {
+          action: 'storefront_order.cod_receipt_made',
+          entityType: 'storefront_order',
+          entityId: id,
+          changes: created({ order: numberOf(order) }),
+        });
+        return this.read(tx, id);
+      });
+    } catch (error) {
+      if (
+        error instanceof AppError &&
+        ![
+          'storefront_cod_receipt_not_failed',
+          'version_conflict',
+          'not_found',
+          'storefront_order_step_invalid',
+        ].includes(error.code)
+      ) {
+        await this.keepCodError(shipmentId, error.code);
+      }
+      throw error;
+    }
   }
 
   // Decision 8: a new order's sales order is cancelled and its hold ends; a packed one's goods
@@ -611,8 +859,13 @@ export class StorefrontOrdersService {
     return order;
   }
 
-  // The whole challan back, into the warehouse it left from, at what it cost (15d's rule)
-  private async returnChallan(tx: Transaction, order: OrderRow): Promise<string> {
+  // The whole challan back, into the warehouse it left from, at what it cost (15d's rule). Step
+  // 28b: Receive the return too, with the member's reason on the return's note
+  private async returnChallan(
+    tx: Transaction,
+    order: OrderRow,
+    note: string | null = null,
+  ): Promise<string> {
     if (order.deliveryId === null || order.salesOrderId === null) throw stepInvalid();
     const [challan] = await tx
       .select({ customerId: deliveries.customerId, warehouseId: deliveries.warehouseId })
@@ -636,7 +889,7 @@ export class StorefrontOrdersService {
       // The return's own list of reasons has no "order cancelled"; the shop order's page says
       // why, and the return's audit row names the order through its challan
       reason: 'other',
-      note: null,
+      note,
       lines: lines.map((line) => ({
         variantId: line.variantId,
         unitId: line.unitId,
@@ -662,6 +915,108 @@ export class StorefrontOrdersService {
             sql`${storefrontOrders.salesOrderId} IS NULL`,
           ),
         );
+    });
+  }
+
+  // Step 28b: a refused COD receipt's code, kept only while the parcel has no receipt (a second
+  // tab's retry may have made it meanwhile)
+  private async keepCodError(shipmentId: string, code: ErrorCode): Promise<void> {
+    await this.withTenant(async (tx) => {
+      await tx
+        .update(storefrontShipments)
+        .set({ receiptError: code })
+        .where(
+          and(
+            eq(storefrontShipments.tenantId, getTenantId()),
+            eq(storefrontShipments.id, shipmentId),
+            isNull(storefrontShipments.receiptId),
+          ),
+        );
+    });
+  }
+
+  private async challanWarehouse(tx: Transaction, deliveryId: string) {
+    const [challan] = await tx
+      .select({ id: deliveries.warehouseId })
+      .from(deliveries)
+      .where(and(eq(deliveries.tenantId, getTenantId()), eq(deliveries.id, deliveryId)));
+    if (!challan) throw new Error(`Challan ${deliveryId} is missing`);
+    return challan;
+  }
+
+  // Step 28b: the challan's lines as the return plan shows them, in the challan's order, each with
+  // the order line it was packed for (the sales order's line i + 1 is the order's line i, the
+  // maker's rule), what the variant is now and its batch
+  private async challanLinesOf(tx: Transaction, order: OrderRow) {
+    if (order.deliveryId === null || order.salesOrderId === null) throw stepInvalid();
+    const tenantId = getTenantId();
+    const rows = await tx
+      .select({
+        line: deliveryLines,
+        lineNo: salesOrderLines.lineNo,
+        sku: productVariants.sku,
+        unitCode: units.code,
+        tracking: products.tracking,
+        lotNumber: batches.lotNumber,
+        expiresOn: batches.expiresOn,
+      })
+      .from(deliveryLines)
+      .innerJoin(
+        salesOrderLines,
+        and(
+          eq(salesOrderLines.tenantId, deliveryLines.tenantId),
+          eq(salesOrderLines.id, deliveryLines.orderLineId),
+        ),
+      )
+      .innerJoin(
+        productVariants,
+        and(
+          eq(productVariants.tenantId, deliveryLines.tenantId),
+          eq(productVariants.id, deliveryLines.variantId),
+        ),
+      )
+      .innerJoin(
+        products,
+        and(
+          eq(products.tenantId, productVariants.tenantId),
+          eq(products.id, productVariants.productId),
+        ),
+      )
+      .innerJoin(
+        units,
+        and(eq(units.tenantId, products.tenantId), eq(units.id, products.baseUnitId)),
+      )
+      .leftJoin(
+        batches,
+        and(eq(batches.tenantId, deliveryLines.tenantId), eq(batches.id, deliveryLines.batchId)),
+      )
+      .where(
+        and(eq(deliveryLines.tenantId, tenantId), eq(deliveryLines.deliveryId, order.deliveryId)),
+      )
+      .orderBy(asc(deliveryLines.lineNo));
+    const orderLines = new Map(
+      (await orderLinesOf(tx, order.id)).map((line) => [line.position, line]),
+    );
+    return rows.map(({ line, lineNo, sku, unitCode, tracking, lotNumber, expiresOn }) => {
+      const ordered = orderLines.get(lineNo);
+      if (ordered === undefined) throw new Error(`Challan line ${line.id} has no shop order line`);
+      return {
+        deliveryLineId: line.id,
+        position: ordered.position,
+        name: ordered.name,
+        packSize: ordered.packSize,
+        sku,
+        unitCode,
+        // What is still out: a challan line of a shipped order has nothing back yet
+        quantity: billableQuantity(line),
+        tracking,
+        batch: lotNumber === null ? null : { lotNumber, expiresOn },
+        serialNumbers: line.serialNumbers,
+        // For partlyDeliver's return lines, not the plan's answer
+        variantId: line.variantId,
+        unitId: line.unitId,
+        batchId: line.batchId,
+      };
     });
   }
 
@@ -861,7 +1216,10 @@ export class StorefrontOrdersService {
       ...summaryOf(
         order,
         lines.reduce((count, { line }) => count + line.quantity, 0),
-        order.status === 'packed' && last?.status === 'booking_failed',
+        // Step 28b: or a parcel's COD receipt was refused (parcelNeedsAttention's second half)
+        (order.status === 'packed' && last?.status === 'booking_failed') ||
+          shipments.some((shipment) => shipment.receiptError !== null),
+        last?.status ?? null,
       ),
       address: order.address,
       history: historyOf(order),

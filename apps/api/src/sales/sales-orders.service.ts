@@ -306,19 +306,26 @@ export class SalesOrdersService {
   // "delivered" by itself.
   close(id: string, version: number): Promise<SalesOrder> {
     return this.withTenant(async (tx) => {
-      const row = await this.lock(tx, id, version);
-      if (row.status !== 'confirmed') throw notConfirmed();
-      if (!(await this.anythingDelivered(tx, id)) && !(await this.anythingInvoiced(tx, id))) {
-        throw new AppError(
-          409,
-          'order_nothing_delivered',
-          'Nothing was delivered or billed for this order. Cancel it instead.',
-        );
-      }
-      await this.write(tx, id, { status: 'closed' });
-      await audit(tx, { action: 'sales_order.closed', entityType: 'sales_order', entityId: id });
+      await this.closeIn(tx, id, version);
       return this.read(tx, id);
     });
+  }
+
+  // Step 28b: the close itself, in the caller's transaction, like cancelIn below: the order page's
+  // Close above, and a partly delivered shop order (StorefrontOrdersService), whose return of what
+  // came back opened its sales order again for goods that will never go out
+  async closeIn(tx: Transaction, id: string, version: number | null): Promise<void> {
+    const row = await this.lock(tx, id, version);
+    if (row.status !== 'confirmed') throw notConfirmed();
+    if (!(await this.anythingDelivered(tx, id)) && !(await this.anythingInvoiced(tx, id))) {
+      throw new AppError(
+        409,
+        'order_nothing_delivered',
+        'Nothing was delivered or billed for this order. Cancel it instead.',
+      );
+    }
+    await this.write(tx, id, { status: 'closed' });
+    await audit(tx, { action: 'sales_order.closed', entityType: 'sales_order', entityId: id });
   }
 
   // Called off before anything left the warehouse

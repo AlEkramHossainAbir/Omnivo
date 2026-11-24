@@ -64,6 +64,9 @@ const TARGET = {
   // Step 28a: a parcel that failed to book five times. The order's page has Book again; an old
   // notification without the id opens the list
   'storefront.shipment_failed': '/storefront/orders',
+  // Step 28b: a delivered parcel whose COD receipt could not be made. The order's page has "Make
+  // the receipt"; the list for a notification without the id
+  'storefront.cod_receipt_failed': '/storefront/orders',
 } as const satisfies Record<Exclude<NotificationType, DocumentNotificationType>, string>;
 
 // A document's page from the notification's kind and id. The list of that kind when the id is
@@ -135,12 +138,14 @@ function shiftOf(notification: Notification): string | null {
 }
 
 // Step 27b: the new-order bell opens its order. Its id is the order's (27a's handler sends it).
-// Step 28a: so does a failed booking's (28a.3's handler sends the order's id too)
+// Step 28a: so does a failed booking's (28a.3's handler sends the order's id too). Step 28b: and a
+// failed COD receipt's (cod-receipts.ts sends the order's id, one bell per parcel)
 function shopOrderOf(notification: Notification): string | null {
   const { id } = notification.params;
   const opensOrder =
     notification.type === 'storefront.order_confirmed' ||
-    notification.type === 'storefront.shipment_failed';
+    notification.type === 'storefront.shipment_failed' ||
+    notification.type === 'storefront.cod_receipt_failed';
   return opensOrder && typeof id === 'string' && id !== '' ? id : null;
 }
 

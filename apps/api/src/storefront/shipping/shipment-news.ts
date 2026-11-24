@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { type ShipmentStatus, type ShopShipmentStatus } from '@omnivo/contracts';
+import { compareMoney, type ShipmentStatus, type ShopShipmentStatus } from '@omnivo/contracts';
 import { storefrontSettings, storefrontShipmentEvents, storefrontShipments } from '@omnivo/db';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 
@@ -58,6 +58,31 @@ function keptRaw(raw: Record<string, unknown>): Record<string, unknown> {
   return Buffer.byteLength(JSON.stringify(raw), 'utf8') <= 8000 ? raw : { tooLarge: true };
 }
 
+// Step 28b (decision 5): the money a status notice names, as the parcel keeps it.
+// - The courier's charge from any status notice that names one: it is the courier's own figure
+//   for the parcel, known from the booking on, and 28c's payout checks it.
+// - What the rider collected only from a delivered or partly delivered step: on the other steps
+//   Steadfast's cod_amount is what is still to collect. Never more than the parcel's codAmount
+//   (mine 21: the raw body keeps what the courier said), and never once the parcel has its COD
+//   receipt (0081's receipt_kept): the receipt was made for the amount known then
+// A parcel the courier never booked has no money (0080's check); stepOf keeps its notices raw,
+// with no status, so they never reach here
+function moneyOf(
+  parcel: ParcelRow,
+  money: { collectedAmount: string | null; courierCharge: string | null },
+  status: ShopShipmentStatus,
+  notice: Extract<CourierNotice, { kind: 'status' }>,
+): { collectedAmount: string | null; courierCharge: string | null } {
+  const atDoor = status === 'delivered' || status === 'partly_delivered';
+  const collected =
+    !atDoor || notice.collected === null || parcel.receiptId !== null
+      ? money.collectedAmount
+      : compareMoney(notice.collected, parcel.codAmount) > 0
+        ? parcel.codAmount
+        : notice.collected;
+  return { collectedAmount: collected, courierCharge: notice.charge ?? money.courierCharge };
+}
+
 // Step 28a: what the courier said about one parcel, from its webhook (in the API) or the 15-minute
 // poll (in the worker), written the same way:
 // 1. the order, then the parcel, are locked (the buttons' order, so the two take turns)
@@ -66,7 +91,9 @@ function keptRaw(raw: Record<string, unknown>): Record<string, unknown> {
 // 3. the parcel's status is its newest step's, by the courier's clock (kept between the booking
 //    and now): a webhook that comes late does not take the parcel back
 // 4. the order follows: Shipped once the goods have left, then Delivered, which posts the invoice
-//    (decision 5, the buttons' own code in order-moves.ts)
+//    (decision 5, the buttons' own code in order-moves.ts). Step 28b: and the rider's COD receipt,
+//    from the collected amount step 3 kept on the parcel. A partly delivered or returned parcel
+//    moves only itself: the goods that came back are recorded by a member (decisions 6 and 7)
 // It answers the SMS to send once the caller's transaction has committed (decision 11), never
 // before: an SMS for news that rolled back would tell the shopper something that did not happen.
 @Injectable()
@@ -101,6 +128,7 @@ export class ShipmentNews {
     if (parcel === undefined) return null;
 
     let current: ShipmentStatus = parcel.status;
+    let money = { collectedAmount: parcel.collectedAmount, courierCharge: parcel.courierCharge };
     for (const notice of notices) {
       const step = this.stepOf(parcel, current, notice, now);
       await tx
@@ -108,12 +136,15 @@ export class ShipmentNews {
         .values({ tenantId, shipmentId, ...step, source, receivedAt: now })
         .onConflictDoNothing();
       if (step.status !== null) current = step.status;
+      if (step.status !== null && notice.kind === 'status') {
+        money = moneyOf(parcel, money, step.status, notice);
+      }
     }
 
     const status = SETTLED.has(parcel.status) ? parcel.status : await this.newest(tx, parcel);
     await tx
       .update(storefrontShipments)
-      .set({ status, lastSyncedAt: now, updatedAt: now })
+      .set({ status, ...money, lastSyncedAt: now, updatedAt: now })
       .where(
         and(eq(storefrontShipments.tenantId, tenantId), eq(storefrontShipments.id, shipmentId)),
       );
@@ -174,7 +205,12 @@ export class ShipmentNews {
       note: notice.note,
       occurredAt: at,
       eventKey: eventKeyOf(notice.kind, status, notice.at, notice.note),
-      raw: null,
+      // Step 28b (mine 21): a notice that names money keeps its body, so the courier's own
+      // figure is still there when the parcel keeps less (moneyOf cuts it to the COD amount)
+      raw:
+        notice.kind === 'status' && (notice.collected !== null || notice.charge !== null)
+          ? keptRaw(notice.raw)
+          : null,
     };
   }
 
@@ -198,7 +234,9 @@ export class ShipmentNews {
 
   // Delivered posts the invoice, in a savepoint: an invoice the sales rules refuse (a product
   // archived since, a lock date) must not lose the courier's news with it. The order stays
-  // Shipped, and Mark delivered on its page shows the reason to the member who can fix it
+  // Shipped, and Mark delivered on its page shows the reason to the member who can fix it. Step
+  // 28b: the COD receipt is made inside it with no typed amount (the parcel's collected amount,
+  // written above, else its codAmount), and has a savepoint of its own (cod-receipts.ts)
   private async deliver(tx: Transaction, orderId: string): Promise<void> {
     const order = await lockOrder(tx, orderId);
     if (order.status !== 'shipped') return;

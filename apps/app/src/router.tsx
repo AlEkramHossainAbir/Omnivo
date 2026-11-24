@@ -1039,6 +1039,8 @@ const ORDER_VIEWS: readonly StorefrontOrderView[] = Object.values({
   shipped: 'shipped',
   delivered: 'delivered',
   cancelled: 'cancelled',
+  // Step 28b (mine 18): the orders received back
+  returned: 'returned',
   all: 'all',
 } as const satisfies { [View in StorefrontOrderView]: View });
 

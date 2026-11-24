@@ -1,6 +1,6 @@
 import { type LanguageCode, SHOP_CODE_VALID_MINUTES, type ShopCourier } from '@omnivo/contracts';
 
-// Step 27a: the shop's two SMS (27b adds a third, 28a a fourth), in the shop's language (storefront_settings.language). Written
+// Step 27a: the shop's two SMS (27b adds a third, 28a a fourth, 28b a fifth), in the shop's language (storefront_settings.language). Written
 // here, side by side, like the emails' words (mail/invitation-email.ts): @omnivo/i18n is the
 // browser's. satisfies makes a third language a compile error until it has its words.
 //
@@ -75,6 +75,22 @@ export function pickedUpSms(
   const words = {
     en: `${shopName}: order ${orderNo} is on its way with ${COURIER_NAMES[courier]}, code ${trackingCode}.`,
     bn: `${shopName}: অর্ডার ${orderNo} ${COURIER_NAMES[courier]} দিয়ে রওনা হয়েছে, কোড ${trackingCode}।`,
+  } satisfies Record<LanguageCode, string>;
+  return words[language];
+}
+
+// Step 28b (decision 7): Receive the return, the parcel is back in the shop. Like the cancel's: the
+// hotline, never the staff's reason. Sent only once a member has the goods, so it never says
+// "returned" for a parcel that is still on its way back
+export function returnedSms(
+  language: LanguageCode,
+  shopName: string,
+  orderNo: string,
+  hotline: string,
+): string {
+  const words = {
+    en: `${shopName}: order ${orderNo} came back to us and is closed. Questions? Call ${hotline}.`,
+    bn: `${shopName}: অর্ডার ${orderNo} ফেরত এসেছে, অর্ডারটি বন্ধ করা হলো। কিছু জানতে কল করুন ${hotline}।`,
   } satisfies Record<LanguageCode, string>;
   return words[language];
 }

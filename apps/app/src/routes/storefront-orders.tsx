@@ -24,7 +24,11 @@ import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
-import { NeedsAttentionPill, OrderStatusPill } from '../components/storefront-order-pills';
+import {
+  NeedsAttentionPill,
+  OrderStatusPill,
+  ParcelWaitPill,
+} from '../components/storefront-order-pills';
 import { StorefrontOffline, useShopMoney, ViewShopLink } from '../components/storefront-parts';
 import { ApiRequestError, call } from '../lib/api';
 import { useCan } from '../lib/permissions';
@@ -214,6 +218,12 @@ export function StorefrontOrdersPage() {
           cell: ({ row }) => (
             <span className="inline-flex flex-wrap justify-end gap-1.5 min-[860px]:justify-start">
               <OrderStatusPill status={row.original.status} />
+              {/* Step 28b: a shipped order that waits for the staff (partly delivered, coming
+                  back), so the Shipped tab says which ones need the order's page */}
+              <ParcelWaitPill
+                status={row.original.status}
+                parcelStatus={row.original.parcelStatus}
+              />
               {row.original.needsAttention && <NeedsAttentionPill />}
             </span>
           ),

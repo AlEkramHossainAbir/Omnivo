@@ -25,12 +25,15 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { baseColumns } from '../base-columns.js';
+import { ledgerAccounts } from './ledger-accounts.js';
+import { receipts } from './receipts.js';
 import { storefrontOrders } from './storefront-orders.js';
 import { tenants } from './tenants.js';
 
 // Step 28a: couriers (system design §14.6). The shop's courier accounts, the parcels its orders
 // are sent in, and what the courier said about each parcel. Migration 0078 gives the three tables
-// their rules.
+// their rules. Step 28b: the courier's COD money (each account's two accounts, and what each
+// parcel collected and its receipt); migration 0081 adds their rules.
 
 // Raw bytes, as in storefront-payments.ts and sync.ts: drizzle 0.45 has no bytea column
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -93,10 +96,36 @@ export const courierAccounts = pgTable(
     lastWebhookAt: timestamp('last_webhook_at', { withTimezone: true }),
     lastTestedAt: timestamp('last_tested_at', { withTimezone: true }),
     lastTestProblem: text('last_test_problem', { enum: COURIER_TEST_PROBLEMS }),
+    // Step 28b. The money account the rider's cash goes into at Delivered ("Cash with
+    // Steadfast", decision 2), and the expense account of the courier's charges (decision 3, used
+    // by 28c's payout). NULL: none, so Delivered makes no receipt, as before 28b. Whether they
+    // still fit (a posting account that holds money, an expense) is the API's check, because an
+    // account can be archived after it was picked (27d's reason)
+    codAccountId: uuid('cod_account_id'),
+    chargeAccountId: uuid('charge_account_id'),
   },
   (table) => [
     // The target of the parcels' foreign key (a constraint, for 0070's reason)
     unique('courier_accounts_tenant_id_key').on(table.tenantId, table.id),
+    // Accounts of this workspace. No ON DELETE: an account is deleted for real only when nothing
+    // uses it, and these two are used (27d's gateway)
+    foreignKey({
+      name: 'courier_accounts_cod_account_fk',
+      columns: [table.tenantId, table.codAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    foreignKey({
+      name: 'courier_accounts_charge_account_fk',
+      columns: [table.tenantId, table.chargeAccountId],
+      foreignColumns: [ledgerAccounts.tenantId, ledgerAccounts.id],
+    }),
+    // The charges in the COD account would post them against the money they come out of: its
+    // balance would no longer be what the courier holds (27d's two accounts)
+    check(
+      'courier_accounts_money_accounts_check',
+      sql`${table.codAccountId} IS NULL OR ${table.chargeAccountId} IS NULL
+        OR ${table.codAccountId} <> ${table.chargeAccountId}`,
+    ),
     // One default per workspace. A second one fails here, so the API clears the old one first
     uniqueIndex('courier_accounts_default_idx')
       .on(table.tenantId)
@@ -177,6 +206,15 @@ export const storefrontShipments = pgTable(
     errorDetail: text('error_detail'),
     // When the courier last told us anything (the webhook or the poll)
     lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    // Step 28b (decision 5). What the rider collected (the courier's notice, or what the member
+    // typed at Delivered), never more than cod_amount (mine 15), and the courier's charge for the
+    // parcel as its notice said it (28c's payout uses it). NULL: not known yet
+    collectedAmount: numeric('collected_amount', { precision: 19, scale: 4 }),
+    courierCharge: numeric('courier_charge', { precision: 19, scale: 4 }),
+    // The posted COD receipt Delivered made for this parcel (decision 4, mine 14), or why it
+    // could not (an error code, like a payment try's receipt_error). Neither: none was due
+    receiptId: uuid('receipt_id'),
+    receiptError: text('receipt_error'),
   },
   (table) => [
     unique('storefront_shipments_tenant_id_key').on(table.tenantId, table.id),
@@ -213,6 +251,21 @@ export const storefrontShipments = pgTable(
       columns: [table.tenantId, table.courierAccountId],
       foreignColumns: [courierAccounts.tenantId, courierAccounts.id],
     }),
+    // Step 28b. One receipt, one parcel: a news handler that ran twice cannot link a second
+    // parcel to the same money. No ON DELETE: a receipt is voided, never deleted
+    uniqueIndex('storefront_shipments_receipt_idx')
+      .on(table.tenantId, table.receiptId)
+      .where(sql`${table.receiptId} IS NOT NULL`),
+    foreignKey({
+      name: 'storefront_shipments_receipt_fk',
+      columns: [table.tenantId, table.receiptId],
+      foreignColumns: [receipts.tenantId, receipts.id],
+    }),
+    // What each courier account holds (decision 12) and 28c's payout read the parcels with a COD
+    // receipt, per account. Partial: most parcels of a shop that takes online payment have none
+    index('storefront_shipments_cod_idx')
+      .on(table.tenantId, table.courierAccountId)
+      .where(sql`${table.receiptId} IS NOT NULL`),
     check(
       'storefront_shipments_values_check',
       sql`${table.status} IN (${sqlList(SHIPMENT_STATUSES)})
@@ -244,6 +297,24 @@ export const storefrontShipments = pgTable(
       'storefront_shipments_amounts_check',
       sql`${table.codAmount} >= 0 AND ${table.codAmount} = round(${table.codAmount}, 2)
         AND ${table.attempts} >= 0`,
+    ),
+    // Step 28b. The rider's money to the paisa, and never more than the courier was told to
+    // collect (mine 15). A receipt is for what was collected, so it needs more than zero (zero
+    // makes none; coalesce, because NULL > 0 is NULL and a check passes on NULL); the receipt and its error are never both. A parcel the courier has not taken
+    // yet has none of them. When a receipt may be linked, and that it is this parcel's money, is
+    // 0081's guard: a check cannot read the receipt
+    check(
+      'storefront_shipments_cod_check',
+      sql`(${table.collectedAmount} IS NULL OR (${table.collectedAmount} >= 0
+          AND ${table.collectedAmount} = round(${table.collectedAmount}, 2)
+          AND ${table.collectedAmount} <= ${table.codAmount}))
+        AND (${table.courierCharge} IS NULL OR (${table.courierCharge} >= 0
+          AND ${table.courierCharge} = round(${table.courierCharge}, 2)))
+        AND (${table.receiptId} IS NULL OR coalesce(${table.collectedAmount}, 0) > 0)
+        AND num_nonnulls(${table.receiptId}, ${table.receiptError}) <= 1
+        AND (${table.receiptError} IS NULL OR ${table.receiptError} ~ '^[a-z][a-z0-9_]{0,63}$')
+        AND (${table.status} NOT IN ('booking', 'booking_failed')
+          OR num_nonnulls(${table.collectedAmount}, ${table.courierCharge}, ${table.receiptId}, ${table.receiptError}) = 0)`,
     ),
   ],
 );

@@ -2840,6 +2840,7 @@ export const bn: Messages = {
       cheque: 'চেক',
       mobile_wallet: 'মোবাইল ওয়ালেট',
       card: 'কার্ড',
+      courier: 'কুরিয়ারের COD',
     },
     columns: {
       number: 'নম্বর',
@@ -5107,6 +5108,8 @@ export const bn: Messages = {
         account: 'অ্যাকাউন্ট',
         news: 'কুরিয়ারের খবর',
         test: 'শেষ পরীক্ষা',
+        // Step 28b
+        holds: 'কাছে আছে',
         status: 'অবস্থা',
         actions: 'কাজ',
       },
@@ -5119,6 +5122,11 @@ export const bn: Messages = {
       testWorked: 'key মেনেছে {{date}}',
       testRejected: 'key মানেনি {{date}}',
       testUnreachable: 'উত্তর আসেনি {{date}}',
+      // Step 28b
+      holds_one: '{{amount}} · {{formatted}}টা পার্সেল',
+      holds_other: '{{amount}} · {{formatted}}টা পার্সেল',
+      holdsNothing: 'এখনো কিছু না',
+      holdsNoAccount: 'COD অ্যাকাউন্ট নেই',
       actionsFor: '{{name}}-এর কাজ',
       edit: 'বদলান',
       test: 'কানেকশন পরীক্ষা করুন',
@@ -5174,6 +5182,22 @@ export const bn: Messages = {
         courier: 'কুরিয়ার',
         courierPlaceholder: 'একটা কুরিয়ার বাছুন',
         courierHint: 'যার ওয়েবসাইট বা অ্যাপে বুক করেন। ট্র্যাকিং পেজে এর নাম দেখায়।',
+        // Step 28b
+        codAccount: 'COD অ্যাকাউন্ট',
+        codAccountNone: 'কোনোটা না: রাইডারের টাকা হাতে লিখুন',
+        codAccountHint:
+          'টাকা রাখা হয় এমন একটা অ্যাকাউন্ট, যেমন “Steadfast-এর কাছে নগদ”। পার্সেল পৌঁছালে রাইডার যা নিয়েছেন তার একটা মানি রিসিট এতে জমা হয়। এর ব্যালান্সই কুরিয়ারের কাছে আপনার পাওনা।',
+        codAccountSavedHint:
+          'বদলালে শুধু পরের রিসিটগুলো বদলায়। আগে বানানো রিসিট যে অ্যাকাউন্টে গেছে, সেখানেই থাকে।',
+        chargeAccount: 'কুরিয়ার চার্জের অ্যাকাউন্ট',
+        chargeAccountNone: 'এখনো কোনোটা না',
+        chargeAccountHint:
+          'একটা খরচের অ্যাকাউন্ট, যেমন “কুরিয়ার চার্জ”। কুরিয়ারের পেআউট লেখার সময় তার ডেলিভারি আর ফেরতের চার্জ এখানে যায়।',
+        accountOption: '{{code}} · {{name}}',
+        noCodAccounts:
+          'টাকা রাখা হয় এমন কোনো চালু অ্যাকাউন্ট এখনো নেই। চার্ট অব অ্যাকাউন্টসে নগদ অ্যাকাউন্টের নিচে একটা যোগ করুন, যেমন “Steadfast-এর কাছে নগদ”।',
+        noChargeAccounts:
+          'কোনো চালু খরচের অ্যাকাউন্ট এখনো নেই। চার্ট অব অ্যাকাউন্টসে একটা যোগ করুন।',
         create: 'অ্যাকাউন্ট যোগ করুন',
         save: 'বদল সেভ করুন',
         created: 'কুরিয়ার অ্যাকাউন্ট {{name}} যোগ হয়েছে',
@@ -5607,6 +5631,7 @@ export const bn: Messages = {
         shipped: 'পাঠানো হয়েছে',
         delivered: 'পৌঁছেছে',
         cancelled: 'বাতিল',
+        returned: 'ফেরত এসেছে',
         all: 'সব',
       },
       statuses: {
@@ -5618,6 +5643,8 @@ export const bn: Messages = {
         returned: 'ফেরত এসেছে',
       },
       needsAttention: 'নজর দিন',
+      // Step 28b
+      parcelPills: { partly_delivered: 'আংশিক পৌঁছেছে', returning: 'ফেরত আসছে' },
       columns: {
         order: 'অর্ডার',
         confirmed: 'কনফার্ম হয়েছে',
@@ -5640,6 +5667,7 @@ export const bn: Messages = {
         shipped: 'পথে কোনো অর্ডার নেই।',
         delivered: 'এখনো কোনো অর্ডার পৌঁছায়নি।',
         cancelled: 'কোনো অর্ডার বাতিল হয়নি।',
+        returned: 'কোনো অর্ডার ফেরত আসেনি।',
       },
       noMatchTitle: 'কোনো অর্ডার মেলেনি',
       noMatchBody: 'নম্বর বা ফোন মিলিয়ে দেখুন। খোঁজা হয় শুধু এই ট্যাবে।',
@@ -5670,6 +5698,9 @@ export const bn: Messages = {
       cancel: 'অর্ডার বাতিল করুন',
       // Step 28a
       book: 'কুরিয়ারে বুক করুন',
+      // Step 28b
+      recordCameBack: 'যা ফেরত এসেছে তা লিখুন',
+      receiveReturn: 'ফেরত মাল বুঝে নিন',
       salesOrderMade: '{{number}}-এর সেলস অর্ডার {{salesOrder}} বানানো হয়েছে',
       packed: '{{number}} প্যাক হয়েছে। চালান {{delivery}} পোস্ট হয়েছে।',
       shipped: '{{number}} পাঠানো হয়েছে',
@@ -5681,6 +5712,15 @@ export const bn: Messages = {
       bookingStarted: '{{number}}-এর পার্সেল {{courier}}-এ বুক হচ্ছে',
       booked: '{{number}} {{courier}}-এ বুক হয়েছে, কোড {{code}}',
       bookingAgain: '{{number}}-এর পার্সেল আবার বুক হচ্ছে',
+      // Step 28b
+      deliveredWithReceipt:
+        '{{number}} পৌঁছেছে। ইনভয়েস {{invoice}} আর মানি রিসিট {{receipt}} পোস্ট হয়েছে।',
+      partlyDelivered:
+        '{{number}} আংশিক পৌঁছেছে। সেলস রিটার্ন {{salesReturn}} আর ইনভয়েস {{invoice}} পোস্ট হয়েছে।',
+      partlyDeliveredWithReceipt:
+        '{{number}} আংশিক পৌঁছেছে। সেলস রিটার্ন {{salesReturn}}, ইনভয়েস {{invoice}} আর মানি রিসিট {{receipt}} পোস্ট হয়েছে।',
+      returnReceived:
+        '{{number}} ফেরত এসেছে। সেলস রিটার্ন {{salesReturn}} পোস্ট হয়েছে। ক্রেতা একটা SMS পাবেন।',
       next: {
         confirmed:
           'মাল প্যাক করে প্যাক হয়েছে বলে চিহ্ন দিন। তাতে চালান পোস্ট হয়, স্টক বের হয়, আর আটকে রাখা স্টক ছাড়া পায়।',
@@ -5690,12 +5730,20 @@ export const bn: Messages = {
       },
       recordPayment: 'টাকা জমা লিখুন',
       deliveredPaid: 'ইনভয়েসের টাকা শোধ হয়েছে: অনলাইন পেমেন্টের মানি রিসিট এতে ধরা হয়েছে।',
+      // Step 28b
+      nextDeliveredCod:
+        'রাইডারের টাকা মানি রিসিট {{receipt}}-এ {{courier}}-এর COD অ্যাকাউন্টে জমা হয়েছে। আপনার ব্যাংকে এর পেআউট পরে লেখা হয়।',
+      nextDeliveredNothing:
+        'রাইডার কিছু নেননি, তাই কোনো মানি রিসিট বানানো হয়নি। টাকা এলে সেটা লিখে রাখুন।',
       paidCancelled:
         'ক্রেতা এই অর্ডারের জন্য অনলাইনে {{amount}} দিয়েছেন। আপনার SSLCommerz প্যানেল থেকে টাকাটা ফেরত দিন, তারপর রিফান্ড লিখুন।',
       paidTwice:
         'ক্রেতা অনলাইনে দুবার টাকা দিয়েছেন, প্রতিবার {{amount}}। আপনার SSLCommerz প্যানেল থেকে একটা ফেরত দিন, তারপর রিফান্ড লিখুন।',
       paidOnCod:
         'ক্রেতা অনলাইনেও {{amount}} দিয়েছেন, তারপর ক্যাশ অন ডেলিভারি বেছেছেন। রাইডারকে নগদ না নিতে বলুন। রাইডার নগদও নিয়ে থাকলে একটা ফেরত দিন।',
+      // Step 28b
+      paidPartly:
+        'ক্রেতা অনলাইনে {{amount}} দিয়েছেন, আর পার্সেলের একটা অংশ ফেরত এসেছে। ইনভয়েসে ধরা হয়েছে শুধু যা তিনি রেখেছেন। বাকি টাকা আপনার SSLCommerz প্যানেল থেকে ফেরত দিন, তারপর রিফান্ড লিখুন।',
       recordRefund: 'রিফান্ড লিখুন',
       // Step 28a
       nextNoParcel:
@@ -5706,6 +5754,11 @@ export const bn: Messages = {
       nextShipped:
         '{{courier}} পৌঁছে দিলে অর্ডার নিজে থেকেই পৌঁছেছে-তে যাবে। তাতে ইনভয়েস পোস্ট হয়।',
       nextManual: '{{courier}} পার্সেল নিয়ে গেলে পাঠানো হয়েছে বলে চিহ্ন দিন।',
+      // Step 28b
+      nextPartly:
+        '{{courier}} পার্সেলের একটা অংশ পৌঁছে দিয়েছে। ফেরত আসা মাল দোকানের তাকে উঠলে যা ফেরত এসেছে তা লিখুন। তাতে সেগুলোর সেলস রিটার্ন আর বাকিটার ইনভয়েস পোস্ট হয়।',
+      nextReturning:
+        '{{courier}} পার্সেলটা ফেরত আনছে। দোকানের তাকে উঠলে ফেরত মাল বুঝে নিন। তাতে মাল স্টকে ফেরে আর ক্রেতা একটা SMS পান।',
       parcelFailed: '{{courier}} পার্সেলটা বুক করেনি। {{reason}}',
       bookAgain: 'আবার বুক করুন',
       documentError: 'সেলস অর্ডার বানানো যায়নি। {{reason}}',
@@ -5780,6 +5833,14 @@ export const bn: Messages = {
       deliverTitle: '{{number}} পৌঁছেছে বলে চিহ্ন দেবেন?',
       deliverBody:
         'এতে আজকের তারিখে {{total}}-এর একটা ইনভয়েস পোস্ট হবে। টাকা জমা না লেখা পর্যন্ত এটা বাকি থাকে।',
+      // Step 28b
+      deliverBodyCod:
+        'এতে আজকের তারিখে {{total}}-এর একটা ইনভয়েস পোস্ট হবে, আর রাইডার যা নিয়েছেন তার একটা মানি রিসিট {{courier}}-এর COD অ্যাকাউন্টে জমা হবে।',
+      deliverBodyPaid:
+        'এতে আজকের তারিখে {{total}}-এর একটা ইনভয়েস পোস্ট হবে। অনলাইন পেমেন্টের মানি রিসিট এতে ধরা হবে, তাই এটা শোধ থাকবে।',
+      collected: 'রাইডার যা নিয়েছেন',
+      collectedHint:
+        'রাইডারের নেওয়ার কথা ছিল {{amount}}। ক্রেতা কম দিলে কম লিখুন: বাকিটা ইনভয়েসে পাওনা থাকে। কিছু না নিলে কোনো রিসিট বানানো হয় না।',
       // Step 28a
       parcels: {
         title: 'পার্সেল',
@@ -5807,6 +5868,13 @@ export const bn: Messages = {
         bookedAt: 'বুক হয়েছে',
         lastSynced: 'শেষ খবর',
         neverSynced: 'এখনো আসেনি',
+        // Step 28b
+        collected: 'রাইডার নিয়েছেন',
+        charge: 'কুরিয়ারের চার্জ',
+        receipt: 'মানি রিসিট',
+        receiptError: 'COD রিসিট বানানো যায়নি। {{reason}}',
+        makeReceipt: 'রিসিট বানান',
+        receiptMade: 'মানি রিসিট {{receipt}} বানানো হয়েছে',
         bookingNow: '{{courier}}-এ বুক হচ্ছে…',
         bookingRetry_one: '{{formatted}} বার চেষ্টা হয়েছে। Omnivo নিজে থেকেই আবার চেষ্টা করবে।',
         bookingRetry_other: '{{formatted}} বার চেষ্টা হয়েছে। Omnivo নিজে থেকেই আবার চেষ্টা করবে।',
@@ -5868,6 +5936,38 @@ export const bn: Messages = {
           'পরে "কুরিয়ারে বুক করুন" দিয়ে বুক করুন, অথবা কুরিয়ারের ওয়েবসাইটে হাতে।',
         submit: 'প্যাক হয়েছে বলে চিহ্ন দিন',
         loadFailed: 'কী প্যাক করতে হবে তা আনা যায়নি। এটা বন্ধ করে আবার চেষ্টা করুন।',
+      },
+      // Step 28b
+      cameBack: {
+        title: '{{number}}-এর যা ফেরত এসেছে তা লিখুন',
+        description:
+          'যে মাল ফেরত এসেছে তাতে টিক দিন। একটা সেলস রিটার্ন সেগুলো {{warehouse}}-এ ফেরত আনবে, আর ইনভয়েসে ধরা হবে শুধু যা ক্রেতা রেখেছেন।',
+        take: 'ফেরত এসেছে: {{name}}',
+        sent: '{{quantity}} পাঠানো হয়েছিল',
+        batch: 'ব্যাচ {{lot}}',
+        batchExpires: 'ব্যাচ {{lot}} · মেয়াদ {{date}}',
+        quantity: 'কতগুলো ফেরত এসেছে',
+        serials: 'যে সিরিয়াল নম্বরগুলো ফেরত এসেছে',
+        serialsNone: 'যে সিরিয়াল নম্বরগুলো ফেরত এসেছে সেগুলোতে টিক দিন।',
+        collected: 'রাইডার যা নিয়েছেন',
+        collectedHint:
+          'ক্রেতা যা রেখেছেন তার জন্য। পুরো পার্সেলের জন্য রাইডারের নেওয়ার কথা ছিল {{amount}}। কিছু না নিলে কোনো রিসিট বানানো হয় না।',
+        collectedFromCourier: '{{courier}} বলছে রাইডার {{amount}} নিয়েছেন।',
+        reason: 'কেন ফেরত এসেছে',
+        reasonPlaceholder: 'ক্রেতা দ্বিতীয় ফেস ওয়াশটা চাননি',
+        reasonHint: 'শুধু আপনার টিম এটা দেখে। এটা সেলস রিটার্নে লেখা থাকে।',
+        submit: 'যা ফেরত এসেছে তা লিখুন',
+        loadFailed: 'পার্সেলে কী গিয়েছিল তা আনা যায়নি। এটা বন্ধ করে আবার চেষ্টা করুন।',
+      },
+      receiving: {
+        title: '{{number}} ফেরত বুঝে নেবেন?',
+        body: 'একটা সেলস রিটার্ন চালান {{delivery}}-এর সব মাল স্টকে ফেরত আনবে, আর সেলস অর্ডার বাতিল হবে। অর্ডারটা ফেরত এসেছে-তে যাবে, আর ক্রেতা একটা SMS পাবেন।',
+        check: 'পার্সেল দোকানের তাকে উঠলে তবেই এটা করুন, শুধু কুরিয়ারের কথায় নয়।',
+        reason: 'কেন ফেরত এসেছে',
+        reasonPlaceholder: 'ক্রেতা ফোন ধরেননি',
+        reasonHint: 'শুধু আপনার টিম এটা দেখে। এটা সেলস রিটার্নে লেখা থাকে।',
+        keep: 'এখন না',
+        submit: 'ফেরত মাল বুঝে নিন',
       },
       cancelling: {
         title: '{{number}} বাতিল করবেন?',
@@ -6946,6 +7046,10 @@ export const bn: Messages = {
         // Step 28a
         shipment_booked: 'শপের অর্ডারের পার্সেল কুরিয়ারে বুক করেছেন',
         shipment_retried: 'বুকিং ব্যর্থ হওয়ার পর শপের অর্ডারের পার্সেল আবার বুক করেছেন',
+        // Step 28b
+        partly_delivered: 'শপের আংশিক পৌঁছানো অর্ডারের ফেরত আসা মাল লিখেছেন',
+        returned: 'শপের ফেরত আসা অর্ডার বুঝে নিয়েছেন',
+        cod_receipt_made: 'শপের পৌঁছানো অর্ডারের COD রিসিট আবার বানিয়েছেন',
       },
       // Step 27c
       storefront_coupon: {
@@ -7217,6 +7321,10 @@ export const bn: Messages = {
       webhookToken: 'Webhook token',
       defaultCourier: 'প্রথমে যেটায় বুক হয়',
       trackingCode: 'ট্র্যাকিং কোড',
+      // Step 28b
+      codAccount: 'COD অ্যাকাউন্ট',
+      chargeAccount: 'কুরিয়ার চার্জের অ্যাকাউন্ট',
+      cameBack: 'যে লাইনগুলো ফেরত এসেছে',
     },
     loadFailed: 'অডিট লগ আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
   },
@@ -7322,6 +7430,9 @@ export const bn: Messages = {
         // Step 28a: {{courier}} is the account's name ("Steadfast")
         shipment_failed:
           '{{courier}} {{number}}-এর পার্সেল বুক করেনি। আবার বুক করতে অর্ডারটা খুলুন।',
+        // Step 28b
+        cod_receipt_failed:
+          '{{courier}} {{number}} পৌঁছে দিয়েছে, কিন্তু এর COD রিসিট বানানো যায়নি। বানাতে অর্ডারটা খুলুন।',
       },
     },
   },
@@ -8160,6 +8271,19 @@ export const bn: Messages = {
       'এই অর্ডারের নম্বরে কুরিয়ারের কাছে আগেই একটা পার্সেল আছে। কুরিয়ারের প্যানেলে সেটা খুঁজে বাতিল করুন, তারপর আবার বুক করুন।',
     courier_webhook_token_invalid:
       'এই webhook token ঠিক না। শপের কুরিয়ার পেজ থেকে token পেস্ট করুন।',
+    // Step 28b
+    courier_cod_account_invalid:
+      'টাকা রাখা হয় এমন একটা চালু অ্যাকাউন্ট বাছুন, যেমন “Steadfast-এর কাছে নগদ”, অথবা কোনোটাই না।',
+    courier_charge_account_invalid:
+      'একটা চালু খরচের অ্যাকাউন্ট বাছুন, যেমন “কুরিয়ার চার্জ”, অথবা কোনোটাই না।',
+    storefront_order_collected_over:
+      'এই পার্সেলে রাইডার সর্বোচ্চ {{amount}} নিতে পারেন। কুরিয়ার যত নিয়েছে বলছে, তত লিখুন।',
+    storefront_order_collected_required: 'রাইডার কত নিয়েছেন লিখুন। কুরিয়ার এখনো বলেনি।',
+    storefront_order_return_nothing:
+      'কী ফেরত এসেছে টিক দিন। ক্রেতা সব রেখে দিলে "পৌঁছেছে বলে চিহ্ন দিন" চাপুন।',
+    storefront_order_return_everything: 'সবই ফেরত এসেছে। এর বদলে "ফেরত মাল বুঝে নিন" চাপুন।',
+    storefront_cod_receipt_not_failed:
+      'এই পার্সেলের COD রিসিট ব্যর্থ হয়নি। অর্ডারটা আবার লোড করুন।',
   },
   ui: {
     dataTable: {

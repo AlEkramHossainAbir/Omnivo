@@ -220,16 +220,22 @@ import {
 } from './storefront-coupon-data';
 import {
   cancelShopOrder,
+  courierDeliver,
   deliverShopOrder,
   findShopOrder,
   bookShopOrder,
   type MadeSalesOrder,
+  makeShopCodReceipt,
   makeShopPaymentReceipt,
   packPlanOf,
   packShopOrder,
+  partlyDeliverShopOrder,
   retrySalesOrder,
   retryShopParcel,
+  returnPlanOf,
+  returnShopOrder,
   shipShopOrder,
+  shopCourierNews,
   shopOrderCounts,
   shopOrderPage,
   toShopOrder,
@@ -565,6 +571,13 @@ function recordShopMove(
       },
     ),
   );
+}
+
+// Step 28b: a Delivered's documents: the invoice, and the COD receipt when one was made
+function recordDelivered(data: WorkspaceData, invoiceId: string, receiptId: string | null): void {
+  record(data, 'invoice.created', 'invoice', invoiceId);
+  record(data, 'invoice.posted', 'invoice', invoiceId);
+  if (receiptId !== null) record(data, 'receipt.created', 'receipt', receiptId);
 }
 
 // What making a shop order's sales order writes in the audit log: the customer and the "Delivery
@@ -6260,17 +6273,111 @@ export const handlers = [
     }),
   ),
 
+  // Step 28b: the moves at the shopper's door have their own route group (the contract's TS7056
+  // note). Delivered makes the rider's COD receipt too, when the parcel's account has a COD account
   mock(
-    routes.storefrontOrders.deliverOrder,
+    routes.storefrontOrderDeliveries.deliverOrder,
     guarded(async ({ request, params }) => {
-      const data = shopOrderData(routes.storefrontOrders.deliverOrder.permission);
-      const { id } = routes.storefrontOrders.deliverOrder.params.parse(params);
-      const { version } = await readBody(routes.storefrontOrders.deliverOrder.body, request);
-      const { order, invoiceId } = transaction(data, () => deliverShopOrder(data, id, version));
-      record(data, 'invoice.created', 'invoice', invoiceId);
-      record(data, 'invoice.posted', 'invoice', invoiceId);
+      const data = shopOrderData(routes.storefrontOrderDeliveries.deliverOrder.permission);
+      const { id } = routes.storefrontOrderDeliveries.deliverOrder.params.parse(params);
+      const body = await readBody(routes.storefrontOrderDeliveries.deliverOrder.body, request);
+      const { order, invoiceId, receiptId } = transaction(data, () =>
+        deliverShopOrder(data, id, body),
+      );
+      recordDelivered(data, invoiceId, receiptId);
       recordShopMove(data, 'storefront_order.delivered', order, 'shipped');
-      return reply(routes.storefrontOrders.deliverOrder, toShopOrder(data, order));
+      return reply(routes.storefrontOrderDeliveries.deliverOrder, toShopOrder(data, order));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrderDeliveries.getReturnPlan,
+    guarded(async ({ params }) => {
+      const data = shopOrderData(routes.storefrontOrderDeliveries.getReturnPlan.permission);
+      const { id } = routes.storefrontOrderDeliveries.getReturnPlan.params.parse(params);
+      await delay();
+      return reply(routes.storefrontOrderDeliveries.getReturnPlan, returnPlanOf(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrderDeliveries.partlyDeliverOrder,
+    guarded(async ({ request, params }) => {
+      const route = routes.storefrontOrderDeliveries.partlyDeliverOrder;
+      const data = shopOrderData(route.permission);
+      const { id } = route.params.parse(params);
+      const body = await readBody(route.body, request);
+      const made = transaction(data, () => partlyDeliverShopOrder(data, id, body));
+      record(data, 'sales_return.created', 'sales_return', made.salesReturnId);
+      record(data, 'sales_return.posted', 'sales_return', made.salesReturnId);
+      recordDelivered(data, made.invoiceId, made.receiptId);
+      if (made.salesOrderId !== null) {
+        record(data, 'sales_order.closed', 'sales_order', made.salesOrderId);
+      }
+      record(
+        data,
+        'storefront_order.partly_delivered',
+        'storefront_order',
+        made.order.id,
+        diff(
+          { order: made.order.orderNo, status: 'shipped' },
+          {
+            order: made.order.orderNo,
+            status: 'delivered',
+            cameBack: body.lines.length,
+            reason: body.reason,
+          },
+        ),
+      );
+      return reply(route, toShopOrder(data, made.order));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrderDeliveries.returnOrder,
+    guarded(async ({ request, params }) => {
+      const route = routes.storefrontOrderDeliveries.returnOrder;
+      const data = shopOrderData(route.permission);
+      const { id } = route.params.parse(params);
+      const body = await readBody(route.body, request);
+      const made = transaction(data, () => returnShopOrder(data, id, body));
+      record(data, 'sales_return.created', 'sales_return', made.salesReturnId);
+      record(data, 'sales_return.posted', 'sales_return', made.salesReturnId);
+      if (made.salesOrderId !== null) {
+        record(data, 'sales_order.cancelled', 'sales_order', made.salesOrderId);
+      }
+      record(
+        data,
+        'storefront_order.returned',
+        'storefront_order',
+        made.order.id,
+        diff(
+          { order: made.order.orderNo, status: 'shipped' },
+          { order: made.order.orderNo, status: 'returned', reason: body.reason },
+        ),
+      );
+      return reply(route, toShopOrder(data, made.order));
+    }),
+  ),
+
+  // Not in transaction(): a refusal is kept on the parcel (its receiptError) and still answered
+  mock(
+    routes.storefrontOrderDeliveries.makeCodReceipt,
+    guarded(async ({ request, params }) => {
+      const route = routes.storefrontOrderDeliveries.makeCodReceipt;
+      const data = shopOrderData(route.permission);
+      const { id, shipmentId } = route.params.parse(params);
+      const { version } = await readBody(route.body, request);
+      const { order, receiptId } = makeShopCodReceipt(data, id, shipmentId, version);
+      record(data, 'receipt.created', 'receipt', receiptId);
+      record(
+        data,
+        'storefront_order.cod_receipt_made',
+        'storefront_order',
+        order.id,
+        diff({}, { order: order.orderNo }),
+      );
+      return reply(route, toShopOrder(data, order));
     }),
   ),
 
@@ -6372,7 +6479,7 @@ export const handlers = [
         diff(
           {},
           {
-            ...courierSnapshot(account),
+            ...courierSnapshot(data, account),
             ...(account.provider === 'manual' ? {} : { keys: 'changed', webhookToken: 'changed' }),
           },
         ),
@@ -6389,10 +6496,10 @@ export const handlers = [
       const body = await readBody(routes.shipping.updateCourier.body, request);
       const { before, after, keysChanged } = updateCourier(data, id, body);
       record(data, 'courier_account.updated', 'courier_account', id, {
-        ...diff(courierSnapshot(before), courierSnapshot(after)),
+        ...diff(courierSnapshot(data, before), courierSnapshot(data, after)),
         ...(keysChanged ? { keys: { from: null, to: 'changed' } } : {}),
       });
-      return reply(routes.shipping.updateCourier, toCourierAccount(after));
+      return reply(routes.shipping.updateCourier, toCourierAccount(data, after));
     }),
   ),
 
@@ -6411,7 +6518,7 @@ export const handlers = [
         id,
         diff({}, { testResult: account.lastTest?.problem ?? 'ok' }),
       );
-      return reply(routes.shipping.testCourier, toCourierAccount(account));
+      return reply(routes.shipping.testCourier, toCourierAccount(data, account));
     }),
   ),
 
@@ -6442,10 +6549,10 @@ export const handlers = [
           'courier_account.archived',
           'courier_account',
           id,
-          diff(courierSnapshot(before), courierSnapshot(after)),
+          diff(courierSnapshot(data, before), courierSnapshot(data, after)),
         );
       }
-      return reply(routes.shipping.archiveCourier, toCourierAccount(after));
+      return reply(routes.shipping.archiveCourier, toCourierAccount(data, after));
     }),
   ),
 
@@ -6462,10 +6569,10 @@ export const handlers = [
           'courier_account.restored',
           'courier_account',
           id,
-          diff(courierSnapshot(before), courierSnapshot(after)),
+          diff(courierSnapshot(data, before), courierSnapshot(data, after)),
         );
       }
-      return reply(routes.shipping.restoreCourier, toCourierAccount(after));
+      return reply(routes.shipping.restoreCourier, toCourierAccount(data, after));
     }),
   ),
 
@@ -6481,6 +6588,38 @@ export const handlers = [
         });
       }
       return reply(routes.shipping.setDefaultCourier, setup);
+    }),
+  ),
+
+  // Step 28b: Steadfast's webhook, no login: the account's id in the address and its token in the
+  // Authorization header (the mock keeps the token plain, storefront-seed.ts). A test posts the
+  // courier's news here the way Steadfast posts them. Like the API, a body it cannot read or
+  // about a parcel it does not know is "success" too. The courier's Delivered runs in a
+  // transaction() of its own: refused, the order stays Shipped and the news are kept
+  mock(
+    routes.shipping.steadfastWebhook,
+    guarded(async ({ request, params }) => {
+      const data = current();
+      const { id } = routes.shipping.steadfastWebhook.params.parse(params);
+      const body: unknown = await request.json().catch(() => null);
+      const news = shopCourierNews(data, id, request.headers.get('authorization'), body);
+      if (news !== null) {
+        const { order } = news;
+        if (news.shipped) recordShopMove(data, 'storefront_order.shipped', order, 'packed');
+        if (news.deliver) {
+          try {
+            const made = transaction(data, () => courierDeliver(data, order));
+            recordDelivered(data, made.invoiceId, made.receiptId);
+            recordShopMove(data, 'storefront_order.delivered', order, 'shipped');
+          } catch (error) {
+            if (!(error instanceof MockProblem)) throw error;
+          }
+        }
+      }
+      return reply(routes.shipping.steadfastWebhook, {
+        status: 'success',
+        message: 'Webhook received',
+      });
     }),
   ),
 

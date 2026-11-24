@@ -316,6 +316,12 @@ export const AUDIT_ACTIONS = [
   'storefront.default_courier_set',
   'storefront_order.shipment_booked',
   'storefront_order.shipment_retried',
+  // Step 28b: the order's two ends after the courier: partly delivered (with what came back, the
+  // collected amount and the documents) and returned (Receive the return, with the reason). The
+  // COD receipt writes its own receipt entry; cod_receipt_made is the member's retry of a failed one
+  'storefront_order.partly_delivered',
+  'storefront_order.returned',
+  'storefront_order.cod_receipt_made',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

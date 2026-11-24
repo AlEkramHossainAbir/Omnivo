@@ -1,6 +1,8 @@
 import type { INestApplicationContext } from '@nestjs/common';
 import type { NestFastifyApplication } from '@nestjs/platform-fastify';
 import {
+  accountListSchema,
+  accountSchema,
   type CourierAccount,
   courierAccountSavedSchema,
   courierAccountSchema,
@@ -74,6 +76,12 @@ let nirvorOrder: StorefrontOrder;
 let acmeOrder: StorefrontOrder;
 
 const WHOLE = [{ position: 1, picks: [{ batchId: '', quantity: '2', serialNumbers: [] }] }];
+// An id no row has: the 404 comes before any line is looked at
+const ZERO_ID = '00000000-0000-4000-8000-000000000000';
+// 28b: a courier account's two money accounts (the COD account and the charge account) have no
+// default, so every body sends both. These tests are about the rest of the account: both stay
+// empty, and cod.int.spec.ts tests them
+const NO_COD = { codAccountId: '', chargeAccountId: '' };
 
 function send(who: SignedIn, method: 'GET' | 'POST' | 'PUT', url: string, payload?: object) {
   return app.inject({
@@ -87,6 +95,7 @@ function send(who: SignedIn, method: 'GET' | 'POST' | 'PUT', url: string, payloa
 async function addSteadfast(who: SignedIn, apiKey: string) {
   const res = await send(who, 'POST', '/storefront/couriers', {
     provider: 'steadfast',
+    ...NO_COD,
     name: 'Steadfast',
     apiKey,
     secretKey: `${apiKey}-secret`,
@@ -248,7 +257,7 @@ describe('Shop couriers', () => {
       [
         'PUT',
         `/storefront/couriers/${id}`,
-        { provider: 'steadfast', name: 'Taken', apiKey: '', secretKey: '', ...version },
+        { ...NO_COD, provider: 'steadfast', name: 'Taken', apiKey: '', secretKey: '', ...version },
       ],
       ['POST', `/storefront/couriers/${id}/test`, undefined],
       ['POST', `/storefront/couriers/${id}/webhook-token`, version],
@@ -443,7 +452,16 @@ describe('the database roles', () => {
       code: '42501',
       message: 'permission denied for table storefront_shipments',
     });
-    for (const column of ['cod_amount', 'consignment_id', 'error_detail']) {
+    // Step 28b: and none of the parcel's money
+    for (const column of [
+      'cod_amount',
+      'consignment_id',
+      'error_detail',
+      'collected_amount',
+      'courier_charge',
+      'receipt_id',
+      'receipt_error',
+    ]) {
       expect(
         await deniedAs(
           asShop,
@@ -518,5 +536,125 @@ describe('the database roles', () => {
     } finally {
       await workerSql.end();
     }
+  });
+});
+
+// Step 28b: a workspace's COD money is its own. Nirvor's Steadfast account gets a COD account and
+// delivers one parcel by the courier's news; Acme must not name Nirvor's ledger account, nor move,
+// read or "make the receipt" of Nirvor's order, and what Acme's account holds counts only Acme's
+// parcels
+describe('COD money', () => {
+  it("never names another workspace's ledger account, nor moves or counts its parcels", async () => {
+    const chart = accountListSchema.parse(
+      (await send(nirvorOwner, 'GET', '/accounts')).json(),
+    ).items;
+    const cash = chart.find((account) => account.code === '1110');
+    if (cash?.parentId == null) throw new Error('no Cash in hand');
+    const made = await send(nirvorOwner, 'POST', '/accounts', {
+      parentId: cash.parentId,
+      code: '1191',
+      name: 'Cash with Steadfast',
+      isGroup: false,
+      holdsMoney: true,
+      description: '',
+    });
+    expect(made.statusCode, made.body).toBe(201);
+    const nirvorCash = accountSchema.parse(made.json());
+
+    // Acme cannot put Nirvor's account on its courier account, new or saved
+    const acmeNow = courierSetupSchema.parse(
+      (await send(acmeOwner, 'GET', '/storefront/couriers')).json(),
+    ).accounts[0];
+    for (const [method, url, extra] of [
+      ['POST', '/storefront/couriers', { apiKey: 'acme-2', secretKey: 'acme-2-secret' }],
+      [
+        'PUT',
+        `/storefront/couriers/${acmeAccount.id}`,
+        { apiKey: '', secretKey: '', version: acmeNow?.version },
+      ],
+    ] as const) {
+      const res = await send(acmeOwner, method, url, {
+        provider: 'steadfast',
+        name: 'Steadfast',
+        codAccountId: nirvorCash.id,
+        chargeAccountId: '',
+        ...extra,
+      });
+      expect(res.statusCode, `${method} ${url}`).toBe(422);
+      expect(res.json()).toMatchObject({ code: 'courier_cod_account_invalid' });
+    }
+
+    // Nirvor's account takes its own, and a parcel delivered by the courier's news gets its receipt
+    const own = courierSetupSchema
+      .parse((await send(nirvorOwner, 'GET', '/storefront/couriers')).json())
+      .accounts.find((account) => account.id === nirvorAccount.id);
+    const saved = await send(nirvorOwner, 'PUT', `/storefront/couriers/${nirvorAccount.id}`, {
+      provider: 'steadfast',
+      name: 'Steadfast',
+      apiKey: '',
+      secretKey: '',
+      codAccountId: nirvorCash.id,
+      chargeAccountId: '',
+      version: own?.version,
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const order = await confirmAt(nirvor, nirvorOwner, 1006);
+    expect((await packWith(nirvorOwner, order, nirvorAccount.id)).statusCode).toBe(200);
+    const booked = await bookedAt(nirvorOwner, order.id);
+    // A second later, so the delivered step is newer than the booking by the courier's clock
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const res = await webhook(nirvorAccount.id, nirvorToken, {
+      notification_type: 'delivery_status',
+      consignment_id: Number(booked.shipments.at(-1)?.consignmentId),
+      status: 'delivered',
+      cod_amount: 538,
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const delivered = await getOrder(nirvorOwner, order.id);
+    const parcel = delivered.shipments.at(-1);
+    expect(parcel?.receipt?.number).toMatch(/^MR-/);
+    const holds = async (who: SignedIn) =>
+      courierSetupSchema
+        .parse((await send(who, 'GET', '/storefront/couriers')).json())
+        .accounts.map((account) => account.holds);
+    expect(await holds(nirvorOwner)).toContainEqual({ amount: '538.0000', parcels: 1 });
+    expect(await holds(acmeOwner)).toEqual([{ amount: '0.0000', parcels: 0 }]);
+
+    // Nirvor's order from Acme: not there, for every 28b route
+    const version = { version: delivered.version };
+    for (const [method, url, body] of [
+      ['GET', 'return-plan', undefined],
+      ['POST', 'deliver', { ...version, collectedAmount: null }],
+      [
+        'POST',
+        'partly-deliver',
+        {
+          ...version,
+          lines: [{ deliveryLineId: ZERO_ID, quantity: '1', serialNumbers: [] }],
+          collectedAmount: null,
+          reason: '',
+        },
+      ],
+      ['POST', 'return', { ...version, reason: '' }],
+      ['POST', `shipments/${parcel?.id ?? ''}/receipt`, version],
+    ] as const) {
+      const answer = await send(acmeOwner, method, `/storefront/orders/${order.id}/${url}`, body);
+      expect(answer.statusCode, `${method} ${url}`).toBe(404);
+    }
+    // Acme's own order with Nirvor's parcel: there is no such parcel on it, and Nirvor's parcel
+    // keeps its receipt and no error
+    const acmeOwn = await getOrder(acmeOwner, acmeOrder.id);
+    const mixed = await send(
+      acmeOwner,
+      'POST',
+      `/storefront/orders/${acmeOwn.id}/shipments/${parcel?.id ?? ''}/receipt`,
+      { version: acmeOwn.version },
+    );
+    expect(mixed.statusCode).toBe(409);
+    expect(mixed.json()).toMatchObject({ code: 'storefront_cod_receipt_not_failed' });
+    expect((await getOrder(nirvorOwner, order.id)).shipments.at(-1)).toMatchObject({
+      receipt: { id: parcel?.receipt?.id },
+      receiptError: null,
+    });
   });
 });

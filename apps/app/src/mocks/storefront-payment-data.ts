@@ -59,8 +59,10 @@ function notSetUp(): MockProblem {
 // The Online payment card
 
 // What the two selects offer, read like the API's chartOf(): a money account is a posting account
-// that holds money (itself or a group above it); a fee account an active expense posting account
-function chartOf(data: WorkspaceData): {
+// that holds money (itself or a group above it); a fee account an active expense posting account.
+// Step 28b: exported for a courier account's two selects, which offer the same two lists (the
+// API's courier-accounts.service.ts reads its chartOf too)
+export function chartOf(data: WorkspaceData): {
   moneyAccounts: StorefrontAccountChoice[];
   feeAccounts: StorefrontAccountChoice[];
 } {

@@ -10,6 +10,7 @@ import {
   PackageDeliveredIcon,
   PackageIcon,
   PackageReceiveIcon,
+  PackageRemoveIcon,
   ShippingTruck01Icon,
   ShoppingCart01Icon,
   SmartPhone01Icon,
@@ -46,8 +47,8 @@ import { Link, useParams } from '@tanstack/react-router';
 import { lazy, type ReactNode, Suspense, useCallback, useState } from 'react';
 import { useForm } from 'react-hook-form';
 
-import { CancelDraftDialog } from '../components/cancel-draft-dialog';
 import { DocumentNotice } from '../components/document-notice';
+import { DeliverDialog, deliveredToast, ReceiveDialog } from '../components/storefront-order-door';
 import {
   BookCourierDialog,
   ParcelCards,
@@ -67,10 +68,14 @@ import { useCan } from '../lib/permissions';
 import {
   canBook,
   canCancel,
+  type DoorMove,
+  doorParcel,
   nextStep,
   openParcel,
   type OrderStep,
   parcelFailed,
+  primaryDoorMove,
+  receiptFailed,
   storefrontOrderQuery,
 } from '../lib/storefront-orders';
 import { useOnline } from '../lib/use-online';
@@ -86,6 +91,14 @@ import { useTenantId, useTimeZone } from '../lib/workspace';
 const PackDialog = lazy(() =>
   import('../components/storefront-pack-dialog').then((module) => ({
     default: module.PackDialog,
+  })),
+);
+
+// Step 28b.6: "Record what came back" too: a list with its own read, and most shipped orders are
+// delivered whole
+const CameBackDialog = lazy(() =>
+  import('../components/storefront-came-back').then((module) => ({
+    default: module.CameBackDialog,
   })),
 );
 
@@ -116,7 +129,16 @@ const STEP_BUTTONS = {
   deliver: PackageDeliveredIcon,
 } as const satisfies Record<OrderStep, IconSvgElement>;
 
-type Dialogs = 'pack' | 'deliver' | 'cancel' | 'book' | null;
+// Step 28b: a shipped order's three moves at the door (approved with the mockup). The primary
+// button is the one the parcel asks for (primaryDoorMove); the other two are secondary
+const DOOR_BUTTONS = {
+  cameBack: { icon: PackageRemoveIcon, word: 'recordCameBack' },
+  receive: { icon: PackageReceiveIcon, word: 'receiveReturn' },
+  deliver: { icon: PackageDeliveredIcon, word: 'deliver' },
+} as const satisfies Record<DoorMove, { icon: IconSvgElement; word: string }>;
+const DOOR_MOVES = ['cameBack', 'receive', 'deliver'] as const satisfies readonly DoorMove[];
+
+type Dialogs = 'pack' | 'cancel' | 'book' | DoorMove | null;
 
 // After a move: the order's own answer at once, then every read the move changed. The orders (the
 // list, the sidebar's count), and the sales, stock, books and customers, because Packed posts a
@@ -134,8 +156,10 @@ function useApplyMove(): (saved: StorefrontOrder) => Promise<void> {
             queryKey: [area, tenantId],
             // Not the Packed dialog's plan: it is asked again each time the dialog opens (gcTime
             // 0), and refreshed here, while the dialog is still open, it would ask for the plan
-            // of an order that is packed now, which the API refuses (409)
-            predicate: (query) => query.queryKey[3] !== 'pack-plan',
+            // of an order that is packed now, which the API refuses (409). Step 28b: nor the
+            // return plan, for the same reason (the order is delivered now)
+            predicate: (query) =>
+              query.queryKey[3] !== 'pack-plan' && query.queryKey[3] !== 'return-plan',
           }),
         ),
       );
@@ -524,7 +548,6 @@ function CancelDialog({
 function OrderView({ order }: { order: StorefrontOrder }) {
   const { t, errorText, format } = useLocale();
   const timeZone = useTimeZone();
-  const money = useShopMoney();
   const can = useCan();
   const canManage = can('storefront.order.manage');
   const applyMove = useApplyMove();
@@ -550,11 +573,26 @@ function OrderView({ order }: { order: StorefrontOrder }) {
         ? t('storefront.order.nextManual', { courier })
         : t('storefront.order.nextBooked', { courier });
     }
+    // Step 28b (decisions 6 and 7): the courier said part of it, or all of it, is coming back.
+    // The newest parcel's word, as the list's pill (a parcel coming back is no longer "open")
+    const newest = order.shipments.at(-1);
+    if (order.status === 'shipped' && newest !== undefined) {
+      const courier = newest.account.name;
+      if (newest.status === 'partly_delivered')
+        return t('storefront.order.nextPartly', { courier });
+      if (newest.status === 'returning' || newest.status === 'returned') {
+        return t('storefront.order.nextReturning', { courier });
+      }
+    }
     if (order.status === 'shipped' && open !== null && open.account.provider !== 'manual') {
       return t('storefront.order.nextShipped', { courier: open.account.name });
     }
     return null;
   })();
+  // Step 28b: the parcel at the door, and a COD receipt that could not be made (mine 14)
+  const door = doorParcel(order);
+  const noReceipt = receiptFailed(order);
+  const doorPrimary = primaryDoorMove(order);
 
   // Step 28a: "Book again" on a parcel that failed five times books the same parcel (the same
   // invoice) once more, in the worker
@@ -570,11 +608,26 @@ function OrderView({ order }: { order: StorefrontOrder }) {
     },
   });
 
-  // The two moves with no dialog of their own (Make the sales order, Shipped), and Delivered's
-  // confirm. Their refusals (version_conflict, storefront_order_step_invalid, a sales error on the
-  // retry) belong to no box, so they show above the cards, or in the Delivered dialog
+  // Step 28b (mine 14): "Make the receipt" after a delivered parcel's COD receipt failed. The
+  // answer's parcel has the receipt now (or the error again, which the notice shows)
+  const makeReceipt = useMutation({
+    mutationFn: (parcel: StorefrontShipment) =>
+      call(routes.storefrontOrderDeliveries.makeCodReceipt, {
+        params: { id: order.id, shipmentId: parcel.id },
+        body: { version: order.version },
+      }),
+    onSuccess: async (saved, parcel) => {
+      await applyMove(saved);
+      const made = saved.shipments.find((one) => one.id === parcel.id)?.receipt?.number ?? '';
+      toast(t('storefront.order.parcels.receiptMade', { receipt: made }));
+    },
+  });
+
+  // The two moves with no dialog of their own (Make the sales order, Shipped). Their refusals
+  // (version_conflict, storefront_order_step_invalid, a sales error on the retry) belong to no
+  // box, so they show above the cards. Step 28b: Delivered has its own dialog now (the amount)
   const move = useMutation({
-    mutationFn: (kind: 'makeSalesOrder' | 'ship' | 'deliver') => {
+    mutationFn: (kind: 'makeSalesOrder' | 'ship') => {
       const body = { version: order.version };
       const params = { id: order.id };
       switch (kind) {
@@ -582,8 +635,6 @@ function OrderView({ order }: { order: StorefrontOrder }) {
           return call(routes.storefrontOrders.makeSalesOrder, { params, body });
         case 'ship':
           return call(routes.storefrontOrders.shipOrder, { params, body });
-        case 'deliver':
-          return call(routes.storefrontOrders.deliverOrder, { params, body });
       }
     },
     onSuccess: async (saved, kind) => {
@@ -595,12 +646,7 @@ function OrderView({ order }: { order: StorefrontOrder }) {
               number: saved.orderNo,
               salesOrder: saved.salesOrder?.number ?? '',
             })
-          : kind === 'ship'
-            ? t('storefront.order.shipped', { number: saved.orderNo })
-            : t('storefront.order.delivered', {
-                number: saved.orderNo,
-                invoice: saved.invoice?.number ?? '',
-              }),
+          : t('storefront.order.shipped', { number: saved.orderNo }),
       );
     },
   });
@@ -618,6 +664,10 @@ function OrderView({ order }: { order: StorefrontOrder }) {
     if (next === 'pack' || next === 'deliver') setDialog(next);
     else move.mutate(next);
   };
+  // Step 28b: the three buttons of a shipped order, the primary last (every page header's order)
+  // and the two others in their fixed order before it
+  const doorMoves =
+    step === 'deliver' ? [...DOOR_MOVES.filter((one) => one !== doorPrimary), doorPrimary] : [];
 
   // The notice under the header (decision 1, 29 and the `next` lines). A failed sales order comes
   // first: nothing else can happen before it is made
@@ -640,7 +690,36 @@ function OrderView({ order }: { order: StorefrontOrder }) {
   if (refundCase(order) !== null) notices.push(<RefundNotice key="refund" order={order} />);
   // The two notices above say what comes first; the step's own line only after them
   const blocked = order.documentError !== null || step === 'makeSalesOrder';
-  if (!blocked && invoiceTookPayment(order)) {
+  if (!blocked && noReceipt !== null) {
+    // Step 28b (mine 14, approved with the mockup): the COD receipt failed. crit, like a failed
+    // booking: the rider's cash is in no account until someone makes it. Its reason is the
+    // error's own words, the same as on the parcel card
+    notices.push(
+      <DocumentNotice
+        key="next"
+        tone="crit"
+        icon={Alert02Icon}
+        action={
+          canManage && (
+            <button
+              type="button"
+              disabled={makeReceipt.isPending}
+              className="font-medium text-brand underline-offset-3 hover:underline"
+              onClick={() => {
+                makeReceipt.mutate(noReceipt);
+              }}
+            >
+              {t('storefront.order.parcels.makeReceipt')}
+            </button>
+          )
+        }
+      >
+        {t('storefront.order.parcels.receiptError', {
+          reason: errorText(noReceipt.receiptError ?? 'unknown_error'),
+        })}
+      </DocumentNotice>,
+    );
+  } else if (!blocked && invoiceTookPayment(order)) {
     // Step 27d (decision 6): nothing to record, the invoice took the online payment's receipt
     notices.push(
       <DocumentNotice key="next" tone="neutral">
@@ -683,9 +762,26 @@ function OrderView({ order }: { order: StorefrontOrder }) {
         {parcelText}
       </DocumentNotice>,
     );
+  } else if (!blocked && canManage && order.status === 'delivered' && door?.receipt) {
+    // Step 28b (decision 4): the rider's cash came in on the COD receipt, so nothing to record
+    notices.push(
+      <DocumentNotice key="next" tone="neutral">
+        {t('storefront.order.nextDeliveredCod', {
+          receipt: door.receipt.number ?? '',
+          courier: door.account.name,
+        })}
+      </DocumentNotice>,
+    );
   } else if (!blocked && canManage && order.status !== 'cancelled' && order.status !== 'returned') {
     // Decision 7: a delivered order's money comes in as an ordinary receipt for its invoice, for
-    // someone who may write one
+    // someone who may write one. Step 28b: with a COD account and nothing collected, the line
+    // says why no receipt was made
+    const nothingCollected =
+      order.status === 'delivered' &&
+      door !== null &&
+      door.account.hasCodAccount &&
+      door.collectedAmount !== null &&
+      isZeroMoney(door.collectedAmount);
     const receipt = order.status === 'delivered' &&
       order.invoice !== null &&
       order.customer !== null &&
@@ -700,7 +796,9 @@ function OrderView({ order }: { order: StorefrontOrder }) {
       );
     notices.push(
       <DocumentNotice key="next" tone="neutral" action={receipt}>
-        {t(`storefront.order.next.${order.status}`)}
+        {nothingCollected
+          ? t('storefront.order.nextDeliveredNothing')
+          : t(`storefront.order.next.${order.status}`)}
       </DocumentNotice>,
     );
   }
@@ -761,7 +859,23 @@ function OrderView({ order }: { order: StorefrontOrder }) {
                 {t('storefront.order.book')}
               </Button>
             )}
-            {step !== null && (
+            {/* Step 28b: a shipped order's three moves (approved with the mockup). On a phone
+                the two secondary ones share the first row and the primary takes the second */}
+            {doorMoves.map((one) => (
+              <Button
+                key={one}
+                variant={one === doorPrimary ? 'primary' : 'secondary'}
+                className={cn(one === doorPrimary && 'col-span-2')}
+                onClick={() => {
+                  move.reset();
+                  setDialog(one);
+                }}
+              >
+                <HugeiconsIcon icon={DOOR_BUTTONS[one].icon} size={17} strokeWidth={1.5} />
+                {t(`storefront.order.${DOOR_BUTTONS[one].word}`)}
+              </Button>
+            ))}
+            {step !== null && step !== 'deliver' && (
               <Button
                 className={cn(
                   (!cancellable || bookable) && 'col-span-2',
@@ -780,6 +894,13 @@ function OrderView({ order }: { order: StorefrontOrder }) {
         )}
       </header>
       {moveError !== null && dialog === null && <FormAlert message={moveError} />}
+      {makeReceipt.error !== null && (
+        <FormAlert
+          message={
+            makeReceipt.error instanceof ApiRequestError ? makeReceipt.error.code : 'unknown_error'
+          }
+        />
+      )}
       {retry.error !== null && (
         <FormAlert
           message={retry.error instanceof ApiRequestError ? retry.error.code : 'unknown_error'}
@@ -821,24 +942,57 @@ function OrderView({ order }: { order: StorefrontOrder }) {
         </div>
       </div>
 
-      {dialog === 'deliver' && (
-        // Decision 35: Delivered posts an invoice, so it asks first. The dialog of a cancelled
-        // draft, with this step's words
-        <CancelDraftDialog
-          title={t('storefront.order.deliverTitle', { number: order.orderNo })}
-          body={t('storefront.order.deliverBody', { total: money(order.total) })}
-          keep={t('common.cancel')}
-          confirm={t('storefront.order.deliver')}
-          pending={move.isPending}
-          error={moveError ?? undefined}
-          onConfirm={() => {
-            move.mutate('deliver');
-          }}
-          onClose={() => {
-            setDialog(null);
-          }}
-        />
-      )}
+      {/* Decision 35: Delivered posts an invoice, so it asks first. Step 28b: its own dialog, which
+          asks what the rider collected when a COD receipt will be made */}
+      <Dialog
+        open={dialog === 'deliver'}
+        onOpenChange={(open) => {
+          if (!open) setDialog(null);
+        }}
+      >
+        {dialog === 'deliver' && (
+          <DeliverDialog
+            order={order}
+            onDone={(saved) => afterDialog(saved, deliveredToast(t, saved))}
+          />
+        )}
+      </Dialog>
+      <Dialog
+        open={dialog === 'cameBack'}
+        onOpenChange={(open) => {
+          if (!open) setDialog(null);
+        }}
+      >
+        {dialog === 'cameBack' && (
+          <Suspense fallback={null}>
+            <CameBackDialog
+              order={order}
+              onDone={(saved) => afterDialog(saved, deliveredToast(t, saved))}
+            />
+          </Suspense>
+        )}
+      </Dialog>
+      <Dialog
+        open={dialog === 'receive'}
+        onOpenChange={(open) => {
+          if (!open) setDialog(null);
+        }}
+      >
+        {dialog === 'receive' && (
+          <ReceiveDialog
+            order={order}
+            onDone={(saved) =>
+              afterDialog(
+                saved,
+                t('storefront.order.returnReceived', {
+                  number: saved.orderNo,
+                  salesReturn: saved.salesReturn?.number ?? '',
+                }),
+              )
+            }
+          />
+        )}
+      </Dialog>
       <Dialog
         open={dialog === 'cancel'}
         onOpenChange={(open) => {

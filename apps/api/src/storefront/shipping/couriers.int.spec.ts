@@ -82,6 +82,10 @@ let manual: CourierAccount;
 
 const API_KEY = 'sf-api-7k2m9q4x';
 const SECRET_KEY = 'sf-secret-4n8p1x6w';
+// 28b: a courier account's two money accounts (the COD account and the charge account) have no
+// default, so every body sends both. These tests are about the rest of the account: both stay
+// empty, and cod.int.spec.ts tests them
+const NO_COD = { codAccountId: '', chargeAccountId: '' };
 
 // Two face washes (৳229 each) and the ৳80 delivery charge
 const TOTAL = '538';
@@ -431,6 +435,7 @@ describe('Shop couriers', () => {
   it('adds an API account with its webhook token once, and keeps its keys sealed', async () => {
     const saved = await addAccount({
       provider: 'steadfast',
+      ...NO_COD,
       name: 'Steadfast',
       apiKey: API_KEY,
       secretKey: SECRET_KEY,
@@ -470,7 +475,12 @@ describe('Shop couriers', () => {
     }
 
     // A manual account: a name and a courier, no keys, no webhook
-    const byHand = await addAccount({ provider: 'manual', name: 'RedX by hand', courier: 'redx' });
+    const byHand = await addAccount({
+      ...NO_COD,
+      provider: 'manual',
+      name: 'RedX by hand',
+      courier: 'redx',
+    });
     expect(byHand.webhookToken).toBeNull();
     expect(byHand.account).toMatchObject({
       provider: 'manual',
@@ -494,6 +504,7 @@ describe('Shop couriers', () => {
     // Both boxes empty: the keys stay, so does the last test
     const renamed = await send('PUT', `/storefront/couriers/${steadfast.id}`, {
       provider: 'steadfast',
+      ...NO_COD,
       name: 'Steadfast Mirpur',
       apiKey: '',
       secretKey: '',
@@ -510,6 +521,7 @@ describe('Shop couriers', () => {
     // A form opened before that save
     const stale = await send('PUT', `/storefront/couriers/${steadfast.id}`, {
       provider: 'steadfast',
+      ...NO_COD,
       name: 'Steadfast',
       apiKey: '',
       secretKey: '',
@@ -521,6 +533,7 @@ describe('Shop couriers', () => {
     // Only the API key: the secret key comes from the saved box, in a new box
     const newKey = await send('PUT', `/storefront/couriers/${steadfast.id}`, {
       provider: 'steadfast',
+      ...NO_COD,
       name: 'Steadfast Mirpur',
       apiKey: 'fake_rejected',
       secretKey: '',
@@ -539,6 +552,7 @@ describe('Shop couriers', () => {
     const sealedNow = (await accountRow(steadfast.id)).sealed;
     const same = await send('PUT', `/storefront/couriers/${steadfast.id}`, {
       provider: 'steadfast',
+      ...NO_COD,
       name: 'Steadfast Mirpur',
       apiKey: 'fake_rejected',
       secretKey: SECRET_KEY,
@@ -550,6 +564,7 @@ describe('Shop couriers', () => {
     // Back to the good keys for the tests after this one
     const back = await send('PUT', `/storefront/couriers/${steadfast.id}`, {
       provider: 'steadfast',
+      ...NO_COD,
       name: 'Steadfast',
       apiKey: API_KEY,
       secretKey: '',
@@ -569,6 +584,7 @@ describe('Shop couriers', () => {
     // A manual account stays manual, and has nothing to test
     const fixed = await send('PUT', `/storefront/couriers/${manual.id}`, {
       provider: 'steadfast',
+      ...NO_COD,
       name: 'RedX by hand',
       apiKey: API_KEY,
       secretKey: SECRET_KEY,
@@ -581,6 +597,7 @@ describe('Shop couriers', () => {
     expect(notTestable.json()).toMatchObject({ code: 'courier_account_not_bookable' });
     const otherCourier = await send('PUT', `/storefront/couriers/${manual.id}`, {
       provider: 'manual',
+      ...NO_COD,
       name: 'Paperfly by hand',
       courier: 'paperfly',
       version: manual.version,
@@ -606,6 +623,7 @@ describe('Shop couriers', () => {
     const spare = (
       await addAccount({
         provider: 'steadfast',
+        ...NO_COD,
         name: 'Steadfast spare',
         apiKey: 'k2',
         secretKey: 's2',
@@ -641,6 +659,7 @@ describe('Shop couriers', () => {
     expect(restored.status).toBe('active');
     const edit = await send('PUT', `/storefront/couriers/${spare.id}`, {
       provider: 'steadfast',
+      ...NO_COD,
       name: 'Steadfast spare',
       apiKey: '',
       secretKey: '',
@@ -716,6 +735,7 @@ describe('Shop couriers', () => {
       const [before] = await sql`SELECT count(*)::int AS n FROM courier_accounts`;
       const added = await as('POST', '/storefront/couriers', {
         provider: 'steadfast',
+        ...NO_COD,
         name: 'Steadfast Sylhet',
         apiKey: 'k3',
         secretKey: 's3',
@@ -726,6 +746,7 @@ describe('Shop couriers', () => {
       expect(after?.n).toBe(before?.n);
       const byHand = await as('POST', '/storefront/couriers', {
         provider: 'manual',
+        ...NO_COD,
         name: 'eCourier by hand',
         courier: 'ecourier',
       });
@@ -735,6 +756,7 @@ describe('Shop couriers', () => {
       const current = await accountOf(steadfast.id);
       const typed = await as('PUT', `/storefront/couriers/${steadfast.id}`, {
         provider: 'steadfast',
+        ...NO_COD,
         name: 'Steadfast',
         apiKey: 'k4',
         secretKey: '',
@@ -743,6 +765,7 @@ describe('Shop couriers', () => {
       expect(typed.json()).toMatchObject({ code: 'courier_key_missing' });
       const named = await as('PUT', `/storefront/couriers/${steadfast.id}`, {
         provider: 'steadfast',
+        ...NO_COD,
         name: 'Steadfast',
         apiKey: '',
         secretKey: '',
@@ -766,7 +789,11 @@ describe('Shop couriers', () => {
     ]);
     for (const [method, url, body] of [
       ['GET', '/storefront/couriers', undefined],
-      ['POST', '/storefront/couriers', { provider: 'manual', name: 'RedX', courier: 'redx' }],
+      [
+        'POST',
+        '/storefront/couriers',
+        { ...NO_COD, provider: 'manual', name: 'RedX', courier: 'redx' },
+      ],
       ['PUT', '/storefront/couriers', { accountId: '' }],
       ['POST', `/storefront/couriers/${steadfast.id}/test`, undefined],
     ] as const) {
@@ -1016,6 +1043,7 @@ describe('booking a parcel', () => {
     const sylhet = (
       await addAccount({
         provider: 'steadfast',
+        ...NO_COD,
         name: 'Steadfast Sylhet',
         apiKey: 'k5',
         secretKey: 's5',
@@ -1038,6 +1066,7 @@ describe('booking a parcel', () => {
     const old = (
       await addAccount({
         provider: 'steadfast',
+        ...NO_COD,
         name: 'Steadfast old keys',
         apiKey: 'fake_rejected',
         secretKey: 's6',

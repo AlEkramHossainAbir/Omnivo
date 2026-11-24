@@ -37,8 +37,8 @@ export function bearerOf(header: string | undefined): string | null {
 //    account and a wrong token: the caller learns nothing about which ids exist
 // 2. the token is compared with the hash in constant time, before the body is read at all
 // 3. inside the workspace: the account's last webhook time (the page shows it, decision 16), then
-//    the parcel by the courier's id or by our invoice, only among this account's parcels. The
-//    body never says which workspace or account it is for
+//    in a transaction of its own the parcel by the courier's id or by our invoice, only among this
+//    account's parcels. The body never says which workspace or account it is for
 // A body we cannot read, or one about a parcel we do not know, is answered "success" all the same:
 // a refusal would only make the courier send it again and again, and then stop sending.
 @Injectable()
@@ -72,13 +72,22 @@ export class CourierWebhooks {
 
     const notice = this.couriers[provider].readNotice(body);
     const tenantId = found.data.tenant_id;
-    const sms = await runWithTenant(tenantId, () =>
+    const now = new Date();
+    // Step 28b: the last webhook time commits on its own, before the news. The UPDATE locks the
+    // account's row, and the news then waits for the parcel's order; a member's move on that order
+    // (Mark delivered's COD receipt, Packed, Book courier) holds the order and reads the account
+    // FOR SHARE. In one transaction the two waited for each other, and Postgres killed the webhook
+    // (found by cod.int.spec.ts's race). A webhook whose news then fails still arrived
+    await runWithTenant(tenantId, () =>
       this.withTenant(async (tx) => {
-        const now = new Date();
         await tx
           .update(courierAccounts)
           .set({ lastWebhookAt: now })
           .where(and(eq(courierAccounts.tenantId, tenantId), eq(courierAccounts.id, accountId)));
+      }),
+    );
+    const sms = await runWithTenant(tenantId, () =>
+      this.withTenant(async (tx) => {
         const by =
           notice.consignmentId !== null
             ? eq(storefrontShipments.consignmentId, notice.consignmentId)

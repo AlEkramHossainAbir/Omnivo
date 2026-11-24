@@ -2,13 +2,15 @@ import {
   Alert02Icon,
   CancelCircleIcon,
   Clock01Icon,
+  DeliveryReturn01Icon,
   DeliveryTruck01Icon,
   PackageDeliveredIcon,
   PackageIcon,
   PackageReceiveIcon,
+  PackageRemoveIcon,
 } from '@hugeicons/core-free-icons';
 import type { IconSvgElement } from '@hugeicons/react';
-import type { StorefrontOrderStatus } from '@omnivo/contracts';
+import type { ShipmentStatus, StorefrontOrderStatus } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import { Pill } from '@omnivo/ui';
 
@@ -47,6 +49,32 @@ export function NeedsAttentionPill() {
   return (
     <Pill tone="crit" icon={Alert02Icon}>
       {t('storefront.orders.needsAttention')}
+    </Pill>
+  );
+}
+
+// Step 28b (mine 40, approved with the mockup): a second, warn pill on a shipped order whose newest
+// parcel did not all reach the shopper. The staff act once the goods are back (Record what came
+// back, Receive the return), so warn. The parcel card's icons, so a step reads the same in both
+// places. Only these two: the courier's other steps are its own work
+const PARCEL_WAIT_PILLS = {
+  partly_delivered: PackageRemoveIcon,
+  returning: DeliveryReturn01Icon,
+} as const satisfies Partial<Record<ShipmentStatus, IconSvgElement>>;
+
+export function ParcelWaitPill({
+  status,
+  parcelStatus,
+}: {
+  status: StorefrontOrderStatus;
+  parcelStatus: ShipmentStatus | null;
+}) {
+  const { t } = useLocale();
+  if (status !== 'shipped') return null;
+  if (parcelStatus !== 'partly_delivered' && parcelStatus !== 'returning') return null;
+  return (
+    <Pill tone="warn" icon={PARCEL_WAIT_PILLS[parcelStatus]}>
+      {t(`storefront.orders.parcelPills.${parcelStatus}`)}
     </Pill>
   );
 }

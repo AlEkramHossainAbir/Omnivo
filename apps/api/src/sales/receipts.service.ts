@@ -5,6 +5,7 @@ import {
   type PartyRef,
   type Receipt,
   type ReceiptInput,
+  type ReceiptMethod,
   type ReceiptStatus,
   type ReceiptSummary,
   subtractMoney,
@@ -26,6 +27,10 @@ import { NumberingService } from '../numbering/numbering.service.js';
 import { type Allocation, allocationChanges, checkAllocations } from './allocations.js';
 import { SalesBooksService } from './sales-books.service.js';
 import { assertBranch, assertCustomer, assertMoneyAccount } from './sales-lines.js';
+
+// Step 28b: what insert() takes: the form's receipt, or a shop's with any of RECEIPT_METHODS. The
+// form's input (ReceiptInput) is one of these, so create() passes it as it is
+type ShopReceiptInput = Omit<ReceiptInput, 'method'> & { method: ReceiptMethod };
 
 type ReceiptRow = typeof receipts.$inferSelect;
 
@@ -128,10 +133,12 @@ export class ReceiptsService {
 
   // Step 27d: a shop order's online payment (decision 6), made by the worker in the caller's
   // transaction: posted at once, an advance (no invoice yet), with the gateway's fee in its entry.
-  // Refused with the receipt's own error codes (a closed period, a money account archived since)
+  // Refused with the receipt's own error codes (a closed period, a money account archived since).
+  // Step 28b: and a delivered parcel's COD money, by `courier` (RECEIPT_METHODS), which the form's
+  // own input (ReceiptInput, PAYMENT_METHODS) never takes
   async createForShop(
     tx: Transaction,
-    input: ReceiptInput,
+    input: ShopReceiptInput,
     fee: { accountId: string; amount: string } | null,
   ): Promise<string> {
     return (await this.insert(tx, input, fee)).id;
@@ -330,7 +337,7 @@ export class ReceiptsService {
   // payment's (createForShop, step 27d). currentActorId(): the person, or null for the worker
   private async insert(
     tx: Transaction,
-    input: ReceiptInput,
+    input: ShopReceiptInput,
     fee: { accountId: string; amount: string } | null,
   ): Promise<ReceiptRow> {
     const customer = await assertCustomer(tx, input.customerId);

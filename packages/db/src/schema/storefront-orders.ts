@@ -117,7 +117,8 @@ export const storefrontOrders = pgTable(
     deliveryId: uuid('delivery_id'),
     // The posted invoice made at Delivered (decision 7)
     invoiceId: uuid('invoice_id'),
-    // The posted sales return made when a packed order is cancelled (decision 8)
+    // The posted sales return made when a packed order is cancelled (decision 8). Step 28b: also
+    // what came back of a partly delivered order (before its invoice) and a returned one's
     salesReturnId: uuid('sales_return_id'),
     // Why the handler could not make the sales order (decision 16): an error code
     // ("sales_variant_archived"), never a message. The page shows it with t('errors.…')
@@ -252,12 +253,17 @@ export const storefrontOrders = pgTable(
     // sales order, an invoice and a return only with a challan. Packed, Shipped and Delivered
     // always have their challan, Delivered its invoice, and a cancel after Packed its return. A
     // pending order has none of them: omnivo_shop may INSERT whole rows, and this keeps it from
-    // placing an order that points at a sales order
+    // placing an order that points at a sales order. Step 28b: a return also on a partly
+    // delivered order (Delivered, decision 6) and always on a Returned one, which has no invoice
+    // (decision 7): the whole challan came back, so nothing was billed. A return after the
+    // invoice is a credit note (15d), not this column
     check(
       'storefront_orders_documents_check',
       sql`(${table.deliveryId} IS NULL OR ${table.salesOrderId} IS NOT NULL)
         AND (${table.invoiceId} IS NULL OR ${table.deliveryId} IS NOT NULL)
-        AND (${table.salesReturnId} IS NULL OR (${table.deliveryId} IS NOT NULL AND ${table.status} = 'cancelled'))
+        AND (${table.salesReturnId} IS NULL OR (${table.deliveryId} IS NOT NULL
+          AND ${table.status} IN ('cancelled', 'delivered', 'returned')))
+        AND (${table.status} <> 'returned' OR (${table.salesReturnId} IS NOT NULL AND ${table.invoiceId} IS NULL))
         AND (${table.status} NOT IN ('packed', 'shipped', 'delivered') OR ${table.deliveryId} IS NOT NULL)
         AND (${table.status} <> 'delivered' OR ${table.invoiceId} IS NOT NULL)
         AND (${table.status} <> 'cancelled' OR ${table.packedAt} IS NULL OR ${table.salesReturnId} IS NOT NULL)

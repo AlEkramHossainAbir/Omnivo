@@ -42,6 +42,14 @@ export const PAYMENT_METHODS = [
 ] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+// Step 28b (decision 4): a receipt's method may also be `courier`, the cash a courier's rider
+// collected at the door. Only Delivered on a shop order makes one (into the courier account's COD
+// account), so the receipt's own form never offers it (receiptInputSchema keeps PAYMENT_METHODS),
+// and neither do refunds and supplier payments, which share PAYMENT_METHODS: money never goes back
+// to a shopper, or out to a supplier, "by courier". A receipt read from the API may say it
+export const RECEIPT_METHODS = [...PAYMENT_METHODS, 'courier'] as const;
+export type ReceiptMethod = (typeof RECEIPT_METHODS)[number];
+
 // What is left of a receipt's (or a credit note's) money to apply or to pay back: the amount less
 // what is applied to invoices and what refunds paid back (step 15d)
 export function unappliedOf(money: { amount: string; applied: string; refunded: string }): string {
@@ -79,7 +87,7 @@ export const receiptSummarySchema = z.object({
   // unappliedOf() is what is left.
   applied: z.string(),
   refunded: z.string(),
-  method: z.enum(PAYMENT_METHODS),
+  method: z.enum(RECEIPT_METHODS),
   // The cheque number, the bKash TrxID, the bank's transfer reference
   reference: z.string().nullable(),
   // The money account it went into (accounts.ts → moneyAccountIds)

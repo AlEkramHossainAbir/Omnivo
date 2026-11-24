@@ -464,7 +464,7 @@ Shop appearance আর Shop pages (ধাপ ২৬h): লোগো আর দ�
 - স্ট্যাটাস: webhook (signature + timestamp যাচাই) + polling fallback, `shipment_events` append-only; ERP-র অ্যাডমিনে কুরিয়ারের API key, আর কুরিয়ারের ইভেন্টগুলো ট্র্যাকিং পেজে (ধাপ ২৬e-র মক ইভেন্টের জায়গায়)
 - **কুরিয়ারপ্রতি COD Receivable control account**, remittance CSV/API auto-matching, return ও partial delivery
 
-তিন ভাগে (প্রতিটার নিজের guide):
+চার ভাগে (প্রতিটার নিজের guide):
 
 - **২৮a (হয়েছে):** Storefront → Shop couriers পেজ (Steadfast অ্যাকাউন্ট API দিয়ে, বা যেকোনো কুরিয়ার হাতে; keys
   `CREDENTIALS_KEY` দিয়ে sealed আর write-only, "Test connection", অ্যাকাউন্টপ্রতি webhook ঠিকানা আর একবার দেখানো
@@ -474,9 +474,15 @@ Shop appearance আর Shop pages (ধাপ ২৬h): লোগো আর দ�
   (ইনভয়েস); অর্ডারের পেজে Parcel কার্ড, Book courier, A6 লেবেল, Shop orders-এ "Export for courier" CSV; শপের
   ট্র্যাকিং পেজে কুরিয়ারের আসল ইভেন্ট; `COURIER_MODE=fake|live`। আসল Steadfast account দিয়ে চালানো বাকি। Guide:
   [step-28a-couriers.en.md](step-28a-couriers.en.md)।
-- **২৮b:** কুরিয়ারের COD টাকা: কুরিয়ারপ্রতি COD account, Delivered-এ তাতে money receipt, কুরিয়ারের payout
-  (চার্জ নিজের লাইনে), CSV matching, Returned আর partial delivery।
-- **২৮c:** Pathao (ঠিকানা city, zone, area আলাদা করে)।
+- **২৮b (হয়েছে):** কুরিয়ারের COD টাকা: কুরিয়ার অ্যাকাউন্টে COD account (টাকা রাখার account) আর Courier
+  charges account; Delivered-এ (কুরিয়ারের খবরে বা "Mark delivered"-এ) ইনভয়েসের পরে COD account-এ posted money
+  receipt (method `courier`), কুরিয়ারের `cod_amount` আর `delivery_charge` পার্সেলে, savepoint-এ ব্যর্থ হলে Needs
+  attention + bell + "Make the receipt"; "Record what came back" (ইনভয়েসের আগে sales return, বাকিটার ইনভয়েস) আর
+  "Receive the return" (পুরো sales return, Returned, SMS), কুরিয়ারের কথায় স্টক ফেরে না; Shop couriers-এ Holds
+  কলাম, Shop orders-এ Returned ট্যাব। Guide: [step-28b-cod-money.en.md](step-28b-cod-money.en.md)।
+- **২৮c:** কুরিয়ারের payout ডকুমেন্ট (চার্জ নিজের লাইনে, `storefront.payout.manage`), CSV matching (কলাম
+  mapping + Steadfast preset; আসল payout ফাইল দেখা হয়নি), রিটার্ন চার্জ।
+- **২৮d:** Pathao (ঠিকানা city, zone, area আলাদা করে)।
 
 **দেখবেন:** শপে অর্ডার → OTP → কনফার্ম → Sales Order + ইনভয়েস + কনসাইনমেন্ট অটো তৈরি → ট্র্যাকিং SMS → রেমিট্যান্স এলে ব্যাংকে টাকা বসল। 🎉 **এটাই বাংলাদেশের বাজারে Omnivo-র সবচেয়ে বড় অস্ত্র।**
 
@@ -595,4 +601,4 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
 - [x] **ধাপ ২৬** — শপের ভিত্তি (২৬a–২৬h: শপের সব স্ক্রিন, পাবলিক API, ERP-র Storefront মেনু, Appearance, Pages, seed; স্টেজিং এখনো মক শপে, wildcard হোস্ট বাকি)
 - [x] **ধাপ ২৭** — চেকআউট ও অর্ডার (২৭a–২৭d: অর্ডার DB-তে, স্টক hold, ফোন কোড SMS-এ, ট্র্যাকিং লিংক, limit; ERP-র Shop orders স্ক্রিন, Sales Order, challan, invoice আর sales return; কুপন; SSLCommerz দিয়ে অনলাইন পেমেন্ট, money receipt আর ফি; আসল SMS provider আর SSLCommerz sandbox দিয়ে যাচাই বাকি)
-- [ ] **ধাপ ২৮** — কুরিয়ার অটোমেশন (২৮a হয়েছে: Shop couriers, Packed-এ Steadfast বুকিং, webhook + poll, ট্র্যাকিং; ২৮b COD টাকা আর ২৮c Pathao বাকি; আসল Steadfast দিয়ে যাচাই বাকি)
+- [ ] **ধাপ ২৮** — কুরিয়ার অটোমেশন (২৮a হয়েছে: Shop couriers, Packed-এ Steadfast বুকিং, webhook + poll, ট্র্যাকিং; ২৮b হয়েছে: COD account-এ Delivered-এ money receipt, আংশিক ডেলিভারি আর return; ২৮c payout + CSV matching আর ২৮d Pathao বাকি; আসল Steadfast দিয়ে যাচাই বাকি)

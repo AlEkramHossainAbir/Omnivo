@@ -33,8 +33,9 @@ function accountError(field: 'moneyAccountId' | 'feeAccountId', code: ErrorCode)
 }
 
 // The chart as the two selects need it: every account, small enough to read whole (a few hundred
-// at most, as for the receipt form's moneyAccountIds)
-async function chartOf(tx: Transaction) {
+// at most, as for the receipt form's moneyAccountIds). Step 28b: exported for the courier
+// account's COD and charge accounts (courier-accounts.service.ts), the same two kinds
+export async function chartOf(tx: Transaction) {
   const rows = await tx
     .select({
       id: ledgerAccounts.id,

@@ -8,17 +8,23 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import {
+  asksCollected,
   canBook,
   canCancel,
+  collectedStart,
   courierCsv,
   decimalsOf,
+  doorParcel,
   nextStep,
   openParcel,
   packFormValues,
   parcelFailed,
   parcelsNewestFirst,
   pickedOf,
+  plainMoney,
   plainQuantity,
+  primaryDoorMove,
+  receiptFailed,
   toPackInput,
 } from './storefront-orders';
 
@@ -228,6 +234,76 @@ describe('the parcels', () => {
     // Only a packed order books
     expect(canBook(withParcels('confirmed', []))).toBe(false);
     expect(parcelFailed(withParcels('cancelled', [failed]))).toBeNull();
+  });
+});
+
+// Step 28b.6. A parcel at the door, with only the money the helpers read
+function moneyParcel(
+  id: string,
+  status: StorefrontShipment['status'],
+  money: Partial<
+    Pick<StorefrontShipment, 'codAmount' | 'collectedAmount' | 'receiptError'> & {
+      hasCodAccount: boolean;
+    }
+  > = {},
+): StorefrontShipment {
+  return {
+    id,
+    status,
+    account: { hasCodAccount: money.hasCodAccount ?? true },
+    codAmount: money.codAmount ?? '538.0000',
+    collectedAmount: money.collectedAmount ?? null,
+    receiptError: money.receiptError ?? null,
+  } as StorefrontShipment;
+}
+
+describe('the parcel at the door', () => {
+  it('is the newest one the courier took, never a failed, cancelled or received one', () => {
+    const failed = moneyParcel('p1', 'booking_failed');
+    const delivered = moneyParcel('p2', 'delivered');
+    expect(doorParcel(withParcels('delivered', [failed, delivered]))).toBe(delivered);
+    // The courier took the second parcel: it is the one at the door
+    const second = moneyParcel('p3', 'out_for_delivery');
+    expect(doorParcel(withParcels('shipped', [delivered, second]))).toBe(second);
+    // Received back (mine 28) or a booking that never reached the courier: none
+    expect(doorParcel(withParcels('returned', [moneyParcel('p4', 'returned')]))).toBeNull();
+    expect(doorParcel(withParcels('packed', [failed, moneyParcel('p5', 'cancelled')]))).toBeNull();
+  });
+
+  it('asks what the rider collected only when a COD receipt will be made', () => {
+    expect(asksCollected(moneyParcel('p1', 'in_transit'))).toBe(true);
+    // No COD account: the receipt is typed by hand, as before 28b
+    expect(asksCollected(moneyParcel('p1', 'in_transit', { hasCodAccount: false }))).toBe(false);
+    // Paid online: the rider collects nothing
+    expect(asksCollected(moneyParcel('p1', 'in_transit', { codAmount: '0.0000' }))).toBe(false);
+    expect(asksCollected(null)).toBe(false);
+  });
+
+  it('starts the box with what the courier said, else what the rider was to collect', () => {
+    expect(collectedStart(moneyParcel('p1', 'in_transit'))).toBe('538');
+    expect(
+      collectedStart(moneyParcel('p1', 'partly_delivered', { collectedAmount: '247.5000' })),
+    ).toBe('247.50');
+    // Zero is what the courier said, not "nothing said"
+    expect(collectedStart(moneyParcel('p1', 'delivered', { collectedAmount: '0.0000' }))).toBe('0');
+    expect(plainMoney('1240')).toBe('1240');
+  });
+
+  it('makes the button the parcel asks for the primary one', () => {
+    const shipped = (status: StorefrontShipment['status']) =>
+      withParcels('shipped', [moneyParcel('p1', status)]);
+    expect(primaryDoorMove(shipped('in_transit'))).toBe('deliver');
+    expect(primaryDoorMove(shipped('partly_delivered'))).toBe('cameBack');
+    expect(primaryDoorMove(shipped('returning'))).toBe('receive');
+    expect(primaryDoorMove(shipped('returned'))).toBe('receive');
+    // A manual parcel, or none: the member decides, Mark delivered first
+    expect(primaryDoorMove(withParcels('shipped', []))).toBe('deliver');
+  });
+
+  it('finds the parcel whose COD receipt failed', () => {
+    const failed = moneyParcel('p1', 'delivered', { receiptError: 'receipt_account_invalid' });
+    expect(receiptFailed(withParcels('delivered', [failed]))).toBe(failed);
+    expect(receiptFailed(withParcels('delivered', [moneyParcel('p2', 'delivered')]))).toBeNull();
   });
 });
 

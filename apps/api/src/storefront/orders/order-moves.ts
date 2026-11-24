@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import {
+  type AuditAction,
+  billableQuantity,
   compareMoney,
+  compareQuantity,
   multiplyMoney,
+  prorateMoney,
   spreadMoney,
   type StorefrontOrderStatus,
   todayIn,
@@ -22,6 +26,7 @@ import { AppError, notFound } from '../../common/http/app-error.js';
 import { currentActorId, getTenantId } from '../../common/tenant/tenant-context.js';
 import type { Transaction } from '../../common/tenant/with-tenant.js';
 import { InvoicesService } from '../../sales/invoices.service.js';
+import { ShopCodReceipts } from '../shipping/cod-receipts.js';
 import type { OrderLineRow, OrderRow } from './order-view.js';
 import { ShopPaymentReceipts } from './payment-receipts.js';
 
@@ -51,6 +56,7 @@ export type OrderMove = Partial<
     | 'deliveredAt'
     | 'cancelledAt'
     | 'cancelReason'
+    | 'returnedAt'
     | 'deliveryId'
     | 'invoiceId'
     | 'salesReturnId'
@@ -58,11 +64,14 @@ export type OrderMove = Partial<
 > & { status: StorefrontOrderStatus };
 
 // The new status, its time and its documents in one UPDATE (storefront_orders_documents_check
-// reads them together), the version up, and the audit row of the move
+// reads them together), the version up, and the audit row of the move. Step 28b: `note` names
+// another action for the same status (a partly delivered order is Delivered, with its own audit
+// action) and adds what the audit row should say about it
 export async function moveOrder(
   tx: Transaction,
   before: OrderRow,
   fields: OrderMove,
+  note: { action?: AuditAction; changes?: Record<string, string | number | null> } = {},
 ): Promise<void> {
   await tx
     .update(storefrontOrders)
@@ -78,9 +87,10 @@ export async function moveOrder(
     shipped: 'storefront_order.shipped',
     delivered: 'storefront_order.delivered',
     cancelled: 'storefront_order.cancelled',
-    returned: null,
-  } as const satisfies Record<StorefrontOrderStatus, string | null>;
-  const name = action[fields.status];
+    // Step 28b: Receive the return
+    returned: 'storefront_order.returned',
+  } as const satisfies Record<StorefrontOrderStatus, AuditAction | null>;
+  const name = note.action ?? action[fields.status];
   if (name === null) throw new Error(`No audit action for ${fields.status}`);
   await audit(tx, {
     action: name,
@@ -92,6 +102,7 @@ export async function moveOrder(
         order: before.orderNo,
         status: fields.status,
         ...(fields.cancelReason === undefined ? {} : { reason: fields.cancelReason }),
+        ...note.changes,
       },
     ),
   });
@@ -169,6 +180,7 @@ export class ShopOrderMoves {
   constructor(
     private readonly invoices: InvoicesService,
     private readonly paymentReceipts: ShopPaymentReceipts,
+    private readonly codReceipts: ShopCodReceipts,
   ) {}
 
   // 27b's decision 6: a status only. Step 28a: the courier's "picked up" calls it too
@@ -179,8 +191,20 @@ export class ShopOrderMoves {
 
   // 27b's decision 7: a posted invoice for what the challan took and the delivery charge, dated
   // today (decision 21) and unpaid: the cash the rider brings back is a money receipt. Step 28a:
-  // the courier's "delivered" calls it too
-  async deliver(tx: Transaction, order: OrderRow): Promise<void> {
+  // the courier's "delivered" calls it too. Step 28b: then the rider's COD receipt (decision 4,
+  // cod-receipts.ts) for `collected` (what the member typed, or null), and with `partial` (the
+  // sales return of what came back, made just before in this transaction) the invoice bills only
+  // what the shopper kept (decision 6), the order's audit row says partly delivered, and the
+  // parcel is partly delivered
+  async deliver(
+    tx: Transaction,
+    order: OrderRow,
+    collected: string | null = null,
+    partial: {
+      salesReturnId: string;
+      changes: Record<string, string | number | null>;
+    } | null = null,
+  ): Promise<void> {
     if (order.status !== 'shipped' || order.deliveryId === null) throw stepInvalid();
     const salesOrder = await salesOrderOf(tx, order);
     const orderLines = await orderLinesOf(tx, order.id);
@@ -207,25 +231,37 @@ export class ShopOrderMoves {
     // Each challan line at its order line's price and VAT rate; then the delivery charge, the
     // sales order's lines after the order's own (the maker added it last). Step 27c: and with
     // its share of the order line's discount (a coupon's, spread by the maker), or the invoice
-    // would bill more than the shopper pays
+    // would bill more than the shopper pays. Step 28b: what a line bills is what did not come back
+    // before the invoice (billableQuantity, the invoice's own rule, 15d), with its discount cut in
+    // the same proportion: 1 of 2 pieces kept keeps half the coupon. A shop's challan is in the
+    // base unit (the maker's sales order is), so the quantity is the base quantity. A line that
+    // came back whole is not billed at all
     const discounts = challanDiscounts(challan, soLineById);
-    const goods = challan.map((line) => {
+    const goods = challan.flatMap((line) => {
       const soLine = line.orderLineId === null ? undefined : soLineById.get(line.orderLineId);
       if (soLine === undefined) throw new Error(`Challan line ${line.id} has no order line`);
-      return {
-        variantId: line.variantId,
-        unitId: line.unitId,
-        quantity: line.quantity,
-        description: soLine.description,
-        unitPrice: soLine.unitPrice,
-        discountType: 'amount' as const,
-        discount: discounts.get(line.id) ?? '0',
-        taxRateId: soLine.taxRateId,
-        deliveryLineId: line.id,
-        orderLineId: null,
-        batchId: null,
-        serialNumbers: [],
-      };
+      const kept = billableQuantity(line);
+      if (compareQuantity(kept, '0') <= 0) return [];
+      const share = discounts.get(line.id) ?? '0';
+      return [
+        {
+          variantId: line.variantId,
+          unitId: line.unitId,
+          quantity: kept,
+          description: soLine.description,
+          unitPrice: soLine.unitPrice,
+          discountType: 'amount' as const,
+          discount:
+            compareQuantity(kept, line.baseQuantity) === 0
+              ? share
+              : prorateMoney(share, kept, line.baseQuantity),
+          taxRateId: soLine.taxRateId,
+          deliveryLineId: line.id,
+          orderLineId: null,
+          batchId: null,
+          serialNumbers: [],
+        },
+      ];
     });
     const charges = soLines.slice(orderLines.length).map((soLine) => ({
       variantId: soLine.variantId,
@@ -258,7 +294,27 @@ export class ShopOrderMoves {
     });
     // Step 27d (decision 6): a paid online order's advance pays its invoice at once
     await this.paymentReceipts.applyToInvoice(tx, order.id, invoiceId);
-    await moveOrder(tx, order, { status: 'delivered', deliveredAt: new Date(), invoiceId });
+    await moveOrder(
+      tx,
+      order,
+      {
+        status: 'delivered',
+        deliveredAt: new Date(),
+        invoiceId,
+        ...(partial === null ? {} : { salesReturnId: partial.salesReturnId }),
+      },
+      partial === null
+        ? {}
+        : { action: 'storefront_order.partly_delivered', changes: partial.changes },
+    );
+    // Step 28b: the rider's money, after the advances: the COD receipt pays what they left
+    await this.codReceipts.settle(
+      tx,
+      order,
+      invoiceId,
+      collected,
+      partial === null ? 'delivered' : 'partly_delivered',
+    );
   }
 }
 

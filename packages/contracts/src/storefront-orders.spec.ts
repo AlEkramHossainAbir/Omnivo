@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { SHOP_ORDER_STATUSES } from './storefront.js';
 import {
   cancelStorefrontOrderInputSchema,
+  deliverStorefrontOrderInputSchema,
   packStorefrontOrderInputSchema,
+  partlyDeliverStorefrontOrderInputSchema,
+  returnStorefrontOrderInputSchema,
   STOREFRONT_ORDER_STATUSES,
   storefrontOrderPaymentSchema,
   storefrontOrderQuerySchema,
@@ -63,6 +66,11 @@ describe('the statuses the ERP shows', () => {
 
   it('has no tab for orders that wait for their code', () => {
     expect(storefrontOrderQuerySchema.safeParse({ view: 'pending' }).success).toBe(false);
+  });
+
+  // Step 28b: an order can be returned now, so it has a tab
+  it('has a Returned tab after Cancelled', () => {
+    expect(storefrontOrderQuerySchema.parse({ view: 'returned' }).view).toBe('returned');
   });
 });
 
@@ -137,6 +145,65 @@ describe('Cancel', () => {
     expect(
       cancelStorefrontOrderInputSchema.safeParse({ version: 2, reason: 'x'.repeat(201) }).success,
     ).toBe(false);
+  });
+});
+
+// Step 28b
+describe('Delivered', () => {
+  it('takes what the rider collected, and none (a page from before 28b) as null', () => {
+    expect(deliverStorefrontOrderInputSchema.parse({ version: 5 })).toEqual({
+      version: 5,
+      collectedAmount: null,
+    });
+    expect(
+      deliverStorefrontOrderInputSchema.parse({ version: 5, collectedAmount: '578' })
+        .collectedAmount,
+    ).toBe('578');
+  });
+});
+
+describe('Record what came back', () => {
+  const LINE_A = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+  const LINE_B = '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e';
+
+  it('takes the lines that came back, what was collected and why', () => {
+    const parsed = partlyDeliverStorefrontOrderInputSchema.parse({
+      version: 6,
+      lines: [{ deliveryLineId: LINE_A, quantity: '1', serialNumbers: [] }],
+      collectedAmount: '300',
+      reason: 'Wrong size',
+    });
+    expect(parsed).toMatchObject({ collectedAmount: '300', reason: 'Wrong size' });
+  });
+
+  it('needs at least one line: nothing back is Mark delivered', () => {
+    expect(
+      errorsOf(
+        partlyDeliverStorefrontOrderInputSchema.safeParse({ version: 6, lines: [], reason: '' }),
+      ),
+    ).toEqual({ lines: ['storefront_order_return_nothing'] });
+  });
+
+  it('refuses a challan line twice and a serial number twice, on the second one', () => {
+    const result = partlyDeliverStorefrontOrderInputSchema.safeParse({
+      version: 6,
+      lines: [
+        { deliveryLineId: LINE_A, quantity: '1', serialNumbers: ['356938035643809'] },
+        { deliveryLineId: LINE_B, quantity: '1', serialNumbers: ['356938035643809'] },
+        { deliveryLineId: LINE_A, quantity: '1', serialNumbers: [] },
+      ],
+      reason: '',
+    });
+    expect(errorsOf(result)).toEqual({
+      'lines.1.serialNumbers.0': ['stock_serial_twice'],
+      'lines.2.deliveryLineId': ['return_line_twice'],
+    });
+  });
+});
+
+describe('Receive the return', () => {
+  it('keeps no reason as null', () => {
+    expect(returnStorefrontOrderInputSchema.parse({ version: 7, reason: '' }).reason).toBeNull();
   });
 });
 

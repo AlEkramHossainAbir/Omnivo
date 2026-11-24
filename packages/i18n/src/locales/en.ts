@@ -3032,6 +3032,8 @@ export const en = {
       cheque: 'Cheque',
       mobile_wallet: 'Mobile wallet',
       card: 'Card',
+      // Step 28b: the cash a courier's rider collected, made by a shop order's Delivered only
+      courier: 'Courier COD',
     },
     columns: {
       number: 'Number',
@@ -5504,6 +5506,8 @@ export const en = {
         account: 'Account',
         news: 'Courier’s news',
         test: 'Last test',
+        // Step 28b (decision 12)
+        holds: 'Holds',
         status: 'Status',
         // 28a.6: the row menu's column, read by screen readers only
         actions: 'Actions',
@@ -5520,6 +5524,14 @@ export const en = {
       testWorked: 'Keys accepted {{date}}',
       testRejected: 'Keys refused {{date}}',
       testUnreachable: 'No answer {{date}}',
+      // Step 28b (decision 12): what the courier holds of the shop's cash, the posted COD
+      // receipts of its parcels (a voided one drops out). amount = whole taka, count = the
+      // parcels
+      holds_one: '{{amount}} · {{formatted}} parcel',
+      holds_other: '{{amount}} · {{formatted}} parcels',
+      holdsNothing: 'Nothing yet',
+      // No COD account: the rider's cash is a receipt typed by hand, as before 28b
+      holdsNoAccount: 'No COD account',
       // The row menu
       actionsFor: 'Actions for {{name}}',
       edit: 'Edit',
@@ -5579,6 +5591,23 @@ export const en = {
         courier: 'Courier',
         courierPlaceholder: 'Pick a courier',
         courierHint: 'Whose website or app you book on. The tracking page names it.',
+        // Step 28b (decisions 2, 3 and 20): active accounts only, code · name. Empty is a real
+        // choice, so its option says what it means
+        codAccount: 'COD account',
+        codAccountNone: 'None: record the rider’s cash by hand',
+        codAccountHint:
+          'An account that holds money, like “Cash with Steadfast”. When a parcel is delivered, a money receipt for what the rider collected goes into it. Its balance is what the courier owes you.',
+        // Editing an account that has one: the receipts already made stay where they went
+        codAccountSavedHint:
+          'A change counts for the next receipts only. The receipts already made stay in the account they went into.',
+        chargeAccount: 'Courier charges account',
+        chargeAccountNone: 'None yet',
+        chargeAccountHint:
+          'An expense account, like “Courier charges”. The courier’s delivery and return charges go here when its payout is recorded.',
+        accountOption: '{{code}} · {{name}}',
+        noCodAccounts:
+          'No active account holds money yet. Add one, like “Cash with Steadfast”, under the cash accounts in the chart of accounts.',
+        noChargeAccounts: 'No active expense account yet. Add one in the chart of accounts.',
         create: 'Add account',
         save: 'Save changes',
         created: 'Courier account {{name}} added',
@@ -6061,13 +6090,14 @@ export const en = {
       searchPlaceholder: 'Order number, name or phone',
       view: 'Show',
       // The tabs (STOREFRONT_ORDER_VIEWS). "New" is a confirmed order nobody has packed yet
-      // (decision 13); returned has no tab until step 28, it shows under All
+      // (decision 13). Step 28b (mine 18): Returned, the orders received back
       views: {
         confirmed: 'New',
         packed: 'Packed',
         shipped: 'Shipped',
         delivered: 'Delivered',
         cancelled: 'Cancelled',
+        returned: 'Returned',
         all: 'All',
       },
       // The status pill (STOREFRONT_ORDER_STATUSES), the tab's own word
@@ -6081,6 +6111,9 @@ export const en = {
       },
       // A second, crit pill: the sales order could not be made (decision 16)
       needsAttention: 'Needs attention',
+      // Step 28b (mine 18): a second, warn pill on a shipped order whose newest parcel did not
+      // all reach the shopper (parcelStatus). The staff act once the goods are back
+      parcelPills: { partly_delivered: 'Partly delivered', returning: 'Coming back' },
       columns: {
         order: 'Order',
         confirmed: 'Confirmed',
@@ -6104,6 +6137,8 @@ export const en = {
         shipped: 'No order is on its way.',
         delivered: 'No order is delivered yet.',
         cancelled: 'No order was cancelled.',
+        // Step 28b
+        returned: 'No order came back.',
       },
       noMatchTitle: 'No order matches',
       noMatchBody: 'Check the number or the phone. The search looks in this tab only.',
@@ -6138,6 +6173,9 @@ export const en = {
       cancel: 'Cancel order',
       // Step 28a: on a packed order with no parcel on its way (or one that was cancelled)
       book: 'Book courier',
+      // Step 28b (decisions 6 and 7): on a shipped order, once the goods are back on the shelf
+      recordCameBack: 'Record what came back',
+      receiveReturn: 'Receive the return',
       // The toasts. number = the order's (W-000123), the others the documents' own
       salesOrderMade: 'Sales order {{salesOrder}} made for {{number}}',
       packed: '{{number}} packed. Challan {{delivery}} posted.',
@@ -6150,6 +6188,15 @@ export const en = {
       bookingStarted: 'Booking {{number}}’s parcel with {{courier}}',
       booked: '{{number}} booked with {{courier}}, code {{code}}',
       bookingAgain: 'Booking {{number}}’s parcel again',
+      // Step 28b. receipt = the COD money receipt's number, salesReturn = the return's
+      deliveredWithReceipt:
+        '{{number}} delivered. Invoice {{invoice}} and money receipt {{receipt}} posted.',
+      partlyDelivered:
+        '{{number}} partly delivered. Sales return {{salesReturn}} and invoice {{invoice}} posted.',
+      partlyDeliveredWithReceipt:
+        '{{number}} partly delivered. Sales return {{salesReturn}}, invoice {{invoice}} and money receipt {{receipt}} posted.',
+      returnReceived:
+        '{{number}} returned. Sales return {{salesReturn}} posted. The shopper gets an SMS.',
       // The neutral document notice under the header: what the next step does
       next: {
         confirmed:
@@ -6163,6 +6210,12 @@ export const en = {
       recordPayment: 'Record payment',
       // Step 27d (decision 6): a delivered order paid online. The invoice took its receipt
       deliveredPaid: 'The invoice is paid: it took the online payment’s money receipt.',
+      // Step 28b (decision 4): what came in at the door. They replace next.delivered. receipt =
+      // the COD receipt's number, courier = the account's name
+      nextDeliveredCod:
+        'The rider’s cash came in on money receipt {{receipt}}, into {{courier}}’s COD account. Its payout to your bank is recorded later.',
+      nextDeliveredNothing:
+        'The rider collected nothing, so no money receipt was made. Record the money when it comes.',
       // Step 27d (decision 7): money the shop has to give back. Each notice ends with "Record
       // refund", a new refund for the order's customer. amount = one payment try's amount
       paidCancelled:
@@ -6173,6 +6226,10 @@ export const en = {
       // A cash on delivery order with a paid try: the shopper paid, then chose to pay on delivery
       paidOnCod:
         'The shopper paid {{amount}} online too, then chose cash on delivery. Tell the rider to take no cash. If the rider took it as well, pay one back.',
+      // Step 28b: a partly delivered order paid online. Its invoice took only what the shopper
+      // kept, so the rest of the payment is left over, to pay back
+      paidPartly:
+        'The shopper paid {{amount}} online, and part of the parcel came back. The invoice took only what they kept. Pay the rest back from your SSLCommerz panel, then record the refund.',
       recordRefund: 'Record refund',
       // Step 28a: the next step's line once the order has a parcel (decision 5). courier = the
       // account's name. They replace next.packed and next.shipped
@@ -6184,6 +6241,12 @@ export const en = {
         'The order moves to Delivered by itself when {{courier}} delivers it. That posts the invoice.',
       // A parcel booked by hand: the staff move the order, as before
       nextManual: 'Mark it shipped when {{courier}} picks the parcel up.',
+      // Step 28b (decisions 6 and 7): a shipped order whose parcel did not all reach the
+      // shopper (the newest parcel's status). They replace nextShipped
+      nextPartly:
+        '{{courier}} delivered part of the parcel. Once the goods that came back are on the shelf, record what came back. That posts a sales return of them and the invoice of the rest.',
+      nextReturning:
+        '{{courier}} is bringing the parcel back. Once it is on the shelf, receive the return. That brings the goods back into stock and texts the shopper.',
       // The crit notice of a booking that failed (decision 4). reason = the error's own words
       parcelFailed: '{{courier}} did not book the parcel. {{reason}}',
       bookAgain: 'Book again',
@@ -6281,6 +6344,18 @@ export const en = {
       deliverTitle: 'Mark {{number}} delivered?',
       deliverBody:
         'This posts an invoice for {{total}}, dated today. It stays unpaid until you record the money.',
+      // Step 28b (decisions 4 and 5): the parcel's courier account has a COD account. courier =
+      // the account's name
+      deliverBodyCod:
+        'This posts an invoice for {{total}}, dated today, and a money receipt into {{courier}}’s COD account for what the rider collected.',
+      // An order paid online: the invoice takes that payment's receipt (27d), so it is not unpaid
+      deliverBodyPaid:
+        'This posts an invoice for {{total}}, dated today. It takes the online payment’s money receipt, so it is paid.',
+      // The amount box: only with a COD account and something to collect. amount = the
+      // parcel's codAmount, what the courier was told to collect
+      collected: 'What the rider collected',
+      collectedHint:
+        'The rider was to collect {{amount}}. Type less if the shopper paid less: the rest stays owed on the invoice. With nothing collected, no receipt is made.',
       // Step 28a: one card per parcel, newest first (storefrontShipmentSchema)
       parcels: {
         title: 'Parcel',
@@ -6311,6 +6386,14 @@ export const en = {
         bookedAt: 'Booked',
         lastSynced: 'Last news',
         neverSynced: 'None yet',
+        // Step 28b (decision 5): from the courier's notice, or what the member typed
+        collected: 'Rider collected',
+        charge: 'Courier’s charge',
+        receipt: 'Money receipt',
+        // Mine 14: the COD receipt's error sits on its parcel. reason = the error's own words
+        receiptError: 'The COD receipt could not be made. {{reason}}',
+        makeReceipt: 'Make the receipt',
+        receiptMade: 'Money receipt {{receipt}} made',
         // While booking. count = the calls made so far (attempts)
         bookingNow: 'Booking with {{courier}}…',
         bookingRetry_one: 'Tried {{formatted}} time. Omnivo tries again by itself.',
@@ -6386,6 +6469,48 @@ export const en = {
         courierNoneHint: 'Book it later with Book courier, or by hand on the courier’s website.',
         submit: 'Mark packed',
         loadFailed: "Couldn't load what to pack. Close this and try again.",
+      },
+      // Step 28b (decision 6, mine 16): the "Record what came back" dialog (partlyDeliverOrder).
+      // Its rows are the challan's lines (getReturnPlan), in the challan's order
+      cameBack: {
+        title: 'Record what came back of {{number}}',
+        description:
+          'Tick the goods that came back. A sales return brings them back into {{warehouse}}, and the invoice bills only what the shopper kept.',
+        // The line's checkbox. name = the product's name
+        take: 'Came back: {{name}}',
+        // quantity = what the challan line took, with its unit ("3 pcs")
+        sent: '{{quantity}} sent',
+        batch: 'Batch {{lot}}',
+        batchExpires: 'Batch {{lot}} · expires {{date}}',
+        quantity: 'How many came back',
+        // A serial product: one tick per serial number that left on the line
+        serials: 'Serial numbers that came back',
+        // Step 28b.6 (mine 49): a ticked serial line with no serial number ticked
+        serialsNone: 'Tick the serial numbers that came back.',
+        collected: 'What the rider collected',
+        // amount = the parcel's codAmount, for the whole parcel
+        collectedHint:
+          'For what the shopper kept. The rider was to collect {{amount}} for the whole parcel. With nothing collected, no receipt is made.',
+        // The courier's notice named it (collectedAmount), and the box starts with it
+        collectedFromCourier: '{{courier}} says the rider collected {{amount}}.',
+        reason: 'Why it came back',
+        reasonPlaceholder: 'The shopper did not want the second face wash',
+        reasonHint: 'Only your team sees this. It goes on the sales return.',
+        submit: 'Record what came back',
+        loadFailed: "Couldn't load what the parcel took. Close this and try again.",
+      },
+      // Step 28b (decision 7): the "Receive the return" dialog (returnOrder). delivery = the
+      // challan's number
+      receiving: {
+        title: 'Receive {{number}} back?',
+        body: 'A sales return brings everything on challan {{delivery}} back into stock, and the sales order is cancelled. The order moves to Returned, and the shopper gets an SMS.',
+        // Decision 7: stock comes back only once the parcel is here
+        check: 'Do this once the parcel is on your shelf, not on the courier’s word alone.',
+        reason: 'Why it came back',
+        reasonPlaceholder: 'The shopper did not answer the phone',
+        reasonHint: 'Only your team sees this. It goes on the sales return.',
+        keep: 'Not yet',
+        submit: 'Receive the return',
       },
       // The Cancel dialog (decisions 8 and 19)
       cancelling: {
@@ -7524,6 +7649,10 @@ export const en = {
         // Step 28a
         shipment_booked: 'Booked a shop order’s parcel with a courier',
         shipment_retried: 'Booked a shop order’s parcel again after it failed',
+        // Step 28b
+        partly_delivered: 'Recorded what came back of a partly delivered shop order',
+        returned: 'Received a returned shop order back',
+        cod_receipt_made: 'Made a delivered shop order’s COD receipt again',
       },
       // Step 27c
       storefront_coupon: {
@@ -7805,6 +7934,10 @@ export const en = {
       webhookToken: 'Webhook token',
       defaultCourier: 'Books first',
       trackingCode: 'Tracking code',
+      // Step 28b: a courier account's two accounts (by code), and what came back
+      codAccount: 'COD account',
+      chargeAccount: 'Courier charges account',
+      cameBack: 'Lines that came back',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -7922,6 +8055,9 @@ export const en = {
         // Step 28a: {{courier}} is the account's name ("Steadfast")
         shipment_failed:
           '{{courier}} did not book the parcel of {{number}}. Open the order to book it again.',
+        // Step 28b: {{courier}} is the account's name, as above
+        cod_receipt_failed:
+          '{{number}} was delivered by {{courier}}, but its COD receipt could not be made. Open the order to make it.',
       },
     },
   },
@@ -8793,6 +8929,19 @@ export const en = {
       'The courier already has a parcel with this order’s number. Find it on the courier’s panel and cancel it there, then book again.',
     courier_webhook_token_invalid:
       'This webhook token is not right. Paste the token from Shop couriers.',
+    // Step 28b
+    courier_cod_account_invalid:
+      'Pick an active account that holds money, like Cash with Steadfast, or none.',
+    courier_charge_account_invalid:
+      'Pick an active expense account, like Courier charges, or none.',
+    storefront_order_collected_over:
+      'The rider collects at most {{amount}} for this parcel. Type what the courier says was collected.',
+    storefront_order_collected_required:
+      'Type what the rider collected. The courier has not said it yet.',
+    storefront_order_return_nothing:
+      'Tick what came back. If the shopper kept everything, use Mark delivered.',
+    storefront_order_return_everything: 'Everything came back. Use Receive the return instead.',
+    storefront_cod_receipt_not_failed: 'This parcel’s COD receipt did not fail. Reload the order.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

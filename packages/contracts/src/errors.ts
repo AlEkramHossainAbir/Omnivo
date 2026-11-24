@@ -796,6 +796,23 @@ export const ERROR_CODES = [
   // The courier's webhook with no token or the wrong one, or for an account that is not an API
   // account of this provider. A 401, so the courier's panel shows that something is wrong
   'courier_webhook_token_invalid',
+  // Step 28b: the courier's COD money. On the courier account: a COD account that is not an active
+  // account holding money (or is a group), and a charge account that is not an active expense
+  // account (or is a group)
+  'courier_cod_account_invalid',
+  'courier_charge_account_invalid',
+  // At Delivered: more than the parcel's codAmount typed as collected (the courier was told to
+  // collect that much, never more), and, for a partial delivery, nothing typed and nothing said by
+  // the courier while a COD receipt is to be made (codAmount would be the wrong amount: the
+  // shopper kept only part)
+  'storefront_order_collected_over',
+  'storefront_order_collected_required',
+  // "Record what came back" with nothing ticked (that is Mark delivered) or with every piece
+  // ticked (that is Receive the return)
+  'storefront_order_return_nothing',
+  'storefront_order_return_everything',
+  // "Make the receipt" on a parcel whose COD receipt did not fail
+  'storefront_cod_receipt_not_failed',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

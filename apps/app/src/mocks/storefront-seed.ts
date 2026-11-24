@@ -212,8 +212,9 @@ export interface MockGateway {
 
 // Step 28a: a courier account, as the API's courier_accounts row keeps it. The mock keeps the keys
 // in plain text, as it keeps the gateway's password: it has no key to seal them with, and it never
-// answers them (storefront-shipping-data.ts → toCourierAccount). The webhook token is not kept at
-// all: the API keeps only its hash, and the mock has no courier to post with it
+// answers them (storefront-shipping-data.ts → toCourierAccount). Step 28b: the webhook token too,
+// in plain text where the API keeps only its hash: the mock's webhook (handlers.ts) compares the
+// token a test posts with, and the page still sees only whether there is one
 export interface MockCourierAccount {
   id: string;
   provider: CourierProvider;
@@ -221,7 +222,11 @@ export interface MockCourierAccount {
   courier: ShopCourier;
   // null for a manual account
   keys: { apiKey: string; secretKey: string } | null;
-  hasWebhookToken: boolean;
+  // null for a manual account
+  webhookToken: string | null;
+  // Step 28b: where the rider's cash goes, and where the courier's charges will (null = none)
+  codAccountId: string | null;
+  chargeAccountId: string | null;
   isDefault: boolean;
   archivedAt: string | null;
   lastWebhookAt: string | null;
@@ -249,6 +254,13 @@ export interface MockShipment {
   events: { status: ShopShipmentStatus; at: string; note: string | null }[];
   lastSyncedAt: string | null;
   bookUntil: string | null;
+  // Step 28b: what the rider collected and the courier's charge, as its notice said or a member
+  // typed at Delivered; the COD receipt made for it (looked up by id, like the order's documents),
+  // or why it could not be made
+  collectedAmount: string | null;
+  courierCharge: string | null;
+  receiptId: string | null;
+  receiptError: ErrorCode | null;
 }
 
 // Step 27c: a coupon as the table keeps it (storefront-coupon-data.ts has the rules). The mock has

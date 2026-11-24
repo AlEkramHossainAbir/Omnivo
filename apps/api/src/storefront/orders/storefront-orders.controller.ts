@@ -5,6 +5,8 @@ import { Endpoint } from '../../common/http/endpoint.js';
 import { StorefrontOrdersService } from './storefront-orders.service.js';
 
 type Routes = typeof routes.storefrontOrders;
+// Step 28b: Delivered, what came back and the COD receipt, a route group of their own (mine 17)
+type DeliveryRoutes = typeof routes.storefrontOrderDeliveries;
 
 // Step 27b: Storefront → Shop orders, the ERP's side of the shop's orders. The contract names each
 // route's permission (storefront.order.read or .manage) and the guard checks it; each route hands
@@ -75,12 +77,53 @@ export class StorefrontOrdersController {
     return this.orders.ship(params.id, body.version);
   }
 
-  @Endpoint(routes.storefrontOrders.deliverOrder)
+  @Endpoint(routes.storefrontOrderDeliveries.deliverOrder)
   deliverOrder({
     params,
     body,
-  }: RouteInput<Routes['deliverOrder']>): Promise<RouteResponse<Routes['deliverOrder']>> {
-    return this.orders.deliver(params.id, body.version);
+  }: RouteInput<DeliveryRoutes['deliverOrder']>): Promise<
+    RouteResponse<DeliveryRoutes['deliverOrder']>
+  > {
+    return this.orders.deliver(params.id, body);
+  }
+
+  @Endpoint(routes.storefrontOrderDeliveries.getReturnPlan)
+  getReturnPlan({
+    params,
+  }: RouteInput<DeliveryRoutes['getReturnPlan']>): Promise<
+    RouteResponse<DeliveryRoutes['getReturnPlan']>
+  > {
+    return this.orders.returnPlan(params.id);
+  }
+
+  @Endpoint(routes.storefrontOrderDeliveries.partlyDeliverOrder)
+  partlyDeliverOrder({
+    params,
+    body,
+  }: RouteInput<DeliveryRoutes['partlyDeliverOrder']>): Promise<
+    RouteResponse<DeliveryRoutes['partlyDeliverOrder']>
+  > {
+    return this.orders.partlyDeliver(params.id, body);
+  }
+
+  @Endpoint(routes.storefrontOrderDeliveries.returnOrder)
+  returnOrder({
+    params,
+    body,
+  }: RouteInput<DeliveryRoutes['returnOrder']>): Promise<
+    RouteResponse<DeliveryRoutes['returnOrder']>
+  > {
+    return this.orders.returnOrder(params.id, body);
+  }
+
+  @Endpoint(routes.storefrontOrderDeliveries.makeCodReceipt)
+  makeCodReceipt({
+    params,
+    body,
+  }: RouteInput<DeliveryRoutes['makeCodReceipt']>): Promise<
+    RouteResponse<DeliveryRoutes['makeCodReceipt']>
+  > {
+    return this.orders.makeCodReceipt(params.id, params.shipmentId, body.version);
   }
 
   // Step 27d: "Make the receipt" on the Payments card
