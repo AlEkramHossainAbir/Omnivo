@@ -71,6 +71,7 @@ import {
   UserMultiple02Icon,
   UserTime01Icon,
   WarehouseIcon,
+  ShippingTruck01Icon,
   WebDesign01Icon,
   PaintBoardIcon,
   Files01Icon,
@@ -712,6 +713,10 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
                   </NavLink>
                   <NavLink to="/storefront/settings" icon={WebDesign01Icon}>
                     {t('nav.storefrontSettings')}
+                  </NavLink>
+                  {/* Step 28a: after Shop settings, both set the shop up (decision 15) */}
+                  <NavLink to="/storefront/couriers" icon={ShippingTruck01Icon}>
+                    {t('nav.storefrontCouriers')}
                   </NavLink>
                 </>
               )}

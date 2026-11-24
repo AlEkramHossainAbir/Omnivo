@@ -540,6 +540,27 @@
       "when": 1795320520963,
       "tag": "0076_storefront-payments-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1795405476892,
+      "tag": "0077_storefront-shipping",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1795405478273,
+      "tag": "0078_storefront-shipping-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1795423785563,
+      "tag": "0079_storefront-tracking-order",
+      "breakpoints": true
     }
   ]
 }

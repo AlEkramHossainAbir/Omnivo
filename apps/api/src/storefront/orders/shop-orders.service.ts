@@ -39,6 +39,7 @@ import { lockedCoupon, markOrdered, usedByPhone } from '../coupon-sql.js';
 import { GatewayAccounts } from '../gateway-accounts.js';
 import { checkoutSettingsOf, quotedListings } from '../public-storefront.service.js';
 import { quoteCart } from '../quote.js';
+import { shopShipmentsOf } from '../shipping/shop-shipments.js';
 import { ShopDb, type ShopScope } from '../shop-db.js';
 import { shopUrl } from '../shop-url.js';
 import { confirmPendingOrder } from './confirm-order.js';
@@ -592,7 +593,11 @@ export class ShopOrdersService {
             ),
           );
         if (order === undefined) throw notFound('Order');
-        return trackingOf(order, await this.linesOf(tx, shop, order.id));
+        return trackingOf(
+          order,
+          await this.linesOf(tx, shop, order.id),
+          await shopShipmentsOf(tx, shop.tenantId, order.id),
+        );
       },
       { readOnly: true },
     );
@@ -627,7 +632,11 @@ export class ShopOrdersService {
           );
         return order === undefined
           ? null
-          : trackingOf(order, await this.linesOf(tx, shop, order.id));
+          : trackingOf(
+              order,
+              await this.linesOf(tx, shop, order.id),
+              await shopShipmentsOf(tx, shop.tenantId, order.id),
+            );
       },
       { readOnly: true },
     );

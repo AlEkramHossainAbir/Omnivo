@@ -1462,6 +1462,31 @@ export interface CourierAdapter {
   পেজে নাম, ঠিকানা বা পুরো ফোন নম্বর নেই, কারণ লিংক অন্যকে পাঠানো যায়), আর গুরুত্বপূর্ণ ধাপে SMS পাবে। SMS
   হারালে `/track`-এ ফোন + অর্ডার নম্বর দিয়ে একই পেজ দেখা যায় (এক IP থেকে ১৫ মিনিটে ১০ বার ভুল হলে থামে)।
 
+**যা বানানো হয়েছে (ধাপ ২৮a, ২০২৬-১১-২৩):** উপরের ইন্টারফেসটা পরিকল্পনা ছিল; আসল কোডে `CourierAdapter` ছোট রাখা
+হয়েছে, আর এটা `apps/api/src/shipping/`-এ থাকে (contracts-এ নয়, কারণ শুধু API আর worker এটা চেনে):
+
+- `book` / `find` (invoice দিয়ে খোঁজা) / `status` / `readNotice` (webhook-এর body) / `test` (keys ঠিক কিনা)। এখন
+  দুইটা: `SteadfastAdapter` আর `FakeCourier` (`COURIER_MODE=fake|live`, production-এ fake চলে না, ২৭d-র fake
+  gateway-এর মতো)। Pathao পরে (২৮c), কারণ তার ঠিকানা city/zone/area আলাদা লাগে। `checkServiceability`, `quote`,
+  `cancelConsignment` আর `printLabel` নেই: Steadfast-এর cancel API নেই (কুরিয়ারের প্যানেলে cancel), আর লেবেল ERP
+  নিজেই A6 শিটে ছাপে।
+- **Manual অ্যাকাউন্ট:** যে কুরিয়ারের API নেই, তার জন্য অ্যাকাউন্ট শুধু কুরিয়ারের নাম রাখে; Book courier-এ
+  ট্র্যাকিং কোড হাতে লেখা হয়, অর্ডার বাটন দিয়ে চলে। CSV export (Steadfast-এর bulk upload কলাম) আর লেবেল দুই ধরনের
+  অ্যাকাউন্টেই কাজে লাগে।
+- **কখন বুক হয়:** confirm-এ নয়, **Packed-এ** (তখনই batch/serial বাছা হয় আর বাক্স তৈরি)। Packed dialog-এর "Send
+  with" শুরু হয় ডিফল্ট অ্যাকাউন্ট দিয়ে; ডিফল্ট না থাকলে "Don't book now"। তাই "বুক বন্ধ" মানে শুধু ডিফল্ট নেই।
+- **Idempotency:** কুরিয়ারের `invoice` = আমাদের অর্ডার নম্বর (`W-000123`, দ্বিতীয় পার্সেল `W-000123-2`), আর
+  `storefront_shipments`-এ `UNIQUE (tenant_id, courier_account_id, invoice)` + অর্ডারপ্রতি একটাই চলমান পার্সেল।
+  টাইমআউটের পরের চেষ্টায় worker আগে invoice দিয়ে কুরিয়ারকে জিজ্ঞেস করে।
+- **Webhook:** অ্যাকাউন্টপ্রতি একটা ঠিকানা `POST /public/v1/couriers/steadfast/<account id>`, অ্যাকাউন্টের নিজের
+  Bearer token (একবারই দেখানো হয়, শুধু hash রাখা)। Steadfast signature দেয় না, তাই token-ই যাচাই। body-র shape
+  ভুল হলেও 400 দেওয়া হয় না (দিলে কুরিয়ার পাঠানো বন্ধ করে); অপড়া notice raw রেখে দেওয়া হয়।
+- **ইভেন্ট:** `storefront_shipment_events` append-only, `event_key` দিয়ে একবারই। Picked up → Shipped (আর ক্রেতাকে
+  SMS), delivered → Delivered (ইনভয়েস, ২৭b-র মতো)। পিক আপের পরে cancel নয়, সেটা return (২৮b)।
+- কুরিয়ারের keys `CREDENTIALS_KEY` দিয়ে sealed, `courier_accounts` শুধু `omnivo_app` পড়ে; শপ শুধু ট্র্যাকিং কোড
+  পাওয়া পার্সেল আর পড়া যায় এমন ইভেন্ট দেখে (`omnivo_shop`-এর column grant + restrictive policy)।
+- আসল Steadfast API এখনো চালানো হয়নি (test account নেই); প্রথম live শপের আগে একটা আসল পার্সেল বুক করে দেখতে হবে।
+
 **COD-র টাকা: সবচেয়ে বেশি অবহেলিত অংশ।** কুরিয়ার ক্রেতার কাছ থেকে টাকা তোলে, কিন্তু আপনাকে দেয় ৩–৭ দিন পরে, চার্জ কেটে। তাই হিসাব হবে এভাবে:
 
 | ঘটনা | জার্নাল |

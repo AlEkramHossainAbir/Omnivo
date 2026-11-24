@@ -40,7 +40,7 @@ import { z } from 'zod';
 import { audit, created, diff } from '../common/audit/audit.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
-import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
+import { currentActorId, currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import {
@@ -254,8 +254,10 @@ export class InvoicesService {
       .values({
         tenantId: getTenantId(),
         ...fields.header,
-        createdBy: currentPrincipal().userId,
-        updatedBy: currentPrincipal().userId,
+        // Step 28a: currentActorId(), because a shop order's Delivered can come from the courier's
+        // news (no member; null, as the worker's own documents, 27b's decision 20)
+        createdBy: currentActorId(),
+        updatedBy: currentActorId(),
       })
       .returning();
     if (!row) throw new Error('Invoice insert returned no row');
@@ -778,9 +780,9 @@ export class InvoicesService {
         status: 'posted',
         number,
         postedAt: new Date(),
-        postedBy: currentPrincipal().userId,
+        postedBy: currentActorId(),
         version: sql`${invoices.version} + 1`,
-        updatedBy: currentPrincipal().userId,
+        updatedBy: currentActorId(),
       })
       .where(and(eq(invoices.tenantId, tenantId), eq(invoices.id, draft.id)));
     await audit(tx, {

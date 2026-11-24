@@ -4,10 +4,12 @@ import {
   Delete02Icon,
   Image01Icon,
   PlusSignIcon,
+  ShippingTruck01Icon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   contractErrorMap,
+  type CourierChoices,
   packStorefrontOrderInputSchema,
   routes,
   type StorefrontOrder,
@@ -24,6 +26,7 @@ import {
   IconButton,
   Input,
   Select,
+  SelectField,
 } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
 import { useCallback, useId, useState } from 'react';
@@ -35,6 +38,7 @@ import {
   type PackLineValues,
   pickedOf,
   plainQuantity,
+  storefrontCourierChoicesQuery,
   storefrontPackPlanQuery,
   toPackInput,
 } from '../lib/storefront-orders';
@@ -52,7 +56,8 @@ const MAX_PICKS = 20;
 
 // The paths this dialog has a place for. Anything else the API names shows above the lines, so no
 // refusal is ever silent
-const PLACED = /^lines\.\d+\.(position|picks(\.\d+\.(batchId|quantity|serialNumbers(\.\d+)?))?)$/;
+const PLACED =
+  /^(lines\.\d+\.(position|picks(\.\d+\.(batchId|quantity|serialNumbers(\.\d+)?))?)|courierAccountId)$/;
 
 type Errors = Record<string, string>;
 
@@ -324,14 +329,23 @@ function PackLine({
 function PackForm({
   order,
   plan,
+  choices,
   onDone,
 }: {
   order: StorefrontOrder;
   plan: StorefrontPackPlan;
+  // null: the accounts could not be read. Packing never waits for a courier: the select is left
+  // out, and the parcel is booked later with Book courier
+  choices: CourierChoices | null;
   onDone: (saved: StorefrontOrder) => Promise<void>;
 }) {
   const { t } = useLocale();
   const [lines, setLines] = useState(() => packFormValues(plan));
+  // Step 28a (decision 13): API accounts only (a manual one has no code yet at Packed), starting
+  // with the default; with none, "Don't book now"
+  const bookable = choices?.accounts.filter((account) => account.provider !== 'manual') ?? [];
+  const [courierAccountId, setCourierAccountId] = useState(choices?.defaultAccountId ?? '');
+  const courier = bookable.find((account) => account.id === courierAccountId) ?? null;
   const [errors, setErrors] = useState<Errors>({});
   const [rootError, setRootError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -352,7 +366,7 @@ function PackForm({
     // The contract's own checks first (a quantity typed wrong, a serial number twice), with the
     // same paths as the API's, so a mistake shows without a round trip
     const parsed = packStorefrontOrderInputSchema.safeParse(
-      toPackInput(plan, lines, order.version),
+      { ...toPackInput(plan, lines, order.version), courierAccountId },
       { error: contractErrorMap },
     );
     if (!parsed.success) {
@@ -426,6 +440,31 @@ function PackForm({
             />
           );
         })}
+        {/* Step 28a: after the lines, the last thing the packer decides. Only while the shop has
+            an account that books by API: without one there is nothing to choose */}
+        {bookable.length > 0 && (
+          <div className="pt-2">
+            <SelectField
+              label={t('storefront.order.packing.courier')}
+              icon={ShippingTruck01Icon}
+              name="courierAccountId"
+              value={courierAccountId}
+              onChange={(event) => {
+                setCourierAccountId(event.target.value);
+              }}
+              options={[
+                { value: '', label: t('storefront.order.packing.courierNone') },
+                ...bookable.map((account) => ({ value: account.id, label: account.name })),
+              ]}
+              hint={
+                courier === null
+                  ? t('storefront.order.packing.courierNoneHint')
+                  : t('storefront.order.packing.courierHint', { courier: courier.name })
+              }
+              error={errors.courierAccountId}
+            />
+          </div>
+        )}
       </form>
     </DialogContent>
   );
@@ -439,8 +478,16 @@ export function PackDialog({
   onDone: (saved: StorefrontOrder) => Promise<void>;
 }) {
   const { t } = useLocale();
-  const plan = useQuery(storefrontPackPlanQuery(useTenantId(), order.id));
-  if (plan.data) return <PackForm order={order} plan={plan.data} onDone={onDone} />;
+  const tenantId = useTenantId();
+  const plan = useQuery(storefrontPackPlanQuery(tenantId, order.id));
+  // Step 28a: the accounts for "Send with", asked with the plan. The form waits for both, so the
+  // select never appears under the packer's hand; a failed read is no select (null)
+  const choices = useQuery(storefrontCourierChoicesQuery(tenantId));
+  if (plan.data && (choices.data !== undefined || choices.isError)) {
+    return (
+      <PackForm order={order} plan={plan.data} choices={choices.data ?? null} onDone={onDone} />
+    );
+  }
   // Until the plan comes, the dialog's frame, so the button's press always opens something; when
   // it cannot come, the line that says to close and try again
   return (

@@ -1,11 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
-  compareMoney,
+  type BookShipmentInput,
   compareQuantity,
+  type CourierChoices,
+  type CourierExport,
   type DocumentRef,
   type ErrorCode,
   isErrorCode,
-  multiplyMoney,
   type PackStorefrontOrderInput,
   type StorefrontOrder,
   type StorefrontOrderCounts,
@@ -17,10 +18,8 @@ import {
   type StorefrontOrderSummary,
   type StorefrontPackPlan,
   storefrontImageSchema,
-  spreadMoney,
   sumQuantity,
   subtractQuantity,
-  todayIn,
 } from '@omnivo/contracts';
 import {
   batches,
@@ -31,24 +30,22 @@ import {
   products,
   productVariants,
   receipts,
-  salesOrderLines,
   salesOrders,
   salesReturns,
   stockBalances,
+  courierAccounts,
   storefrontImages,
   storefrontOrderLines,
   storefrontOrders,
   storefrontPayments,
   storefrontSettings,
   storefrontStockHolds,
-  tenantSettings,
   units,
   warehouses,
 } from '@omnivo/db';
 import { and, asc, eq, gt, inArray, ne, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { audit, diff } from '../../common/audit/audit.js';
 import { containsPattern } from '../../common/db/search.js';
 import { AppError, notFound, versionConflict } from '../../common/http/app-error.js';
 import { decodeCursor, toPage } from '../../common/pagination/cursor.js';
@@ -57,14 +54,33 @@ import type { Transaction, WithTenant } from '../../common/tenant/with-tenant.js
 import type { Config } from '../../config.js';
 import { CONFIG, WITH_TENANT } from '../../infra/tokens.js';
 import { DeliveriesService } from '../../sales/deliveries.service.js';
-import { InvoicesService } from '../../sales/invoices.service.js';
 import { SalesOrdersService } from '../../sales/sales-orders.service.js';
 import { SalesReturnsService } from '../../sales/sales-returns.service.js';
 import { cancelledSms } from '../../sms/shop-sms.js';
 import { SmsQueue } from '../../sms/sms-queue.js';
 import { isoText } from '../listing-sql.js';
 import { shopImage } from '../media.js';
-import { historyOf, type OrderLineRow, type OrderRow } from './order-view.js';
+import {
+  lockOrder,
+  moveOrder,
+  orderLinesOf,
+  salesOrderLinesOf,
+  salesOrderOf,
+  ShopOrderMoves,
+  shopToday,
+  stepInvalid,
+} from './order-moves.js';
+import { codAmountOf, historyOf, type OrderRow } from './order-view.js';
+import {
+  cancelShipments,
+  courierChoicesOf,
+  courierExportRows,
+  followOrder,
+  parcelNeedsAttention,
+  retryShipment,
+  shipmentsOf,
+  startShipment,
+} from '../shipping/shipments.js';
 import { ShopPaymentReceipts } from './payment-receipts.js';
 import { ShopSalesOrderMaker } from './sales-order-maker.js';
 
@@ -118,14 +134,6 @@ function invalidCursor(): AppError {
   return new AppError(400, 'invalid_cursor', 'The cursor is not valid for this list.');
 }
 
-function stepInvalid(): AppError {
-  return new AppError(
-    409,
-    'storefront_order_step_invalid',
-    'This order has moved on since it was loaded. Reload it.',
-  );
-}
-
 // The statuses the ERP shows (decision 13). The routes never read a pending order (their WHERE
 // says status <> 'pending'), so one here is a bug, and a loud one
 function erpStatus(order: OrderRow): StorefrontOrderStatus {
@@ -144,7 +152,13 @@ function numberOf(order: OrderRow): string {
   return order.orderNo;
 }
 
-function summaryOf(order: OrderRow, items: number): StorefrontOrderSummary {
+// Step 28a: parcelAttention is the parcel's half of "Needs attention" (its last booking failed),
+// worked out by the caller: in SQL for the list, from the parcels for the order page
+function summaryOf(
+  order: OrderRow,
+  items: number,
+  parcelAttention: boolean,
+): StorefrontOrderSummary {
   return {
     id: order.id,
     orderNo: numberOf(order),
@@ -157,7 +171,7 @@ function summaryOf(order: OrderRow, items: number): StorefrontOrderSummary {
     paymentMethod: order.paymentMethod,
     itemCount: items,
     total: order.total,
-    needsAttention: order.documentError !== null,
+    needsAttention: order.documentError !== null || parcelAttention,
   };
 }
 
@@ -207,10 +221,10 @@ export class StorefrontOrdersService {
     private readonly maker: ShopSalesOrderMaker,
     private readonly salesOrders: SalesOrdersService,
     private readonly deliveries: DeliveriesService,
-    private readonly invoices: InvoicesService,
     private readonly salesReturns: SalesReturnsService,
     private readonly sms: SmsQueue,
     private readonly paymentReceipts: ShopPaymentReceipts,
+    private readonly moves: ShopOrderMoves,
   ) {
     this.mediaUrl = config.storefront.mediaUrl;
   }
@@ -240,14 +254,19 @@ export class StorefrontOrdersService {
       }
       const direction = sort.desc ? sql`DESC` : sql`ASC`;
       const rows = await tx
-        .select({ order: storefrontOrders, items: itemCount, sortKey: sort.text })
+        .select({
+          order: storefrontOrders,
+          items: itemCount,
+          sortKey: sort.text,
+          parcelAttention: parcelNeedsAttention,
+        })
         .from(storefrontOrders)
         .where(and(...filters))
         .orderBy(sql`${sort.key} ${direction}`, sql`${storefrontOrders.id} ${direction}`)
         .limit(q.limit + 1);
       const page = toPage(rows, q.limit, (last) => [q.sort, last.sortKey, last.order.id]);
       return {
-        items: page.items.map((row) => summaryOf(row.order, row.items)),
+        items: page.items.map((row) => summaryOf(row.order, row.items, row.parcelAttention)),
         nextCursor: page.nextCursor,
       };
     });
@@ -346,7 +365,7 @@ export class StorefrontOrdersService {
     return this.withTenant(async (tx) => {
       const order = await this.find(tx, id);
       if (order.status !== 'confirmed') throw stepInvalid();
-      const salesOrder = await this.salesOrderOf(tx, order);
+      const salesOrder = await salesOrderOf(tx, order);
       const [warehouse] = await tx
         .select({ id: warehouses.id, name: warehouses.name })
         .from(warehouses)
@@ -392,9 +411,11 @@ export class StorefrontOrdersService {
     return this.withTenant(async (tx) => {
       const order = await this.lock(tx, id, input.version);
       if (order.status !== 'confirmed') throw stepInvalid();
-      const salesOrder = await this.salesOrderOf(tx, order);
-      const orderLines = await this.orderLinesOf(tx, id);
-      const soLines = await this.salesOrderLinesOf(tx, salesOrder.id);
+      // Step 28a: the courier first, so a wrong pick is refused before any stock moves
+      if (input.courierAccountId !== null) await this.bookableAtPack(tx, input.courierAccountId);
+      const salesOrder = await salesOrderOf(tx, order);
+      const orderLines = await orderLinesOf(tx, id);
+      const soLines = await salesOrderLinesOf(tx, salesOrder.id);
 
       // Every line of the order once, and only its lines (the contract refused a line twice).
       // The picks of a line add up to what the shopper ordered: the challan would take whatever
@@ -455,7 +476,7 @@ export class StorefrontOrdersService {
         deliveryId = await this.deliveries.postForShopOrder(tx, {
           customerId: salesOrder.customerId,
           orderId: salesOrder.id,
-          date: await this.today(tx),
+          date: await shopToday(tx),
           warehouseId: salesOrder.warehouseId,
           shippingAddress: salesOrder.shippingAddress,
           note: null,
@@ -467,104 +488,64 @@ export class StorefrontOrdersService {
           challanLines.map((entry) => entry.at),
         );
       }
-      await this.move(tx, order, { status: 'packed', packedAt: new Date(), deliveryId });
+      await moveOrder(tx, order, { status: 'packed', packedAt: new Date(), deliveryId });
+      // Step 28a (decision 2): the parcel in the same transaction as the challan. The worker books
+      // it once this commits; a Packed that rolls back books nothing
+      if (input.courierAccountId !== null) {
+        await startShipment(tx, await lockOrder(tx, id), {
+          accountId: input.courierAccountId,
+          trackingCode: '',
+        });
+      }
       return this.read(tx, id);
     });
   }
 
-  // Decision 6: a status only. The courier comes in step 28
+  // Step 28a: "Book courier" on a packed order (decision 2), with an API or a manual account
+  bookShipment(id: string, input: BookShipmentInput): Promise<StorefrontOrder> {
+    return this.withTenant(async (tx) => {
+      const order = await this.lock(tx, id, input.version);
+      await startShipment(tx, order, input);
+      return this.read(tx, id);
+    });
+  }
+
+  // Step 28a: "Book again" after five failed tries (decision 4)
+  retryShipment(id: string, shipmentId: string, version: number): Promise<StorefrontOrder> {
+    return this.withTenant(async (tx) => {
+      const order = await this.lock(tx, id, version);
+      await retryShipment(tx, order, shipmentId);
+      return this.read(tx, id);
+    });
+  }
+
+  // Step 28a (decision 19): the rows for a courier's bulk upload
+  // Step 28a.6: the Packed dialog's and Book courier's accounts
+  courierChoices(): Promise<CourierChoices> {
+    return this.withTenant((tx) => courierChoicesOf(tx));
+  }
+
+  courierExport(): Promise<CourierExport> {
+    return this.withTenant((tx) => courierExportRows(tx));
+  }
+
+  // Decision 6: a status only (the moves are in order-moves.ts since 28a)
   ship(id: string, version: number): Promise<StorefrontOrder> {
     return this.withTenant(async (tx) => {
       const order = await this.lock(tx, id, version);
-      if (order.status !== 'packed') throw stepInvalid();
-      await this.move(tx, order, { status: 'shipped', shippedAt: new Date() });
+      await this.moves.ship(tx, order);
+      // Step 28a: a parcel booked by hand follows the button (decision 5)
+      await followOrder(tx, id, 'picked_up');
       return this.read(tx, id);
     });
   }
 
-  // Decision 7: a posted invoice for what the challan took and the delivery charge, dated today
-  // (decision 21) and unpaid: the cash the rider brings back is a money receipt
+  // Decision 7: the invoice (order-moves.ts)
   deliver(id: string, version: number): Promise<StorefrontOrder> {
     return this.withTenant(async (tx) => {
       const order = await this.lock(tx, id, version);
-      if (order.status !== 'shipped' || order.deliveryId === null) throw stepInvalid();
-      const salesOrder = await this.salesOrderOf(tx, order);
-      const orderLines = await this.orderLinesOf(tx, id);
-      const soLines = await this.salesOrderLinesOf(tx, salesOrder.id);
-      const soLineById = new Map(soLines.map((line) => [line.id, line]));
-      const challan = await tx
-        .select()
-        .from(deliveryLines)
-        .where(
-          and(
-            eq(deliveryLines.tenantId, getTenantId()),
-            eq(deliveryLines.deliveryId, order.deliveryId),
-          ),
-        )
-        .orderBy(asc(deliveryLines.lineNo));
-      const [branch] = await tx
-        .select({ id: warehouses.branchId })
-        .from(warehouses)
-        .where(
-          and(eq(warehouses.tenantId, getTenantId()), eq(warehouses.id, salesOrder.warehouseId)),
-        );
-      if (!branch) throw new Error(`Warehouse ${salesOrder.warehouseId} is missing`);
-
-      // Each challan line at its order line's price and VAT rate; then the delivery charge, the
-      // sales order's lines after the order's own (the maker added it last). Step 27c: and with
-      // its share of the order line's discount (a coupon's, spread by the maker), or the invoice
-      // would bill more than the shopper pays
-      const discounts = challanDiscounts(challan, soLineById);
-      const goods = challan.map((line) => {
-        const soLine = line.orderLineId === null ? undefined : soLineById.get(line.orderLineId);
-        if (soLine === undefined) throw new Error(`Challan line ${line.id} has no order line`);
-        return {
-          variantId: line.variantId,
-          unitId: line.unitId,
-          quantity: line.quantity,
-          description: soLine.description,
-          unitPrice: soLine.unitPrice,
-          discountType: 'amount' as const,
-          discount: discounts.get(line.id) ?? '0',
-          taxRateId: soLine.taxRateId,
-          deliveryLineId: line.id,
-          orderLineId: null,
-          batchId: null,
-          serialNumbers: [],
-        };
-      });
-      const charges = soLines.slice(orderLines.length).map((soLine) => ({
-        variantId: soLine.variantId,
-        unitId: soLine.unitId,
-        quantity: soLine.quantity,
-        description: soLine.description,
-        unitPrice: soLine.unitPrice,
-        discountType: 'amount' as const,
-        discount: '0',
-        taxRateId: soLine.taxRateId,
-        deliveryLineId: null,
-        orderLineId: soLine.id,
-        batchId: null,
-        serialNumbers: [],
-      }));
-      const invoiceId = await this.invoices.createIn(tx, {
-        customerId: salesOrder.customerId,
-        date: await this.today(tx),
-        note: null,
-        lines: [...goods, ...charges],
-        // The customer's payment terms from today: 0 days for a new shop customer
-        dueDate: null,
-        customerReference: order.orderNo,
-        branchId: branch.id,
-        warehouseId: null,
-        post: true,
-        // Never over the limit: the invoice bills the confirmed order at its own prices, which
-        // moves the amount from "on order" to "owed" and adds nothing (CreditService.check)
-        overrideCreditLimit: false,
-      });
-      // Step 27d (decision 6): a paid online order's advance pays its invoice at once
-      await this.paymentReceipts.applyToInvoice(tx, order.id, invoiceId);
-      await this.move(tx, order, { status: 'delivered', deliveredAt: new Date(), invoiceId });
+      await this.moves.deliver(tx, order);
+      await followOrder(tx, id, 'delivered');
       return this.read(tx, id);
     });
   }
@@ -580,6 +561,9 @@ export class StorefrontOrdersService {
     const { order, sms } = await this.withTenant(async (tx) => {
       const before = await this.lock(tx, id, input.version);
       if (before.status !== 'confirmed' && before.status !== 'packed') throw stepInvalid();
+      // Step 28a (decision 21): a parcel only booked is cancelled with the order; one booking or
+      // with the courier refuses the cancel
+      await cancelShipments(tx, before);
       let salesReturnId: string | null = null;
       if (before.status === 'packed') {
         salesReturnId = await this.returnChallan(tx, before);
@@ -596,7 +580,7 @@ export class StorefrontOrdersService {
       if (before.salesOrderId !== null) {
         await this.salesOrders.cancelIn(tx, before.salesOrderId, null);
       }
-      await this.move(tx, before, {
+      await moveOrder(tx, before, {
         status: 'cancelled',
         cancelledAt: new Date(),
         cancelReason: input.reason,
@@ -647,7 +631,7 @@ export class StorefrontOrdersService {
       .orderBy(asc(deliveryLines.lineNo));
     return this.salesReturns.createIn(tx, {
       customerId: challan.customerId,
-      date: await this.today(tx),
+      date: await shopToday(tx),
       warehouseId: challan.warehouseId,
       // The return's own list of reasons has no "order cancelled"; the shop order's page says
       // why, and the return's audit row names the order through its challan
@@ -681,73 +665,26 @@ export class StorefrontOrdersService {
     });
   }
 
-  // The new status, its time and its documents in one UPDATE (storefront_orders_documents_check
-  // reads them together), the version up, and the audit row of the move
-  private async move(
-    tx: Transaction,
-    before: OrderRow,
-    fields: Partial<
-      Pick<
-        OrderRow,
-        | 'status'
-        | 'packedAt'
-        | 'shippedAt'
-        | 'deliveredAt'
-        | 'cancelledAt'
-        | 'cancelReason'
-        | 'deliveryId'
-        | 'invoiceId'
-        | 'salesReturnId'
-      >
-    > & { status: StorefrontOrderStatus },
-  ): Promise<void> {
-    await tx
-      .update(storefrontOrders)
-      .set({
-        ...fields,
-        version: sql`${storefrontOrders.version} + 1`,
-        updatedBy: currentPrincipal().userId,
-      })
-      .where(and(eq(storefrontOrders.tenantId, getTenantId()), eq(storefrontOrders.id, before.id)));
-    const action = {
-      confirmed: null,
-      packed: 'storefront_order.packed',
-      shipped: 'storefront_order.shipped',
-      delivered: 'storefront_order.delivered',
-      cancelled: 'storefront_order.cancelled',
-      returned: null,
-    } as const satisfies Record<StorefrontOrderStatus, string | null>;
-    const name = action[fields.status];
-    if (name === null) throw new Error(`No audit action for ${fields.status}`);
-    await audit(tx, {
-      action: name,
-      entityType: 'storefront_order',
-      entityId: before.id,
-      changes: diff(
-        { order: before.orderNo, status: before.status },
-        {
-          order: before.orderNo,
-          status: fields.status,
-          ...(fields.cancelReason === undefined ? {} : { reason: fields.cancelReason }),
-        },
-      ),
-    });
+  // Step 28a: Packed books with an active API account only (28a.1's packStorefrontOrderInputSchema):
+  // a manual parcel needs the courier's code, which does not exist before the box is handed over
+  private async bookableAtPack(tx: Transaction, accountId: string): Promise<void> {
+    const [account] = await tx
+      .select({ provider: courierAccounts.provider, archivedAt: courierAccounts.archivedAt })
+      .from(courierAccounts)
+      .where(and(eq(courierAccounts.tenantId, getTenantId()), eq(courierAccounts.id, accountId)));
+    if (account === undefined || account.provider === 'manual' || account.archivedAt !== null) {
+      throw new AppError(
+        422,
+        'courier_account_not_bookable',
+        'Pick an active courier account that books by API, or Don’t book now.',
+        { fieldErrors: { courierAccountId: ['courier_account_not_bookable'] } },
+      );
+    }
   }
 
-  // FOR UPDATE, never a pending order (that one is the shopper's), and the version the page read
+  // FOR UPDATE (order-moves.ts's lockOrder), and the version the page read
   private async lock(tx: Transaction, id: string, version: number): Promise<OrderRow> {
-    const [order] = await tx
-      .select()
-      .from(storefrontOrders)
-      .where(
-        and(
-          eq(storefrontOrders.tenantId, getTenantId()),
-          eq(storefrontOrders.id, id),
-          ne(storefrontOrders.status, 'pending'),
-        ),
-      )
-      .for('update');
-    if (!order) throw notFound('Shop order');
+    const order = await lockOrder(tx, id);
     if (order.version !== version) throw versionConflict();
     return order;
   }
@@ -765,46 +702,6 @@ export class StorefrontOrdersService {
       );
     if (!order) throw notFound('Shop order');
     return order;
-  }
-
-  // The order's sales order, which Packed and Delivered build on
-  private async salesOrderOf(tx: Transaction, order: OrderRow) {
-    if (order.salesOrderId === null) {
-      throw new AppError(
-        409,
-        'storefront_order_no_sales_order',
-        'This order has no sales order yet. Make the sales order first.',
-      );
-    }
-    const [row] = await tx
-      .select()
-      .from(salesOrders)
-      .where(and(eq(salesOrders.tenantId, getTenantId()), eq(salesOrders.id, order.salesOrderId)));
-    if (!row) throw new Error(`Sales order ${order.salesOrderId} is missing`);
-    return row;
-  }
-
-  private orderLinesOf(tx: Transaction, orderId: string): Promise<OrderLineRow[]> {
-    return tx
-      .select()
-      .from(storefrontOrderLines)
-      .where(
-        and(
-          eq(storefrontOrderLines.tenantId, getTenantId()),
-          eq(storefrontOrderLines.orderId, orderId),
-        ),
-      )
-      .orderBy(asc(storefrontOrderLines.position));
-  }
-
-  private salesOrderLinesOf(tx: Transaction, salesOrderId: string) {
-    return tx
-      .select()
-      .from(salesOrderLines)
-      .where(
-        and(eq(salesOrderLines.tenantId, getTenantId()), eq(salesOrderLines.orderId, salesOrderId)),
-      )
-      .orderBy(asc(salesOrderLines.lineNo));
   }
 
   // The order's lines with what the ERP knows of each variant now: its SKU, its base unit's code
@@ -875,14 +772,6 @@ export class StorefrontOrdersService {
       byVariant.set(variantId, [...(byVariant.get(variantId) ?? []), batch]);
     }
     return byVariant;
-  }
-
-  private async today(tx: Transaction): Promise<string> {
-    const [settings] = await tx
-      .select({ timezone: tenantSettings.timezone })
-      .from(tenantSettings)
-      .where(eq(tenantSettings.tenantId, getTenantId()));
-    return todayIn(settings?.timezone ?? 'Asia/Dhaka');
   }
 
   // Part of the number ("W-000123", "123"), of the name, or of the phone with its spaces and
@@ -964,10 +853,15 @@ export class StorefrontOrdersService {
       )
       .where(and(eq(storefrontPayments.tenantId, tenantId), eq(storefrontPayments.orderId, id)))
       .orderBy(asc(storefrontPayments.tryNo));
+    // Step 28a: the parcels, and what the rider collects (decision 20) from the paid tries read
+    // above
+    const shipments = await shipmentsOf(tx, id);
+    const last = shipments.at(-1);
     return {
       ...summaryOf(
         order,
         lines.reduce((count, { line }) => count + line.quantity, 0),
+        order.status === 'packed' && last?.status === 'booking_failed',
       ),
       address: order.address,
       history: historyOf(order),
@@ -1027,6 +921,13 @@ export class StorefrontOrdersService {
             ? payment.receiptError
             : null,
       })),
+      codAmount: codAmountOf(
+        order.total,
+        payments
+          .filter(({ payment }) => payment.status === 'paid')
+          .map(({ payment }) => payment.amount),
+      ),
+      shipments,
       version: order.version,
       updatedAt: order.updatedAt.toISOString(),
     };
@@ -1049,34 +950,4 @@ function fefo(
     left = subtractQuantity(left, take);
   }
   return picks;
-}
-
-// Step 27c: each challan line's share of its sales order line's discount, by challan line id. A
-// line packed from two batches is two challan lines of one order line, so the order line's
-// discount is spread over them by what each is worth at the order's price (spreadMoney: to the
-// paisa, adding up to the discount exactly). One challan line per order line, the usual case,
-// takes the whole discount. The maker wrote every discount of a shop's sales order as an amount
-// (sales-order-maker.ts); a line without one gets none. Exported for its unit test
-export function challanDiscounts(
-  challan: readonly { id: string; orderLineId: string | null; quantity: string }[],
-  orderLines: ReadonlyMap<string, { discountType: string; discount: string; unitPrice: string }>,
-): Map<string, string> {
-  const byOrderLine = new Map<string, { id: string; quantity: string }[]>();
-  for (const line of challan) {
-    if (line.orderLineId === null) continue;
-    byOrderLine.set(line.orderLineId, [...(byOrderLine.get(line.orderLineId) ?? []), line]);
-  }
-  const shares = new Map<string, string>();
-  for (const [orderLineId, lines] of byOrderLine) {
-    const orderLine = orderLines.get(orderLineId);
-    if (orderLine?.discountType !== 'amount' || compareMoney(orderLine.discount, '0') === 0) {
-      continue;
-    }
-    const pieces = spreadMoney(
-      orderLine.discount,
-      lines.map((line) => multiplyMoney(line.quantity, orderLine.unitPrice)),
-    );
-    lines.forEach((line, index) => shares.set(line.id, pieces[index] ?? '0'));
-  }
-  return shares;
 }

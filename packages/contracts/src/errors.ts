@@ -755,6 +755,47 @@ export const ERROR_CODES = [
   // Step 27d.4: a delete refused because the account is chosen on the shop's Payment card (the
   // money or the fee account). Archiving it is allowed: Pay online then leaves the checkout
   'account_used_by_shop',
+  // Step 28a: couriers. On the Shop couriers page: a key with other characters, the first save of
+  // an API account without both keys, a manual account with no courier picked, and the server with
+  // no CREDENTIALS_KEY (the same key the payment gateway's password is sealed with)
+  'courier_key_format',
+  'courier_key_required',
+  'courier_pick_one',
+  'courier_key_missing',
+  // The default or a Packed booking with a manual or archived account (a manual parcel has no code
+  // yet at Packed), a change to an archived account, and an account of another provider in a save
+  // (the provider never changes)
+  'courier_account_not_bookable',
+  'courier_account_archived',
+  'courier_provider_fixed',
+  // Book courier: no account picked, a manual parcel without its tracking code or with other
+  // characters in it, an order that is not packed (or is shipped already), an order with a parcel
+  // on its way, and Book again on a parcel that did not fail
+  'courier_pick_account',
+  'courier_tracking_code_required',
+  'courier_tracking_code_format',
+  'storefront_order_not_bookable',
+  'storefront_order_has_parcel',
+  'storefront_shipment_not_failed',
+  // Cancel after the courier picked the parcel up: it comes back as a return (step 28b)
+  'storefront_order_parcel_on_its_way',
+  // 28a.3: cancel while the worker is still booking the parcel. The booking ends booked or failed
+  // within about 15 minutes (decision 4); cancelling in between could leave a parcel at the
+  // courier for an order that no longer exists
+  'storefront_order_parcel_booking',
+  // Why a booking failed, kept on the parcel and shown with Book again (decision 4): the courier
+  // refused the keys (the tenant's account, not our bug, §14.6 rule 5), refused the parcel itself
+  // (its own words in errorDetail: "Invalid phone number"), or never answered in time
+  'courier_rejected_keys',
+  'courier_rejected_parcel',
+  'courier_unreachable',
+  // 28a.3: the courier has a parcel with this order's number already (an earlier call reached it
+  // and its answer was lost), but its answer does not say the tracking code (Steadfast's
+  // status_by_invoice). The parcel is found on the courier's panel
+  'courier_invoice_taken',
+  // The courier's webhook with no token or the wrong one, or for an account that is not an API
+  // account of this provider. A 401, so the courier's panel shows that something is wrong
+  'courier_webhook_token_invalid',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

@@ -1,5 +1,7 @@
 import {
   compareQuantity,
+  type CourierExportRow,
+  isOpenShipment,
   isQuantity,
   type PackStorefrontOrderFormValues,
   routes,
@@ -7,6 +9,7 @@ import {
   type StorefrontOrderSort,
   type StorefrontOrderView,
   type StorefrontPackPlan,
+  type StorefrontShipment,
   sumQuantity,
 } from '@omnivo/contracts';
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
@@ -64,6 +67,16 @@ export function storefrontPackPlanQuery(tenantId: string, orderId: string) {
     queryFn: () => call(routes.storefrontOrders.getPackPlan, { params: { id: orderId } }),
     staleTime: 0,
     gcTime: 0,
+  });
+}
+
+// Step 28a.6: the accounts the Packed dialog and Book courier offer (courierChoices). Asked each
+// time one of them opens, like the pack plan: an account archived a minute ago must not be offered
+export function storefrontCourierChoicesQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['storefront', tenantId, 'orders', 'courier-choices'],
+    queryFn: () => call(routes.storefrontOrders.courierChoices),
+    staleTime: 0,
   });
 }
 
@@ -187,4 +200,87 @@ export function pickedOf(
   );
   // sumQuantity writes four decimals; the count shows what a person would write
   return { picked: plainQuantity(picked), complete: compareQuantity(picked, quantity) === 0 };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28a: the order's parcels
+
+// The order's parcels come oldest first (storefrontOrderSchema). The page shows the newest first:
+// the one that matters now is on top, and an earlier failed one sits under it
+export function parcelsNewestFirst(order: StorefrontOrder): StorefrontShipment[] {
+  return [...order.shipments].reverse();
+}
+
+// The parcel on its way, if any. The database keeps at most one per order (28a.2's open_idx)
+export function openParcel(order: StorefrontOrder): StorefrontShipment | null {
+  return order.shipments.find((parcel) => isOpenShipment(parcel.status)) ?? null;
+}
+
+// "Needs attention" on the order's page, by the API's own rule for the list (parcelNeedsAttention):
+// a packed order whose last parcel failed to book. "Book again" made a new parcel, so a failed one
+// under a newer one no longer counts
+export function parcelFailed(order: StorefrontOrder): StorefrontShipment | null {
+  const last = order.shipments.at(-1);
+  return order.status === 'packed' && last?.status === 'booking_failed' ? last : null;
+}
+
+// "Book courier": a packed order with no parcel on its way (none yet, or the last one failed or
+// was cancelled). The API refuses the rest with storefront_order_not_bookable
+export function canBook(order: StorefrontOrder): boolean {
+  return order.status === 'packed' && openParcel(order) === null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28a: the export for a courier's bulk upload (decision 19)
+
+// The columns of Steadfast's bulk upload, in its own words, which the other couriers' panels take
+// too. They stay English in a Bangla app: the courier's panel reads them, not a person
+export const COURIER_CSV_COLUMNS = [
+  'Invoice',
+  'Name',
+  'Address',
+  'Phone',
+  'Amount',
+  'Note',
+] as const;
+
+// One CSV cell. Quoted when it holds a comma, a quote or a line break (an address often has all
+// three), with its quotes doubled. A shopper typed the name and the address: one that starts with
+// = + - or @ would run as a formula when the file is opened in Excel, so it gets a ' in front
+// (OWASP's CSV injection advice). Only those two: a phone or an amount never starts that way, and
+// a ' there would reach the courier's panel
+function csvCell(value: string, typed = false): string {
+  const safe = typed && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+// Found in 28a.7: the API answers money with 4 decimals ("538.0000"), and a courier's panel wants
+// taka and paisa ("538.00"). Every shop amount is whole paisa (its prices, and a percent off rounds
+// to the paisa), so the last two digits are always 0 and cutting them loses nothing
+function paisaOf(amount: string): string {
+  const [whole = '0', fraction = ''] = amount.split('.');
+  return `${whole}.${fraction.padEnd(2, '0').slice(0, 2)}`;
+}
+
+// The whole file. note(count) is the rider's line ("3 items", in the reader's words). CRLF, as
+// RFC 4180 says, and a byte order mark first, so Excel reads a Bangla name as UTF-8, not as
+// question marks. The amount with paisa and a dot (paisaOf): the courier's panel reads it
+export function courierCsv(
+  rows: readonly CourierExportRow[],
+  note: (count: number) => string,
+): string {
+  const lines = [
+    COURIER_CSV_COLUMNS.join(','),
+    ...rows.map((row) =>
+      [
+        csvCell(row.invoice),
+        csvCell(row.name, true),
+        csvCell(row.address, true),
+        csvCell(row.phone),
+        csvCell(paisaOf(row.amount)),
+        csvCell(note(row.itemCount), true),
+      ].join(','),
+    ),
+  ];
+  return `\uFEFF${lines.join('\r\n')}\r\n`;
 }

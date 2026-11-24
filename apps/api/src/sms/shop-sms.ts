@@ -1,6 +1,6 @@
-import { type LanguageCode, SHOP_CODE_VALID_MINUTES } from '@omnivo/contracts';
+import { type LanguageCode, SHOP_CODE_VALID_MINUTES, type ShopCourier } from '@omnivo/contracts';
 
-// Step 27a: the shop's two SMS (27b adds a third), in the shop's language (storefront_settings.language). Written
+// Step 27a: the shop's two SMS (27b adds a third, 28a a fourth), in the shop's language (storefront_settings.language). Written
 // here, side by side, like the emails' words (mail/invitation-email.ts): @omnivo/i18n is the
 // browser's. satisfies makes a third language a compile error until it has its words.
 //
@@ -48,6 +48,33 @@ export function cancelledSms(
   const words = {
     en: `${shopName}: order ${orderNo} was cancelled. Questions? Call ${hotline}.`,
     bn: `${shopName}: অর্ডার ${orderNo} বাতিল করা হয়েছে। কিছু জানতে কল করুন ${hotline}।`,
+  } satisfies Record<LanguageCode, string>;
+  return words[language];
+}
+
+// The couriers' own names: brand names, the same in every language (as the tracking page's
+// shop.track.couriers words)
+const COURIER_NAMES = {
+  pathao: 'Pathao',
+  steadfast: 'Steadfast',
+  redx: 'RedX',
+  ecourier: 'eCourier',
+  paperfly: 'Paperfly',
+} satisfies Record<ShopCourier, string>;
+
+// Step 28a (decision 11): the courier picked the parcel up, and the order is Shipped. The courier
+// and its code, which its call centre asks for; the tracking link went with the confirmation and
+// cannot be sent again (only its hash is kept)
+export function pickedUpSms(
+  language: LanguageCode,
+  shopName: string,
+  orderNo: string,
+  courier: ShopCourier,
+  trackingCode: string,
+): string {
+  const words = {
+    en: `${shopName}: order ${orderNo} is on its way with ${COURIER_NAMES[courier]}, code ${trackingCode}.`,
+    bn: `${shopName}: অর্ডার ${orderNo} ${COURIER_NAMES[courier]} দিয়ে রওনা হয়েছে, কোড ${trackingCode}।`,
   } satisfies Record<LanguageCode, string>;
   return words[language];
 }

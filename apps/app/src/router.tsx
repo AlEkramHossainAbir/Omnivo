@@ -1090,6 +1090,17 @@ const storefrontCouponsRoute = createRoute({
   ),
 });
 
+// Step 28a: the shop's courier accounts (decision 15), storefront.manage. One page: an account opens
+// in a dialog
+const storefrontCouriersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/couriers',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-couriers'),
+    'StorefrontCouriersPage',
+  ),
+});
+
 const storefrontCategoriesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/storefront/categories',
@@ -1304,6 +1315,7 @@ const routeTree = rootRoute.addChildren([
     storefrontListingsRoute,
     storefrontListingRoute,
     storefrontCouponsRoute,
+    storefrontCouriersRoute,
     storefrontCategoriesRoute,
     storefrontSettingsRoute,
     storefrontAppearanceRoute,

@@ -31,6 +31,9 @@ export const OUTBOX_EVENT_TYPES = [
   // Step 27d: a payment try of a shop order was paid. The worker makes its money receipt (and the
   // gateway's fee) once the order has its sales order (27d.2's mine 26)
   'storefront.payment_paid',
+  // Step 28a: a shop order's parcel waits to be booked with a courier's API (Packed, "Book
+  // courier" or "Book again"). The worker calls the courier, on its own queue (decision 4)
+  'storefront.shipment_requested',
 ] as const;
 export type OutboxEventType = (typeof OUTBOX_EVENT_TYPES)[number];
 

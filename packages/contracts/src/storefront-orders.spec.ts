@@ -43,6 +43,7 @@ const PACK: PackStorefrontOrderFormValues = {
       picks: [{ batchId: '', quantity: '1', serialNumbers: ['356938035643809'] }],
     },
   ],
+  courierAccountId: '',
 };
 
 describe('the statuses the ERP shows', () => {
@@ -66,6 +67,19 @@ describe('the statuses the ERP shows', () => {
 });
 
 describe('Packed', () => {
+  it('books with the courier the dialog picked, and "Don\'t book now" as null (step 28a)', () => {
+    expect(packStorefrontOrderInputSchema.parse(PACK).courierAccountId).toBeNull();
+    const courier = '4e5f6a7b-8c9d-4e0f-a1b2-c3d4e5f6a7b8';
+    expect(
+      packStorefrontOrderInputSchema.parse({ ...PACK, courierAccountId: courier }).courierAccountId,
+    ).toBe(courier);
+    // 28a.3: a body without the field (an older page) does not book either
+    expect(
+      packStorefrontOrderInputSchema.parse({ version: PACK.version, lines: PACK.lines })
+        .courierAccountId,
+    ).toBeNull();
+  });
+
   it('takes a line split over two batches, and no batch as null', () => {
     const parsed = packStorefrontOrderInputSchema.parse(PACK);
     expect(parsed.lines[0]?.picks.map((pick) => pick.batchId)).toEqual([BATCH_A, BATCH_B]);
@@ -108,6 +122,7 @@ describe('Packed', () => {
         { position: 1, picks: [{ batchId: BATCH_A, quantity: '0', serialNumbers: [] }] },
         { position: 2, picks: [] },
       ],
+      courierAccountId: '',
     });
     expect(Object.keys(errorsOf(result)).sort()).toEqual([
       'lines.0.picks.0.quantity',
@@ -165,10 +180,16 @@ describe('the routes', () => {
   });
 
   // Decision 9: a packer reads and moves orders without storefront.manage (the shop's prices and
-  // pages), and every move is .manage, never .read
+  // pages), and every move is .manage, never .read. Two reads are .manage too: the pack plan, and
+  // (step 28a) the courier export, which is for booking and holds many shoppers' phones at once,
+  // and the courier choices, which only the one who books needs
   it('read with storefront.order.read and change with storefront.order.manage', () => {
     for (const route of routes) {
-      const changes = route.method !== 'GET' || route.path.endsWith('/pack-plan');
+      const changes =
+        route.method !== 'GET' ||
+        route.path.endsWith('/pack-plan') ||
+        route.path.endsWith('/courier-export') ||
+        route.path.endsWith('/courier-choices');
       expect([route.path, route.permission]).toEqual([
         route.path,
         changes ? 'storefront.order.manage' : 'storefront.order.read',

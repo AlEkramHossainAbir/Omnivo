@@ -27,6 +27,18 @@ export class StorefrontOrdersController {
     return this.orders.counts();
   }
 
+  // Step 28a: before getOrder, for countOrders' reason
+  @Endpoint(routes.storefrontOrders.courierExport)
+  courierExport(): Promise<RouteResponse<Routes['courierExport']>> {
+    return this.orders.courierExport();
+  }
+
+  // Step 28a.6: before getOrder too
+  @Endpoint(routes.storefrontOrders.courierChoices)
+  courierChoices(): Promise<RouteResponse<Routes['courierChoices']>> {
+    return this.orders.courierChoices();
+  }
+
   @Endpoint(routes.storefrontOrders.getOrder)
   getOrder({ params }: RouteInput<Routes['getOrder']>): Promise<RouteResponse<Routes['getOrder']>> {
     return this.orders.get(params.id);
@@ -80,6 +92,23 @@ export class StorefrontOrdersController {
     RouteResponse<Routes['makePaymentReceipt']>
   > {
     return this.orders.makePaymentReceipt(params.id, params.paymentId, body.version);
+  }
+
+  // Step 28a: "Book courier" and "Book again"
+  @Endpoint(routes.storefrontOrders.bookShipment)
+  bookShipment({
+    params,
+    body,
+  }: RouteInput<Routes['bookShipment']>): Promise<RouteResponse<Routes['bookShipment']>> {
+    return this.orders.bookShipment(params.id, body);
+  }
+
+  @Endpoint(routes.storefrontOrders.retryShipment)
+  retryShipment({
+    params,
+    body,
+  }: RouteInput<Routes['retryShipment']>): Promise<RouteResponse<Routes['retryShipment']>> {
+    return this.orders.retryShipment(params.id, params.shipmentId, body.version);
   }
 
   @Endpoint(routes.storefrontOrders.cancelOrder)

@@ -302,6 +302,20 @@ export const AUDIT_ACTIONS = [
   'storefront_payment_gateway.created',
   'storefront_payment_gateway.updated',
   'storefront_payment_gateway.tested',
+  // Step 28a: the shop's courier accounts (entity = courier_account). Keys and tokens are never in
+  // the changes, only that they changed. The default is the workspace's storefront's change
+  // (entity = storefront, entityId = tenant id). A booking is the order's: booked by a member
+  // (with the account's name and, for a manual parcel, the tracking code) and booked again after
+  // it failed. What the courier reports later writes nothing here: it is on the parcel's events
+  'courier_account.created',
+  'courier_account.updated',
+  'courier_account.tested',
+  'courier_account.token_renewed',
+  'courier_account.archived',
+  'courier_account.restored',
+  'storefront.default_courier_set',
+  'storefront_order.shipment_booked',
+  'storefront_order.shipment_retried',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -368,6 +382,7 @@ export const AUDIT_ENTITY_TYPES = [
   'storefront_order',
   'storefront_coupon',
   'storefront_payment_gateway',
+  'courier_account',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

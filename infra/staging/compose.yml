@@ -220,6 +220,8 @@ services:
   # and the API's SHOP_BASE_DOMAIN and STOREFRONT_SHOP_KEY (the same value as SHOP_API_KEY; step
   # 27a). Paying online (step 27d) also needs CREDENTIALS_KEY on api and worker: production uses
   # SSLCommerz (PAYMENT_GATEWAY), and without the key the Online payment card cannot save a store.
+  # Shop couriers (step 28a) need the same key for a courier's API keys. Production books with the
+  # real courier (COURIER_MODE is live), so a staging shop books real parcels once one is set.
   # It needs nothing else in the stack. `web` does not wait for it either:
   # if the shop fails, the ERP app keeps working and only the shop's address answers 502.
   shop:

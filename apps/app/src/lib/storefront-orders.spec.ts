@@ -1,15 +1,22 @@
 import {
+  type CourierExportRow,
   packStorefrontOrderInputSchema,
   type StorefrontOrder,
   type StorefrontPackPlan,
+  type StorefrontShipment,
 } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
 import {
+  canBook,
   canCancel,
+  courierCsv,
   decimalsOf,
   nextStep,
+  openParcel,
   packFormValues,
+  parcelFailed,
+  parcelsNewestFirst,
   pickedOf,
   plainQuantity,
   toPackInput,
@@ -189,5 +196,68 @@ describe('the Packed form', () => {
         '3',
       ),
     ).toEqual({ picked: '2', complete: false });
+  });
+});
+
+// Step 28a.6. A parcel with only what the helpers read
+function parcel(id: string, status: StorefrontShipment['status']): StorefrontShipment {
+  return { id, status } as StorefrontShipment;
+}
+function withParcels(
+  status: StorefrontOrder['status'],
+  shipments: StorefrontShipment[],
+): StorefrontOrder {
+  return { status, shipments } as StorefrontOrder;
+}
+
+describe('the parcels', () => {
+  it('finds the open one, newest first, and when a failed one needs attention', () => {
+    const failed = parcel('p1', 'booking_failed');
+    const booked = parcel('p2', 'booked');
+    const order = withParcels('packed', [failed, booked]);
+    expect(parcelsNewestFirst(order).map((one) => one.id)).toEqual(['p2', 'p1']);
+    expect(openParcel(order)).toBe(booked);
+    // Booked again: the failed one under it no longer counts, and nothing more can be booked
+    expect(parcelFailed(order)).toBeNull();
+    expect(canBook(order)).toBe(false);
+    const stuck = withParcels('packed', [failed]);
+    expect(parcelFailed(stuck)).toBe(failed);
+    expect(canBook(stuck)).toBe(true);
+    // A cancelled parcel is not on its way: the order can be booked again
+    expect(canBook(withParcels('packed', [parcel('p3', 'cancelled')]))).toBe(true);
+    // Only a packed order books
+    expect(canBook(withParcels('confirmed', []))).toBe(false);
+    expect(parcelFailed(withParcels('cancelled', [failed]))).toBeNull();
+  });
+});
+
+describe('the courier export file', () => {
+  const row: CourierExportRow = {
+    orderId: '0193a1b2-0000-7000-8000-0000000000c1',
+    invoice: 'W-000123',
+    name: 'ফারহানা আক্তার',
+    address: 'House 12, Road 5, "Green" Lane\nDhanmondi',
+    phone: '01786120356',
+    // As the API answers it: 4 decimals, written with paisa
+    amount: '538.0000',
+    itemCount: 3,
+  };
+  const note = (count: number) => `${String(count)} items`;
+
+  it('writes the courier’s columns, quoted where a cell needs it', () => {
+    const file = courierCsv([row], note);
+    // The byte order mark first, so Excel reads the Bangla name as UTF-8
+    expect(file.startsWith('\uFEFF')).toBe(true);
+    expect(file.slice(1).split('\r\n')).toEqual([
+      'Invoice,Name,Address,Phone,Amount,Note',
+      'W-000123,ফারহানা আক্তার,"House 12, Road 5, ""Green"" Lane\nDhanmondi",01786120356,538.00,3 items',
+      '',
+    ]);
+  });
+
+  it('never lets a shopper’s words run as a formula', () => {
+    const file = courierCsv([{ ...row, name: '=HYPERLINK("x")', address: '+8801' }], note);
+    const cells = file.slice(1).split('\r\n')[1];
+    expect(cells).toBe(`W-000123,"'=HYPERLINK(""x"")",'+8801,01786120356,538.00,3 items`);
   });
 });

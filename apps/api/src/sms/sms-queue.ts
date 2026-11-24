@@ -17,7 +17,9 @@ export class SmsQueue implements OnApplicationShutdown {
   private readonly logger = new Logger(SmsQueue.name);
   private queue: Queue | null = null;
 
-  constructor(@Inject(CONFIG) private readonly config: Config) {}
+  // Only the Redis address: step 28a's worker adds SMS too (a parcel picked up, found by the poll),
+  // and its config has the address but not the API's other parts
+  constructor(@Inject(CONFIG) private readonly config: Pick<Config, 'redisUrl'>) {}
 
   // Made on the first SMS, not when the API starts: most API processes never send one, and a queue
   // made at start would hold a Redis connection open (and try it in tests that have no Redis)

@@ -23,6 +23,7 @@ import { storefrontRoutes } from './storefront-admin.js';
 import { storefrontAppearanceRoutes } from './storefront-appearance.js';
 import { storefrontCouponRoutes } from './storefront-coupons.js';
 import { storefrontOrderRoutes } from './storefront-orders.js';
+import { shippingRoutes } from './shipping.js';
 import { storefrontPaymentRoutes } from './storefront-payments.js';
 import { publicStorefrontRoutes } from './storefront.js';
 import { creditNoteRoutes } from './credit-notes.js';
@@ -170,6 +171,7 @@ type Routes = Readonly<{
   storefrontOrders: typeof storefrontOrderRoutes;
   storefrontCoupons: typeof storefrontCouponRoutes;
   storefrontPayments: typeof storefrontPaymentRoutes;
+  shipping: typeof shippingRoutes;
 }>;
 
 // API-র প্রতিটা endpoint এখানে। নতুন মডিউল = এখানে এক লাইন; API-র টেস্ট দেখে যে Nest-এর রুট আর
@@ -255,4 +257,5 @@ export const routes: Routes = {
   storefrontOrders: storefrontOrderRoutes,
   storefrontCoupons: storefrontCouponRoutes,
   storefrontPayments: storefrontPaymentRoutes,
+  shipping: shippingRoutes,
 };

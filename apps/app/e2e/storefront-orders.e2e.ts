@@ -130,6 +130,9 @@ test('packs an order by batch and serial number, then ships and delivers it', as
   await attar.getByLabel('Quantity 1').fill('3');
   const watch = dialog.getByRole('region', { name: /Steel analog wristwatch/ });
   await watch.getByLabel('Serial numbers').fill('SW-7782');
+  // Step 28a: the dialog starts with the shop's default courier. This order goes by the shop's
+  // own rider, moved by hand (storefront-couriers.e2e.ts books one)
+  await dialog.getByLabel('Send with').selectOption({ label: 'Don’t book now' });
   await dialog.getByRole('button', { name: 'Mark packed' }).click();
   await expect(
     attar.getByText('Not enough stock here. Lower the quantity or pick another batch.'),
@@ -146,7 +149,10 @@ test('packs an order by batch and serial number, then ships and delivers it', as
   await attar.getByLabel('Quantity 2').fill('1');
   await dialog.getByRole('button', { name: 'Mark packed' }).click();
   await toastShown(page, /^W-000005 packed\. Challan .+ posted\.$/);
-  await expect(page.getByText(/^Mark it shipped when the parcel leaves the shop\./)).toBeVisible();
+  // Step 28a: the shop has couriers, so the line offers one too
+  await expect(
+    page.getByText('Book a courier, or mark it shipped when the parcel leaves the shop.'),
+  ).toBeVisible();
 
   // The challan is a real one: its lines took the batches and the serial number picked
   const challan = documentRow(page, 'Challan').getByRole('link');

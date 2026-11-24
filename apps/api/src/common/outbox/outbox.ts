@@ -61,6 +61,9 @@ export const outboxPayloadSchemas = {
   // Step 27d: one payment try was paid. Its row has the rest (amount, the gateway's numbers); the
   // worker makes the posted money receipt. Never the val_id or the store's account
   'storefront.payment_paid': z.object({ paymentId: z.uuid() }),
+  // Step 28a: one parcel in `booking`. Its row has the rest (the account, the invoice, the amount);
+  // the worker reads the order's name, phone and address when it calls. Never the account's keys
+  'storefront.shipment_requested': z.object({ shipmentId: z.uuid() }),
 } satisfies Record<OutboxEventType, z.ZodObject>;
 
 export type OutboxPayload<T extends OutboxEventType> = z.output<(typeof outboxPayloadSchemas)[T]>;

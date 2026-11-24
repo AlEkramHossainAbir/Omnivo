@@ -1,5 +1,6 @@
 import {
   addMoney,
+  type BookShipmentInput,
   compareMoney,
   compareQuantity,
   type CustomerInput,
@@ -55,7 +56,21 @@ import {
   toPayment,
 } from './storefront-payment-data';
 import {
+  bookableAtPack,
+  cancelShipments,
+  codAmountOf,
+  followOrder,
+  parcelNeedsAttention,
+  retryShipment,
+  seedCouriers,
+  seedParcel,
+  settleBookings,
+  shipmentsOf,
+  startShipment,
+} from './storefront-shipping-data';
+import {
   type MockCategory,
+  type MockCourierAccount,
   type MockListing,
   type MockShopOrder,
   type MockShopOrderLine,
@@ -117,7 +132,8 @@ function summaryOf(order: MockShopOrder): StorefrontOrderSummary {
     paymentMethod: order.paymentMethod,
     itemCount: itemCount(order),
     total: order.total,
-    needsAttention: order.documentError !== null,
+    // Step 28a: or its last parcel failed to book
+    needsAttention: order.documentError !== null || parcelNeedsAttention(order),
   };
 }
 
@@ -151,6 +167,8 @@ export function shopOrderPage(
   query: OrderQuery,
 ): { items: StorefrontOrderSummary[]; nextCursor: string | null } {
   const search = query.search ?? '';
+  // Step 28a: the pretend worker's bookings first, as any read sees the worker's
+  settleBookings(data);
   const found = data.storefront.orders.filter(
     (order) =>
       (query.view === 'all' || order.status === query.view) &&
@@ -167,6 +185,7 @@ export function shopOrderCounts(data: WorkspaceData): StorefrontOrderCounts {
 }
 
 export function findShopOrder(data: WorkspaceData, id: string): MockShopOrder {
+  settleBookings(data);
   const found = data.storefront.orders.find((order) => order.id === id);
   if (!found) throw new MockProblem(404, 'not_found');
   return found;
@@ -232,6 +251,9 @@ export function toShopOrder(data: WorkspaceData, order: MockShopOrder): Storefro
     documentError: order.documentError,
     // Step 27d
     payments: order.payments.map((payment) => toPayment(data, payment)),
+    // Step 28a
+    codAmount: codAmountOf(order),
+    shipments: shipmentsOf(data, order),
     version: order.version,
     updatedAt: order.updatedAt,
   };
@@ -574,9 +596,11 @@ export function packShopOrder(
   id: string,
   input: PackStorefrontOrderInput,
   at: string = now(),
-): { order: MockShopOrder; delivery: MockDelivery } {
+): { order: MockShopOrder; delivery: MockDelivery; courier: MockCourierAccount | null } {
   const order = lockShopOrder(data, id, input.version);
   if (order.status !== 'confirmed') throw stepInvalid();
+  // Step 28a: the courier first, so a wrong pick is refused before any stock moves
+  if (input.courierAccountId !== null) bookableAtPack(data, input.courierAccountId);
   const salesOrder = salesOrderOf(data, order);
 
   // Every line of the order once, and the picks of each add up to what the shopper ordered
@@ -641,7 +665,35 @@ export function packShopOrder(
     );
   }
   move(order, 'packed', at, { deliveryId: delivery.id });
-  return { order, delivery };
+  // Step 28a: the parcel with the challan; the pretend worker books it (storefront-shipping-data.ts)
+  const courier =
+    input.courierAccountId === null
+      ? null
+      : startShipment(data, order, { accountId: input.courierAccountId, trackingCode: '' }, at);
+  return { order, delivery, courier };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28a: Book courier and Book again (the parcel's rules are storefront-shipping-data.ts's)
+
+export function bookShopOrder(
+  data: WorkspaceData,
+  id: string,
+  input: BookShipmentInput,
+): { order: MockShopOrder; courier: MockCourierAccount } {
+  const order = lockShopOrder(data, id, input.version);
+  return { order, courier: startShipment(data, order, input) };
+}
+
+export function retryShopParcel(
+  data: WorkspaceData,
+  id: string,
+  shipmentId: string,
+  version: number,
+): { order: MockShopOrder; courier: MockCourierAccount; invoice: string } {
+  const order = lockShopOrder(data, id, version);
+  const { account, parcel } = retryShipment(data, order, shipmentId);
+  return { order, courier: account, invoice: parcel.invoice };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -656,6 +708,8 @@ export function shipShopOrder(
   const order = lockShopOrder(data, id, version);
   if (order.status !== 'packed') throw stepInvalid();
   move(order, 'shipped', at);
+  // Step 28a: a parcel booked by hand follows the button
+  followOrder(data, order, 'picked_up', at);
   return order;
 }
 
@@ -718,6 +772,7 @@ export function deliverShopOrder(
   // Never over the limit: it moves the amount from "on order" to "owed" and adds nothing
   postInvoice(data, draft, false);
   move(order, 'delivered', at, { invoiceId: draft.id });
+  followOrder(data, order, 'delivered', at);
   // Step 27d (decision 6): the invoice takes the advances of the paid tries
   applyPaymentsToInvoice(data, order, draft.id);
   return { order, invoiceId: draft.id };
@@ -740,6 +795,9 @@ export function cancelShopOrder(
 ): CancelledShopOrder {
   const order = lockShopOrder(data, id, input.version);
   if (order.status !== 'confirmed' && order.status !== 'packed') throw stepInvalid();
+  // Step 28a: a parcel only booked is cancelled with the order; one booking or with the courier
+  // refuses the cancel
+  cancelShipments(order, at);
   let salesReturnId: string | null = null;
   if (order.status === 'packed') {
     if (order.deliveryId === null) throw stepInvalid();
@@ -910,6 +968,7 @@ function placeOrder(
     salesReturnId: null,
     documentError: null,
     payments: [],
+    shipments: [],
     version: 1,
     updatedAt: confirmed,
   };
@@ -940,6 +999,7 @@ function packAsPlanned(data: WorkspaceData, order: MockShopOrder, at: string): v
               : line.picks,
         };
       }),
+      courierAccountId: null,
     },
     at,
   );
@@ -1245,6 +1305,33 @@ export function seedShopOrders(data: WorkspaceData): void {
   packAsPlanned(data, shipped, after(shipped, 120));
   shipShopOrder(data, shipped.id, shipped.version, after(shipped, 240));
   packAsPlanned(data, packed, after(packed, 200));
+
+  // Step 28a: the shop's couriers, and the parcels Steadfast Dhaka carried: W-000001 to the door,
+  // W-000003 on its way to Chattogram. W-000004 waits for Book courier (or the export)
+  const [dhaka] = seedCouriers(data, minutesAgo(13 * 24 * 60));
+  if (!dhaka) return;
+  seedParcel(
+    delivered,
+    dhaka,
+    { consignmentId: '148920107', trackingCode: 'SFR2611140017' },
+    after(delivered, 92),
+    [
+      { status: 'picked_up', at: after(delivered, 180), note: 'Picked up from Rahman Fashion' },
+      { status: 'in_transit', at: after(delivered, 300), note: 'At the Dhanmondi hub' },
+      { status: 'out_for_delivery', at: after(delivered, days(1) - 150), note: null },
+      { status: 'delivered', at: after(delivered, days(1)), note: null },
+    ],
+  );
+  seedParcel(
+    shipped,
+    dhaka,
+    { consignmentId: '148920331', trackingCode: 'SFR2611210042' },
+    after(shipped, 122),
+    [
+      { status: 'picked_up', at: after(shipped, 240), note: 'Picked up from Rahman Fashion' },
+      { status: 'in_transit', at: after(shipped, 600), note: 'Reached the Chattogram hub' },
+    ],
+  );
 
   // The bell of the newest order that is not refused, unread (27a's handler rings it)
   const newest = orders[5];

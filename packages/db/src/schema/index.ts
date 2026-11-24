@@ -56,3 +56,4 @@ export * from './storefront.js';
 export * from './storefront-orders.js';
 export * from './storefront-coupons.js';
 export * from './storefront-payments.js';
+export * from './storefront-shipping.js';

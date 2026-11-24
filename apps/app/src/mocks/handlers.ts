@@ -222,11 +222,13 @@ import {
   cancelShopOrder,
   deliverShopOrder,
   findShopOrder,
+  bookShopOrder,
   type MadeSalesOrder,
   makeShopPaymentReceipt,
   packPlanOf,
   packShopOrder,
   retrySalesOrder,
+  retryShopParcel,
   shipShopOrder,
   shopOrderCounts,
   shopOrderPage,
@@ -240,6 +242,19 @@ import {
   toGateway,
   updateGateway,
 } from './storefront-payment-data';
+import {
+  courierChoicesOf,
+  courierExportOf,
+  courierSetup,
+  courierSnapshot,
+  createCourier,
+  renewCourierToken,
+  setCourierArchived,
+  setDefaultCourier,
+  testCourier,
+  toCourierAccount,
+  updateCourier,
+} from './storefront-shipping-data';
 import {
   findProduct,
   IMPORT_DELAY_MS,
@@ -580,6 +595,23 @@ function recordSalesOrderMade(
     'storefront_order',
     order.id,
     diff({}, { order: order.orderNo }),
+  );
+}
+
+// Step 28a: a parcel booked at Packed or with Book courier (the API's startShipment audit row).
+// The tracking code only for a parcel booked by hand: an API parcel has none yet
+function recordShipmentBooked(
+  data: WorkspaceData,
+  order: { id: string; orderNo: string },
+  courier: string,
+  trackingCode: string | null,
+): void {
+  record(
+    data,
+    'storefront_order.shipment_booked',
+    'storefront_order',
+    order.id,
+    diff({}, { order: order.orderNo, courier, ...(trackingCode === null ? {} : { trackingCode }) }),
   );
 }
 
@@ -6148,6 +6180,25 @@ export const handlers = [
     }),
   ),
 
+  // Step 28a: before /:id too ("courier-export" and "courier-choices" are not ids)
+  mock(
+    routes.storefrontOrders.courierExport,
+    guarded(async () => {
+      const data = shopOrderData(routes.storefrontOrders.courierExport.permission);
+      await delay();
+      return reply(routes.storefrontOrders.courierExport, courierExportOf(data));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrders.courierChoices,
+    guarded(async () => {
+      const data = shopOrderData(routes.storefrontOrders.courierChoices.permission);
+      await delay();
+      return reply(routes.storefrontOrders.courierChoices, courierChoicesOf(data));
+    }),
+  ),
+
   mock(
     routes.storefrontOrders.getOrder,
     guarded(async ({ params }) => {
@@ -6188,10 +6239,11 @@ export const handlers = [
       const data = shopOrderData(routes.storefrontOrders.packOrder.permission);
       const { id } = routes.storefrontOrders.packOrder.params.parse(params);
       const body = await readBody(routes.storefrontOrders.packOrder.body, request);
-      const { order, delivery } = transaction(data, () => packShopOrder(data, id, body));
+      const { order, delivery, courier } = transaction(data, () => packShopOrder(data, id, body));
       record(data, 'delivery.created', 'delivery', delivery.id);
       record(data, 'delivery.posted', 'delivery', delivery.id);
       recordShopMove(data, 'storefront_order.packed', order, 'confirmed');
+      if (courier !== null) recordShipmentBooked(data, order, courier.name, null);
       return reply(routes.storefrontOrders.packOrder, toShopOrder(data, order));
     }),
   ),
@@ -6253,6 +6305,182 @@ export const handlers = [
       const { order, receiptId } = makeShopPaymentReceipt(data, id, paymentId, version);
       record(data, 'receipt.created', 'receipt', receiptId);
       return reply(routes.storefrontOrders.makePaymentReceipt, toShopOrder(data, order));
+    }),
+  ),
+
+  // Step 28a: Book courier and Book again (storefront-shipping-data.ts). An API account's parcel
+  // answers in `booking`; the pretend worker books it MOCK_BOOK_MS later
+  mock(
+    routes.storefrontOrders.bookShipment,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontOrders.bookShipment.permission);
+      const { id } = routes.storefrontOrders.bookShipment.params.parse(params);
+      const body = await readBody(routes.storefrontOrders.bookShipment.body, request);
+      const { order, courier } = bookShopOrder(data, id, body);
+      recordShipmentBooked(
+        data,
+        order,
+        courier.name,
+        courier.provider === 'manual' ? body.trackingCode : null,
+      );
+      return reply(routes.storefrontOrders.bookShipment, toShopOrder(data, order));
+    }),
+  ),
+
+  mock(
+    routes.storefrontOrders.retryShipment,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontOrders.retryShipment.permission);
+      const { id, shipmentId } = routes.storefrontOrders.retryShipment.params.parse(params);
+      const { version } = await readBody(routes.storefrontOrders.retryShipment.body, request);
+      const { order, courier, invoice } = retryShopParcel(data, id, shipmentId, version);
+      record(
+        data,
+        'storefront_order.shipment_retried',
+        'storefront_order',
+        order.id,
+        diff({}, { order: order.orderNo, courier: courier.name, invoice }),
+      );
+      return reply(routes.storefrontOrders.retryShipment, toShopOrder(data, order));
+    }),
+  ),
+
+  // --- Step 28a: Shop couriers (storefront-shipping-data.ts) -----------------------------------
+  // storefront.manage, like the payment gateway. The audit rows never hold a key or a token: a new
+  // one is written as "changed" (the API's snapshot)
+
+  mock(
+    routes.shipping.getCouriers,
+    guarded(async () => {
+      const data = shopData();
+      await delay();
+      return reply(routes.shipping.getCouriers, courierSetup(data));
+    }),
+  ),
+
+  mock(
+    routes.shipping.createCourier,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const body = await readBody(routes.shipping.createCourier.body, request);
+      const { account, saved } = createCourier(data, body);
+      record(
+        data,
+        'courier_account.created',
+        'courier_account',
+        account.id,
+        diff(
+          {},
+          {
+            ...courierSnapshot(account),
+            ...(account.provider === 'manual' ? {} : { keys: 'changed', webhookToken: 'changed' }),
+          },
+        ),
+      );
+      return reply(routes.shipping.createCourier, saved);
+    }),
+  ),
+
+  mock(
+    routes.shipping.updateCourier,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.shipping.updateCourier.params.parse(params);
+      const body = await readBody(routes.shipping.updateCourier.body, request);
+      const { before, after, keysChanged } = updateCourier(data, id, body);
+      record(data, 'courier_account.updated', 'courier_account', id, {
+        ...diff(courierSnapshot(before), courierSnapshot(after)),
+        ...(keysChanged ? { keys: { from: null, to: 'changed' } } : {}),
+      });
+      return reply(routes.shipping.updateCourier, toCourierAccount(after));
+    }),
+  ),
+
+  mock(
+    routes.shipping.testCourier,
+    guarded(async ({ params }) => {
+      const data = shopData();
+      const { id } = routes.shipping.testCourier.params.parse(params);
+      // A real test waits for the courier; the menu's "Testing…" shows for a moment
+      await delay();
+      const account = testCourier(data, id);
+      record(
+        data,
+        'courier_account.tested',
+        'courier_account',
+        id,
+        diff({}, { testResult: account.lastTest?.problem ?? 'ok' }),
+      );
+      return reply(routes.shipping.testCourier, toCourierAccount(account));
+    }),
+  ),
+
+  mock(
+    routes.shipping.renewCourierWebhookToken,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.shipping.renewCourierWebhookToken.params.parse(params);
+      const { version } = await readBody(routes.shipping.renewCourierWebhookToken.body, request);
+      const saved = renewCourierToken(data, id, version);
+      record(data, 'courier_account.token_renewed', 'courier_account', id, {
+        webhookToken: { from: null, to: 'changed' },
+      });
+      return reply(routes.shipping.renewCourierWebhookToken, saved);
+    }),
+  ),
+
+  mock(
+    routes.shipping.archiveCourier,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.shipping.archiveCourier.params.parse(params);
+      const { version } = await readBody(routes.shipping.archiveCourier.body, request);
+      const { before, after, changed } = setCourierArchived(data, id, version, true);
+      if (changed) {
+        record(
+          data,
+          'courier_account.archived',
+          'courier_account',
+          id,
+          diff(courierSnapshot(before), courierSnapshot(after)),
+        );
+      }
+      return reply(routes.shipping.archiveCourier, toCourierAccount(after));
+    }),
+  ),
+
+  mock(
+    routes.shipping.restoreCourier,
+    guarded(async ({ request, params }) => {
+      const data = shopData();
+      const { id } = routes.shipping.restoreCourier.params.parse(params);
+      const { version } = await readBody(routes.shipping.restoreCourier.body, request);
+      const { before, after, changed } = setCourierArchived(data, id, version, false);
+      if (changed) {
+        record(
+          data,
+          'courier_account.restored',
+          'courier_account',
+          id,
+          diff(courierSnapshot(before), courierSnapshot(after)),
+        );
+      }
+      return reply(routes.shipping.restoreCourier, toCourierAccount(after));
+    }),
+  ),
+
+  mock(
+    routes.shipping.setDefaultCourier,
+    guarded(async ({ request }) => {
+      const data = shopData();
+      const { accountId } = await readBody(routes.shipping.setDefaultCourier.body, request);
+      const { setup, change } = setDefaultCourier(data, accountId);
+      if (change !== null) {
+        record(data, 'storefront.default_courier_set', 'storefront', workspace.tenantId, {
+          defaultCourier: change,
+        });
+      }
+      return reply(routes.shipping.setDefaultCourier, setup);
     }),
   ),
 

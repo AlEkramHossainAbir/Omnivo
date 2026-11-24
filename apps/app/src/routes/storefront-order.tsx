@@ -1,5 +1,6 @@
 import {
   Agreement01Icon,
+  Alert02Icon,
   AlertCircleIcon,
   ArrowLeft01Icon,
   CancelCircleIcon,
@@ -9,6 +10,7 @@ import {
   PackageDeliveredIcon,
   PackageIcon,
   PackageReceiveIcon,
+  ShippingTruck01Icon,
   ShoppingCart01Icon,
   SmartPhone01Icon,
 } from '@hugeicons/core-free-icons';
@@ -23,6 +25,7 @@ import {
   type ShopOrderStatus,
   type StorefrontOrder,
   type StorefrontOrderLine,
+  type StorefrontShipment,
 } from '@omnivo/contracts';
 import { useLocale } from '@omnivo/i18n';
 import {
@@ -45,6 +48,11 @@ import { useForm } from 'react-hook-form';
 
 import { CancelDraftDialog } from '../components/cancel-draft-dialog';
 import { DocumentNotice } from '../components/document-notice';
+import {
+  BookCourierDialog,
+  ParcelCards,
+  ParcelLabel,
+} from '../components/storefront-order-parcels';
 import { NeedsAttentionPill, OrderStatusPill } from '../components/storefront-order-pills';
 import {
   invoiceTookPayment,
@@ -57,9 +65,12 @@ import { ApiRequestError, call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
 import { useCan } from '../lib/permissions';
 import {
+  canBook,
   canCancel,
   nextStep,
+  openParcel,
   type OrderStep,
+  parcelFailed,
   storefrontOrderQuery,
 } from '../lib/storefront-orders';
 import { useOnline } from '../lib/use-online';
@@ -105,7 +116,7 @@ const STEP_BUTTONS = {
   deliver: PackageDeliveredIcon,
 } as const satisfies Record<OrderStep, IconSvgElement>;
 
-type Dialogs = 'pack' | 'deliver' | 'cancel' | null;
+type Dialogs = 'pack' | 'deliver' | 'cancel' | 'book' | null;
 
 // After a move: the order's own answer at once, then every read the move changed. The orders (the
 // list, the sidebar's count), and the sales, stock, books and customers, because Packed posts a
@@ -445,6 +456,10 @@ function CancelDialog({
     resolver: zodResolver(cancelStorefrontOrderInputSchema, { error: contractErrorMap }),
     defaultValues: { version: order.version, reason: '' },
   });
+  // A parcel the courier has a code for. One still booking is refused by the API
+  // (storefront_order_parcel_booking), and that error shows above the box
+  const open = openParcel(order);
+  const booked = open?.status === 'booked' ? open : null;
   const onSubmit = handleSubmit(async (values) => {
     try {
       const saved = await call(routes.storefrontOrders.cancelOrder, {
@@ -484,6 +499,14 @@ function CancelDialog({
         {errors.root?.server?.message !== undefined && (
           <FormAlert message={errors.root.server.message} />
         )}
+        {/* Step 28a (decision 21): a booked parcel is cancelled here too, but the courier is not
+            told (Steadfast has no cancel call), so the member must cancel it on its panel. warn:
+            it is theirs to do (approved with the mockup) */}
+        {booked !== null && (
+          <DocumentNotice tone="warn" icon={Alert02Icon}>
+            {t('storefront.order.cancelling.parcelBooked', { courier: booked.account.name })}
+          </DocumentNotice>
+        )}
         <TextAreaField
           label={t('storefront.order.cancelling.reason')}
           optional
@@ -506,8 +529,46 @@ function OrderView({ order }: { order: StorefrontOrder }) {
   const canManage = can('storefront.order.manage');
   const applyMove = useApplyMove();
   const [dialog, setDialog] = useState<Dialogs>(null);
+  // Step 28a: the parcel whose label is printing (ParcelLabel prints once, then clears this)
+  const [printing, setPrinting] = useState<StorefrontShipment | null>(null);
   const step = nextStep(order);
   const cancellable = canCancel(order);
+  const failed = parcelFailed(order);
+  const open = openParcel(order);
+  const bookable = canBook(order);
+  const stopPrinting = useCallback(() => {
+    setPrinting(null);
+  }, []);
+  // Step 28a (decision 5): the step's line once a packed order is with a courier, or a shipped one
+  // is with an API courier. null keeps the status's own line (next.*)
+  const parcelText = ((): string | null => {
+    if (order.status === 'packed') {
+      if (open === null) return t('storefront.order.nextNoParcel');
+      const courier = open.account.name;
+      if (open.status === 'booking') return t('storefront.order.nextBooking', { courier });
+      return open.account.provider === 'manual'
+        ? t('storefront.order.nextManual', { courier })
+        : t('storefront.order.nextBooked', { courier });
+    }
+    if (order.status === 'shipped' && open !== null && open.account.provider !== 'manual') {
+      return t('storefront.order.nextShipped', { courier: open.account.name });
+    }
+    return null;
+  })();
+
+  // Step 28a: "Book again" on a parcel that failed five times books the same parcel (the same
+  // invoice) once more, in the worker
+  const retry = useMutation({
+    mutationFn: (parcel: StorefrontShipment) =>
+      call(routes.storefrontOrders.retryShipment, {
+        params: { id: order.id, shipmentId: parcel.id },
+        body: { version: order.version },
+      }),
+    onSuccess: async (saved) => {
+      await applyMove(saved);
+      toast(t('storefront.order.bookingAgain', { number: saved.orderNo }));
+    },
+  });
 
   // The two moves with no dialog of their own (Make the sales order, Shipped), and Delivered's
   // confirm. Their refusals (version_conflict, storefront_order_step_invalid, a sales error on the
@@ -586,6 +647,42 @@ function OrderView({ order }: { order: StorefrontOrder }) {
         {t('storefront.order.deliveredPaid')}
       </DocumentNotice>,
     );
+  } else if (!blocked && failed !== null) {
+    // Step 28a (decision 4): the booking failed five times. crit: nothing moves until someone
+    // books it again. Its reason is the error's own words; the courier's are on the parcel card
+    notices.push(
+      <DocumentNotice
+        key="next"
+        tone="crit"
+        icon={Alert02Icon}
+        action={
+          canManage && (
+            <button
+              type="button"
+              disabled={retry.isPending}
+              className="font-medium text-brand underline-offset-3 hover:underline"
+              onClick={() => {
+                retry.mutate(failed);
+              }}
+            >
+              {t('storefront.order.bookAgain')}
+            </button>
+          )
+        }
+      >
+        {t('storefront.order.parcelFailed', {
+          courier: failed.account.name,
+          reason: errorText(failed.error ?? 'unknown_error'),
+        })}
+      </DocumentNotice>,
+    );
+  } else if (!blocked && canManage && parcelText !== null) {
+    // Step 28a (decision 5): once the order has a parcel, the line says who moves the order
+    notices.push(
+      <DocumentNotice key="next" tone="neutral">
+        {parcelText}
+      </DocumentNotice>,
+    );
   } else if (!blocked && canManage && order.status !== 'cancelled' && order.status !== 'returned') {
     // Decision 7: a delivered order's money comes in as an ordinary receipt for its invoice, for
     // someone who may write one
@@ -626,7 +723,8 @@ function OrderView({ order }: { order: StorefrontOrder }) {
             <h1 className="text-h1">{order.orderNo}</h1>
             <span className="flex flex-wrap gap-1.5">
               <OrderStatusPill status={order.status} />
-              {order.documentError !== null && <NeedsAttentionPill />}
+              {/* The sales order could not be made, or (step 28a) the parcel failed to book */}
+              {order.needsAttention && <NeedsAttentionPill />}
             </span>
           </div>
           <p className="mt-1 text-label text-ink-3 tabular-nums">
@@ -651,9 +749,24 @@ function OrderView({ order }: { order: StorefrontOrder }) {
                 {t('storefront.order.cancel')}
               </Button>
             )}
+            {/* Step 28a: a packed order with no parcel on its way (approved with the mockup) */}
+            {bookable && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setDialog('book');
+                }}
+              >
+                <HugeiconsIcon icon={ShippingTruck01Icon} size={17} strokeWidth={1.5} />
+                {t('storefront.order.book')}
+              </Button>
+            )}
             {step !== null && (
               <Button
-                className={cn(!cancellable && 'col-span-2')}
+                className={cn(
+                  (!cancellable || bookable) && 'col-span-2',
+                  bookable && 'sm:col-span-1',
+                )}
                 disabled={move.isPending}
                 onClick={() => {
                   press(step);
@@ -667,6 +780,11 @@ function OrderView({ order }: { order: StorefrontOrder }) {
         )}
       </header>
       {moveError !== null && dialog === null && <FormAlert message={moveError} />}
+      {retry.error !== null && (
+        <FormAlert
+          message={retry.error instanceof ApiRequestError ? retry.error.code : 'unknown_error'}
+        />
+      )}
       {notices.length > 0 && <div className="grid gap-2.5">{notices}</div>}
       {/* Two columns from xl. Below it the wrappers are `contents`, so the four cards are one
           stack, and `order` puts the address and the documents before the timeline */}
@@ -675,6 +793,13 @@ function OrderView({ order }: { order: StorefrontOrder }) {
           <div className="order-1">
             <LinesCard order={order} />
           </div>
+          {/* Step 28a: under the lines and before the payments (approved with the mockup). On a
+              phone order-2 too, so the DOM order puts it before the payments */}
+          {order.shipments.length > 0 && (
+            <div className="order-2">
+              <ParcelCards order={order} onPrint={setPrinting} />
+            </div>
+          )}
           {/* Step 27d: under the lines, the gateway's visits (none: no card, and the empty
               wrapper takes no gap, being `contents` on a phone and empty in the xl grid) */}
           {order.payments.length > 0 && (
@@ -730,6 +855,22 @@ function OrderView({ order }: { order: StorefrontOrder }) {
         )}
       </Dialog>
       <Dialog
+        open={dialog === 'book'}
+        onOpenChange={(open) => {
+          if (!open) setDialog(null);
+        }}
+      >
+        {dialog === 'book' && (
+          <BookCourierDialog
+            order={order}
+            onDone={(saved, message) => void afterDialog(saved, message)}
+          />
+        )}
+      </Dialog>
+      {printing !== null && (
+        <ParcelLabel order={order} parcel={printing} onPrinted={stopPrinting} />
+      )}
+      <Dialog
         open={dialog === 'pack'}
         onOpenChange={(open) => {
           if (!open) setDialog(null);
@@ -739,15 +880,21 @@ function OrderView({ order }: { order: StorefrontOrder }) {
           <Suspense fallback={null}>
             <PackDialog
               order={order}
-              onDone={(saved) =>
-                afterDialog(
+              onDone={(saved) => {
+                // Step 28a: Packed asked a courier for the parcel. The toast says the booking
+                // started, not that it worked: the worker books it a moment later
+                const booking = openParcel(saved);
+                const words = { number: saved.orderNo, delivery: saved.delivery?.number ?? '' };
+                return afterDialog(
                   saved,
-                  t('storefront.order.packed', {
-                    number: saved.orderNo,
-                    delivery: saved.delivery?.number ?? '',
-                  }),
-                )
-              }
+                  booking?.status === 'booking'
+                    ? t('storefront.order.packedBooking', {
+                        ...words,
+                        courier: booking.account.name,
+                      })
+                    : t('storefront.order.packed', words),
+                );
+              }}
             />
           </Suspense>
         )}
@@ -763,6 +910,13 @@ export function StorefrontOrderPage() {
   const { data: order, error } = useQuery({
     ...storefrontOrderQuery(useTenantId(), orderId),
     enabled: online && orderId !== '',
+    // Step 28a: the worker books a parcel a moment after Packed (or after Book again), so the page
+    // asks again every 3 seconds while one is booking, and stops once it is booked or failed. The
+    // courier's later news come minutes apart; a reload or the next visit shows them
+    refetchInterval: (query) =>
+      query.state.data?.shipments.some((parcel) => parcel.status === 'booking') === true
+        ? 3000
+        : false,
   });
 
   if (!online) {

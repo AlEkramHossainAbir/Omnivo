@@ -50,7 +50,7 @@ export async function createTestApp(config: Config): Promise<NestFastifyApplicat
 }
 
 // The worker's config, checked like production's, but fast: the relay looks every 50 ms and a
-// failed job gives up after 2 quick tries, so a test waits well under a second for either. With
+// failed job (an email, a booking) gives up after 2 quick tries, so a test waits well under a second for either. With
 // no mailUrl the SMTP address is dead (port 1): every send fails at once, which is how the tests
 // see "Email not sent". No storageUrl: the same dead address, for tests that write no files.
 export function testWorkerConfig(urls: {
@@ -76,6 +76,9 @@ export function testWorkerConfig(urls: {
     ...config,
     relay: { ...config.relay, idleMs: 50, publishTimeoutMs: 500 },
     retry: { attempts: 2, backoffMs: 50 },
+    // Step 28a: a booking's tries too, so a parcel the courier never answers fails in well under a
+    // second, not after the 15 minutes of production's five tries
+    courierRetry: { attempts: 2, backoffMs: 50 },
   };
 }
 

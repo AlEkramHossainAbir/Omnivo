@@ -162,6 +162,8 @@ export const en = {
     // Step 27c: after Catalog, both about the shop's prices (decision 29). "Shop" for the phone's
     // nav row, like the others
     storefrontCoupons: 'Shop coupons',
+    // Step 28a: after Shop settings in the menu, both set the shop up (decision 15)
+    storefrontCouriers: 'Shop couriers',
   },
   auth: {
     workspace: 'Workspace',
@@ -5472,6 +5474,148 @@ export const en = {
       updated: 'Payment gateway saved',
       loadFailed: "Couldn't load the payment gateway. Refresh the page to try again.",
     },
+    // Step 28a: Storefront → Shop couriers (/storefront/couriers, decision 15), storefront.manage.
+    // An account books with the courier's API (Steadfast) or names a courier the shop books by
+    // hand (decision 14)
+    couriers: {
+      title: 'Shop couriers',
+      description:
+        'The couriers your parcels go with, and the one the Packed dialog books with first',
+      add: 'Add courier account',
+      view: 'Show',
+      views: { active: 'Active', archived: 'Archived' },
+      statuses: { active: 'Active', archived: 'Archived' },
+      // A second, brand pill on the default account's row (decision 13)
+      isDefault: 'Books first',
+      // The line under the account's name. courier = the courier's name (names below)
+      providers: {
+        steadfast: '{{courier}} · books by its API',
+        manual: '{{courier}} · booked by hand',
+      },
+      // SHOP_COURIERS. Names, so the same in Bangla, like the shop's own list
+      names: {
+        pathao: 'Pathao',
+        steadfast: 'Steadfast',
+        redx: 'RedX',
+        ecourier: 'eCourier',
+        paperfly: 'Paperfly',
+      },
+      columns: {
+        account: 'Account',
+        news: 'Courier’s news',
+        test: 'Last test',
+        status: 'Status',
+        // 28a.6: the row menu's column, read by screen readers only
+        actions: 'Actions',
+      },
+      // The news column (lastWebhookAt, decision 16). date = the date and time in the
+      // workspace's time zone
+      newsAt: 'Last arrived {{date}}',
+      newsNever: 'None yet',
+      newsNeverHint:
+        'Paste the webhook into the courier’s panel. Until then, Omnivo asks every 15 minutes.',
+      newsManual: 'Moved by hand',
+      // The last test column (lastTest)
+      neverTested: 'Not tested',
+      testWorked: 'Keys accepted {{date}}',
+      testRejected: 'Keys refused {{date}}',
+      testUnreachable: 'No answer {{date}}',
+      // The row menu
+      actionsFor: 'Actions for {{name}}',
+      edit: 'Edit',
+      test: 'Test connection',
+      renewToken: 'New webhook token',
+      archive: 'Archive',
+      restore: 'Restore',
+      // The test's toast. courier = the courier's name
+      testedWorked: '{{courier}} accepted the keys',
+      testedRejected: '{{courier}} refused the keys. Check them in Edit.',
+      testedUnreachable: '{{courier}} did not answer. Try again in a few minutes.',
+      emptyTitle: 'No courier account yet',
+      emptyBody:
+        'Add your Steadfast account to book parcels as orders are packed, or a courier you book by hand, to keep its tracking codes on the orders.',
+      archivedEmptyTitle: 'No archived courier account',
+      archivedEmptyBody:
+        'An account you archive shows here. Its parcels on their way still get the courier’s news.',
+      loadFailed: "Couldn't load the courier accounts. Refresh the page to try again.",
+      // The card above the list (setDefaultCourier, decision 13)
+      default: {
+        title: 'Book at Packed',
+        description:
+          'The courier the Packed dialog starts with. Whoever packs the order can still change it.',
+        label: 'Book with',
+        none: 'Don’t book at Packed',
+        hint: 'Only an account that books by its API. With none, a parcel is booked with Book courier, or by hand.',
+        noApiAccount: 'Add a Steadfast account to book parcels as orders are packed.',
+        save: 'Save',
+        saved: 'Packed books with {{name}} first',
+        cleared: 'Packed books with no courier first',
+      },
+      // The account dialog (create and update, by provider)
+      form: {
+        addTitle: 'Add a courier account',
+        editTitle: 'Edit {{name}}',
+        provider: 'How it books',
+        providers: { steadfast: 'Steadfast, by its API', manual: 'Another courier, by hand' },
+        providerHints: {
+          steadfast:
+            'Omnivo books each parcel with Steadfast, and Steadfast’s news move the order.',
+          manual:
+            'You book on the courier’s own website or app, then type its tracking code into the order.',
+        },
+        // Editing: the provider is shown, not offered (courier_provider_fixed)
+        providerFixed: 'An account’s courier can’t change. Add a new account for another courier.',
+        name: 'Name',
+        namePlaceholder: 'Steadfast Dhaka',
+        nameHint:
+          'Only your team sees it. Two accounts with one courier, one per pickup point, need two names.',
+        apiKey: 'API key',
+        secretKey: 'Secret key',
+        keysHint: 'Both are on the API page of your Steadfast panel.',
+        // A saved account: the boxes start empty, and an empty box keeps its key
+        keySavedPlaceholder: 'Saved',
+        keysSavedHint:
+          'The keys are saved and never shown. Leave a box empty to keep its key, or type a new one.',
+        courier: 'Courier',
+        courierPlaceholder: 'Pick a courier',
+        courierHint: 'Whose website or app you book on. The tracking page names it.',
+        create: 'Add account',
+        save: 'Save changes',
+        created: 'Courier account {{name}} added',
+        updated: 'Courier account saved',
+      },
+      // After an API account is added, and after New webhook token. The token is in the answer
+      // once (courierAccountSavedSchema), so the dialog says so
+      webhook: {
+        title: 'Paste the webhook into Steadfast',
+        description:
+          'Steadfast sends each parcel’s news to this address. Paste both into the webhook settings of your Steadfast panel.',
+        url: 'Callback URL',
+        token: 'Auth token (Bearer)',
+        tokenHint: 'Shown only this once. If it is lost, make a new one from the account’s menu.',
+        copyUrl: 'Copy URL',
+        copyToken: 'Copy token',
+        copied: 'Copied',
+        poll: 'Until the first news arrive, Omnivo asks Steadfast every 15 minutes, so orders still move, only later.',
+        done: 'Done',
+      },
+      renewing: {
+        title: 'Make a new webhook token for {{name}}?',
+        body: 'The old token stops working at once. Steadfast’s news are refused until you paste the new one into its panel.',
+        submit: 'Make new token',
+      },
+      archiving: {
+        title: 'Archive {{name}}?',
+        body: 'No new parcel goes with it. Its parcels on their way still get the courier’s news.',
+        // The default account: archiving it clears the default too (28a.2)
+        bodyDefault:
+          'No new parcel goes with it, and Packed books with no courier first. Its parcels on their way still get the courier’s news.',
+        submit: 'Archive account',
+      },
+      archived: '{{name}} archived',
+      restored: '{{name}} restored',
+      tokenRenewed: 'New webhook token made',
+    },
     categories: {
       title: 'Shop categories',
       description: 'How the shop groups its listings, in the order its menu shows them',
@@ -5964,6 +6108,15 @@ export const en = {
       noMatchTitle: 'No order matches',
       noMatchBody: 'Check the number or the phone. The search looks in this tab only.',
       searchAll: 'Search every order',
+      // Step 28a: the packed orders with no parcel, for a courier's bulk upload (decision 19). The
+      // file's column names are the courier's, so they stay in code; its Note is `items_*`
+      exportCourier: 'Export for courier',
+      exporting: 'Exporting…',
+      exported_one: '{{formatted}} packed order in the file',
+      exported_other: '{{formatted}} packed orders in the file',
+      exportedMore:
+        'More orders wait than one file holds. Book these with the courier, then export again.',
+      exportEmpty: 'No packed order waits for a courier.',
       loadFailed: "Couldn't load the shop orders. Refresh the page to try again.",
     },
     // Step 27b: one order's page (/storefront/orders/$orderId): the next step's button, the
@@ -5983,12 +6136,20 @@ export const en = {
       ship: 'Mark shipped',
       deliver: 'Mark delivered',
       cancel: 'Cancel order',
+      // Step 28a: on a packed order with no parcel on its way (or one that was cancelled)
+      book: 'Book courier',
       // The toasts. number = the order's (W-000123), the others the documents' own
       salesOrderMade: 'Sales order {{salesOrder}} made for {{number}}',
       packed: '{{number}} packed. Challan {{delivery}} posted.',
       shipped: '{{number}} shipped',
       delivered: '{{number}} delivered. Invoice {{invoice}} posted.',
       cancelled: '{{number}} cancelled. The shopper gets an SMS.',
+      // Step 28a. courier = the account's name, code = the tracking code
+      packedBooking:
+        '{{number}} packed. Challan {{delivery}} posted. Booking the parcel with {{courier}}.',
+      bookingStarted: 'Booking {{number}}’s parcel with {{courier}}',
+      booked: '{{number}} booked with {{courier}}, code {{code}}',
+      bookingAgain: 'Booking {{number}}’s parcel again',
       // The neutral document notice under the header: what the next step does
       next: {
         confirmed:
@@ -6013,6 +6174,19 @@ export const en = {
       paidOnCod:
         'The shopper paid {{amount}} online too, then chose cash on delivery. Tell the rider to take no cash. If the rider took it as well, pay one back.',
       recordRefund: 'Record refund',
+      // Step 28a: the next step's line once the order has a parcel (decision 5). courier = the
+      // account's name. They replace next.packed and next.shipped
+      nextNoParcel: 'Book a courier, or mark it shipped when the parcel leaves the shop.',
+      nextBooking: 'Omnivo is booking the parcel with {{courier}}.',
+      nextBooked:
+        'The order moves to Shipped by itself when {{courier}}’s rider picks the parcel up.',
+      nextShipped:
+        'The order moves to Delivered by itself when {{courier}} delivers it. That posts the invoice.',
+      // A parcel booked by hand: the staff move the order, as before
+      nextManual: 'Mark it shipped when {{courier}} picks the parcel up.',
+      // The crit notice of a booking that failed (decision 4). reason = the error's own words
+      parcelFailed: '{{courier}} did not book the parcel. {{reason}}',
+      bookAgain: 'Book again',
       // Decision 1: the crit notice. reason = the error's own words (errors.*), a whole sentence
       documentError: 'The sales order could not be made. {{reason}}',
       // Decision 29: an order confirmed before 27b has no sales order and no error
@@ -6107,6 +6281,79 @@ export const en = {
       deliverTitle: 'Mark {{number}} delivered?',
       deliverBody:
         'This posts an invoice for {{total}}, dated today. It stays unpaid until you record the money.',
+      // Step 28a: one card per parcel, newest first (storefrontShipmentSchema)
+      parcels: {
+        title: 'Parcel',
+        // An order booked again: number = the parcel's place, from 1
+        titleNumber: 'Parcel {{number}}',
+        // account = the courier account's name
+        description: 'Sent with {{account}}',
+        // The pill (SHIPMENT_STATUSES). The courier's steps on the card use the same words
+        statuses: {
+          booking: 'Booking',
+          booking_failed: 'Booking failed',
+          booked: 'Booked',
+          picked_up: 'Picked up',
+          in_transit: 'In transit',
+          out_for_delivery: 'Out for delivery',
+          delivered: 'Delivered',
+          partly_delivered: 'Partly delivered',
+          on_hold: 'On hold',
+          returning: 'Going back',
+          returned: 'Returned',
+          cancelled: 'Cancelled',
+        },
+        courier: 'Courier',
+        trackingCode: 'Tracking code',
+        consignmentId: 'Courier’s ID',
+        cod: 'Rider collects',
+        codNothing: 'Nothing: paid online',
+        bookedAt: 'Booked',
+        lastSynced: 'Last news',
+        neverSynced: 'None yet',
+        // While booking. count = the calls made so far (attempts)
+        bookingNow: 'Booking with {{courier}}…',
+        bookingRetry_one: 'Tried {{formatted}} time. Omnivo tries again by itself.',
+        bookingRetry_other: 'Tried {{formatted}} times. Omnivo tries again by itself.',
+        // A refused parcel: the courier's own words (errorDetail), as they came
+        courierSaid: 'The courier said: “{{detail}}”',
+        eventsTitle: 'The courier’s news',
+        noEvents: 'No news from the courier yet.',
+        manual: 'Booked by hand. Move the order with its buttons.',
+        printLabel: 'Print label',
+      },
+      // The Book courier dialog (bookShipment)
+      booking: {
+        title: 'Book a courier for {{number}}',
+        // amount = the order's codAmount
+        description:
+          'The courier gets the shopper’s name, mobile number and address, and what the rider collects: {{amount}}.',
+        descriptionPaid:
+          'The courier gets the shopper’s name, mobile number and address. The order is paid, so the rider collects nothing.',
+        account: 'Courier account',
+        accountPlaceholder: 'Pick an account',
+        // name = the account's, courier = the courier's name
+        accountOption: '{{name}} · {{courier}}',
+        apiHint:
+          'Omnivo books the parcel with {{courier}} now, and the courier’s news move the order.',
+        trackingCode: 'Tracking code',
+        trackingCodePlaceholder: 'SFR2611120042',
+        trackingCodeHint:
+          'Book the parcel on the courier’s website or app first, then type the code it gave.',
+        noAccounts: 'No active courier account yet. Add one in Shop couriers.',
+        submit: 'Book courier',
+      },
+      // The parcel's label, a print sheet (one per parcel)
+      label: {
+        title: 'Parcel label {{number}}',
+        from: 'From',
+        to: 'To',
+        order: 'Order',
+        // amount = the parcel's codAmount, always with paisa
+        collect: 'Collect {{amount}}',
+        paid: 'Paid. Collect nothing.',
+        courierLine: '{{courier}} · {{code}}',
+      },
       // The Packed dialog (decisions 5, 14, 15, 32)
       packing: {
         title: 'Pack {{number}}',
@@ -6132,6 +6379,11 @@ export const en = {
         // needed = the line's quantity
         serialsHint: 'One per line, or scan them. This line needs {{needed}}.',
         serialsCount: '{{entered}} of {{needed}} typed',
+        // Step 28a (decision 13): API accounts only, starting with the default
+        courier: 'Send with',
+        courierNone: 'Don’t book now',
+        courierHint: 'Omnivo books the parcel with {{courier}} once the challan is posted.',
+        courierNoneHint: 'Book it later with Book courier, or by hand on the courier’s website.',
         submit: 'Mark packed',
         loadFailed: "Couldn't load what to pack. Close this and try again.",
       },
@@ -6142,6 +6394,9 @@ export const en = {
           'The stock held for it is free again, and its sales order is cancelled. The shopper gets an SMS that the order was cancelled.',
         bodyPacked:
           'A sales return brings the packed goods back into stock, and the sales order is cancelled. The shopper gets an SMS that the order was cancelled.',
+        // Step 28a (decision 21): the order has a booked parcel. courier = the account's name
+        parcelBooked:
+          'Its parcel booked with {{courier}} is cancelled here too. Cancel it on the courier’s panel as well, so no rider comes for it.',
         reason: 'Why',
         reasonPlaceholder: 'The shopper did not answer the phone',
         reasonHint: 'Only your team sees this. The SMS does not say why.',
@@ -6898,6 +7153,7 @@ export const en = {
       storefront_order: 'Shop orders',
       storefront_coupon: 'Shop coupons',
       storefront_payment_gateway: 'Shop payment gateway',
+      courier_account: 'Shop couriers',
     },
     columns: {
       when: 'When',
@@ -7229,6 +7485,8 @@ export const en = {
         launched: 'Opened the online shop',
         // Step 26h
         theme_updated: 'Changed the shop’s logo or colors',
+        // Step 28a
+        default_courier_set: 'Chose the courier the shop books with first',
         home_moved: 'Moved a block on the shop’s home page',
         page_saved: 'Wrote or changed a shop page',
         page_deleted: 'Deleted a shop page',
@@ -7263,6 +7521,9 @@ export const en = {
         shipped: 'Marked a shop order shipped',
         delivered: 'Marked a shop order delivered',
         cancelled: 'Cancelled a shop order',
+        // Step 28a
+        shipment_booked: 'Booked a shop order’s parcel with a courier',
+        shipment_retried: 'Booked a shop order’s parcel again after it failed',
       },
       // Step 27c
       storefront_coupon: {
@@ -7276,6 +7537,15 @@ export const en = {
         created: 'Saved the shop’s payment gateway',
         updated: 'Changed the shop’s payment gateway',
         tested: 'Tested the shop’s payment gateway',
+      },
+      // Step 28a
+      courier_account: {
+        created: 'Added a courier account',
+        updated: 'Changed a courier account',
+        tested: 'Tested a courier account',
+        token_renewed: 'Made a new webhook token for a courier account',
+        archived: 'Archived a courier account',
+        restored: 'Restored an archived courier account',
       },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
@@ -7527,6 +7797,14 @@ export const en = {
       feeAccount: 'Gateway fee account',
       password: 'Password',
       testResult: 'Test result',
+      // Step 28a: a courier account and a parcel. The keys' and the token's change say only
+      // "changed"
+      provider: 'How it books',
+      courier: 'Courier',
+      keys: 'Keys',
+      webhookToken: 'Webhook token',
+      defaultCourier: 'Books first',
+      trackingCode: 'Tracking code',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -7641,6 +7919,9 @@ export const en = {
       // Step 27a: a shop order got its phone code. {{total}} arrives as money ("৳578")
       storefront: {
         order_confirmed: 'New shop order {{number}} for {{total}}.',
+        // Step 28a: {{courier}} is the account's name ("Steadfast")
+        shipment_failed:
+          '{{courier}} did not book the parcel of {{number}}. Open the order to book it again.',
       },
     },
   },
@@ -8480,6 +8761,38 @@ export const en = {
       'This server cannot keep a gateway password yet. Ask whoever runs Omnivo for you to set CREDENTIALS_KEY.',
     account_used_by_shop:
       'The shop’s online payments use this account. Choose another one in Shop settings → Online payment first, or archive it.',
+    // Step 28a
+    courier_key_format:
+      'Type the key as the courier’s panel shows it: letters and digits, with no spaces.',
+    courier_key_required: 'Type both keys from the courier’s panel.',
+    courier_pick_one: 'Pick the courier you book these parcels with.',
+    courier_key_missing:
+      'This server cannot keep a courier’s keys yet. Ask whoever runs Omnivo for you to set CREDENTIALS_KEY.',
+    courier_account_not_bookable:
+      'Pick an active courier account that books by its API. A manual one is booked with Book courier, once the courier gives you its code.',
+    courier_account_archived: 'This courier account is archived. Restore it to change it.',
+    courier_provider_fixed:
+      'A courier account’s courier can’t change. Add a new account for the other courier.',
+    courier_pick_account: 'Pick the courier account to send the parcel with.',
+    courier_tracking_code_required: 'Type the tracking code the courier gave for this parcel.',
+    courier_tracking_code_format:
+      'Type the tracking code as the courier shows it: letters, digits and dashes.',
+    storefront_order_not_bookable: 'Only a packed order goes to a courier. Mark it packed first.',
+    storefront_order_has_parcel:
+      'This order’s parcel is on its way already. Reload the page to see it.',
+    storefront_shipment_not_failed: 'This parcel did not fail. Reload the page to see where it is.',
+    storefront_order_parcel_on_its_way:
+      'The courier has the parcel now, so the order can’t be cancelled. Ask the courier to return it.',
+    storefront_order_parcel_booking:
+      'The parcel is being booked with the courier. Cancel once it is booked or its booking failed.',
+    courier_rejected_keys:
+      'The courier refused the account’s keys. Check them in Shop couriers, then book again.',
+    courier_rejected_parcel: 'The courier refused the parcel. Fix what it says, then book again.',
+    courier_unreachable: 'The courier did not answer. Book again in a few minutes.',
+    courier_invoice_taken:
+      'The courier already has a parcel with this order’s number. Find it on the courier’s panel and cancel it there, then book again.',
+    courier_webhook_token_invalid:
+      'This webhook token is not right. Paste the token from Shop couriers.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

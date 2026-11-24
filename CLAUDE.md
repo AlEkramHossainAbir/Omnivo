@@ -617,7 +617,7 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   either permission: Shop orders first (`ShoppingBag01`, with `storefront.order.read`, and a `crit` count of the new
   orders on the right, asked every 30 seconds like the approvals count), then, with `storefront.manage`, Catalog
   (`Store04`), Shop coupons (`CouponPercent`), Shop categories (`FolderLibrary`), Shop appearance (`PaintBoard`),
-  Shop pages (`Files01`), Shop settings (`WebDesign01`). The links say "Shop …" because the phone's nav row has no group labels. A page under
+  Shop pages (`Files01`), Shop settings (`WebDesign01`), Shop couriers (`ShippingTruck01`). The links say "Shop …" because the phone's nav row has no group labels. A page under
   another (a listing, the hero, a collection, a text page) keeps its item marked, because its address starts with
   the item's link. Every page is online only: offline it is the
   empty state "Needs a connection" (`WifiDisconnected02`). Once the shop is set up, each page header has "View
@@ -656,6 +656,35 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   `InformationCircle` "Not tested yet." or, while the form has changes, "Save your changes first…"); on the right
   "Save gateway" alone before the first save, then "Test connection" (secondary, `Plug01`, disabled while the form
   has changes; it tests what is saved), and "Discard changes" and "Save changes" only with changes.
+- **Shop couriers (`/storefront/couriers`, `storefront.manage`):** the couriers the shop's parcels go with. Works
+  before the shop is set up, with no "Changes show in the shop" line. The page header ("The couriers your parcels go
+  with, and the one the Packed dialog books with first") with "View shop" once the shop is set up and "Add courier
+  account" (primary, `PlusSign`). Then the
+  "Book at Packed" card: a "Book with" select (max 420px, `ShippingTruck01`) of the active API accounts, "Don’t book
+  at Packed" first, and Save (secondary, disabled until it changes: the page's one primary is Add); with no API
+  account, a neutral line that says to add a Steadfast account. Then an Active / Archived segmented control (it
+  filters in the browser) and a data table (cards on a phone), not sortable: Account (a 30px `brand-soft`
+  `ShippingTruck01` tile, the name, a `brand` "Books first" pill (`CheckmarkBadge01`) on the default, and "Steadfast ·
+  books by its API" or "Pathao · booked by hand" under it), Courier’s news ("Last arrived …"; a manual account says
+  "Moved by hand"; an API account with none is `warn` `Alert02` "None yet" with the line that says to paste the
+  webhook), Last test (`good` "Keys accepted …", `crit` "Keys refused …" or "No answer …", "Not tested", a dash for a
+  manual account), Status, and a row menu (`MoreHorizontal`, "Actions for Steadfast Dhaka"): Edit (`Edit02`), Test
+  connection (`Plug01`, API only), New webhook token (`Webhook`, API only, asks first: the old token stops at once)
+  and Archive (`Archive02`, asks first; on the default it says Packed then books with no courier), or on an archived
+  row Restore alone (`ArchiveRestore`, no question). A row click opens Edit; an archived row opens nothing. Empty:
+  "No courier account yet" (`ShippingTruck01`, "Add courier account") and "No archived courier account". Online only.
+- **Courier account dialog:** "Add a courier account" or "Edit Steadfast Dhaka", its own lazy chunk. New: "How it
+  books" as two radio cards (`SelectableCardGroup`): "Steadfast, by its API" or "Another courier, by hand", each with
+  its hint; on edit the provider is a fact on `subtle` with "An account’s courier can’t change…". Name (`Tag01`, "Only
+  your team sees it…"). Steadfast: API key (`Key01`) and Secret key (`LockKeyhole`), both write-only like the store
+  password (start empty, "Saved" as the placeholder once saved, an empty box keeps its key, `autocomplete="new-password"`).
+  By hand: a Courier select (`ShippingTruck01`) of the five couriers the tracking page knows. "Add account" / "Save
+  changes".
+- **Webhook dialog:** after an API account is added and after New webhook token: "Paste the webhook into Steadfast",
+  the Callback URL and the "Auth token (Bearer)" in read-only boxes that select all on focus, each with Copy
+  (secondary `sm`, `Copy01`; when the clipboard refuses, the toast says to select it by hand), the hint that the token
+  is shown only this once, a neutral document notice that Omnivo asks Steadfast every 15 minutes until the first news
+  arrive, and Done (primary) as the only button.
 - **Shop coupons (`/storefront/coupons`):** works before the shop is set up (a coupon can wait for it), so "View shop"
   shows only once it is, and there is no "Changes show in the shop" line (the shop's price check is not cached, so a
   coupon acts at once). The page header with "Add coupon" (primary, `PlusSign`), a search box ("Code", max 320px, in
@@ -798,34 +827,51 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   in the shop"); a page always keeps at least one section, so taking it out is Delete.
 - **Shop orders (`/storefront/orders`, `storefront.order.read`):** the page header ("Orders from your online shop,
   from the checkout to the shopper’s door"; "View shop" only with `storefront.manage`, and no "Changes show in
-  the shop" line), a search box ("Order number, name or phone", max 320px, inside the tab only), a segmented control
+  the shop" line; "Export for courier", secondary with `Download04`, on every tab, with `storefront.order.manage`
+  and online only: a CSV of the packed orders with no parcel, at most 500, in Steadfast's bulk upload columns
+  (Invoice, Name, Address, Phone, Amount, Note), with a byte order mark so Excel reads Bangla, a `'` before a cell
+  that starts with `=`, `+`, `-` or `@`, the amount with paisa and the local day in the file name; nothing waiting is
+  a toast, never an empty file, and the same toast says when more orders wait than one file holds), a search box ("Order number, name or phone", max 320px, inside the tab only), a segmented control
   New / Packed / Shipped / Delivered / Cancelled / All (the tab is in the address, `?view=packed`; New, the default,
   has none), then a data table sorted on the server and paged: order (number in `Geist Mono`, "3 items" under it),
   confirmed (date and time, newest first at first, sortable), shopper (name, phone under it), delivery zone,
-  payment ("Cash on Delivery" or "Paid online"), total (sortable) and status (the status pill, plus a `crit` "Needs attention" pill). A row click opens the
+  payment ("Cash on Delivery" or "Paid online"), total (sortable) and status (the status pill, plus a `crit` "Needs attention" pill when its sales order or its
+  parcel's booking failed). A row click opens the
   order. On a phone the card leaves out Payment. A pending order (waiting for its phone code) never shows. Empty: "No
   shop orders yet" on All, the tab's own line on the others, and "No order matches" with "Search every order" (moves
   to All, keeps the search). Online only.
 - **Shop order page (`/storefront/orders/$orderId`):** a "Shop orders" back link (`ArrowLeft01`), the number (`h1`) with
   its pills beside it and "Placed …" under it; on the right "Cancel order" (secondary,
-  `CancelCircle`, while New or Packed) and the next step's primary button: "Make the sales order" (`Agreement01`, a
-  New order without one), "Mark packed" (`Package`), "Mark shipped" (`DeliveryTruck01`, at once), "Mark delivered"
-  (`PackageDelivered`, asks first: it posts an invoice). On a phone the two buttons share a row. One notice under
-  the header: `crit` "The sales order could not be made." with the error's own words, else neutral "This order has
+  `CancelCircle`, while New or Packed), "Book courier" (secondary, `ShippingTruck01`, on a packed order with no
+  parcel on its way, also while a failed one waits, so another account can take it) and the next step's primary
+  button: "Make the sales order" (`Agreement01`, a
+  New order without one), "Mark packed" (`Package`), "Mark shipped" (`DeliveryTruck01`, at once; it stays while an
+  API parcel is on its way, as a way out when the courier's news are late), "Mark delivered"
+  (`PackageDelivered`, asks first: it posts an invoice). On a phone the buttons are two columns and the step's button
+  takes the whole second row. One notice under
+  the header: `crit` "The sales order could not be made." with the error's own words, else `crit` "Steadfast Dhaka
+  did not book the parcel." with the error's words and a "Book again" button (books the same parcel with the same
+  account), else neutral "This order has
   no sales order yet…", else what the next step does (a delivered order's ends with a "Record payment" link to a new
   money receipt for that invoice, with `sales.receipt.manage`; a delivered order paid online says "The invoice is
   paid: it took the online payment’s money receipt." with no link). A paid order that must give money back (cancelled
   after it was paid, paid twice, or paid online and then switched to cash on delivery) also has a `warn` notice
   (`MoneyRemove01`) with the amount and a "Record refund" link (with `sales.refund.manage`, a new refund of the last
-  paid try's receipt); it comes after the sales order's error and before the step's line. Without `storefront.order.manage`, no buttons and a
+  paid try's receipt); it comes after the sales order's error and before the step's line. Once the order has a
+  parcel, the step's line says who moves it next: "Omnivo is booking the parcel with …", "The order moves to Shipped
+  by itself when …’s rider picks the parcel up", "…to Delivered by itself when … delivers it. That posts the
+  invoice."; a manual parcel keeps the buttons ("Mark it shipped when Pathao picks the parcel up."), and a packed
+  order with none says "Book a courier, or mark it shipped…". While a parcel is booking the page asks again every 3
+  seconds. Without `storefront.order.manage`, no buttons and a
   neutral notice that says which permission moves orders. From `xl` two columns: Items (a 40px photo, name, "SKU ·
   150ml", "2 pcs × ৳229", the amount; then Subtotal, Discount only when there is one, Delivery charge or "Free", and
-  the Total at 500, all on `subtle`), the Payments card under it (only when the order has a payment try) and Timeline (oldest first, 24px round icons on `subtle`, the step it is at on
+  the Total at 500, all on `subtle`), the parcel cards under it (newest first), the Payments card (only when the
+  order has a payment try) and Timeline (oldest first, 24px round icons on `subtle`, the step it is at on
   `brand-soft`/`brand`, a 1px `line` between them, the time in 12px `ink-3`, and "Why: …" under Cancelled), beside a
   340px column of Deliver to (name, mobile number, address with its line breaks, zone, payment ("Paid online"), "Customer in Omnivo"
   or "Found by the phone with the sales order") and Documents (sales order, challan, invoice, sales return; each
   number a link, or when it comes: "When it is packed"; a cancelled order lists only what it made). On a phone the
-  cards are Items, Payments, Deliver to, Documents, Timeline. Amounts like the shop (paisa only when there is some). Online
+  cards are Items, Parcels, Payments, Deliver to, Documents, Timeline. Amounts like the shop (paisa only when there is some). Online
   only.
 - **Payments card (shop order page):** `storefront-order-payments.tsx`, "Payments", "Each visit to the SSLCommerz
   page…", one row per try, oldest first, with 1px `line` rules: "Try 2" (13.5px/500), its pill and the amount on the
@@ -838,6 +884,33 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Shop payment try statuses:** Started (`brand`, `Clock01`), Page did not open (neutral, `Unlink04`), Paid (`good`,
   `CheckmarkCircle02`), Failed (neutral, `CreditCardNotAccept`), Cancelled (neutral, `CancelCircle`). Failed is not
   `crit`: a refused card is the shop's normal day. Only Paid is final; a later Paid replaces a Failed or a Cancelled.
+- **Parcel card (shop order page):** `storefront-order-parcels.tsx`, one card per parcel, "Parcel" ("Parcel 2" above
+  "Parcel 1" when the order was booked again), the parcel pill beside the title, "Sent with Steadfast Dhaka" under
+  it, and "Print label" (secondary `sm`, `Printer`) on the right once it has a tracking code and is not cancelled.
+  While booking, a `role="status"` line with `Loading03` (spinning only without reduced motion), "Booking with …"
+  and "Tried 2 times. Omnivo tries again by itself." once a try failed. A failed booking shows "The courier said:
+  “Invalid phone number”" when the courier sent words, else our error's words. Then a grid of facts with caption
+  labels (two columns on a phone, three from `sm`), only the ones that exist: Courier, Tracking code, Courier’s ID,
+  Rider collects ("Nothing: paid online" for a paid order; paisa only when there is some), Booked, Last news. An API
+  parcel then lists "The courier’s news", newest first, in the Timeline card's style with the pills' icons ("No news
+  from the courier yet."); a manual one says "Booked by hand. Move the order with its buttons."
+- **Parcel statuses:** Booking (`brand`, `Clock01`), Booking failed (`crit`, `Alert02`), Booked (`brand`,
+  `DeliveryBox01`), Picked up (`brand`, `PackageMoving`), In transit (`brand`, `DeliveryTruck01`), Out for delivery
+  (`brand`, `DeliveryTracking01`), Delivered (`good`, `PackageDelivered`), Partly delivered (`warn`, `PackageRemove`),
+  On hold (`warn`, `DeliveryDelay01`), Going back (`warn`, `DeliveryReturn01`), Returned (neutral, `PackageReceive`),
+  Cancelled (neutral, `CancelCircle`). Work on its way is `brand`; `warn` is what the shop must act on. Booking and
+  Booking failed are the ERP's own: the shop shows a parcel only once the courier gave it a tracking code.
+- **Book courier dialog:** "Book a courier for W-000123", a line of what the courier gets and what the rider
+  collects (or that the order is paid), a "Courier account" select ("Steadfast Dhaka · Steadfast", the active
+  accounts, starting at the default), and for a manual account a "Tracking code" box (upper-cased, letters, digits
+  and dashes, "Book the parcel on the courier’s website or app first…"); an API account's hint says Omnivo books it
+  now. "Book courier" (primary). The toast: "Booking W-000123’s parcel with …", or "W-000123 booked with …, code …"
+  for a manual one. With no active account, a line that says to add one in Shop couriers.
+- **Parcel label:** a print sheet like the POS receipt (`data-print-sheet`, its own `@page { size: A6; margin: 0 }`),
+  105 × 148 mm, black on white, no fills and no barcode (the courier prints its own): "Steadfast · SFR2611120042" in
+  `Geist Mono` over a 2px rule, the order number, To (name, phone, the address with its line breaks, zone), the
+  amount in a 2px box ("Collect ৳578.00", always with paisa, or "Paid. Collect nothing.") and From (the company's
+  legal name, address and phone). It waits for the company's settings, prints once and leaves the page.
 - **Packed dialog:** the dialog at 560px, "Pack W-000123", "The challan takes these goods out of Main warehouse…".
   One block per line in a 1px `line` box (radius 10px): the name and "Needs 3 pcs"; an untracked product says "No
   batch or serial number to pick."; a batch product has rows of a batch select ("AT-2408 · expires 30 Nov 2026 · 12
@@ -845,14 +918,20 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   last row), "Add another batch" (secondary `sm`) and "2 of 3 pcs picked" (`good` with `CheckmarkCircle02` once it adds up), or
   `crit` "No batch of this product has stock in …"; a serial product has the serial number box and "1 of 2 typed".
   A quantity shows without its zeros at the end, never rounded. Errors land under the box the API names
-  (`lines.0.picks.1.quantity`). "Mark packed" (primary).
+  (`lines.0.picks.1.quantity`). Under the lines, "Send with" (only when the shop has an API courier account): the
+  active API accounts, starting at the default ("Book at Packed"), and "Don’t book now", with a hint of what each
+  does; the dialog waits for the plan and the accounts together, and opens without the select when the accounts
+  can't be read (packing never waits for a courier). "Mark packed" (primary); the toast then says the booking
+  started.
 - **Cancel shop order dialog:** "Cancel W-000123?", what happens (a new order frees its stock; a packed one gets a
   sales return), "Why" (optional, 200 characters, "Only your team sees this. The SMS does not say why."), "Keep the
-  order" (secondary) and "Cancel order" (primary).
+  order" (secondary) and "Cancel order" (primary). With a booked parcel, a `warn` document notice says it is
+  cancelled here too and must be cancelled on the courier's panel as well. A parcel still booking is refused
+  (`storefront_order_parcel_booking`), and one the courier picked up is a return, not a cancel.
 - **Shop order statuses:** New (`brand`, `Clock01`), Packed (`brand`, `Package`), Shipped (`brand`,
   `DeliveryTruck01`), Delivered (`good`, `PackageDelivered`), Cancelled (neutral, `CancelCircle`), Returned (neutral,
   `PackageReceive`, step 28), plus a second `crit` "Needs attention" pill (`Alert02`) while its sales order could
-  not be made. The timeline's icons: placed `ShoppingCart01`, confirmed `SmartPhone01` ("Confirmed with the phone
+  not be made or its parcel's booking failed (`needsAttention`, set by the API). The timeline's icons: placed `ShoppingCart01`, confirmed `SmartPhone01` ("Confirmed with the phone
   code") or, on an order paid online, `CreditCardAccept` ("Confirmed when the payment arrived"), then the pills'
   icons.
 - **Filter chips / segmented control:** radius 8px, 1px `line-strong` border. The
@@ -1265,6 +1344,19 @@ bytes, base64, the same on `api` and `worker`, with a key version) in `storefron
 `omnivo_app` reads, never the shop's roles; without the key the card answers `storefront_gateway_key_missing`. A
 paid try gets a posted money receipt (an advance) from the worker, with the fee (`amount − store_amount`) on its own
 line to the fee account, and the invoice takes it at Delivered.
+Couriers go through `apps/api/src/shipping/` (`CourierAdapter`: `SteadfastAdapter`, `FakeCourier`; a manual account
+has no adapter): `COURIER_MODE` is `fake` outside production and `live` in it (fake is refused in production). A
+courier account's keys are sealed under the same `CREDENTIALS_KEY` in `courier_accounts`, which only `omnivo_app`
+reads. Packed (or Book courier) writes the parcel row and an outbox event in the order's transaction; the worker
+books it on its own `couriers` queue, never inside a request, with the order number as the courier's `invoice`
+(`W-000123`, `W-000123-2` for a second parcel) and `UNIQUE` on it, and after a lost answer it asks the courier by
+that invoice before trying again. Five tries, then the parcel is `booking_failed`, the order needs attention and
+the bell rings (`storefront.shipment_failed`); it never fails quietly. The courier's news come by a webhook per
+account (`POST /public/v1/couriers/steadfast/<account id>`, checked against the account's bearer token, of which only
+the hash is kept; any wrong token is 401, an unknown parcel 200, and a body is never refused for its shape) and by a
+15-minute poll of the parcels on their way. Every step goes into the append-only `storefront_shipment_events` once
+(`event_key`). Picked up moves the order to Shipped (and texts the shopper), delivered to Delivered (the invoice). The
+real Steadfast API has not been run yet: book one parcel with a real account before the first live shop.
 A shop photo comes from the ERP's Storefront menu as a `storefront_image` upload; the worker's `sharp` job writes
 `storefront/<id>/small.webp`, `large.webp` and `wide.webp`, and only that `storefront/` folder of the storage is
 public. The original stays private, and the shop never links to it.
@@ -1611,7 +1703,8 @@ These follow the same tokens and components. Use them exactly as written here un
   "Steadfast · SFR2611120042" in 14px `muted` `tabular-nums`, an optional "See it on the Steadfast site" link
   (`LinkSquare02`, https only, `rel="noopener noreferrer"`), and the courier's events newest first in the same
   dots and line (status, time, and the courier's own note in 14px `body`). Each courier's statuses map to the
-  shop's ten. Before a courier is booked, the parcel section says so. It ends with "Anyone with this link can
+  shop's ten. Before a courier is booked, the parcel section says so; a parcel still booking or whose booking failed
+  is not shown, nor a notice the API could not read. Steps with the same courier time keep the order they arrived in. It ends with "Anyone with this link can
   see this page. It shows no address and no phone number." in 14px `muted`: the page names no person, because a
   link can be forwarded. Headers `Cache-Control: no-store`, `X-Robots-Tag: noindex` and
   `Referrer-Policy: no-referrer`. A broken or unknown link answers 404 with its own empty state.

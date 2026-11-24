@@ -7,6 +7,12 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 import { TRACKING_MODES } from './products.js';
 import { quantitySchema } from './quantities.js';
 import { documentRefSchema } from './sales.js';
+import {
+  bookShipmentInputSchema,
+  courierChoicesSchema,
+  courierExportSchema,
+  storefrontShipmentSchema,
+} from './shipping.js';
 import { MAX_SERIALS_PER_LINE, optionalIdSchema, serialNumberSchema } from './stock.js';
 import { storefrontImageViewSchema } from './storefront-admin.js';
 import {
@@ -74,7 +80,8 @@ export const storefrontOrderSummarySchema = z.object({
   // The pieces in the order (the sum of the lines' quantities), as "3 items" on a phone's card
   itemCount: z.number().int().min(1),
   total: z.string(),
-  // The sales order could not be made (decision 1): the list shows a crit "Needs attention" pill
+  // The sales order could not be made (decision 1), or (step 28a) its parcel's booking failed five
+  // times: the list shows a crit "Needs attention" pill
   needsAttention: z.boolean(),
 });
 export type StorefrontOrderSummary = z.infer<typeof storefrontOrderSummarySchema>;
@@ -166,6 +173,14 @@ export const storefrontOrderSchema = storefrontOrderSummarySchema.extend({
   // to pay online. A paid online order has one paid try; two paid ones mean the shopper paid twice
   // (a second tab), and the page says one of them is to be refunded
   payments: z.array(storefrontOrderPaymentSchema).max(SHOP_PAYMENT_TRIES),
+  // Step 28a: what the rider collects at the door, a decimal string with paisa: the total less
+  // what paid tries took (never below zero; "0.00" for an order paid online). The API works it
+  // out, so the label, the export and the courier's booking all say the same amount
+  codAmount: z.string(),
+  // Step 28a: the order's parcels, oldest first. Empty until it is booked with a courier. More than
+  // one only when an earlier one was cancelled or failed and the order was booked again: at most
+  // one is on its way at a time (isOpenShipment)
+  shipments: z.array(storefrontShipmentSchema).max(5),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),
 });
@@ -239,6 +254,12 @@ export const packStorefrontOrderInputSchema = z
   .object({
     version: versionSchema,
     lines: z.array(packLineInputSchema).min(1).max(SHOP_CART_MAX_LINES),
+    // Step 28a (decision 2): the courier account to book the parcel with, once the challan is
+    // posted. The dialog starts with the default account; '' = "Don't book now" (a shop's own
+    // rider, or a booking made later with "Book courier"). Only an active account that books by
+    // API: the API refuses a manual or archived one (courier_account_not_bookable). Left out is
+    // "Don't book now" too (28a.3): a page loaded before 28a, still open in a tab, packs as before
+    courierAccountId: optionalIdSchema.default(null),
   })
   .superRefine((input, ctx) => {
     // Each line once: two entries for one line would pack it twice
@@ -290,6 +311,7 @@ export type CancelStorefrontOrderFormValues = z.input<typeof cancelStorefrontOrd
 
 const idParamsSchema = z.object({ id: z.uuid() });
 const paymentParamsSchema = z.object({ id: z.uuid(), paymentId: z.uuid() });
+const shipmentParamsSchema = z.object({ id: z.uuid(), shipmentId: z.uuid() });
 
 export const storefrontOrderRoutes = {
   listOrders: defineRoute({
@@ -311,6 +333,28 @@ export const storefrontOrderRoutes = {
     permission: 'storefront.order.read',
     status: 200,
     response: storefrontOrderCountsSchema,
+  }),
+  // Step 28a: declared before getOrder in the controller, like countOrders, or "courier-export"
+  // would reach it as an id
+  courierExport: defineRoute({
+    method: 'GET',
+    path: '/storefront/orders/courier-export',
+    summary: "The packed orders with no parcel yet, as rows for a courier's bulk upload",
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    response: courierExportSchema,
+  }),
+  // Step 28a.6: the accounts the Packed dialog and Book courier offer, for a packer without
+  // storefront.manage. Before getOrder too
+  courierChoices: defineRoute({
+    method: 'GET',
+    path: '/storefront/orders/courier-choices',
+    summary: 'The active courier accounts a packer can book with, and the default one',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    response: courierChoicesSchema,
   }),
   getOrder: defineRoute({
     method: 'GET',
@@ -389,6 +433,35 @@ export const storefrontOrderRoutes = {
     body: storefrontOrderVersionInputSchema,
     response: storefrontOrderSchema,
   }),
+  // Step 28a: "Book courier" on a packed order with no parcel on its way. An API account books in
+  // the worker (the answer's parcel is `booking`), a manual one takes the typed tracking code
+  bookShipment: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/shipments',
+    summary: 'Book courier: send a packed order with a courier account',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: idParamsSchema,
+    body: bookShipmentInputSchema,
+    response: storefrontOrderSchema,
+  }),
+  // Step 28a: "Book again" after five failed tries (decision 4). The same parcel row, so the
+  // courier is asked with the same order number and cannot make a second parcel
+  retryShipment: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/shipments/:shipmentId/retry',
+    summary: 'Book again a parcel whose booking failed',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: shipmentParamsSchema,
+    body: storefrontOrderVersionInputSchema,
+    response: storefrontOrderSchema,
+  }),
+  // Step 28a: a booked parcel nobody has picked up yet is cancelled with the order (the API asks
+  // the courier to cancel it, or says to cancel it on the courier's panel); once the courier has
+  // it, the order is refused (storefront_order_parcel_on_its_way): it comes back as a return (28b)
   cancelOrder: defineRoute({
     method: 'POST',
     path: '/storefront/orders/:id/cancel',
