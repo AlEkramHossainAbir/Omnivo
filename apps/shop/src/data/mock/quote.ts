@@ -1,7 +1,8 @@
 import {
   compareMoney,
+  judgeShopCoupon,
   multiplyMoney,
-  percentOfMoney,
+  shopCouponDiscount,
   subtractMoney,
   sumMoney,
   todayIn,
@@ -9,20 +10,20 @@ import {
   type ShopCartQuoteLine,
   type ShopCartQuoteRequest,
   type ShopCheckoutSettings,
-  type ShopCouponResult,
-  type ShopDiscount,
+  type ShopCouponRule,
   type ShopListing,
 } from '@omnivo/contracts';
-
-import type { MockCoupon } from './checkout';
 
 // Step 26c: what the quote needs besides the request: the listings, the shop's checkout settings
 // and coupons, the shop's time zone and the moment (a coupon's last day is a day in Dhaka, not in
 // UTC). One object, so a test changes only the part it is about.
+// Step 27c: the coupons are the contracts' ShopCouponRule, and `used` says how many orders have a
+// code now (the order book's count, orders.ts → couponUses)
 export interface QuoteContext {
   catalog: ShopListing[];
   settings: ShopCheckoutSettings;
-  coupons: MockCoupon[];
+  coupons: readonly ShopCouponRule[];
+  used: (code: string) => number;
   timeZone: string;
   now: Date;
 }
@@ -63,8 +64,22 @@ export function quoteCart(request: ShopCartQuoteRequest, context: QuoteContext):
   const sold = lines.filter((line) => line.status === 'available');
   const subtotal = sumMoney(sold.map((line) => line.lineTotal));
 
-  const coupon = couponResult(request.couponCode, subtotal, context);
-  const discount = coupon.status === 'applied' ? discountOf(coupon.discount, subtotal) : '0.0000';
+  // Step 27c: judged by the contracts' rule, the one the API's quote uses, so the mock can never
+  // apply a code the real shop refuses. The reasons go from "no such code" to "not any more" to
+  // "not for this cart" (27c's decision 15)
+  const code = request.couponCode;
+  const coupon = judgeShopCoupon(
+    code,
+    context.coupons.find((candidate) => candidate.code === code),
+    {
+      subtotal,
+      // Today in the shop's time zone: at 1 am on 1 January in Dhaka it is still 31 December in
+      // UTC, and a code that ended on the 31st must not work then
+      today: todayIn(context.timeZone, context.now),
+      used: code === undefined ? 0 : context.used(code),
+    },
+  );
+  const discount = coupon.status === 'applied' ? shopCouponDiscount(coupon, subtotal) : '0.0000';
 
   const { settings } = context;
   // Decision 8: both rules look at the subtotal, the items before the coupon
@@ -89,35 +104,4 @@ export function quoteCart(request: ShopCartQuoteRequest, context: QuoteContext):
     total: sumMoney([subtractMoney(subtotal, discount), deliveryCharge ?? '0']),
     belowMinimum,
   };
-}
-
-// Decision 9: a code that does not apply is an answer, never an error. The checks go from "no such
-// code" to "not any more" to "not for this cart", so the reason given is the one that matters most
-function couponResult(
-  code: string | undefined,
-  subtotal: string,
-  context: QuoteContext,
-): ShopCouponResult {
-  if (code === undefined) return { status: 'none' };
-
-  const coupon = context.coupons.find((candidate) => candidate.code === code);
-  if (!coupon) return { status: 'refused', code, reason: 'shop_coupon_unknown', minimum: null };
-
-  // Today in the shop's time zone: at 1 am on 1 January in Dhaka it is still 31 December in UTC,
-  // and a code that ended on the 31st must not work then. ISO dates compare correctly as strings
-  if (coupon.lastDay !== null && todayIn(context.timeZone, context.now) > coupon.lastDay) {
-    return { status: 'refused', code, reason: 'shop_coupon_expired', minimum: null };
-  }
-  if (coupon.minimum !== null && compareMoney(subtotal, coupon.minimum) < 0) {
-    return { status: 'refused', code, reason: 'shop_coupon_minimum', minimum: coupon.minimum };
-  }
-  return { status: 'applied', code, discount: coupon.discount };
-}
-
-// What a coupon takes off the subtotal, to the paisa. A fixed amount never takes off more than the
-// items cost: ৳50 off a ৳30 cart is ৳30 off, so the total never goes below the delivery charge
-function discountOf(discount: ShopDiscount, subtotal: string): string {
-  if (discount.kind === 'percent') return percentOfMoney(subtotal, String(discount.value));
-  const amount = sumMoney([discount.value]);
-  return compareMoney(amount, subtotal) > 0 ? subtotal : amount;
 }

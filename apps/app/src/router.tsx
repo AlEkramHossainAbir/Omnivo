@@ -6,7 +6,7 @@ import {
   Outlet,
   redirect,
 } from '@tanstack/react-router';
-import { INVITE_PATH } from '@omnivo/contracts';
+import { INVITE_PATH, type StorefrontOrderView } from '@omnivo/contracts';
 
 import { restoreSession } from './lib/session';
 import { sessionStore } from './lib/session-store';
@@ -1027,6 +1027,37 @@ const auditLogRoute = createRoute({
   component: lazyRouteComponent(() => import('./routes/audit-log'), 'AuditLogPage'),
 });
 
+// Step 27b: the shop's orders (decision 10), behind storefront.order.read. The tab is a search
+// param, so Back from an order lands on its tab; anything that is not a tab is the default (New).
+// The tabs are written out here, not imported: STOREFRONT_ORDER_VIEWS lives in the contracts'
+// storefront-orders module, whose schemas (and the modules they import) would then ride in the
+// first chunk, 12 KB of it. `satisfies Record<…>` keeps the list exactly the contract's: a tab added
+// or removed there fails the type check here
+const ORDER_VIEWS: readonly StorefrontOrderView[] = Object.values({
+  confirmed: 'confirmed',
+  packed: 'packed',
+  shipped: 'shipped',
+  delivered: 'delivered',
+  cancelled: 'cancelled',
+  all: 'all',
+} as const satisfies { [View in StorefrontOrderView]: View });
+
+const storefrontOrdersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/orders',
+  validateSearch: (search: Record<string, unknown>): { view?: StorefrontOrderView } => {
+    const view = ORDER_VIEWS.find((candidate) => candidate === search.view);
+    return view === undefined || view === 'confirmed' ? {} : { view };
+  },
+  component: lazyRouteComponent(() => import('./routes/storefront-orders'), 'StorefrontOrdersPage'),
+});
+
+const storefrontOrderRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/orders/$orderId',
+  component: lazyRouteComponent(() => import('./routes/storefront-order'), 'StorefrontOrderPage'),
+});
+
 // Step 26g: the Storefront menu (decision 5), behind storefront.manage: the sidebar hides it, and
 // the API refuses the reads for anyone else. '/storefront/listings' is the catalog; a listing's
 // editor sits under it
@@ -1045,6 +1076,17 @@ const storefrontListingRoute = createRoute({
   component: lazyRouteComponent(
     () => import('./routes/storefront-listing'),
     'StorefrontListingPage',
+  ),
+});
+
+// Step 27c: the shop's coupons (decision 5), behind storefront.manage like the catalog. One page:
+// a coupon opens in a dialog, so it has no address of its own
+const storefrontCouponsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/coupons',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-coupons'),
+    'StorefrontCouponsPage',
   ),
 });
 
@@ -1257,8 +1299,11 @@ const routeTree = rootRoute.addChildren([
     rolesRoute,
     approvalRulesRoute,
     auditLogRoute,
+    storefrontOrdersRoute,
+    storefrontOrderRoute,
     storefrontListingsRoute,
     storefrontListingRoute,
+    storefrontCouponsRoute,
     storefrontCategoriesRoute,
     storefrontSettingsRoute,
     storefrontAppearanceRoute,

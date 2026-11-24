@@ -161,6 +161,14 @@ const warehouseIdSchema = z
   .transform((value) => (value === '' ? null : value))
   .nullable();
 
+// Step 27b: the service a shop order's delivery charge is sold as (decision 4). The select's
+// "Made on the first order" sends ''. Whether it is an active service, and whether it may be
+// empty (not once an order used one), the API checks
+const deliveryVariantIdSchema = z
+  .union([z.uuid(errorCode('storefront_delivery_product_invalid')), z.literal('')])
+  .transform((value) => (value === '' ? null : value))
+  .nullable();
+
 const settingsFieldsSchema = z.object({
   subdomain: storefrontSubdomainSchema,
   name: nameSchema(80),
@@ -179,11 +187,14 @@ const settingsFieldsSchema = z.object({
     .max(STOREFRONT_ZONES_MAX, errorCode('too_long')),
   freeDeliveryFrom: optionalAmountSchema,
   minimumOrder: optionalAmountSchema,
-  // At least one way to pay, or no order can be placed. Ticked twice is once
+  // At least one way to pay, or no order can be placed. Ticked twice is once. Step 27d: `online`
+  // only once the payment gateway is saved with accounts that fit (storefront_online_not_ready);
+  // only the API knows that, so it checks
   paymentMethods: z
     .array(z.enum(SHOP_PAYMENT_METHODS))
     .min(1, errorCode('storefront_payment_required'))
     .transform((methods) => [...new Set(methods)]),
+  deliveryVariantId: deliveryVariantIdSchema,
 });
 
 // Two zones with one name would be two radio cards nobody can tell apart. Compared without case
@@ -246,6 +257,9 @@ export const storefrontSettingsSchema = z.object({
   freeDeliveryFrom: z.string().nullable(),
   minimumOrder: z.string().nullable(),
   paymentMethods: z.array(z.enum(SHOP_PAYMENT_METHODS)),
+  // Step 27b: the delivery charge's service. null until the first order makes one ("Delivery
+  // charge") or the tenant picks one
+  deliveryVariantId: z.uuid().nullable(),
   // null = not open yet: the address answers "No shop has this address"
   launchedAt: z.iso.datetime().nullable(),
   readiness: storefrontReadinessSchema,
@@ -268,6 +282,9 @@ export const storefrontSetupSchema = z.object({
     hotline: z.string(),
     address: z.string(),
   }),
+  // Step 27b: what the delivery charge select offers: the workspace's active services, by name.
+  // Here and not from the products list, because storefront.manage does not read products
+  deliveryChoices: z.array(z.object({ variantId: z.uuid(), name: z.string(), sku: z.string() })),
 });
 export type StorefrontSetup = z.infer<typeof storefrontSetupSchema>;
 

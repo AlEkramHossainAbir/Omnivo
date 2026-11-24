@@ -1,9 +1,16 @@
-import { shopOrderSchema, type ShopOrderRequest, SHOP_CODE_TRIES } from '@omnivo/contracts';
+import {
+  SHOP_CODE_TRIES,
+  SHOP_FAKE_GATEWAY_PATH,
+  shopOrderSchema,
+  shopOrderTokenSchema,
+  type ShopOrderRequest,
+} from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
-import type { ShopSource } from '../types';
+import type { PlacedOrder, ShopSource } from '../types';
+import { fakePageOf, payPlaced, pressOnFakePage } from './fake-payment';
 import { createMockSource } from './mock-source';
-import { maskPhone, MOCK_CODE } from './orders';
+import { MOCK_CODE } from './orders';
 
 const NEEM = 'lst-himalaya-purifying-neem-face-wash-150ml'; // ৳229
 const DANO = 'lst-dano-daily-pushti-milk-1kg'; // out of stock
@@ -21,6 +28,11 @@ const ORDER: ShopOrderRequest = {
   expectedTotal: '767',
 };
 
+// The shopper's address. The mock has no order limits, so any address does
+const ADDRESS = '203.0.113.7';
+// Step 27d: the shop's own address, for the mock's fake gateway page (ShopSource.placeOrder)
+const ORIGIN = 'http://shop.test';
+
 // A source whose clock the test moves
 function withClock() {
   let now = new Date('2026-11-11T10:00:00+06:00');
@@ -35,16 +47,20 @@ function withClock() {
 }
 
 async function placed(source: ShopSource, request: ShopOrderRequest = ORDER) {
-  const result = await source.placeOrder(request);
+  const result = await source.placeOrder(request, ADDRESS, ORIGIN);
   if (!result.ok) throw new Error(`refused: ${result.code}`);
   return result.value;
 }
 
-describe('the mock’s orders', () => {
-  it('hides the middle of the phone', () => {
-    expect(maskPhone('01786120356')).toBe('+880 17•• ••• 356');
-  });
+const ONLINE: ShopOrderRequest = { ...ORDER, paymentMethod: 'online' };
 
+// Step 27d: an online order's page, which every placed online order has in the mock
+function pageOf({ answer }: PlacedOrder): string | null {
+  if (answer.next !== 'pay') throw new Error(`The order answered ${answer.next}`);
+  return answer.paymentUrl;
+}
+
+describe('the mock’s orders', () => {
   it('asks Cash on Delivery for the phone code', async () => {
     const { source } = withClock();
     const order = await placed(source);
@@ -53,15 +69,16 @@ describe('the mock’s orders', () => {
       maskedPhone: '+880 17•• ••• 356',
       resendInSeconds: 45,
     });
-    expect(order.orderNo).toBe('W-000001');
-    expect(order.token).toMatch(/^[0-9a-f]{64}$/);
+    // Step 27a: the API's token shape, so one cookie check serves both sources
+    expect(shopOrderTokenSchema.safeParse(order.token).success).toBe(true);
     // Not an order yet: /order/<no> does not show it, even with the right token
-    expect(await source.order(order.orderNo, order.token)).toBeNull();
+    expect(await source.order('W-000001', order.token)).toBeNull();
   });
 
   it('confirms a right code, and the order then shows with its token only', async () => {
     const { source } = withClock();
-    const { orderNo, token } = await placed(source);
+    const { token } = await placed(source);
+    const orderNo = 'W-000001';
     expect(await source.verifyCode(token, MOCK_CODE)).toEqual({
       ok: true,
       value: { orderNo, phone: '01786120356' },
@@ -82,17 +99,166 @@ describe('the mock’s orders', () => {
     // Decision 5: the number with another order's token, or a made-up token, finds nothing
     const other = await placed(source, { ...ORDER, paymentMethod: 'online' });
     expect(await source.order(orderNo, other.token)).toBeNull();
-    expect(await source.order(orderNo, 'f'.repeat(64))).toBeNull();
+    expect(await source.order(orderNo, 'f'.repeat(22))).toBeNull();
     // And the code cannot confirm it twice
     expect(await source.verifyCode(token, MOCK_CODE)).toMatchObject({ code: 'shop_code_no_order' });
   });
 
-  it('confirms Mobile Banking at once, with the next number', async () => {
+  it('waits for an online payment, with no phone code', async () => {
+    const { source } = withClock();
+    const order = await placed(source, ONLINE);
+    // The fake gateway's page on this shop, for the order's total (৳687 + ৳80)
+    expect(pageOf(order)).toMatch(
+      new RegExp(`^${ORIGIN}${SHOP_FAKE_GATEWAY_PATH}\\?tranId=[A-Z0-9]{20}&amount=767\\.0000$`),
+    );
+    // Not an order yet, and the code's routes do not know it: the mock's 123456 must not confirm
+    // an unpaid order
+    expect(await source.order('W-000001', order.token)).toBeNull();
+    expect(await source.codeWait(order.token)).toBeNull();
+    expect(await source.verifyCode(order.token, MOCK_CODE)).toMatchObject({
+      code: 'shop_code_no_order',
+    });
+    // Back without pressing anything on the page: not finished, two more tries
+    expect(await source.paymentWait(order.token)).toEqual({
+      state: 'unpaid',
+      problem: 'not_finished',
+      triesLeft: 2,
+      payOnDelivery: true,
+      total: '767.0000',
+    });
+  });
+
+  it('confirms an online order when its payment arrives, once', async () => {
     const { source } = withClock();
     await placed(source);
-    const order = await placed(source, { ...ORDER, paymentMethod: 'online' });
-    expect(order.answer).toEqual({ next: 'confirmed', orderNo: 'W-000002', phone: '01786120356' });
-    expect((await source.order('W-000002', order.token))?.status).toBe('confirmed');
+    const order = await placed(source, ONLINE);
+    expect(await pressOnFakePage(source, pageOf(order))).toEqual({ status: 'paid' });
+    expect(await source.paymentWait(order.token)).toEqual({
+      state: 'paid',
+      orderNo: 'W-000002',
+      phone: '01786120356',
+      listingIds: [NEEM],
+    });
+    // The browser and the gateway's notice both settle it: the second changes nothing
+    expect(await pressOnFakePage(source, pageOf(order), 'failed')).toEqual({ status: 'paid' });
+    const shown = await source.order('W-000002', order.token);
+    expect(shown).toMatchObject({ status: 'confirmed', paymentMethod: 'online' });
+    expect(shown?.history.map((step) => step.status)).toEqual(['pending', 'confirmed']);
+  });
+
+  it('does not believe a payment for another amount or another try', async () => {
+    const { source } = withClock();
+    const order = await placed(source, ONLINE);
+    expect(await pressOnFakePage(source, pageOf(order), 'paid', '1')).toEqual({
+      status: 'started',
+    });
+    // Another try's val_id on this try's id
+    const { tranId } = fakePageOf(pageOf(order));
+    const other = fakePageOf(pageOf(await placed(source, ONLINE)));
+    expect(await source.settlePayment({ tranId, valId: `FAKE_${other.tranId}_767.0000` })).toEqual({
+      status: 'started',
+    });
+    // No val_id: the fake gateway knows no payment by the transaction id alone
+    expect(await source.settlePayment({ tranId, valId: null })).toEqual({ status: 'started' });
+    // A transaction id no try has
+    expect(await source.settlePayment({ tranId: 'A'.repeat(20), valId: null })).toBeNull();
+    expect(await source.paymentWait(order.token)).toMatchObject({ state: 'unpaid' });
+  });
+
+  it('gives an order three tries, each with its own page', async () => {
+    const { source } = withClock();
+    const order = await placed(source, ONLINE);
+    expect(await pressOnFakePage(source, pageOf(order), 'failed')).toEqual({ status: 'failed' });
+    expect(await source.paymentWait(order.token)).toMatchObject({
+      problem: 'failed',
+      triesLeft: 2,
+    });
+
+    const second = await source.retryPayment(order.token, ORIGIN);
+    if (!second.ok) throw new Error(second.code);
+    expect(fakePageOf(second.value.paymentUrl).tranId).not.toBe(fakePageOf(pageOf(order)).tranId);
+    expect(await pressOnFakePage(source, second.value.paymentUrl, 'cancelled')).toEqual({
+      status: 'cancelled',
+    });
+    const third = await source.retryPayment(order.token, ORIGIN);
+    if (!third.ok) throw new Error(third.code);
+    expect(await source.paymentWait(order.token)).toMatchObject({
+      problem: 'not_finished',
+      triesLeft: 0,
+    });
+    expect(await source.retryPayment(order.token, ORIGIN)).toEqual({
+      ok: false,
+      code: 'shop_payment_tries_used',
+    });
+    // The third page still pays
+    await pressOnFakePage(source, third.value.paymentUrl);
+    expect(await source.paymentWait(order.token)).toMatchObject({ state: 'paid' });
+    expect(await source.retryPayment(order.token, ORIGIN)).toEqual({
+      ok: false,
+      code: 'shop_payment_no_order',
+    });
+  });
+
+  it('turns an online order into Cash on Delivery with its phone code', async () => {
+    const { source } = withClock();
+    const order = await placed(source, ONLINE);
+    const cod = await source.payOnDelivery(order.token);
+    expect(cod).toEqual({
+      ok: true,
+      value: {
+        next: 'verify',
+        maskedPhone: '+880 17•• ••• 356',
+        resendInSeconds: 45,
+        listingIds: [NEEM],
+      },
+    });
+    // A second press is the same answer, and "Try again" is over
+    expect(await source.payOnDelivery(order.token)).toEqual(cod);
+    expect(await source.retryPayment(order.token, ORIGIN)).toEqual({
+      ok: false,
+      code: 'shop_payment_settled',
+    });
+    expect(await source.paymentWait(order.token)).toBeNull();
+    expect(await source.verifyCode(order.token, MOCK_CODE)).toMatchObject({ ok: true });
+    expect(await source.order('W-000001', order.token)).toMatchObject({ paymentMethod: 'cod' });
+
+    // The first page was still open and paid after the code: the money is kept, the order stays
+    // Cash on Delivery (the ERP's order page says to refund one)
+    expect(await pressOnFakePage(source, pageOf(order))).toEqual({ status: 'paid' });
+    expect(await source.order('W-000001', order.token)).toMatchObject({
+      status: 'confirmed',
+      paymentMethod: 'cod',
+    });
+  });
+
+  it('confirms as online an order paid while it waited for its phone code', async () => {
+    const { source } = withClock();
+    const order = await placed(source, ONLINE);
+    await source.payOnDelivery(order.token);
+    await pressOnFakePage(source, pageOf(order));
+    expect(await source.codeWait(order.token)).toBeNull();
+    expect(await source.order('W-000001', order.token)).toMatchObject({
+      status: 'confirmed',
+      paymentMethod: 'online',
+    });
+  });
+
+  it('confirms a payment that arrives after the hour, which the page no longer offers', async () => {
+    const { source, wait } = withClock();
+    const order = await placed(source, ONLINE);
+    wait(61 * 60);
+    // Decision 5: the money came, so the order is confirmed; the stock is checked at Packed
+    expect(await pressOnFakePage(source, pageOf(order))).toEqual({ status: 'paid' });
+    expect(await source.order('W-000001', order.token)).toMatchObject({ status: 'confirmed' });
+
+    // An order that was never paid is gone after its hour
+    const late = await placed(source, ONLINE);
+    wait(61 * 60);
+    expect(await source.paymentWait(late.token)).toBeNull();
+    expect(await source.payOnDelivery(late.token)).toEqual({
+      ok: false,
+      code: 'shop_payment_no_order',
+    });
   });
 
   it('drops the order after five wrong codes', async () => {
@@ -112,6 +278,41 @@ describe('the mock’s orders', () => {
     // Gone: even the right code is too late now
     expect(await source.verifyCode(token, MOCK_CODE)).toMatchObject({ code: 'shop_code_no_order' });
     expect(await source.codeWait(token)).toBeNull();
+  });
+
+  // Step 27a: the API's code rules, kept by the mock so the verify page meets them in its tests
+  it('refuses a code after its 10 minutes without spending a try', async () => {
+    const { source, wait } = withClock();
+    const { token } = await placed(source);
+    wait(10 * 60);
+    expect(await source.verifyCode(token, MOCK_CODE)).toEqual({
+      ok: false,
+      code: 'shop_code_expired',
+    });
+    expect(await source.verifyCode(token, '000000')).toEqual({
+      ok: false,
+      code: 'shop_code_expired',
+    });
+    // A new code works its own 10 minutes, and no try was spent on the expired one
+    expect(await source.resendCode(token)).toMatchObject({ ok: true });
+    expect(await source.verifyCode(token, '000000')).toMatchObject({
+      params: { triesLeft: SHOP_CODE_TRIES - 1 },
+    });
+    wait(9 * 60);
+    expect(await source.verifyCode(token, MOCK_CODE)).toMatchObject({ ok: true });
+  });
+
+  it('sends three codes at most', async () => {
+    const { source, wait } = withClock();
+    const { token } = await placed(source);
+    wait(45);
+    expect(await source.resendCode(token)).toMatchObject({ ok: true });
+    wait(45);
+    expect(await source.resendCode(token)).toMatchObject({ ok: true });
+    // The first SMS and two more: the fourth ask is refused at once, not after another wait
+    expect(await source.resendCode(token)).toEqual({ ok: false, code: 'shop_code_sends_used' });
+    // The last code still works
+    expect(await source.verifyCode(token, MOCK_CODE)).toMatchObject({ ok: true });
   });
 
   it('sends a new code only after 45 seconds, and keeps the wrong codes', async () => {
@@ -151,7 +352,7 @@ describe('the mock’s orders', () => {
 
   it('refuses what the shop does not offer', async () => {
     const { source } = withClock();
-    expect(await source.placeOrder({ ...ORDER, zoneId: 'chattogram' })).toEqual({
+    expect(await source.placeOrder({ ...ORDER, zoneId: 'chattogram' }, ADDRESS, ORIGIN)).toEqual({
       ok: false,
       code: 'shop_zone_unknown',
     });
@@ -161,7 +362,7 @@ describe('the mock’s orders', () => {
     const { source } = withClock();
     // One face wash: ৳229 of items, ৳80 delivery
     const small = { ...ORDER, lines: [{ listingId: NEEM, quantity: 1 }], expectedTotal: '309' };
-    expect(await source.placeOrder(small)).toEqual({
+    expect(await source.placeOrder(small, ADDRESS, ORIGIN)).toEqual({
       ok: false,
       code: 'shop_order_below_minimum',
       params: { minimum: '300' },
@@ -171,25 +372,28 @@ describe('the mock’s orders', () => {
   it('refuses an order whose total or stock changed since the last quote', async () => {
     const { source } = withClock();
     // Decision 10: the shopper saw ৳747 (an old price); the server's total is ৳767
-    expect(await source.placeOrder({ ...ORDER, expectedTotal: '747' })).toMatchObject({
+    expect(
+      await source.placeOrder({ ...ORDER, expectedTotal: '747' }, ADDRESS, ORIGIN),
+    ).toMatchObject({
       code: 'shop_order_changed',
     });
     // A line went out of stock: the total of what is left might still match, so it is checked
     // on its own
     const withMilk = { ...ORDER, lines: [...ORDER.lines, { listingId: DANO, quantity: 1 }] };
-    expect(await source.placeOrder(withMilk)).toMatchObject({ code: 'shop_order_changed' });
+    expect(await source.placeOrder(withMilk, ADDRESS, ORIGIN)).toMatchObject({
+      code: 'shop_order_changed',
+    });
   });
 
   it('keeps the coupon that took money off, and copies the lines', async () => {
     const { source } = withClock();
     // ৳687 − 10% (৳68.70) + ৳80
-    const { orderNo, token } = await placed(source, {
-      ...ORDER,
+    const placedOrder = await placed(source, {
+      ...ONLINE,
       couponCode: 'WELCOME10',
-      paymentMethod: 'online',
       expectedTotal: '698.30',
     });
-    const order = await source.order(orderNo, token);
+    const order = await source.order(await payPlaced(source, placedOrder), placedOrder.token);
     expect(order).toMatchObject({
       couponCode: 'WELCOME10',
       discount: '68.7000',
@@ -199,5 +403,51 @@ describe('the mock’s orders', () => {
     expect(order?.lines).toMatchObject([
       { listingId: NEEM, quantity: 3, unitPrice: '229', lineTotal: '687.0000' },
     ]);
+  });
+
+  // Step 27c: the coupon's uses, counted from the book as the API counts its orders table
+  it('takes a once-per-number code once per mobile number, counting an order still waiting', async () => {
+    const { source, wait } = withClock();
+    // ৳687 − 10% (৳68.70) + ৳80
+    const welcome = { ...ORDER, couponCode: 'WELCOME10', expectedTotal: '698.30' };
+    // Cash on Delivery: it waits for its code, and already holds the use
+    await placed(source, welcome);
+    expect(await source.placeOrder(welcome, ADDRESS, ORIGIN)).toEqual({
+      ok: false,
+      code: 'shop_coupon_used_by_phone',
+    });
+    // Another number may, and the same number may order without the code
+    await placed(source, { ...welcome, phone: '01711284519' });
+    await placed(source);
+
+    // The first order never got its code: after its hour it is dropped and gives the use back
+    wait(61 * 60);
+    await placed(source, welcome);
+  });
+
+  it('gives the last use to the first order, and back when that order is dropped', async () => {
+    const { source } = withClock();
+    // EID100 may be on one order: ৳687 − ৳100 + ৳80
+    const eid = { ...ORDER, couponCode: 'EID100', expectedTotal: '667' };
+    const { token } = await placed(source, eid);
+
+    // The next shopper's quote says "used up". One who saw ৳667 before is refused: the total
+    // without the code is not the one they saw, and the checkout prices the cart again
+    expect((await source.quote({ lines: ORDER.lines, couponCode: 'EID100' })).coupon).toMatchObject(
+      { status: 'refused', reason: 'shop_coupon_used_up' },
+    );
+    expect(
+      await source.placeOrder({ ...eid, phone: '01711284519' }, ADDRESS, ORIGIN),
+    ).toMatchObject({
+      ok: false,
+      code: 'shop_order_changed',
+    });
+
+    // Five wrong codes drop the first order, and the use is free again
+    for (let tries = 0; tries < SHOP_CODE_TRIES; tries += 1)
+      await source.verifyCode(token, '000000');
+    expect((await source.quote({ lines: ORDER.lines, couponCode: 'EID100' })).coupon.status).toBe(
+      'applied',
+    );
   });
 });

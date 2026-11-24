@@ -29,6 +29,11 @@ const stillToBill = sql<string>`coalesce(sum(round(
          ELSE ${salesOrderLines.invoicedQuantity} END
     - ${salesOrderLines.invoicedQuantity}, 0) / ${salesOrderLines.baseQuantity}, 2)), 0)::text`;
 
+// true: the member saw the amounts in a dialog and goes ahead (needs sales.credit.override).
+// 'storefront_order' (step 27b): a shop order's sales order, made by the worker with no member
+// behind it; over the limit it still goes through, and the audit log keeps the same row
+export type CreditOverride = boolean | 'storefront_order';
+
 // The credit limit (step 15c, you chose this): checked when an order is confirmed and when an
 // invoice is posted. What counts is the customer's exposure: what they owe now (the receivable
 // lines with them, the same number as their balance) plus what confirmed orders will still bill.
@@ -93,7 +98,7 @@ export class CreditService {
     input: {
       customerId: string;
       before: string;
-      overrideCreditLimit: boolean;
+      overrideCreditLimit: CreditOverride;
       entityType: 'sales_order' | 'invoice';
       entityId: string;
     },
@@ -114,8 +119,13 @@ export class CreditService {
         { params: { limit, exposure } },
       );
     }
-    const access = await this.permissions.ofCurrentUser();
-    if (!access.permissions.includes('sales.credit.override')) {
+    // A shop order has no member to ask: the shopper's order stands, like a POS sale (27b's
+    // decision 2), and the audit row below is how the staff find it
+    const access =
+      input.overrideCreditLimit === 'storefront_order'
+        ? null
+        : await this.permissions.ofCurrentUser();
+    if (access !== null && !access.permissions.includes('sales.credit.override')) {
       throw new AppError(
         403,
         'credit_override_forbidden',

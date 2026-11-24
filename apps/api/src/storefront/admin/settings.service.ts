@@ -3,15 +3,24 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   addMoney,
   type CreateStorefrontSettingsInput,
+  defaultLineDescription,
   type ShopDeliveryZone,
+  type ShopPaymentMethod,
   type StorefrontReadiness,
   type StorefrontSettings,
   type StorefrontSetup,
   storefrontSubdomainSchema,
   type UpdateStorefrontSettingsInput,
 } from '@omnivo/contracts';
-import { storefrontSettings, tenants, tenantSettings, warehouses } from '@omnivo/db';
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import {
+  products,
+  productVariants,
+  storefrontSettings,
+  tenants,
+  tenantSettings,
+  warehouses,
+} from '@omnivo/db';
+import { and, asc, eq, isNull, or, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../../common/audit/audit.js';
 import { isUniqueViolation } from '../../common/db/pg-errors.js';
@@ -20,6 +29,7 @@ import { currentPrincipal, getTenantId } from '../../common/tenant/tenant-contex
 import type { Transaction, WithTenant } from '../../common/tenant/with-tenant.js';
 import type { Config } from '../../config.js';
 import { CONFIG, WITH_TENANT } from '../../infra/tokens.js';
+import { onlineReady } from '../online-ready.js';
 import { shopUrl } from '../shop-url.js';
 
 type SettingsRow = typeof storefrontSettings.$inferSelect;
@@ -34,6 +44,15 @@ function subdomainTaken(): AppError {
 function warehouseInvalid(): AppError {
   return new AppError(409, 'storefront_warehouse_invalid', 'Pick an active warehouse.', {
     fieldErrors: { defaultWarehouseId: ['storefront_warehouse_invalid'] },
+  });
+}
+
+// Step 27b: the delivery charge's service (decisions 4 and 17), said on its select
+function deliveryError(
+  code: 'storefront_delivery_product_invalid' | 'storefront_delivery_product_required',
+) {
+  return new AppError(409, code, 'Pick an active service for the delivery charge.', {
+    fieldErrors: { deliveryVariantId: [code] },
   });
 }
 
@@ -59,8 +78,13 @@ function zoneIds(input: SettingsInput['deliveryZones'], before: readonly ShopDel
 }
 
 // What the table keeps, from the form. The name in NFC (26f, decision 34): the shop's search folds
-// to NFC, so a Bangla word typed in its other form would miss
-function columnsOf(input: SettingsInput, before: readonly ShopDeliveryZone[]) {
+// to NFC, so a Bangla word typed in its other form would miss. Step 27b: the delivery charge's
+// service as both its ids, which checkDelivery() looked up (the table's FK names the pair)
+function columnsOf(
+  input: SettingsInput,
+  before: readonly ShopDeliveryZone[],
+  delivery: { productId: string; variantId: string } | null,
+) {
   return {
     subdomain: input.subdomain,
     name: input.name.normalize('NFC'),
@@ -76,6 +100,8 @@ function columnsOf(input: SettingsInput, before: readonly ShopDeliveryZone[]) {
     freeDeliveryFrom: input.freeDeliveryFrom,
     minimumOrder: input.minimumOrder,
     paymentMethods: input.paymentMethods,
+    deliveryProductId: delivery?.productId ?? null,
+    deliveryVariantId: delivery?.variantId ?? null,
   };
 }
 
@@ -100,7 +126,26 @@ function snapshot(row: SettingsRow) {
     freeDeliveryFrom: money(row.freeDeliveryFrom),
     minimumOrder: money(row.minimumOrder),
     paymentMethods: row.paymentMethods.join(', '),
+    deliveryVariantId: row.deliveryVariantId,
   };
+}
+
+// Step 27d (decision 4): Pay online can be newly ticked only while the gateway is ready. One that
+// was ticked already and is not ready now (an account archived since) stays as it is: the checkout
+// hides it by itself (offeredMethods), and a save of the shop's other settings is not refused for it
+async function checkOnline(
+  tx: Transaction,
+  methods: readonly ShopPaymentMethod[],
+  before: readonly ShopPaymentMethod[],
+): Promise<void> {
+  if (!methods.includes('online') || before.includes('online')) return;
+  if (await onlineReady(tx)) return;
+  throw new AppError(
+    422,
+    'storefront_online_not_ready',
+    'Save the payment gateway with its two accounts first.',
+    { fieldErrors: { paymentMethods: ['storefront_online_not_ready'] } },
+  );
 }
 
 // Step 26g: the shop's settings and its launch (decision 1). One row per workspace: the first
@@ -134,6 +179,7 @@ export class StorefrontSettingsService {
       return {
         baseDomain: this.config.storefront.baseDomain,
         shop: row === null ? null : await this.toSettings(tx, row),
+        deliveryChoices: await this.deliveryChoices(tx, row?.deliveryVariantId ?? null),
         suggested: {
           subdomain: storefrontSubdomainSchema.safeParse(slug).success ? slug : '',
           name: company?.name ?? '',
@@ -148,11 +194,13 @@ export class StorefrontSettingsService {
     try {
       return await this.withTenant(async (tx) => {
         await this.checkWarehouse(tx, input.defaultWarehouseId);
+        const delivery = await this.checkDelivery(tx, input.deliveryVariantId, null);
+        await checkOnline(tx, input.paymentMethods, []);
         const [row] = await tx
           .insert(storefrontSettings)
           .values({
             tenantId: getTenantId(),
-            ...columnsOf(input, []),
+            ...columnsOf(input, [], delivery),
             updatedBy: currentPrincipal().userId,
           })
           // A second first save (two tabs, a double click): the row is there already. Not an
@@ -197,10 +245,12 @@ export class StorefrontSettingsService {
         if (input.defaultWarehouseId !== before.defaultWarehouseId) {
           await this.checkWarehouse(tx, input.defaultWarehouseId);
         }
+        const delivery = await this.checkDelivery(tx, input.deliveryVariantId, before);
+        await checkOnline(tx, input.paymentMethods, before.paymentMethods);
         const [after] = await tx
           .update(storefrontSettings)
           .set({
-            ...columnsOf(input, before.deliveryZones),
+            ...columnsOf(input, before.deliveryZones, delivery),
             version: sql`${storefrontSettings.version} + 1`,
             updatedBy: currentPrincipal().userId,
           })
@@ -284,6 +334,95 @@ export class StorefrontSettingsService {
     if (!found) throw warehouseInvalid();
   }
 
+  // Step 27b: the delivery charge's service, as both ids. A new choice must be an active service
+  // of this workspace; the saved one is kept even if it was archived since (like the warehouse:
+  // the next shop order's sales order then says so, and someone picks another). Emptied again
+  // (decision 17): refused once a shop order's sales order has a line of the saved one, or the
+  // next order would make a second "Delivery charge"
+  private async checkDelivery(
+    tx: Transaction,
+    variantId: string | null,
+    before: SettingsRow | null,
+  ): Promise<{ productId: string; variantId: string } | null> {
+    const tenantId = getTenantId();
+    const saved = before?.deliveryVariantId ?? null;
+    if (variantId === null) {
+      if (saved === null) return null;
+      const used = await tx.execute(sql`
+        SELECT 1 FROM storefront_orders o
+          JOIN sales_order_lines l ON l.tenant_id = o.tenant_id AND l.order_id = o.sales_order_id
+         WHERE o.tenant_id = ${tenantId}::uuid AND l.variant_id = ${saved}::uuid
+         LIMIT 1`);
+      if (used.length > 0) throw deliveryError('storefront_delivery_product_required');
+      return null;
+    }
+    const [found] = await tx
+      .select({
+        productId: products.id,
+        type: products.type,
+        archived: sql<boolean>`
+        ${products.archivedAt} IS NOT NULL OR ${productVariants.archivedAt} IS NOT NULL`,
+      })
+      .from(productVariants)
+      .innerJoin(
+        products,
+        and(
+          eq(products.tenantId, productVariants.tenantId),
+          eq(products.id, productVariants.productId),
+        ),
+      )
+      .where(and(eq(productVariants.tenantId, tenantId), eq(productVariants.id, variantId)));
+    if (!found) throw deliveryError('storefront_delivery_product_invalid');
+    if (variantId !== saved && (found.type !== 'service' || found.archived)) {
+      throw deliveryError('storefront_delivery_product_invalid');
+    }
+    return { productId: found.productId, variantId };
+  }
+
+  // What the select offers (decision 17): the active services, by name, and the saved one even
+  // when it was archived since, so the select can still show what is saved. 200 at most: a
+  // workspace has a few services, not thousands
+  private async deliveryChoices(
+    tx: Transaction,
+    saved: string | null,
+  ): Promise<StorefrontSetup['deliveryChoices']> {
+    const rows = await tx
+      .select({
+        variantId: productVariants.id,
+        productName: products.name,
+        optionValues: productVariants.optionValues,
+        sku: productVariants.sku,
+      })
+      .from(productVariants)
+      .innerJoin(
+        products,
+        and(
+          eq(products.tenantId, productVariants.tenantId),
+          eq(products.id, productVariants.productId),
+        ),
+      )
+      .where(
+        and(
+          eq(productVariants.tenantId, getTenantId()),
+          or(
+            and(
+              eq(products.type, 'service'),
+              isNull(products.archivedAt),
+              isNull(productVariants.archivedAt),
+            ),
+            saved === null ? undefined : eq(productVariants.id, saved),
+          ),
+        ),
+      )
+      .orderBy(asc(sql`lower(${products.name})`), asc(productVariants.sku))
+      .limit(200);
+    return rows.map((row) => ({
+      variantId: row.variantId,
+      name: defaultLineDescription(row),
+      sku: row.sku,
+    }));
+  }
+
   // The launch checklist. The warehouse must still be active (one archived since the save would
   // show every listing out of stock), and "a published listing" is one the shop would show: its
   // product and variant not archived
@@ -333,6 +472,7 @@ export class StorefrontSettingsService {
       freeDeliveryFrom: row.freeDeliveryFrom,
       minimumOrder: row.minimumOrder,
       paymentMethods: row.paymentMethods,
+      deliveryVariantId: row.deliveryVariantId,
       launchedAt: row.launchedAt?.toISOString() ?? null,
       readiness: await this.readiness(tx, row),
       version: row.version,

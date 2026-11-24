@@ -20,7 +20,10 @@ import { z } from 'zod';
 // Storefront menu's words (26g.5) and its sidebar group took it to 237.2 KB; its four pages are
 // lazy chunks. Step 26h: 245 KB (you chose this). The words of Shop appearance and Shop pages
 // (26h.5) took it to 241.1 KB, with or without their two sidebar items; the six pages are lazy.
-const INITIAL_BUDGET = 245 * 1024;
+// Step 27d: 250 KB (you chose this). The online payment's words (27d.5) and its contracts (the
+// Online payment card, the order's payment tries and the shop's payment routes, which the route
+// table carries) took it to 246.4 KB; the card and the order page stay in their lazy chunks.
+const INITIAL_BUDGET = 250 * 1024;
 // Step 17d: a lazy chunk is 105 KB for now. Almost every page loads the contracts' whole route
 // table (about 28 KB gz) to call the API, and 17d's three documents grew it enough to push pages
 // that 17d never touched (team, units) over 100 KB. Loading each module's routes with its own
@@ -38,7 +41,9 @@ const INITIAL_BUDGET = 245 * 1024;
 // 26g: 150 KB (you chose this). A shop listing's editor is one form of five cards (the photo
 // uploader, the sale with its dates, the description with its preview): 145.9 KB. Loading two of
 // its cards on their own saved only 4 KB, most of the chunk being the route table and form parts.
-const CHUNK_BUDGET = 150 * 1024;
+// Step 27b: 155 KB (you chose this). The Shop orders' nine routes grew the route table, and the
+// listing's editor went from 149.8 to 150.8 KB without changing; the orders' own pages are 95–109 KB.
+const CHUNK_BUDGET = 155 * 1024;
 // Step 19a: everything the service worker downloads the first time, gz (the fonts do not shrink).
 // 1.3 MB at 19a. It is downloaded once per device; a new version downloads only the files that
 // changed.

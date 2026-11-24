@@ -121,6 +121,8 @@ async function setUp(who: SignedIn, slug: string, name: string): Promise<Shop> {
     freeDeliveryFrom: '',
     minimumOrder: '',
     paymentMethods: ['cod'],
+    // Step 27b: "Made by the first order with a charge"
+    deliveryVariantId: '',
   });
   expect(shop.statusCode, shop.body).toBe(201);
   // The same category slug in both shops on purpose: each shop's slugs are its own
@@ -366,6 +368,7 @@ describe('another workspace’s shop settings', () => {
       freeDeliveryFrom: '',
       minimumOrder: '',
       paymentMethods: ['cod'],
+      deliveryVariantId: '',
       version: ours.settings.version,
     });
     expect(res).toEqual({
@@ -391,6 +394,7 @@ describe('another workspace’s shop settings', () => {
       freeDeliveryFrom: '',
       minimumOrder: '',
       paymentMethods: ['cod'],
+      deliveryVariantId: '',
       version: ours.settings.version,
     });
     expect(res).toMatchObject({ status: 409, code: 'storefront_warehouse_invalid' });

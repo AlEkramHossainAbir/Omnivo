@@ -10,6 +10,7 @@ import {
   routes,
   shiftIsoDate,
   type StorefrontCategory,
+  type StorefrontCouponView,
   type StorefrontListing,
   type StorefrontListingSort,
   type StorefrontSale,
@@ -37,6 +38,15 @@ export function storefrontSetupQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['storefront', tenantId, 'settings'],
     queryFn: () => call(routes.storefront.getSettings),
+  });
+}
+
+// Step 27d: the Online payment card's read (the saved gateway, never its password, and the two
+// account selects' choices). Under the same ['storefront', tenantId] key, so a save refreshes it
+export function storefrontPaymentSetupQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['storefront', tenantId, 'payment-gateway'],
+    queryFn: () => call(routes.storefrontPayments.getPaymentGateway),
   });
 }
 
@@ -72,6 +82,33 @@ export function storefrontListingsQuery(tenantId: string, filter: ListingFilter)
     initialPageParam: null,
     getNextPageParam: (page) => page.nextCursor,
     // A new filter keeps the old rows until its first page comes: no flash of an empty table
+    placeholderData: keepPreviousData,
+  });
+}
+
+// Step 27c: the Coupons page, a page at a time, newest first (the contract's only order). The key
+// is under ['storefront', tenantId] like the rest of the menu, so useStorefrontRefresh() after a
+// save, an archive or a restore reads it again
+export interface CouponFilter {
+  view: StorefrontCouponView;
+  search: string;
+}
+
+export function storefrontCouponsQuery(tenantId: string, filter: CouponFilter) {
+  return infiniteQueryOptions({
+    queryKey: ['storefront', tenantId, 'coupons', filter],
+    queryFn: ({ pageParam }: { pageParam: string | null }) =>
+      call(routes.storefrontCoupons.listCoupons, {
+        query: {
+          limit: 50,
+          view: filter.view,
+          ...(filter.search !== '' && { search: filter.search }),
+          ...(pageParam !== null && { cursor: pageParam }),
+        },
+      }),
+    initialPageParam: null,
+    getNextPageParam: (page) => page.nextCursor,
+    // The other tab keeps the old rows until its first page comes: no flash of an empty table
     placeholderData: keepPreviousData,
   });
 }
@@ -176,6 +213,8 @@ export function settingsFormValues(
       freeDeliveryFrom: '',
       minimumOrder: '',
       paymentMethods: ['cod'],
+      // Step 27b (decision 4): none picked; the first order with a charge makes "Delivery charge"
+      deliveryVariantId: '',
       version: 1,
     };
   }
@@ -198,6 +237,8 @@ export function settingsFormValues(
     freeDeliveryFrom: plainAmount(shop.freeDeliveryFrom ?? ''),
     minimumOrder: plainAmount(shop.minimumOrder ?? ''),
     paymentMethods: shop.paymentMethods,
+    // null (none picked yet) is the select's empty choice, ''
+    deliveryVariantId: shop.deliveryVariantId ?? '',
     version: shop.version,
   };
 }

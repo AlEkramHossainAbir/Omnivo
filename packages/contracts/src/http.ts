@@ -13,7 +13,9 @@ export interface RouteDef {
   // OpenAPI-র এক লাইনের বিবরণ
   summary: string;
   // 'public' = লগইন ছাড়া; বাকি সব Bearer টোকেন চায় (API-র global AuthGuard)
-  auth: 'public' | 'bearer';
+  // Step 27a: 'shop' = no login either, but only the shop's own server may call it: it sends the
+  // key in SHOP_KEY_HEADER (storefront.ts), which the API checks before anything else
+  auth: 'public' | 'shop' | 'bearer';
   // এই কাজে কোন permission লাগে। API-র @Endpoint এখান থেকেই guard বসায় (আলাদা decorator নেই, তাই
   // চুক্তি আর পাহারা কখনো আলাদা হয় না), আর OpenAPI-তে x-permission হয়ে দেখায়। না থাকলে = শুধু লগইন
   permission?: PermissionKey;

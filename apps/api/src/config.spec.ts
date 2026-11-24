@@ -23,7 +23,7 @@ function env(extra: Record<string, string>): Record<string, string> {
 describe('storefront config', () => {
   it('serves the photos from the storage bucket in dev, on localhost', () => {
     const { storefront } = loadConfig(env({}));
-    expect(storefront).toEqual({
+    expect(storefront).toMatchObject({
       baseDomain: 'localhost',
       mediaUrl: 'http://localhost:9000/omnivo',
       shopScheme: 'http',
@@ -39,7 +39,7 @@ describe('storefront config', () => {
         STOREFRONT_MEDIA_URL: 'https://media.omnivo.shop/',
       }),
     );
-    expect(storefront).toEqual({
+    expect(storefront).toMatchObject({
       baseDomain: 'omnivo.shop',
       mediaUrl: 'https://media.omnivo.shop',
       shopScheme: 'https',
@@ -77,5 +77,53 @@ describe('storefront config', () => {
         /Invalid environment/,
       );
     }
+  });
+});
+
+// Step 27a: the shop server's key and the phone code's key
+describe('order keys', () => {
+  it('has no shop key until one is set, and refuses a short one', () => {
+    expect(loadConfig(env({})).storefront.shopKey).toBeNull();
+    const key = 'a-shop-key-of-at-least-thirty-two-chars';
+    expect(loadConfig(env({ STOREFRONT_SHOP_KEY: key })).storefront.shopKey).toBe(key);
+    expect(() => loadConfig(env({ STOREFRONT_SHOP_KEY: 'short' }))).toThrow(/Invalid environment/);
+  });
+
+  it('derives the code key from JWT_SECRET: 32 bytes, never the secret itself', () => {
+    const { codeKey } = loadConfig(env({})).storefront;
+    expect(codeKey).toHaveLength(32);
+    expect(codeKey.toString('utf8')).not.toContain('test-jwt-secret');
+    // The same secret gives the same key (a code sent before a restart still works) …
+    expect(loadConfig(env({})).storefront.codeKey.equals(codeKey)).toBe(true);
+    // … and another secret another key
+    const other = loadConfig(env({ JWT_SECRET: 'another-jwt-secret-that-is-32-bytes-long' }));
+    expect(other.storefront.codeKey.equals(codeKey)).toBe(false);
+  });
+});
+
+// Step 27d.3: the gateway and the key that seals its passwords
+describe('payment config', () => {
+  const production = { NODE_ENV: 'production', STOREFRONT_MEDIA_URL: 'https://files.example.com' };
+  const key = Buffer.alloc(32, 7).toString('base64');
+
+  it('uses the fake gateway outside production and SSLCommerz in production', () => {
+    expect(loadConfig(env({})).payments.gateway).toBe('fake');
+    expect(loadConfig(env(production)).payments.gateway).toBe('sslcommerz');
+    expect(loadConfig(env({ PAYMENT_GATEWAY: 'sslcommerz' })).payments.gateway).toBe('sslcommerz');
+  });
+
+  it('refuses the fake gateway in production', () => {
+    expect(() => loadConfig(env({ ...production, PAYMENT_GATEWAY: 'fake' }))).toThrow(
+      /PAYMENT_GATEWAY=fake/,
+    );
+  });
+
+  it('has no key until one is set, and takes only 32 bytes', () => {
+    expect(loadConfig(env({})).payments.credentialsKey).toBeNull();
+    const { credentialsKey } = loadConfig(env({ CREDENTIALS_KEY: key })).payments;
+    expect(credentialsKey?.version).toBe(1);
+    expect(credentialsKey?.key.equals(Buffer.alloc(32, 7))).toBe(true);
+    const short = Buffer.alloc(16, 7).toString('base64');
+    expect(() => loadConfig(env({ CREDENTIALS_KEY: short }))).toThrow(/Invalid environment/);
   });
 });

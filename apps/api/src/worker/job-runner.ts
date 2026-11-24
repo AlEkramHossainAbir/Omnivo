@@ -18,6 +18,7 @@ import { runWithTenant } from '../common/tenant/tenant-context.js';
 import type { WorkerConfig } from '../config.js';
 import { CONFIG } from '../infra/tokens.js';
 import { ReportScheduleSweep } from '../reports/report-schedule-sweep.js';
+import { PendingOrderSweep } from '../storefront/orders/pending-order-sweep.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { OutboxRelay } from './outbox-relay.js';
@@ -26,6 +27,7 @@ import {
   type EventJobData,
   isOutboxEventType,
   OUTBOX_CLEANUP,
+  PENDING_ORDER_SWEEP,
   QUEUE_NAMES,
   Queues,
   REPORT_SCHEDULE_SWEEP,
@@ -48,6 +50,7 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     private readonly relay: OutboxRelay,
     private readonly syncLog: SyncLogCleanup,
     private readonly reportSweep: ReportScheduleSweep,
+    private readonly orderSweep: PendingOrderSweep,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -65,6 +68,7 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     });
     await this.queues.scheduleCleanup();
     await this.queues.scheduleReportSweep();
+    await this.queues.schedulePendingOrderSweep();
   }
 
   // close() stops taking new jobs and waits for the running ones, before the database closes
@@ -88,6 +92,12 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     if (job.name === REPORT_SCHEDULE_SWEEP) {
       const handed = await this.reportSweep.run();
       if (handed > 0) this.logger.log(`report schedules: ${String(handed)} runs handed over`);
+      return;
+    }
+    // Step 27a: like the report sweep, no retries of its own; the next one is 5 minutes later
+    if (job.name === PENDING_ORDER_SWEEP) {
+      const deleted = await this.orderSweep.run();
+      if (deleted > 0) this.logger.log(`shop orders: ${String(deleted)} without a code deleted`);
       return;
     }
     // A job we cannot read will never become readable: no retries

@@ -18,8 +18,10 @@ import { problemResponse, readBody, sourceFailed, type ProblemStatus } from './p
 // data/types.ts fail the type check here until it has one.
 // - 409: the cart changed under the shopper; asking again with a new quote can work
 // - 422: the request is well formed but breaks a rule (no such zone, under the minimum, wrong code)
-// - 429: asked for a new code too soon; Retry-After says when
-// - 404: no order waits for a code in this browser
+// - 429: asked for a new code too soon, or (step 27a) too many orders; Retry-After says when
+// - 404: no order waits for a code (step 27d: or for its payment) in this browser
+// Step 27a: the API answers the same statuses (shop-orders.service.ts), so a shopper's browser
+// gets the same answer from either source
 const REFUSALS = {
   shop_zone_unknown: [422, 'The delivery zone is not one the shop has.'],
   shop_payment_unavailable: [422, 'The shop does not take this payment method.'],
@@ -29,9 +31,18 @@ const REFUSALS = {
   shop_code_too_many: [422, 'Too many wrong codes; the order was dropped.'],
   shop_code_resend_wait: [429, 'A new code cannot be sent yet.'],
   shop_code_no_order: [404, 'No order waits for a code in this browser.'],
+  shop_order_limit: [429, 'Too many orders from this phone or connection.'],
+  shop_code_expired: [422, 'The code has expired. Ask for a new one.'],
+  shop_code_sends_used: [422, 'This order has had all its codes.'],
+  shop_coupon_used_by_phone: [422, 'This mobile number has an order with this coupon already.'],
+  // Step 27d: the API's statuses for the two buttons on /checkout/paid (shop-payments.service.ts)
+  shop_payment_no_order: [404, 'No online order waits for its payment in this browser.'],
+  shop_payment_tries_used: [422, 'This order has used all its tries.'],
+  shop_payment_settled: [409, 'The order is paid, or it is cash on delivery now.'],
 } as const satisfies Record<ShopRefusalCode, readonly [ProblemStatus, string]>;
 
-function refused(
+// Step 27d: exported for the payment routes (server/payments.ts), which answer the same way
+export function refused(
   result: Extract<SourceResult<unknown>, { ok: false }>,
   headers: Headers = new Headers(),
 ): Response {
@@ -39,6 +50,9 @@ function refused(
   // The standard header for "try again in N seconds", next to the same number in params
   if (result.code === 'shop_code_resend_wait' && typeof result.params?.seconds === 'number') {
     headers.set('Retry-After', String(result.params.seconds));
+  }
+  if (result.code === 'shop_order_limit' && typeof result.params?.minutes === 'number') {
+    headers.set('Retry-After', String(result.params.minutes * 60));
   }
   return problemResponse(status, result.code, detail, {
     headers,
@@ -53,10 +67,13 @@ function noOrder(options: CookieOptions): Response {
   return refused({ ok: false, code: 'shop_code_no_order' }, headers);
 }
 
-// Confirm Order
+// Confirm Order. Step 27a: `address` is the shopper's (Astro's clientAddress), which the API
+// counts orders under. Step 27d: `origin` is the shop's own (ShopSource.placeOrder)
 export async function answerPlaceOrder(
   request: Request,
   source: ShopSource,
+  address: string,
+  origin: string,
   options: CookieOptions,
 ): Promise<Response> {
   const body = await readBody(request, shopOrderRequestSchema);
@@ -64,22 +81,28 @@ export async function answerPlaceOrder(
 
   let result;
   try {
-    result = await source.placeOrder(body.data);
+    result = await source.placeOrder(body.data, address, origin);
   } catch (error) {
     return sourceFailed('place order', error);
   }
   if (!result.ok) return refused(result);
 
-  const { answer, orderNo, token } = result.value;
+  const { answer, token } = result.value;
   const headers = new Headers({ 'Cache-Control': 'no-store' });
-  if (answer.next === 'verify') {
-    // The order waits for its code; /checkout/verify finds it by this cookie
+  if (answer.next === 'verify' || answer.next === 'pay') {
+    // The order waits for its code, or (step 27d) for its payment. /checkout/verify and
+    // /checkout/paid find it by this cookie. The gateway's own post back to the shop does not
+    // bring it (it comes from another site, and the cookie is SameSite=Lax): the return path
+    // settles by the transaction id and sends the browser on to /checkout/paid, whose plain GET
+    // does bring it (server/payments.ts)
     headers.append('Set-Cookie', checkoutCookie(token, options));
   } else {
-    // Confirmed at once (Mobile Banking in the mock): this browser may now open /order/<no>.
+    // Confirmed at once (the API never answers this since step 27d; the type keeps it, see
+    // shopOrderPlacedSchema): this browser may now open /order/<no>.
     // An older order that was still waiting for its code is forgotten: the shopper chose to start
-    // again, and the verify page must not offer the old one
-    headers.append('Set-Cookie', ordersCookie(request, orderNo, token, options));
+    // again, and the verify page must not offer the old one. Step 27a: the number comes from the
+    // answer, the only place a confirmed order's number is
+    headers.append('Set-Cookie', ordersCookie(request, answer.orderNo, token, options));
     headers.append('Set-Cookie', clearCheckoutCookie(options));
   }
   // 201: an order was made. The body says which page comes next; the token is only in the cookie

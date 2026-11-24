@@ -20,6 +20,8 @@ import { StockAccountsHandler } from '../setup/stock-accounts.handler.js';
 import { TaxRatesHandler } from '../setup/tax-rates.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 import { StorefrontImageHandler } from '../storefront/image.handler.js';
+import { OrderConfirmedHandler } from '../storefront/orders/order-confirmed.handler.js';
+import { PaymentPaidHandler } from '../storefront/orders/payment-paid.handler.js';
 
 // Which handler runs for which event — the one place to look. The mapped type ties each key to a
 // handler of exactly that event, so wiring the invitation handler to 'member.joined' (or leaving
@@ -50,6 +52,8 @@ export class EventHandlers {
     scheduleRun: ReportScheduleRunHandler,
     scheduleEmail: ReportScheduleEmailHandler,
     storefrontImage: StorefrontImageHandler,
+    orderConfirmed: OrderConfirmedHandler,
+    paymentPaid: PaymentPaidHandler,
   ) {
     this.byType = {
       'workspace.created': welcome,
@@ -70,6 +74,8 @@ export class EventHandlers {
       'report.schedule_due': scheduleRun,
       'report.schedule_email': scheduleEmail,
       'storefront.image_uploaded': storefrontImage,
+      'storefront.order_confirmed': orderConfirmed,
+      'storefront.payment_paid': paymentPaid,
     };
   }
 

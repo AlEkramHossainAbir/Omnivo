@@ -882,7 +882,14 @@ const RECEIPT_CODES = { invoice: 'receipt_invoice_invalid', over: 'receipt_over_
 // Saved = posted: numbered, booked (Dr the money account / Cr Accounts receivable with the
 // customer), then applied. The handler runs it in a transaction(): a refused allocation leaves no
 // receipt and no entry.
-export function createReceipt(data: WorkspaceData, input: ReceiptInput): MockReceipt {
+// Step 27d: `fee` is the gateway's fee of a shop order paid online (the API's createForShop): the
+// money account gets what the gateway pays out, and the fee goes to its expense account, in the
+// receipt's own entry, so a void reverses the fee too
+export function createReceipt(
+  data: WorkspaceData,
+  input: ReceiptInput,
+  fee: { accountId: string; amount: string } | null = null,
+): MockReceipt {
   const customer = customerOf(data, input.customerId, null);
   assertBranch(data, input.branchId);
   // Exactly the list the form offers (contracts' moneyAccountIds)
@@ -901,7 +908,10 @@ export function createReceipt(data: WorkspaceData, input: ReceiptInput): MockRec
       date: input.date,
       narration: `Money receipt ${number}`,
       lines: [
-        side(input.accountId, input.branchId, null, { debit: amount }),
+        side(input.accountId, input.branchId, null, {
+          debit: fee === null ? amount : subtractMoney(amount, fee.amount),
+        }),
+        ...(fee === null ? [] : [side(fee.accountId, input.branchId, null, { debit: fee.amount })]),
         side(accounts.receivable, input.branchId, customer.id, { credit: amount }),
       ],
     },

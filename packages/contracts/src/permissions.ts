@@ -55,6 +55,10 @@ export const PERMISSION_KEYS = [
   'pos.return.create',
   // Step 26g: everything in the Storefront menu, from the settings and the launch to the listings
   'storefront.manage',
+  // Step 27a: the shop's orders, apart from running the shop (decision 11). A packer reads them and
+  // moves them on without changing the shop's prices, and an order holds a phone and an address
+  'storefront.order.read',
+  'storefront.order.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -132,4 +136,6 @@ export const PERMISSION_GROUP_OF = {
   'pos.shift.manage': 'pos',
   'pos.return.create': 'pos',
   'storefront.manage': 'storefront',
+  'storefront.order.read': 'storefront',
+  'storefront.order.manage': 'storefront',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

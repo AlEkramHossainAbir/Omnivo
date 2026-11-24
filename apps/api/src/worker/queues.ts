@@ -31,6 +31,8 @@ const QUEUE_OF = {
   'pos.shift_variance': 'jobs',
   'report.schedule_due': 'jobs',
   'storefront.image_uploaded': 'jobs',
+  'storefront.order_confirmed': 'jobs',
+  'storefront.payment_paid': 'jobs',
 } satisfies Record<OutboxEventType, QueueName>;
 
 // The hourly maintenance job. Not an outbox event: no request asks for it, a scheduler adds it.
@@ -39,6 +41,9 @@ export const OUTBOX_CLEANUP = 'outbox.cleanup';
 // Step 21c: every 5 minutes, look for the scheduled reports that are due (decision 9). Like the
 // cleanup, a scheduler adds it, not a request.
 export const REPORT_SCHEDULE_SWEEP = 'report-schedules.sweep';
+
+// Step 27a: every 5 minutes, delete the shop orders that never got their phone code (decision 19)
+export const PENDING_ORDER_SWEEP = 'storefront-orders.sweep';
 
 // What a job carries: the outbox row minus its bookkeeping. The job name is the event type.
 // Redis is data from outside this process, so the worker checks this shape before using it.
@@ -130,6 +135,16 @@ export class Queues implements OnApplicationShutdown {
       'report-schedules-sweep',
       { every: SWEEP_MS },
       { name: REPORT_SCHEDULE_SWEEP },
+    );
+  }
+
+  // Step 27a: the same, for the shop's pending orders. Every 5 minutes: an order is kept at most
+  // that long past its hour, and nothing depends on the minute it goes
+  async schedulePendingOrderSweep(): Promise<void> {
+    await this.queues.jobs.upsertJobScheduler(
+      'storefront-orders-sweep',
+      { every: SWEEP_MS },
+      { name: PENDING_ORDER_SWEEP },
     );
   }
 

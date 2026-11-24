@@ -108,6 +108,16 @@ async function assertNotSalesAccount(tx: Transaction, accountId: string): Promis
   if (used) throw usedBySales();
 }
 
+// Step 27d.4: chosen on the shop's Payment card. Only a delete is refused: an archived money or fee
+// account makes the gateway not ready, and the checkout stops offering Pay online by itself
+function usedByShop(): AppError {
+  return new AppError(
+    409,
+    'account_used_by_shop',
+    'The shop’s online payments use this account. Choose another one in Shop settings → Payment first.',
+  );
+}
+
 function usedByPurchase(): AppError {
   return new AppError(
     409,
@@ -402,6 +412,13 @@ export class AccountsService {
         isForeignKeyViolation(error, 'tenant_settings_services_account_fk')
       ) {
         throw usedByPurchase();
+      }
+      // Chosen on the shop's Payment card (step 27d)
+      if (
+        isForeignKeyViolation(error, 'storefront_payment_gateways_money_account_fk') ||
+        isForeignKeyViolation(error, 'storefront_payment_gateways_fee_account_fk')
+      ) {
+        throw usedByShop();
       }
       throw error;
     }

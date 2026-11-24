@@ -1,6 +1,6 @@
 import type { ShopOrder, ShopOrderLine, ShopPaymentMethod, ShopShipment } from '@omnivo/contracts';
 
-import { mockCheckoutSettings } from './checkout';
+import { mockCheckoutSettings, mockCoupons } from './checkout';
 import type { MockDemoOrder } from './orders';
 import { mockCatalog } from './products';
 import { quoteCart } from './quote';
@@ -21,6 +21,9 @@ interface DemoInput {
   paymentMethod: ShopPaymentMethod;
   // [slug, quantity]: the listing as the catalog has it today
   items: readonly (readonly [string, number])[];
+  // Step 27c: the code the shopper typed, if any. It must apply: a code the quote refuses is a
+  // mistake in this file, like a slug the catalog does not have
+  couponCode?: string;
   shipments: ShopShipment[];
   trackingToken: string;
 }
@@ -39,15 +42,21 @@ function demoOrder(input: DemoInput): MockDemoOrder {
     {
       lines: input.items.map(([slug, quantity]) => ({ listingId: `lst-${slug}`, quantity })),
       zoneId: input.zoneId,
+      ...(input.couponCode === undefined ? {} : { couponCode: input.couponCode }),
     },
     {
       catalog: mockCatalog,
       settings: mockCheckoutSettings,
-      coupons: [],
+      // Step 27c: the shop's coupons, each with no use yet: priced as when it was placed
+      coupons: mockCoupons,
+      used: () => 0,
       timeZone: mockShop.timeZone,
       now: new Date(first.at),
     },
   );
+  if (input.couponCode !== undefined && quote.coupon.status !== 'applied') {
+    throw new Error(`${input.orderNo}: ${input.couponCode} does not apply`);
+  }
   // A slug that is not in the catalog, or a listing out of stock, is a mistake in this file: it
   // fails here, when the module loads, and every test fails with it. The fields are the ones
   // orders.ts's place() copies from a quote line
@@ -80,7 +89,7 @@ function demoOrder(input: DemoInput): MockDemoOrder {
       lines,
       subtotal: quote.subtotal,
       discount: quote.discount,
-      couponCode: null,
+      couponCode: quote.coupon.status === 'applied' ? quote.coupon.code : null,
       // The zone was given, so the quote has its charge; `?? '0'` only satisfies the type
       deliveryCharge: quote.deliveryCharge ?? '0',
       total: quote.total,
@@ -91,9 +100,10 @@ function demoOrder(input: DemoInput): MockDemoOrder {
 }
 
 export const mockDemoOrders: readonly MockDemoOrder[] = [
-  // Delivered in Dhaka, paid with Mobile Banking. The first booking (RedX) was cancelled before its
+  // Delivered in Dhaka, paid online. The first booking (RedX) was cancelled before its
   // rider came, and the shop booked Pathao instead: the page's "Earlier parcel". Over ৳1,000, so
-  // the delivery was free
+  // the delivery was free. Step 27c: with EID100's only use (৳100 off), so that code answers
+  // "used up" in the shop from the start
   demoOrder({
     orderNo: 'W-000121',
     history: [
@@ -112,6 +122,7 @@ export const mockDemoOrders: readonly MockDemoOrder[] = [
       ['davidoff-espresso-coffee', 1],
       ['sprite-cold-drink-500ml', 2],
     ],
+    couponCode: 'EID100',
     shipments: [
       {
         courier: 'redx',

@@ -9,7 +9,6 @@ import { shopLocale } from '../lib/locale';
 import { spacedPhone } from '../lib/phone';
 import {
   answerTrackForm,
-  trackLimiter,
   type TrackFieldErrors,
   type TrackFormAnswer,
   type TrackFormValues,
@@ -25,9 +24,8 @@ let answer: TrackFormAnswer | null = null;
 if (Astro.request.method === 'POST') {
   answer = await answerTrackForm(Astro.request, {
     source,
-    limiter: trackLimiter,
     // The visitor's address, which astro.config.ts → security says to read from the proxy's
-    // X-Forwarded-For (26e.2)
+    // X-Forwarded-For (26e.2). Step 27a: the source counts the misses under it (the API in Redis)
     address: Astro.clientAddress,
   });
   // A browser draws the page whatever the status; the status is for scripts and logs, which can

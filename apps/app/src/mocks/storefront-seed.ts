@@ -1,5 +1,11 @@
 import {
+  type ErrorCode,
+  type PaymentGatewayMode,
+  type PaymentGatewayProvider,
+  type PaymentGatewayTestProblem,
+  type ShopCouponRule,
   type ShopPaymentMethod,
+  type ShopPaymentStatus,
   type ShopTextPageSlug,
   slugFromName,
   STOREFRONT_DEFAULT_THEME,
@@ -10,6 +16,7 @@ import {
   type StorefrontHero,
   type StorefrontImage,
   type StorefrontListing,
+  type StorefrontOrder,
   type StorefrontSale,
   type StorefrontSection,
   type StorefrontSettings,
@@ -115,6 +122,101 @@ export interface MockPage {
   updatedAt: string;
 }
 
+// Step 27b: a shop order as the ERP keeps it: 27a's storefront_orders row with its lines, and the
+// four documents 27b links to it. The mock never has a pending one: an order waiting for its phone
+// code is the shopper's (apps/shop), and the ERP never lists it. Each line keeps the listing's copy
+// as the shopper saw it (name, pack size, photo, price); the timeline is kept as it grows, the
+// shape the page reads (the API works it out from the row's *_at columns)
+export interface MockShopOrderLine {
+  position: number;
+  listingId: string;
+  name: string;
+  packSize: string;
+  image: StorefrontImage | null;
+  productId: string;
+  variantId: string;
+  quantity: number;
+  unitPrice: string;
+  lineTotal: string;
+}
+
+export interface MockShopOrder {
+  id: string;
+  orderNo: string;
+  status: StorefrontOrder['status'];
+  history: StorefrontOrder['history'];
+  customerName: string;
+  // 11 digits, as the shop's checkout keeps it (01711223344)
+  phone: string;
+  address: string;
+  zoneName: string;
+  paymentMethod: ShopPaymentMethod;
+  lines: MockShopOrderLine[];
+  subtotal: string;
+  discount: string;
+  couponCode: string | null;
+  deliveryCharge: string;
+  total: string;
+  // The warehouse the stock is held in (27a copied the shop's onto each hold)
+  warehouseId: string;
+  cancelReason: string | null;
+  salesOrderId: string | null;
+  deliveryId: string | null;
+  invoiceId: string | null;
+  salesReturnId: string | null;
+  documentError: ErrorCode | null;
+  // Step 27d: the order's visits to the payment page, oldest first (27d.2's storefront_payments).
+  // Empty for a Cash on Delivery order that never tried to pay online
+  payments: MockShopPayment[];
+  version: number;
+  updatedAt: string;
+}
+
+// Step 27d: one try, as the API's row keeps it. The receipt is kept by id, like the order's other
+// documents, and looked up on read
+export interface MockShopPayment {
+  id: string;
+  tranId: string;
+  status: ShopPaymentStatus;
+  amount: string;
+  startedAt: string;
+  settledAt: string | null;
+  cardType: string | null;
+  bankTranId: string | null;
+  storeAmount: string | null;
+  receiptId: string | null;
+  receiptError: ErrorCode | null;
+}
+
+// Step 27d: the shop's SSLCommerz account, as the API's storefront_payment_gateways row keeps it.
+// The mock keeps the password in plain text: it has no key to seal it with, and it never answers it
+// (storefront-payment-data.ts → toGateway)
+export interface MockGateway {
+  provider: PaymentGatewayProvider;
+  storeId: string;
+  mode: PaymentGatewayMode;
+  password: string;
+  moneyAccountId: string;
+  feeAccountId: string;
+  lastTest: { at: string; problem: PaymentGatewayTestProblem | null } | null;
+  version: number;
+  updatedAt: string;
+}
+
+// Step 27c: a coupon as the table keeps it (storefront-coupon-data.ts has the rules). The mock has
+// no shop checkout, so the orders that have a code are not real orders here:
+// - used: how many orders hold a use now (the API counts them with storefront_coupon_uses())
+// - codeLocked: an order has had the code (the API's first_ordered_at)
+export interface MockCoupon extends ShopCouponRule {
+  id: string;
+  used: number;
+  codeLocked: boolean;
+  archivedAt: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface MockStorefront {
   shop: MockShop | null;
   categories: MockCategory[];
@@ -127,6 +229,12 @@ export interface MockStorefront {
   collections: MockCollection[];
   home: MockHomeBlock[];
   pages: Map<ShopTextPageSlug, MockPage>;
+  // Step 27b: the shop's confirmed orders, newest first (storefront-order-data.ts)
+  orders: MockShopOrder[];
+  // Step 27c: the shop's coupons, archived ones too, in the order they were made
+  coupons: MockCoupon[];
+  // Step 27d: null until the Online payment card is saved the first time
+  gateway: MockGateway | null;
 }
 
 export function emptyStorefront(): MockStorefront {
@@ -142,6 +250,9 @@ export function emptyStorefront(): MockStorefront {
     collections: [],
     home: [],
     pages: new Map(),
+    orders: [],
+    coupons: [],
+    gateway: null,
   };
 }
 
@@ -174,7 +285,8 @@ function seedPicture(
   return { id, alt };
 }
 
-function seedPhoto(
+// Step 27b: exported for the shop orders' two extra listings (storefront-order-data.ts)
+export function seedPhoto(
   data: WorkspaceData,
   label: string,
   colour: string,
@@ -221,7 +333,11 @@ const POLO_SECTIONS: StorefrontSection[] = [
 export function seedStorefront(data: WorkspaceData, garments: boolean): void {
   if (!garments) return;
   const main = data.stock.warehouses.find((place) => place.code === 'MAIN');
-  const payments: ShopPaymentMethod[] = ['cod', 'online'];
+  // Step 27d: Cash on Delivery only. Pay online needs the Online payment card saved first (the API
+  // refuses it otherwise, storefront_online_not_ready), and a new shop has not connected SSLCommerz
+  // yet. The shop orders' seed connects it (storefront-payment-data.ts → seedGateway), because its
+  // orders were paid online
+  const payments: ShopPaymentMethod[] = ['cod'];
   const logo = seedPicture(data, drawnLogo(), { width: 400, height: 400 }, 'Rahman Fashion logo');
   data.storefront.shop = {
     subdomain: 'rahman-fashion',
@@ -241,6 +357,7 @@ export function seedStorefront(data: WorkspaceData, garments: boolean): void {
     freeDeliveryFrom: '2000.0000',
     minimumOrder: null,
     paymentMethods: payments,
+    deliveryVariantId: null,
     launchedAt: daysAgo(12),
     version: 4,
     updatedAt: daysAgo(3),

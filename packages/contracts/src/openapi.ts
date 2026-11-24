@@ -43,7 +43,10 @@ function operation(tag: string, name: string, route: RouteDef) {
     tags: [tag],
     summary: route.summary,
     // খালি array = লগইন লাগে না; নাহলে global Bearer
-    security: route.auth === 'public' ? [] : [{ bearer: [] }],
+    // Step 27a: 'shop' routes name the shop server's key, so a reader of the document sees that
+    // they are not open to everyone like the 'public' ones
+    security:
+      route.auth === 'public' ? [] : route.auth === 'shop' ? [{ shopKey: [] }] : [{ bearer: [] }],
     // OpenAPI-র নিজের "কোন permission" ঘর নেই; x- দিয়ে শুরু হওয়া extension যেকোনো tool মেনে নেয়।
     // description-এও লেখা, কারণ Scalar-এর মতো viewer extension দেখায় না
     ...(route.permission !== undefined && {
@@ -98,6 +101,9 @@ export function buildOpenApiDocument(registry: RouteRegistry, options: OpenApiOp
     components: {
       securitySchemes: {
         bearer: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+        // The header's name is written out, not imported from storefront.ts: this file knows only
+        // routes, and openapi.spec.ts checks that the two names agree
+        shopKey: { type: 'apiKey', in: 'header', name: 'x-shop-key' },
       },
       schemas: { Problem: jsonSchema(problemSchema, 'output') },
       responses: {

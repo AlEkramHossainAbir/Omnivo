@@ -38,7 +38,8 @@ const details = [
   { label: t('shop.checkout.phone'), value: spacedPhone(order.phone) },
   { label: t('shop.checkout.address'), value: order.address },
   { label: t('shop.checkout.zone'), value: order.zoneName },
-  { label: t('shop.order.payment'), value: t(`shop.checkout.${order.paymentMethod}`) },
+  // Step 27d: "Paid online", not the checkout's "Pay online": a confirmed online order is paid
+  { label: t('shop.order.payment'), value: t(`shop.order.paymentMethods.${order.paymentMethod}`) },
 ];
 const heading = 'font-semibold';
 ---

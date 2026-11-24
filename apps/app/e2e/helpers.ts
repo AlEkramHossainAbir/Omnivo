@@ -7,6 +7,7 @@ import { test as base, expect, type Locator, type Page, type Response } from '@p
 import {
   HEAD_OFFICES,
   MOCK_NO_HISTORY_KEY,
+  MOCK_NO_SHOP_ORDERS_KEY,
   MOCK_NO_VAT_MONTH_KEY,
   MOCK_ROLE_KEY,
   type MockRole,
@@ -60,6 +61,7 @@ export const test = base.extend<{
   answerPinDialog: boolean;
   tradeHistory: boolean;
   vatMonth: boolean;
+  shopOrders: boolean;
 }>({
   seedDevice: [true, { option: true }],
   answerPinDialog: [true, { option: true }],
@@ -67,8 +69,13 @@ export const test = base.extend<{
   tradeHistory: [false, { option: true }],
   // Step 21c: last month's documents with VAT (fixtures.ts → MOCK_NO_VAT_MONTH_KEY)
   vatMonth: [false, { option: true }],
+  // Step 27b: Rahman Fashion's shop orders (fixtures.ts → MOCK_NO_SHOP_ORDERS_KEY)
+  shopOrders: [false, { option: true }],
   // `provide`, not Playwright's usual `use`: the React hooks lint rule reads `use(…)` as a hook
-  page: async ({ page, seedDevice, answerPinDialog, tradeHistory, vatMonth }, provide) => {
+  page: async (
+    { page, seedDevice, answerPinDialog, tradeHistory, vatMonth, shopOrders },
+    provide,
+  ) => {
     copies.set(page, copyOf(page));
     if (!tradeHistory) {
       await page.addInitScript((key) => {
@@ -79,6 +86,11 @@ export const test = base.extend<{
       await page.addInitScript((key) => {
         localStorage.setItem(key, '1');
       }, MOCK_NO_VAT_MONTH_KEY);
+    }
+    if (!shopOrders) {
+      await page.addInitScript((key) => {
+        localStorage.setItem(key, '1');
+      }, MOCK_NO_SHOP_ORDERS_KEY);
     }
     if (answerPinDialog) {
       // A new seeded device always asks once; without the seed the branch dialog comes first

@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import {
+  compareMoney,
   overAllocated,
   type PartyRef,
   type Receipt,
@@ -18,7 +19,7 @@ import { datedAllocations, workspaceToday } from '../common/db/applied-on.js';
 import { isCheckViolation } from '../common/db/pg-errors.js';
 import { AppError, notFound, versionConflict } from '../common/http/app-error.js';
 import { decodeCursor, toPage } from '../common/pagination/cursor.js';
-import { currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
+import { currentActorId, currentPrincipal, getTenantId } from '../common/tenant/tenant-context.js';
 import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { NumberingService } from '../numbering/numbering.service.js';
@@ -117,60 +118,70 @@ export class ReceiptsService {
   async create(input: ReceiptInput): Promise<Receipt> {
     try {
       return await this.withTenant(async (tx) => {
-        const customer = await assertCustomer(tx, input.customerId);
-        await assertBranch(tx, input.branchId);
-        await assertMoneyAccount(tx, input.accountId, 'receipt_account_invalid');
-        const number = await this.numbering.next(tx, 'sales.receipt', input.date);
-        const [row] = await tx
-          .insert(receipts)
-          .values({
-            tenantId: getTenantId(),
-            number,
-            date: input.date,
-            customerId: customer.id,
-            amount: input.amount,
-            accountId: input.accountId,
-            method: input.method,
-            reference: input.reference,
-            branchId: input.branchId,
-            note: input.note,
-            createdBy: currentPrincipal().userId,
-            updatedBy: currentPrincipal().userId,
-          })
-          .returning();
-        if (!row) throw new Error('Receipt insert returned no row');
-        // The books first: a closed period refuses here, before any invoice is touched
-        const entry = await this.books.receipt(
-          tx,
-          { id: row.id, number, date: row.date },
-          {
-            customerId: customer.id,
-            branchId: row.branchId,
-            accountId: row.accountId,
-            amount: row.amount,
-          },
-        );
-        // Paid on the receipt's own day, like the books (step 21b, decision 25)
-        await this.apply(tx, row, input.allocations, row.date);
-        await audit(tx, {
-          action: 'receipt.created',
-          entityType: 'receipt',
-          entityId: row.id,
-          changes: created({
-            number,
-            date: row.date,
-            customer: customer.code,
-            amount: row.amount,
-            method: row.method,
-            entry: entry.number,
-            invoices: input.allocations.length,
-          }),
-        });
+        const row = await this.insert(tx, input, null);
         return this.read(tx, row.id);
       });
     } catch (error) {
       throw overInvoiceRace(error);
     }
+  }
+
+  // Step 27d: a shop order's online payment (decision 6), made by the worker in the caller's
+  // transaction: posted at once, an advance (no invoice yet), with the gateway's fee in its entry.
+  // Refused with the receipt's own error codes (a closed period, a money account archived since)
+  async createForShop(
+    tx: Transaction,
+    input: ReceiptInput,
+    fee: { accountId: string; amount: string } | null,
+  ): Promise<string> {
+    return (await this.insert(tx, input, fee)).id;
+  }
+
+  // Step 27d: a receipt's money that is still free goes to a new invoice, as much as it still
+  // owes: a shop order's advance when its invoice is posted at Delivered. Like allocate(), but in
+  // the caller's transaction and for one invoice more, with the person or the worker as the actor.
+  // A voided receipt, or one with nothing left, applies nothing
+  async applyIn(tx: Transaction, receiptId: string, invoiceId: string): Promise<void> {
+    const [row] = await tx
+      .select()
+      .from(receipts)
+      .where(and(eq(receipts.tenantId, getTenantId()), eq(receipts.id, receiptId)))
+      .for('update');
+    if (row?.status !== 'posted') return;
+    const free = subtractMoney(subtractMoney(row.amount, row.refunded), row.applied);
+    const [invoice] = await tx
+      .select({
+        total: invoices.total,
+        paid: invoices.amountPaid,
+        credited: invoices.amountCredited,
+      })
+      .from(invoices)
+      .where(and(eq(invoices.tenantId, getTenantId()), eq(invoices.id, invoiceId)));
+    if (invoice === undefined) throw notFound('Invoice');
+    const due = subtractMoney(subtractMoney(invoice.total, invoice.paid), invoice.credited);
+    const amount = compareMoney(free, due) < 0 ? free : due;
+    if (compareMoney(amount, '0') <= 0) return;
+    const before = await this.allocationsOf(tx, receiptId);
+    // The allocations it has (none, for a shop's advance) and this invoice; checkAllocations()
+    // locks the invoice and checks the customer and the amount like the form's
+    const wanted = [
+      ...before.map((allocation) => ({
+        invoiceId: allocation.invoiceId,
+        amount: allocation.amount,
+      })),
+      { invoiceId, amount },
+    ];
+    await this.apply(tx, row, wanted, await workspaceToday(tx));
+    await tx
+      .update(receipts)
+      .set({ version: sql`${receipts.version} + 1`, updatedBy: currentActorId() })
+      .where(and(eq(receipts.tenantId, getTenantId()), eq(receipts.id, receiptId)));
+    await audit(tx, {
+      action: 'receipt.allocated',
+      entityType: 'receipt',
+      entityId: receiptId,
+      changes: allocationChanges(before, await this.allocationsOf(tx, receiptId)),
+    });
   }
 
   // The whole list as the person left it: the money of an advance applied to a new invoice, or
@@ -313,6 +324,68 @@ export class ReceiptsService {
         appliedOn: allocation.appliedOn,
       })),
     );
+  }
+
+  // A new receipt, its entry, its allocations and its audit row: the form's (create) and a shop
+  // payment's (createForShop, step 27d). currentActorId(): the person, or null for the worker
+  private async insert(
+    tx: Transaction,
+    input: ReceiptInput,
+    fee: { accountId: string; amount: string } | null,
+  ): Promise<ReceiptRow> {
+    const customer = await assertCustomer(tx, input.customerId);
+    await assertBranch(tx, input.branchId);
+    await assertMoneyAccount(tx, input.accountId, 'receipt_account_invalid');
+    const number = await this.numbering.next(tx, 'sales.receipt', input.date);
+    const [row] = await tx
+      .insert(receipts)
+      .values({
+        tenantId: getTenantId(),
+        number,
+        date: input.date,
+        customerId: customer.id,
+        amount: input.amount,
+        accountId: input.accountId,
+        method: input.method,
+        reference: input.reference,
+        branchId: input.branchId,
+        note: input.note,
+        createdBy: currentActorId(),
+        updatedBy: currentActorId(),
+      })
+      .returning();
+    if (!row) throw new Error('Receipt insert returned no row');
+    // The books first: a closed period refuses here, before any invoice is touched
+    const entry = await this.books.receipt(
+      tx,
+      { id: row.id, number, date: row.date },
+      {
+        customerId: customer.id,
+        branchId: row.branchId,
+        accountId: row.accountId,
+        amount: row.amount,
+        fee,
+      },
+    );
+    // Paid on the receipt's own day, like the books (step 21b, decision 25)
+    await this.apply(tx, row, input.allocations, row.date);
+    await audit(tx, {
+      action: 'receipt.created',
+      entityType: 'receipt',
+      entityId: row.id,
+      changes: created({
+        number,
+        date: row.date,
+        customer: customer.code,
+        amount: row.amount,
+        method: row.method,
+        entry: entry.number,
+        invoices: input.allocations.length,
+        // Step 27d: the gateway's fee, only when there is one
+        ...(fee === null ? {} : { fee: fee.amount }),
+      }),
+    });
+    return row;
   }
 
   // FOR UPDATE: an allocate and a void of one receipt take turns. A voided receipt is final.

@@ -1,0 +1,97 @@
+---
+import { InformationCircleIcon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
+import { fakeGatewayParamsSchema, fakeValId, SHOP_PAYMENT_RETURN_PATH } from '@omnivo/contracts';
+
+import ShopLayout from '../../layouts/ShopLayout.astro';
+import { shopLocale } from '../../lib/locale';
+
+// Step 26f.5: the data source for the shop this request's host names (src/middleware.ts)
+const { source } = Astro.locals;
+
+// Step 27d (decision 8): the fake gateway's page, where SSLCommerz's page would be. The mock
+// source and the API's FakeGateway (PAYMENT_GATEWAY=fake: development, CI, the demo shop) send the
+// browser here. It posts what SSLCommerz posts to the return path, with a val_id that says what
+// happened (fakeValId). On a shop whose API asks the real SSLCommerz, such a val_id pays nothing
+// (the gateway knows no payment by it), so the page is harmless there, and it says plainly what
+// it is. Nothing here is checked against an order: the API checks the post, as it does SSLCommerz's.
+const params = fakeGatewayParamsSchema.safeParse({
+  tranId: Astro.url.searchParams.get('tranId'),
+  amount: Astro.url.searchParams.get('amount'),
+});
+// Not a page a try opened: the shop's own 404
+if (!params.success) return Astro.rewrite('/404');
+const { tranId, amount } = params.data;
+
+const [shop, categories] = await Promise.all([source.shop(), source.categories()]);
+const locale = await shopLocale(shop.language);
+const { t, money } = locale;
+
+// A test page is never one for a search engine, and it names a try: no cache keeps it
+Astro.response.headers.set('Cache-Control', 'no-store');
+Astro.response.headers.set('X-Robots-Tag', 'noindex');
+
+const button =
+  'flex items-center justify-center rounded-sm font-semibold transition-colors duration-150';
+---
+
+<ShopLayout
+  shop={shop}
+  locale={locale}
+  title={t('shop.fakeGateway.pageTitle', { shop: shop.name })}
+  categories={categories}
+>
+  <div class="mx-auto mt-4 max-w-[560px] rounded-2xl bg-card-glass p-1 md:mt-9 md:mb-40">
+    <div class="rounded-t-xl bg-cream p-6 text-center">
+      <h1 class="trim-text text-sf-title font-semibold">{t('shop.fakeGateway.title')}</h1>
+    </div>
+    {/* One form, three submit buttons: the pressed button's name and value go with the post, so
+        each says its own val_id and the page needs no script */}
+    <form method="post" action={SHOP_PAYMENT_RETURN_PATH} class="flex flex-col gap-8 p-5 md:p-9">
+      <input type="hidden" name="tran_id" value={tranId} />
+      <p class="flex items-start gap-2 rounded-lg bg-canvas px-4 py-3 text-sf-small text-body">
+        <HugeiconsIcon
+          icon={InformationCircleIcon}
+          size={20}
+          strokeWidth={1.5}
+          className="mt-0.5 shrink-0 text-brand"
+          aria-hidden="true"
+        />
+        {t('shop.fakeGateway.notice')}
+      </p>
+      <dl class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3">
+        <dt class="font-semibold">{t('shop.fakeGateway.amount')}</dt>
+        <dd class="text-right font-semibold text-price tabular-nums">{money(amount)}</dd>
+        <dt class="font-semibold">{t('shop.fakeGateway.tranId')}</dt>
+        {/* break-all: 20 letters with no space would push the card wider than a phone */}
+        <dd class="text-right font-mono break-all text-body">{tranId}</dd>
+      </dl>
+      <div class="flex flex-col gap-3">
+        <button
+          type="submit"
+          name="val_id"
+          value={fakeValId(tranId, { outcome: 'paid', amount })}
+          class={`${button} h-16 bg-accent text-[18px] hover:bg-brand hover:text-accent`}
+        >
+          {t('shop.fakeGateway.pay', { amount: money(amount) })}
+        </button>
+        <button
+          type="submit"
+          name="val_id"
+          value={fakeValId(tranId, { outcome: 'failed' })}
+          class={`${button} h-11 bg-cream hover:bg-accent`}
+        >
+          {t('shop.fakeGateway.fail')}
+        </button>
+        <button
+          type="submit"
+          name="val_id"
+          value={fakeValId(tranId, { outcome: 'cancelled' })}
+          class={`${button} h-11 bg-cream hover:bg-accent`}
+        >
+          {t('shop.fakeGateway.cancel')}
+        </button>
+      </div>
+    </form>
+  </div>
+</ShopLayout>

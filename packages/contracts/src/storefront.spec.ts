@@ -1,7 +1,23 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  addressKey,
+  fakeGatewayParamsSchema,
+  fakeValId,
+  readFakeValId,
+  SHOP_PAYMENT_NOTICE_PATH,
+  SHOP_PAYMENT_RETURN_PATH,
+  SHOP_PAYMENT_TRIES,
+  shopGatewayPostSchema,
+  shopPaymentSettleRequestSchema,
+  shopPaymentTranIdSchema,
+  shopPaymentWaitSchema,
   listingParamsFromQuery,
+  maskPhone,
+  publicOrderPlacedSchema,
+  SHOP_KEY_HEADER,
+  shopCodeWaitSchema,
+  shopOrderTokenSchema,
   listingQueryFromParams,
   publicListingParamsSchema,
   publicShopSchema,
@@ -372,6 +388,23 @@ describe('order placed', () => {
     });
     expect(parsed).not.toHaveProperty('token');
   });
+
+  // Step 27d
+  it('sends an online order to the payment page, or says it did not open', () => {
+    const pay = { next: 'pay', paymentUrl: 'https://sandbox.sslcommerz.com/EasyCheckOut/abc' };
+    expect(shopOrderPlacedSchema.parse(pay)).toEqual(pay);
+    expect(shopOrderPlacedSchema.parse({ next: 'pay', paymentUrl: null })).toEqual({
+      next: 'pay',
+      paymentUrl: null,
+    });
+    // The fake gateway's page in development is plain http on this computer
+    const fake = 'http://nirvor.localhost:4321/checkout/fake-gateway?tranId=A';
+    expect(shopOrderPlacedSchema.safeParse({ next: 'pay', paymentUrl: fake }).success).toBe(true);
+    // The shop puts it in `location`: a script address would run on the shop's page
+    expect(
+      shopOrderPlacedSchema.safeParse({ next: 'pay', paymentUrl: 'javascript:alert(1)' }).success,
+    ).toBe(false);
+  });
 });
 
 describe('phone code', () => {
@@ -693,9 +726,183 @@ describe('public API', () => {
 
   it('has no login on any route, and every path under /public/v1', () => {
     for (const route of Object.values(publicStorefrontRoutes)) {
-      expect(route.auth).toBe('public');
+      expect(route.auth).not.toBe('bearer');
       expect(route.path.startsWith('/public/v1/')).toBe(true);
     }
+  });
+});
+
+describe("the shop server's order routes (step 27a.1)", () => {
+  const TOKEN = 'AbCdEfGhIjKlMnOpQrStUv';
+
+  it("keeps every route that writes or shows an order behind the shop server's key", () => {
+    // The read routes stay open: a shop's pages show them to anyone. Everything that places an
+    // order, sends an SMS or answers with an order needs the key, so a stranger who finds the API
+    // cannot fill a shop with orders or walk its tracking links
+    const byAuth = (auth: 'public' | 'shop') =>
+      Object.entries(publicStorefrontRoutes)
+        .filter(([, route]) => route.auth === auth)
+        .map(([name]) => name)
+        .sort();
+    expect(byAuth('shop')).toEqual(
+      [
+        'codeWait',
+        'order',
+        'placeOrder',
+        'resendCode',
+        'track',
+        'tracking',
+        'verifyCode',
+        // Step 27d: a payment's answer from the gateway is the API's to check, and the other three
+        // answer with an order or change one
+        'settlePayment',
+        'paymentWait',
+        'retryPayment',
+        'payOnDelivery',
+      ].sort(),
+    );
+    expect(byAuth('public')).toEqual(
+      [
+        'categories',
+        'checkoutSettings',
+        'home',
+        'listings',
+        'product',
+        'quote',
+        'shop',
+        'textPage',
+      ].sort(),
+    );
+    expect(SHOP_KEY_HEADER).toBe('x-shop-key');
+  });
+
+  it('never puts a token or a phone in an address', () => {
+    // POST with a body for every shop route: a path or a query ends up in logs and Referer headers
+    for (const route of Object.values(publicStorefrontRoutes)) {
+      if (route.auth !== 'shop') continue;
+      expect(route.method).toBe('POST');
+      expect(route.path).not.toContain(':');
+      expect('query' in route).toBe(false);
+    }
+  });
+
+  it("takes a 22-character base64url token, like a tracking link's", () => {
+    expect(shopOrderTokenSchema.safeParse(TOKEN).success).toBe(true);
+    expect(shopOrderTokenSchema.safeParse(`${TOKEN}A`).success).toBe(false);
+    // The mock's 64 hex digits are not the API's: the shop never sends one to the API
+    expect(shopOrderTokenSchema.safeParse('a'.repeat(64)).success).toBe(false);
+    expect(shopOrderTokenSchema.safeParse('AbCdEfGhIjKlMnOpQrSt+/').success).toBe(false);
+  });
+
+  it('checks the code and the token together on verify', () => {
+    const body = publicStorefrontRoutes.verifyCode.body;
+    expect(body.parse({ token: TOKEN, code: '১২৩ ৪৫৬' })).toEqual({ token: TOKEN, code: '123456' });
+    expect(body.safeParse({ code: '123456' }).success).toBe(false);
+  });
+
+  it('finds an order by its number however it was typed, with its token', () => {
+    const body = publicStorefrontRoutes.order.body;
+    expect(body.parse({ token: TOKEN, orderNo: 'w000123' })).toEqual({
+      token: TOKEN,
+      orderNo: 'W-000123',
+    });
+  });
+
+  it("answers the placed order with its token beside the shopper's answer", () => {
+    const placed = {
+      answer: { next: 'verify', maskedPhone: maskPhone('01786120356'), resendInSeconds: 45 },
+      token: TOKEN,
+    };
+    expect(publicOrderPlacedSchema.parse(placed)).toEqual(placed);
+    expect(placed.answer.maskedPhone).toBe('+880 17•• ••• 356');
+  });
+
+  it('says which listings the waiting order holds', () => {
+    const wait = { next: 'verify', maskedPhone: '+880 17•• ••• 356', resendInSeconds: 0 };
+    expect(shopCodeWaitSchema.safeParse({ ...wait, listingIds: ['l1'] }).success).toBe(true);
+    expect(shopCodeWaitSchema.safeParse({ ...wait, listingIds: [] }).success).toBe(false);
+  });
+});
+
+describe('paying online (step 27d.1)', () => {
+  const TRAN = 'K7Q2M4X9B1C3D5E6F8G0';
+  const TOKEN = 'AbCdEfGhIjKlMnOpQrStUv';
+
+  it("takes the gateway's post by its two ids only, with an empty val_id as none", () => {
+    // What SSLCommerz posts: much more than the ids, all of it typed by whoever sent the post
+    const post = { tran_id: TRAN, val_id: '2611221045371uQe8kz1lO', status: 'VALID', amount: '1' };
+    expect(shopGatewayPostSchema.parse(post)).toEqual({
+      tran_id: TRAN,
+      val_id: '2611221045371uQe8kz1lO',
+    });
+    // A failed or cancelled payment has no val_id, or an empty one
+    expect(shopGatewayPostSchema.parse({ tran_id: TRAN, val_id: ' ' }).val_id).toBeNull();
+    expect(shopGatewayPostSchema.parse({ tran_id: TRAN }).val_id).toBeNull();
+    // A transaction id not in our shape names no try: refused before the API is asked
+    expect(shopGatewayPostSchema.safeParse({ tran_id: 'W-000123' }).success).toBe(false);
+    expect(shopPaymentTranIdSchema.safeParse(TRAN.toLowerCase()).success).toBe(false);
+  });
+
+  it("passes the ids on with the shop server's body", () => {
+    expect(shopPaymentSettleRequestSchema.parse({ tranId: TRAN, valId: null })).toEqual({
+      tranId: TRAN,
+      valId: null,
+    });
+    expect(shopPaymentSettleRequestSchema.safeParse({ tranId: TRAN }).success).toBe(false);
+  });
+
+  it('keeps the return and notice paths on the shop, apart from its pages', () => {
+    expect(SHOP_PAYMENT_RETURN_PATH).toBe('/checkout/pay/return');
+    expect(SHOP_PAYMENT_NOTICE_PATH.startsWith('/api/')).toBe(true);
+  });
+
+  it('draws the three states of /checkout/paid, with the tries it has left', () => {
+    const unpaid = {
+      state: 'unpaid',
+      problem: 'cancelled',
+      triesLeft: 2,
+      payOnDelivery: true,
+      total: '1199.0000',
+    };
+    expect(shopPaymentWaitSchema.parse(unpaid)).toEqual(unpaid);
+    expect(shopPaymentWaitSchema.parse({ state: 'checking' })).toEqual({ state: 'checking' });
+    const paid = { state: 'paid', orderNo: 'W-000124', phone: '01786120356', listingIds: ['l1'] };
+    expect(shopPaymentWaitSchema.parse(paid)).toEqual(paid);
+    // The first try is used before the page ever shows, so at most 2 are left
+    expect(
+      shopPaymentWaitSchema.safeParse({ ...unpaid, triesLeft: SHOP_PAYMENT_TRIES }).success,
+    ).toBe(false);
+    expect(shopPaymentWaitSchema.safeParse({ ...unpaid, problem: 'expired' }).success).toBe(false);
+  });
+
+  it("takes the cookie's token on the three payment routes, in a POST body", () => {
+    for (const name of ['paymentWait', 'retryPayment', 'payOnDelivery'] as const) {
+      const route = publicStorefrontRoutes[name];
+      expect(route.body.parse({ token: TOKEN })).toEqual({ token: TOKEN });
+      expect(route.body.safeParse({}).success).toBe(false);
+    }
+  });
+
+  it("reads back the fake gateway's val_id, and nothing else", () => {
+    const valId = fakeValId(TRAN, { outcome: 'paid', amount: '1199.0000' });
+    expect(readFakeValId(valId)).toEqual({ tranId: TRAN, outcome: 'paid', amount: '1199.0000' });
+    // Step 27d.3: Fail and Cancel on the fake page say so too
+    expect(readFakeValId(fakeValId(TRAN, { outcome: 'failed' }))).toEqual({
+      tranId: TRAN,
+      outcome: 'failed',
+    });
+    expect(readFakeValId(fakeValId(TRAN, { outcome: 'cancelled' }))).toEqual({
+      tranId: TRAN,
+      outcome: 'cancelled',
+    });
+    expect(readFakeValId(`FAKE_${TRAN}_PAID`)).toBeNull();
+    // A real SSLCommerz val_id is not a fake one
+    expect(readFakeValId('2611221045371uQe8kz1lO')).toBeNull();
+    expect(readFakeValId(`FAKE_${TRAN}_12a`)).toBeNull();
+    expect(readFakeValId(`FAKE_${TRAN.slice(1)}_12`)).toBeNull();
+    expect(fakeGatewayParamsSchema.safeParse({ tranId: TRAN, amount: '1,199' }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -718,5 +925,26 @@ describe('public API answers (step 26f.3)', () => {
       shopHomeSchema.safeParse({ hero: null, featured: [], hasMoreFeatured: false, blocks: [] })
         .success,
     ).toBe(true);
+  });
+});
+
+// Step 27a: moved from the shop's server (26e), with its cases, because the API counts by it now
+describe('addressKey', () => {
+  it('keeps an IPv4 address as it is, also when Node writes it as IPv6', () => {
+    expect(addressKey('203.0.113.7')).toBe('203.0.113.7');
+    expect(addressKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
+  });
+
+  it('counts an IPv6 address by its /64 block, however it is written', () => {
+    const block = addressKey('2001:db8:1:2::a');
+    expect(block).toBe('2001:db8:1:2::/64');
+    expect(addressKey('2001:0DB8:0001:0002:ffff:ffff:ffff:ffff')).toBe(block);
+    expect(addressKey('fe80::1%en0')).toBe('fe80:0:0:0::/64');
+    expect(addressKey('2001:db8::7')).toBe('2001:db8:0:0::/64');
+    expect(addressKey('::1')).toBe('0:0:0:0::/64');
+  });
+
+  it('gives two neighbouring blocks two keys', () => {
+    expect(addressKey('2001:db8:1:2::a')).not.toBe(addressKey('2001:db8:1:3::a'));
   });
 });

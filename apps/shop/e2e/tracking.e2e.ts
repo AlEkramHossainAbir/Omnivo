@@ -21,7 +21,7 @@ test.describe('a tracking link', () => {
 
     const main = page.getByRole('main');
     await expect(main).toContainText(DELIVERED.orderNo);
-    await expect(main).toContainText('Paid with Mobile Banking.');
+    await expect(main).toContainText('Paid online.');
     // The order's road reads top to bottom, oldest first; a parcel's events newest first
     // (decision 23), and the parcel that delivered comes before the cancelled booking
     const timeline = page.getByRole('list', { name: 'Order status' }).getByRole('listitem');
@@ -159,6 +159,6 @@ test.describe('the /track form', () => {
     ).toBeVisible();
     await page.getByRole('link', { name: `Tracking link of ${DELIVERED.orderNo}` }).click();
     await expect(page).toHaveURL(`/t/${DELIVERED.token}`);
-    await expect(page.getByRole('main')).toContainText('Paid with Mobile Banking.');
+    await expect(page.getByRole('main')).toContainText('Paid online.');
   });
 });

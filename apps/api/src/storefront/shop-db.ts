@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { type Db, storefrontSettings } from '@omnivo/db';
-import { eq, sql } from 'drizzle-orm';
+import { eq, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { AppError } from '../common/http/app-error.js';
@@ -19,6 +19,8 @@ export function storefrontNotFound(): AppError {
 // What every public read knows about its shop once it is found
 export interface ShopScope {
   tenantId: string;
+  // Step 27a: the shop's own label ("nirvor"), for the tracking link the confirm SMS carries
+  subdomain: string;
   // Where the shop counts its stock (decision 3)
   warehouseId: string;
   // One clock for the whole answer: a sale that ends during the request is either on in every
@@ -31,6 +33,9 @@ const tenantRowSchema = z.object({ tenant_id: z.uuid().nullable() });
 // Step 26f: how the public API reads the database (decision 15). Every public request is one
 // read-only transaction that first becomes omnivo_public (migration 0064), so even a bug in this
 // module reads only what the shop's own pages show, and writes nothing.
+//
+// Step 27a: the order routes go through orders() instead, as omnivo_shop (0071, 27a's decision
+// 22): the public reads plus the order tables, and nothing else. Both find the shop the same way.
 @Injectable()
 export class ShopDb {
   constructor(
@@ -42,6 +47,27 @@ export class ShopDb {
     host: string | undefined,
     fn: (tx: Transaction, shop: ShopScope) => Promise<T>,
   ): Promise<T> {
+    // READ ONLY on top of the role's SELECT-only grants: a write here fails twice over
+    return this.run(host, sql`omnivo_public`, 'read only', fn);
+  }
+
+  // Step 27a: placing an order, its phone code, and the order and tracking pages. Read-write only
+  // where it writes: the pages that only show an order pass readOnly, so a bug there cannot change
+  // one either
+  orders<T>(
+    host: string | undefined,
+    fn: (tx: Transaction, shop: ShopScope) => Promise<T>,
+    { readOnly = false }: { readOnly?: boolean } = {},
+  ): Promise<T> {
+    return this.run(host, sql`omnivo_shop`, readOnly ? 'read only' : 'read write', fn);
+  }
+
+  private run<T>(
+    host: string | undefined,
+    role: SQL,
+    accessMode: 'read only' | 'read write',
+    fn: (tx: Transaction, shop: ShopScope) => Promise<T>,
+  ): Promise<T> {
     // Before any database work: a host that cannot be a shop of ours costs nothing
     const label = subdomainOf(host, this.config.storefront.baseDomain);
     if (label === null) return Promise.reject(storefrontNotFound());
@@ -49,8 +75,9 @@ export class ShopDb {
     return this.db.transaction(
       async (tx) => {
         // LOCAL: only until this transaction ends. The pooled connection is omnivo_app again for
-        // the next request, as with set_config(…, true) in setTenantContext
-        await tx.execute(sql`SET LOCAL ROLE omnivo_public`);
+        // the next request, as with set_config(…, true) in setTenantContext. The role is one of
+        // the two written above, never a value from the request
+        await tx.execute(sql`SET LOCAL ROLE ${role}`);
         // The one look across workspaces, through the database's own function: it answers one id
         // for a launched shop, or NULL
         const [found] = z
@@ -73,10 +100,14 @@ export class ShopDb {
         // all would mean the shop's launch was undone between the two queries: the same 404
         if (settings?.warehouseId == null) throw storefrontNotFound();
 
-        return fn(tx, { tenantId, warehouseId: settings.warehouseId, now: new Date() });
+        return fn(tx, {
+          tenantId,
+          subdomain: label,
+          warehouseId: settings.warehouseId,
+          now: new Date(),
+        });
       },
-      // READ ONLY on top of the role's SELECT-only grants: a write here fails twice over
-      { accessMode: 'read only' },
+      { accessMode },
     );
   }
 }

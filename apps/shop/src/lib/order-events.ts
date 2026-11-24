@@ -1,8 +1,9 @@
 import type { ShopOrderConfirmed } from '@omnivo/contracts';
 
 // Step 26c: the checkout tells the page that an order is confirmed with a DOM event, not a React
-// prop. Two places confirm an order: the checkout island (Mobile Banking, no code) and the verify
-// page's script (a right code, 26c.5). One "Order Confirmed" dialog listens on the document, so it
+// prop. Two places confirm an order: the verify page's script (a right code, 26c.5) and, since step
+// 27d, /checkout/paid's (the payment arrived). The checkout island still can, for the contract's
+// `confirmed` answer. One "Order Confirmed" dialog listens on the document, so it
 // does not care which of them sent it, and neither imports the dialog's code.
 export const ORDER_CONFIRMED_EVENT = 'shop:order-confirmed';
 

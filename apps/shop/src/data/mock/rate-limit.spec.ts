@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { addressKey, createRateLimiter } from './rate-limit';
+import { createRateLimiter } from './rate-limit';
 
-// Step 26e: the misses limit and the address it counts by
+// Step 26e: the misses limit. Step 27a: the address it counts by is tested in @omnivo/contracts
+// (addressKey moved there), and the limiter is the mock's only (mock-source.ts)
 
 const MINUTE = 60 * 1000;
 
@@ -84,26 +85,5 @@ describe('the misses limit', () => {
     missTimes(limiter, 'a', 9);
     expect(limiter.waitFor('a')).toBeGreaterThan(0);
     expect(limiter.waitFor('b')).toBeGreaterThan(0);
-  });
-});
-
-describe('the address a miss counts against', () => {
-  it('keeps an IPv4 address as it is, also when Node writes it as IPv6', () => {
-    expect(addressKey('203.0.113.7')).toBe('203.0.113.7');
-    expect(addressKey('::ffff:203.0.113.7')).toBe('203.0.113.7');
-  });
-
-  it('counts an IPv6 address by its /64 block, however it is written', () => {
-    const block = addressKey('2001:db8:1:2::a');
-    expect(block).toBe('2001:db8:1:2::/64');
-    expect(addressKey('2001:0DB8:0001:0002:ffff:ffff:ffff:ffff')).toBe(block);
-    expect(addressKey('fe80::1%en0')).toBe('fe80:0:0:0::/64');
-    // Zero groups left out before the fourth group are put back
-    expect(addressKey('2001:db8::7')).toBe('2001:db8:0:0::/64');
-    expect(addressKey('::1')).toBe('0:0:0:0::/64');
-  });
-
-  it('gives two neighbouring blocks two keys', () => {
-    expect(addressKey('2001:db8:1:2::a')).not.toBe(addressKey('2001:db8:1:3::a'));
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildOpenApiDocument } from './openapi.js';
 import { routes } from './routes.js';
+import { SHOP_KEY_HEADER } from './storefront.js';
 
 const document = buildOpenApiDocument(routes, { version: '0.0.0' });
 
@@ -31,6 +32,16 @@ describe('OpenAPI document', () => {
     const logout = document.paths['/auth/logout']?.post;
     expect(logout?.security).toEqual([]);
     expect(logout?.responses['204']).toEqual({ description: 'No content' });
+  });
+
+  it("marks the shop server's routes with its key, and names the key's header", () => {
+    expect(document.paths['/public/v1/orders']?.post?.security).toEqual([{ shopKey: [] }]);
+    expect(document.paths['/public/v1/shop']?.get?.security).toEqual([]);
+    expect(document.components.securitySchemes.shopKey).toEqual({
+      type: 'apiKey',
+      in: 'header',
+      name: SHOP_KEY_HEADER,
+    });
   });
 
   it('names the permission a route needs, for tools and for people', () => {

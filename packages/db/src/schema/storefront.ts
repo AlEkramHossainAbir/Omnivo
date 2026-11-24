@@ -116,6 +116,12 @@ export const storefrontSettings = pgTable(
       .$type<ShopPaymentMethod[]>()
       .notNull()
       .default(sql`'{cod}'::text[]`),
+    // Step 27b: the service product the sales order's delivery charge line names (decision 4).
+    // NULL until the first order with a charge makes "Delivery charge", or the tenant picks one.
+    // Both ids, because a sales order line names a variant by its product too (the variant FK
+    // below is the lines' own)
+    deliveryProductId: uuid('delivery_product_id'),
+    deliveryVariantId: uuid('delivery_variant_id'),
     launchedAt: timestamp('launched_at', { withTimezone: true }),
     createdAt: baseColumns().createdAt,
     updatedAt: baseColumns().updatedAt,
@@ -167,6 +173,19 @@ export const storefrontSettings = pgTable(
     // be deleted (the later unused-photo cleanup must skip it anyway). NULL skips the check, as in
     // every composite FK here. storefrontImages is defined further down; drizzle reads this list
     // only after the whole file has run
+    // A variant of this workspace. A composite FK is skipped when any of its columns is NULL, so
+    // the check makes the two ids go together: a product id alone would skip the FK and name
+    // nothing. Whether it is an active service is the API's rule (27b.3): a product can be
+    // archived later, and the next order then says so instead of failing here
+    foreignKey({
+      name: 'storefront_settings_delivery_variant_fk',
+      columns: [table.tenantId, table.deliveryProductId, table.deliveryVariantId],
+      foreignColumns: [productVariants.tenantId, productVariants.productId, productVariants.id],
+    }),
+    check(
+      'storefront_settings_delivery_check',
+      sql`(${table.deliveryProductId} IS NULL) = (${table.deliveryVariantId} IS NULL)`,
+    ),
     foreignKey({
       name: 'storefront_settings_logo_fk',
       columns: [table.tenantId, table.logoImageId],

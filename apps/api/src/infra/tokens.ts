@@ -11,3 +11,8 @@ export const STORAGE_CONFIG = Symbol('STORAGE_CONFIG');
 
 // The worker's second database pool, as omnivo_worker: only the outbox relay and its cleanup use it
 export const RELAY_DB = Symbol('RELAY_DB');
+
+// Step 27d: the payment part of the config (the API's and the worker's), and the gateway made from
+// it (payments/gateway.ts)
+export const PAYMENTS_CONFIG = Symbol('PAYMENTS_CONFIG');
+export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');

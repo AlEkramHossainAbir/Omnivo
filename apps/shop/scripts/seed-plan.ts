@@ -195,7 +195,12 @@ export function settingsBody(subdomain: string, warehouseId: string): SettingsBo
     })),
     freeDeliveryFrom: mockCheckoutSettings.freeDeliveryFrom,
     minimumOrder: mockCheckoutSettings.minimumOrder,
-    paymentMethods: [...mockCheckoutSettings.paymentMethods],
+    // Step 27d: Cash on Delivery only. The mock offers Pay online too, but the API lets a shop tick
+    // it only once the Online payment card is saved with its two accounts (storefront_online_not_ready),
+    // and the seed has no gateway account to save. Set it up in Shop settings to see Pay online
+    paymentMethods: ['cod'],
+    // Step 27b: none picked, so the first order with a charge makes "Delivery charge" itself
+    deliveryVariantId: null,
   };
 }
 

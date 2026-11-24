@@ -15,6 +15,7 @@ import {
   percentOfWhole,
   prorateMoney,
   splitMoney,
+  spreadMoney,
   subtractMoney,
   sumMoney,
   unitCostOf,
@@ -80,6 +81,27 @@ describe('money', () => {
     expect(splitMoney('-0.05', 2)).toEqual(['-0.0300', '-0.0200']);
     expect(sumMoney(splitMoney('1234.57', 7))).toBe('1234.5700');
     expect(splitMoney('5', 1)).toEqual(['5.0000']);
+  });
+
+  it('spreads a value over weights in proportion, to the paisa, adding up exactly', () => {
+    expect(spreadMoney('100', ['300', '200'])).toEqual(['60.0000', '40.0000']);
+    // ৳10 over three equal lines: 3.33 each, and the paisa left over goes to the first
+    expect(spreadMoney('10', ['50', '50', '50'])).toEqual(['3.3400', '3.3300', '3.3300']);
+    // The largest remainder wins the paisa, not the first line: 0.05 × 2/3 = 0.0333… and
+    // 0.05 × 1/3 = 0.0166…, so the second share lost more to rounding down (0.0066… > 0.0033…)
+    expect(spreadMoney('0.05', ['2', '1'])).toEqual(['0.0300', '0.0200']);
+    const pieces = spreadMoney('57.89', ['229', '1.50', '999.99', '48.25']);
+    expect(sumMoney(pieces)).toBe('57.8900');
+    // The whole value over the weights takes each weight exactly; nothing takes nothing
+    expect(spreadMoney('230.50', ['229', '1.50'])).toEqual(['229.0000', '1.5000']);
+    expect(spreadMoney('0', ['229', '1.50'])).toEqual(['0.0000', '0.0000']);
+  });
+
+  it('refuses to spread more than the weights, a fraction of a paisa, or over nothing', () => {
+    expect(() => spreadMoney('231', ['229', '1.50'])).toThrow();
+    expect(() => spreadMoney('10.005', ['229'])).toThrow();
+    expect(() => spreadMoney('10', ['229', '0'])).toThrow();
+    expect(() => spreadMoney('10', [])).toThrow();
   });
 
   it('works out a unit cost to 4 decimals', () => {

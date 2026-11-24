@@ -116,6 +116,10 @@ describe('the shop', () => {
     expect(parsed.error?.issues).toBeUndefined();
   });
 
+  it('settings ask for Cash on Delivery only (Pay online needs a saved gateway, step 27d)', () => {
+    expect(settingsBody('demo-shop', randomUUID()).paymentMethods).toEqual(['cod']);
+  });
+
   it('categories come after their parent and pass the form', () => {
     const made = new Set<string>();
     for (const category of seedCategories) {

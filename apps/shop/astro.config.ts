@@ -34,7 +34,12 @@ export default defineConfig({
   // can be on any domain. That is safe only while nothing but the proxy can reach the server, and
   // the proxy writes X-Forwarded-For itself (infra/staging/Caddyfile → the shop), never passing on
   // one the visitor sent
-  security: { allowedDomains: [{}] },
+  // Step 27d (decision 2): checkOrigin off, because SSLCommerz posts the shopper back from its own
+  // site, and Astro's check would answer that post 403 with no way to leave one path out. The
+  // middleware runs the same check itself, with only the gateway's two paths let through
+  // (src/server/origin-check.ts). Never turn this off without that: every form here would take a
+  // post from any site
+  security: { allowedDomains: [{}], checkOrigin: false },
   build: { format: 'file' },
   // Step 26f.5: where the data comes from (src/data/config.ts). "secret" is Astro's word for "read
   // when the server runs, never written into the build": a public server value would be fixed when
@@ -51,6 +56,9 @@ export default defineConfig({
         default: 'mock',
       }),
       SHOP_API_URL: envField.string({ context: 'server', access: 'secret', optional: true }),
+      // Step 27a: the key for the order routes (src/data/config.ts). This one is a secret in both
+      // senses: anyone who has it can place orders and send SMS in any shop's name
+      SHOP_API_KEY: envField.string({ context: 'server', access: 'secret', optional: true }),
     },
   },
 });

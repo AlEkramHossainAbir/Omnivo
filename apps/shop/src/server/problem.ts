@@ -89,8 +89,8 @@ interface BodySchema<T> {
 // Step 26c: the first lines of every POST route, in one place. The body must say it is JSON, be
 // JSON, and pass the schema; anything else is the response to send back as it is.
 // The Content-Type check matters for the routes that read cookies: a form on another site can post
-// text/plain to this server, and Astro's origin check (security.checkOrigin, on by default) is the
-// only thing that refuses it. JSON can only come from a script, which the browser stops from
+// text/plain to this server, and the origin check is the only thing that refuses it (Astro's until
+// step 27d, the middleware's since: server/origin-check.ts). JSON can only come from a script, which the browser stops from
 // another site unless the server allows it (CORS), and this server allows no one.
 export async function readBody<T>(
   request: Request,

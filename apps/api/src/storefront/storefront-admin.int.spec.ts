@@ -105,6 +105,8 @@ const FIRST_SAVE: Omit<StorefrontSettingsFormValues, 'version'> = {
   freeDeliveryFrom: '1000',
   minimumOrder: '',
   paymentMethods: ['cod'],
+  // Step 27b: "Made on the first order"
+  deliveryVariantId: '',
 };
 
 // The form again from a saved shop, the way the settings page fills its boxes from the answer
@@ -116,6 +118,7 @@ function formOf(shop: StorefrontSettings): StorefrontSettingsFormValues {
     deliveryZones: shop.deliveryZones.map((zone) => ({ ...zone })),
     freeDeliveryFrom: shop.freeDeliveryFrom ?? '',
     minimumOrder: shop.minimumOrder ?? '',
+    deliveryVariantId: shop.deliveryVariantId ?? '',
     version: shop.version,
   };
 }

@@ -240,39 +240,42 @@ export class SalesReturnsService {
 
   async create(input: SalesReturnInput): Promise<SalesReturn> {
     try {
-      return await this.withTenant(async (tx) => {
-        const customer = await assertCustomer(tx, input.customerId);
-        await assertWarehousesActive(tx, [
-          { field: 'warehouseId', warehouseId: input.warehouseId },
-        ]);
-        const checked = await this.checkLines(tx, customer.id, input.lines, false);
-        const [row] = await tx
-          .insert(salesReturns)
-          .values({
-            tenantId: getTenantId(),
-            date: input.date,
-            customerId: customer.id,
-            warehouseId: input.warehouseId,
-            reason: input.reason,
-            note: input.note,
-            createdBy: currentPrincipal().userId,
-            updatedBy: currentPrincipal().userId,
-          })
-          .returning();
-        if (!row) throw new Error('Sales return insert returned no row');
-        await this.writeLines(tx, row.id, input.lines, checked.lines);
-        await audit(tx, {
-          action: 'sales_return.created',
-          entityType: 'sales_return',
-          entityId: row.id,
-          changes: created(await this.snapshot(tx, row, customer, checked.lines.length)),
-        });
-        if (input.post) await this.postAndLog(tx, row);
-        return this.read(tx, row.id);
-      });
+      return await this.withTenant(async (tx) => this.read(tx, await this.createIn(tx, input)));
     } catch (error) {
       throw overDeliveredRace(error);
     }
+  }
+
+  // Step 27b: the save (and the post, when asked) in the caller's transaction: create() above,
+  // and the cancel of a packed shop order (StorefrontOrdersService), which brings its whole challan
+  // back and cancels the shop order in the same transaction. Returns the id
+  async createIn(tx: Transaction, input: SalesReturnInput): Promise<string> {
+    const customer = await assertCustomer(tx, input.customerId);
+    await assertWarehousesActive(tx, [{ field: 'warehouseId', warehouseId: input.warehouseId }]);
+    const checked = await this.checkLines(tx, customer.id, input.lines, false);
+    const [row] = await tx
+      .insert(salesReturns)
+      .values({
+        tenantId: getTenantId(),
+        date: input.date,
+        customerId: customer.id,
+        warehouseId: input.warehouseId,
+        reason: input.reason,
+        note: input.note,
+        createdBy: currentPrincipal().userId,
+        updatedBy: currentPrincipal().userId,
+      })
+      .returning();
+    if (!row) throw new Error('Sales return insert returned no row');
+    await this.writeLines(tx, row.id, input.lines, checked.lines);
+    await audit(tx, {
+      action: 'sales_return.created',
+      entityType: 'sales_return',
+      entityId: row.id,
+      changes: created(await this.snapshot(tx, row, customer, checked.lines.length)),
+    });
+    if (input.post) await this.postAndLog(tx, row);
+    return row.id;
   }
 
   async update(id: string, input: UpdateSalesReturnInput): Promise<SalesReturn> {

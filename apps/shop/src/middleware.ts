@@ -2,12 +2,19 @@ import { defineMiddleware } from 'astro:middleware';
 
 import { ShopMissingError } from './data/api/shop-api';
 import { sourceFor } from './data/source';
+import { crossSiteForbidden, isForbiddenCrossSite } from './server/origin-check';
 import { problemResponse } from './server/problem';
 
 // Step 26f.5: runs before every page and API route. It gives the request its data source (the one
 // for the shop its host names), and stops a host that is no launched shop before any page runs,
 // because every page draws the shop's header and footer and would fail without a shop.
 export const onRequest = defineMiddleware(async (context, next) => {
+  // Step 27d: Astro's origin check, with the gateway's two paths let through (decision 2). First,
+  // so a refused post costs no request to the API
+  if (isForbiddenCrossSite(context.request, context.url)) {
+    return crossSiteForbidden(context.request);
+  }
+
   const source = sourceFor(context.url);
   context.locals.source = source;
 

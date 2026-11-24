@@ -117,7 +117,7 @@ export const PAGES: Readonly<Record<ShopTextPageSlug, StorefrontSection[]>> = {
   terms: [
     {
       heading: 'Orders',
-      body: 'An order is placed when you confirm it with the code we send to your mobile number, or when you pay with Mobile Banking. Prices are the ones on the checkout page when you confirm.',
+      body: 'An order is placed when you confirm it with the code we send to your mobile number, or when your online payment arrives. Prices are the ones on the checkout page when you confirm.',
     },
     {
       heading: 'Delivery',

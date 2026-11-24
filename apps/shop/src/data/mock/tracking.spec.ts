@@ -12,6 +12,7 @@ import {
 import { describe, expect, it } from 'vitest';
 
 import { mockDemoOrders } from './demo-orders';
+import { payPlaced } from './fake-payment';
 import { createMockSource } from './mock-source';
 
 // Step 26e: the demo orders, tracking by link and by the form, and the text pages
@@ -25,6 +26,11 @@ function demoSource() {
 
 // The form's request after shopTrackRequestSchema, as the route hands it over
 const asked = (phone: string, orderNo: string) => shopTrackRequestSchema.parse({ phone, orderNo });
+
+// Step 27a: the shopper's address, which the mock counts misses under
+const ADDRESS = '203.0.113.7';
+// Step 27d: the shop's own address, for the mock's fake gateway page (ShopSource.placeOrder)
+const ORIGIN = 'http://shop.test';
 
 // Two face washes, inside Dhaka: ৳458 + ৳80, over the shop's ৳300 minimum
 function order(paymentMethod: ShopOrderRequest['paymentMethod']): ShopOrderRequest {
@@ -51,9 +57,11 @@ describe('the mock’s demo orders', () => {
 
   it('are priced like the checkout prices an order', () => {
     const [dhaka, chattogram, sylhet] = mockDemoOrders.map(({ order: demo }) => demo);
-    // Over ৳1,000 of items, so its delivery was free
+    // Over ৳1,000 of items, so its delivery was free. Step 27c: less EID100's ৳100. The free
+    // delivery still looks at the items before the coupon (26c's decision 8)
     expect(compareMoney(dhaka?.deliveryCharge ?? '', '0')).toBe(0);
-    expect(compareMoney(dhaka?.total ?? '', '1299')).toBe(0);
+    expect(dhaka).toMatchObject({ couponCode: 'EID100', discount: '100.0000' });
+    expect(compareMoney(dhaka?.total ?? '', '1199')).toBe(0);
     expect(compareMoney(chattogram?.total ?? '', '520')).toBe(0);
     // The contracts' fixture: ৳458 of items and ৳120 outside Dhaka
     expect(compareMoney(sylhet?.total ?? '', '578')).toBe(0);
@@ -87,35 +95,64 @@ describe('tracking in the mock', () => {
   });
 
   it('tracks with the number and the phone the order was placed with, however they are typed', async () => {
-    const tracking = await demoSource().track(asked('01786 120356', 'w-000123'));
-    expect(tracking?.orderNo).toBe('W-000123');
+    const tracked = await demoSource().track(asked('01786 120356', 'w-000123'), ADDRESS);
+    expect(tracked).toMatchObject({ ok: true, value: { orderNo: 'W-000123' } });
   });
 
-  it('answers null for the right number with another order’s phone', async () => {
+  it('refuses the right number with another order’s phone', async () => {
     // 01711284519 placed W-000121: a real buyer's phone, but not this order's
-    expect(await demoSource().track(asked('01711284519', 'W-000123'))).toBeNull();
+    expect(await demoSource().track(asked('01711284519', 'W-000123'), ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_track_not_found',
+    });
   });
 
-  it('answers null for a number no order has', async () => {
-    expect(await demoSource().track(asked('01786120356', 'W-000999'))).toBeNull();
+  it('refuses a number no order has', async () => {
+    expect(await demoSource().track(asked('01786120356', 'W-000999'), ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_track_not_found',
+    });
   });
 
   it('numbers new orders after the demo ones, and tracks them with no parcel', async () => {
     const source = demoSource();
-    const placed = await source.placeOrder(order('online'));
+    const placed = await source.placeOrder(order('online'), ADDRESS, ORIGIN);
     if (!placed.ok) throw new Error(placed.code);
-    expect(placed.value.orderNo).toBe('W-000124');
+    // Step 27d: confirmed once it is paid on the fake gateway's page
+    expect(await payPlaced(source, placed.value)).toBe('W-000124');
 
-    const tracking = await source.track(asked('01786120356', 'W-000124'));
-    expect(tracking?.status).toBe('confirmed');
-    expect(tracking?.shipments).toEqual([]);
+    const tracked = await source.track(asked('01786120356', 'W-000124'), ADDRESS);
+    expect(tracked).toMatchObject({ ok: true, value: { status: 'confirmed', shipments: [] } });
   });
 
   it('does not track an order that waits for its code', async () => {
     const source = demoSource();
-    const placed = await source.placeOrder(order('cod'));
+    const placed = await source.placeOrder(order('cod'), ADDRESS, ORIGIN);
     if (!placed.ok) throw new Error(placed.code);
-    expect(await source.track(asked('01786120356', placed.value.orderNo))).toBeNull();
+    // The mock numbers its orders as they are placed: the next one after the demo orders
+    expect(await source.track(asked('01786120356', 'W-000124'), ADDRESS)).toMatchObject({
+      ok: false,
+      code: 'shop_track_not_found',
+    });
+  });
+
+  // Step 27a: the limit moved here from the /track form's server code (server/track.spec.ts tests
+  // the form with it)
+  it('stops an address after ten misses, for the window’s 15 minutes', async () => {
+    let now = new Date('2026-11-15T10:00:00+06:00');
+    const source = createMockSource(() => now, mockDemoOrders);
+    for (let miss = 0; miss < 10; miss += 1) {
+      await source.track(asked('01711284519', 'W-000123'), ADDRESS);
+    }
+    expect(await source.track(asked('01786120356', 'W-000123'), ADDRESS)).toEqual({
+      ok: false,
+      code: 'shop_track_too_many',
+      params: { minutes: 15 },
+    });
+    now = new Date(now.getTime() + 15 * 60 * 1000);
+    expect(await source.track(asked('01786120356', 'W-000123'), ADDRESS)).toMatchObject({
+      ok: true,
+    });
   });
 
   it('cannot be changed through what it answers', async () => {

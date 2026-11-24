@@ -1,3 +1,5 @@
+import { addressKey, SHOP_TRACK_TRIES, SHOP_TRACK_WINDOW_MINUTES } from '@omnivo/contracts';
+
 import type { ShopSource } from '../types';
 import { listListings, type BrowseContext } from './browse';
 import { mockCheckoutSettings, mockCoupons } from './checkout';
@@ -7,15 +9,21 @@ import { createOrderBook, MOCK_CODE, type MockDemoOrder } from './orders';
 import { mockTextPages } from './pages';
 import { mockCatalog, mockProductPage, mockSkus } from './products';
 import { quoteCart, type QuoteContext } from './quote';
+import { createRateLimiter } from './rate-limit';
 import { mockCategories, mockShop } from './shop';
 
 // Step 26c: everything the mock prices a cart with, at one moment. Exported for the tests, which
-// price carts without a source
-export function mockQuoteContext(now: Date): QuoteContext {
+// price carts without a source. Step 27c: `used` counts a code's orders; a test without an order
+// book has none
+export function mockQuoteContext(
+  now: Date,
+  used: (code: string) => number = () => 0,
+): QuoteContext {
   return {
     catalog: mockCatalog,
     settings: mockCheckoutSettings,
     coupons: mockCoupons,
+    used,
     timeZone: mockShop.timeZone,
     now,
   };
@@ -37,7 +45,15 @@ export function createMockSource(
   demo: readonly MockDemoOrder[] = [],
 ): ShopSource {
   const orders = createOrderBook(now, demo);
-  const context = () => mockQuoteContext(now());
+  // Step 27c: each quote counts the coupon's orders in this source's own book
+  const context = () => mockQuoteContext(now(), orders.couponUses);
+  // Step 27a: the /track form's misses, moved here from server/track.ts. The source's own clock, so
+  // a test that moves time moves the window too
+  const trackLimiter = createRateLimiter({
+    tries: SHOP_TRACK_TRIES,
+    windowMs: SHOP_TRACK_WINDOW_MINUTES * 60 * 1000,
+    now: () => now().getTime(),
+  });
 
   // The mock answers at once. Still a promise, so the pages are written for the real source, which
   // waits for the network
@@ -51,18 +67,54 @@ export function createMockSource(
 
     checkoutSettings: () => Promise.resolve(mockCheckoutSettings),
     // The order is priced again here from its own lines, zone and coupon, never from anything the
-    // browser says it costs (decision 10)
-    placeOrder: (request) =>
-      Promise.resolve(orders.place(request, quoteCart(request, context()), mockCheckoutSettings)),
+    // browser says it costs (decision 10). The shopper's address is not used: the mock has no order
+    // limits (data/mock/orders.ts)
+    placeOrder: (request, _address, origin) =>
+      Promise.resolve(
+        orders.place(
+          request,
+          quoteCart(request, context()),
+          mockCheckoutSettings,
+          mockCoupons,
+          origin,
+        ),
+      ),
     codeWait: (token) => Promise.resolve(orders.codeWait(token)),
     verifyCode: (token, code) => Promise.resolve(orders.verify(token, code)),
     resendCode: (token) => Promise.resolve(orders.resend(token)),
     order: (orderNo, token) => Promise.resolve(orders.find(orderNo, token)),
     testCode: MOCK_CODE,
 
+    // Step 27d: paying online, against the fake gateway (decision 8). The shop's settings decide
+    // which buttons /checkout/paid offers, as the API's do
+    settlePayment: (request) => Promise.resolve(orders.settle(request)),
+    paymentWait: (token) => Promise.resolve(orders.paymentWait(token, mockCheckoutSettings)),
+    retryPayment: (token, origin) =>
+      Promise.resolve(orders.retry(token, mockCheckoutSettings, origin)),
+    payOnDelivery: (token) => Promise.resolve(orders.payOnDelivery(token, mockCheckoutSettings)),
+
     // Step 26e
     tracking: (token) => Promise.resolve(orders.trackByLink(token)),
-    track: (request) => Promise.resolve(orders.track(request)),
+    // Step 27a: the limit first, as 26e's form did: once it is reached, nothing is looked up, so a
+    // guesser learns nothing more until the window ends, however right the next guess is. Only a
+    // miss counts (26e's decision 3), as in the API
+    track(request, address) {
+      const key = addressKey(address);
+      const wait = trackLimiter.waitFor(key);
+      if (wait > 0) {
+        return Promise.resolve({
+          ok: false,
+          code: 'shop_track_too_many',
+          params: { minutes: Math.ceil(wait / 60) },
+        });
+      }
+      const tracking = orders.track(request);
+      if (tracking === null) {
+        trackLimiter.miss(key);
+        return Promise.resolve({ ok: false, code: 'shop_track_not_found' });
+      }
+      return Promise.resolve({ ok: true, value: tracking });
+    },
     textPage: (slug) => Promise.resolve(mockTextPages[slug] ?? null),
     // What the /track page offers a tester: the demo orders' numbers, phones and links. null
     // without them, so the page does not offer links that lead nowhere
