@@ -68,11 +68,28 @@ jobs:
       - name: Module boundaries
         run: pnpm boundaries
 
-  # Every push to dev that passes the gate goes to staging. Pull requests and main never deploy here.
-  deploy-staging:
+  # Every push to dev that passes the gate goes to the demo (demo.omnivosoft.com), with its own
+  # database. The users never see it.
+  deploy-demo:
     needs: gate
     if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    uses: ./.github/workflows/deploy-staging.yml
+    uses: ./.github/workflows/deploy.yml
+    with:
+      target: demo
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+
+  # Every push to main (a merged pull request from dev) that passes the gate goes to production
+  # (app.omnivosoft.com). The users' open tabs show the update notice and get it on reload.
+  # Pull requests never deploy.
+  deploy-production:
+    needs: gate
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      target: production
     permissions:
       contents: read
       packages: write

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# A copy of the staging database, kept for 7 days. cron runs it every night (see the guide).
+# A copy of this stack's database, kept for 7 days. cron runs it every night for production
+# (see docs/vps-deploy.en.md). Run it from the stack's own folder: each folder is its own database.
 # Restore one:  ./restore.sh backups/omnivo-2026-11-05-0300.dump
 set -euo pipefail
 cd "$(dirname "$0")"

@@ -1,0 +1,218 @@
+name: Deploy
+
+# Two stacks on the same server, each with its own database, files, mail and tunnel:
+#   demo        https://demo.omnivosoft.com  from dev   (/srv/omnivo-demo)
+#   production  https://app.omnivosoft.com   from main  (/srv/omnivo)
+#
+# Two ways in:
+#   - ci.yml calls this after its gate job passes: a push to dev deploys demo, a push to main
+#     (a merged pull request) deploys production (workflow_call)
+#   - the "Run workflow" button in the Actions tab, to deploy a branch or commit to one target, or
+#     to go back to an earlier one (workflow_dispatch). GitHub shows the button only once this file
+#     is on main. Production takes only a commit that is already on main.
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: demo or production
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Where to deploy
+        required: true
+        type: choice
+        options: [demo, production]
+        default: demo
+      ref:
+        description: Branch, tag or commit to deploy (production takes only a commit on main)
+        required: true
+        default: dev
+
+# One deploy at a time per target. A second one waits instead of cancelling the first one halfway
+# through. Demo and production have their own groups, so a demo deploy never waits for (or
+# replaces a waiting) production deploy.
+concurrency:
+  group: deploy-${{ inputs.target }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          # The whole history, so the production check below can see whether the commit is on main
+          fetch-depth: 0
+
+      # The input is free text on workflow_call, so a typo must stop here, not deploy somewhere
+      # unexpected. The API's address is built into the app, so it must be set for this target.
+      - name: Check the target
+        env:
+          TARGET: ${{ inputs.target }}
+          API_URL: ${{ inputs.target == 'production' && vars.PRODUCTION_API_URL || vars.DEMO_API_URL }}
+        run: |
+          case "$TARGET" in
+            demo|production) ;;
+            *) echo "::error::target must be demo or production, not '$TARGET'"; exit 1 ;;
+          esac
+          if [ -z "$API_URL" ]; then
+            echo "::error::Set the repository variable ${TARGET^^}_API_URL first"
+            exit 1
+          fi
+
+      # Production runs only what was merged into main. The "Run workflow" button could otherwise
+      # send dev (or any branch) to the users.
+      - name: Production takes only commits on main
+        if: inputs.target == 'production'
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor HEAD origin/main; then
+            echo "::error::$(git rev-parse --short HEAD) is not on main. Merge it into main first."
+            exit 1
+          fi
+
+      # The image tag is the full commit, so every build points at one exact commit. GHCR wants the
+      # owner in lower case.
+      - id: meta
+        run: |
+          echo "tag=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The four images share their first stages. One builder builds them one after the other, so
+      # the shared stages are built once. The gha cache keeps every stage for the next run. api,
+      # migrate and shop are the same for both targets; when main gets a commit demo already ran,
+      # they come from the cache.
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: api
+          push: true
+          tags: ${{ steps.meta.outputs.registry }}/omnivo-api:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=deploy
+          cache-to: type=gha,scope=deploy,mode=max
+
+      - name: Build and push migrate
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: migrate
+          push: true
+          tags: ${{ steps.meta.outputs.registry }}/omnivo-migrate:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=deploy
+
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: web
+          push: true
+          # Vite writes the API's address into the app's JavaScript. It must be https:// plus
+          # API_HOST in that stack's .env. So the web image is per target: <commit>-<target>. One
+          # tag for both would let the demo's build (pointing at the demo API) replace production's.
+          build-args: VITE_API_URL=${{ inputs.target == 'production' && vars.PRODUCTION_API_URL || vars.DEMO_API_URL }}
+          tags: ${{ steps.meta.outputs.registry }}/omnivo-web:${{ steps.meta.outputs.tag }}-${{ inputs.target }}
+          cache-from: type=gha,scope=deploy
+
+      # The shop needs no build argument: it is a server, so its settings are read when it starts
+      - name: Build and push shop
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/Dockerfile
+          target: shop
+          push: true
+          tags: ${{ steps.meta.outputs.registry }}/omnivo-shop:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha,scope=deploy
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    # The server only pulls: the token it is lent may read packages, not write them
+    permissions:
+      contents: read
+      packages: read
+    # The GitHub environment (demo or production) keeps the history of each target's deploys. Its
+    # settings may add rules, such as "only main" or a reviewer, on production.
+    environment:
+      name: ${{ inputs.target }}
+      url: ${{ inputs.target == 'production' && vars.PRODUCTION_APP_URL || vars.DEMO_APP_URL }}
+    env:
+      # Each stack's folder on the server
+      STACK_DIR: ${{ inputs.target == 'production' && '/srv/omnivo' || '/srv/omnivo-demo' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.build.outputs.tag }}
+
+      # Secrets go through env, never straight into the script, so a value is never read as shell code.
+      # The server's address, user and port go into one "vps" entry of ~/.ssh/config, so scp and
+      # ssh below need no flags. Both stacks are on the same server, so the secrets are the
+      # repository's, not an environment's.
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/vps
+          chmod 600 ~/.ssh/vps
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf 'Host vps\n  HostName %s\n  Port %s\n  User %s\n  IdentityFile ~/.ssh/vps\n  IdentitiesOnly yes\n' \
+            "$SSH_HOST" "${SSH_PORT:-22}" "$SSH_USER" > ~/.ssh/config
+          chmod 600 ~/.ssh/config
+
+      # The folder and its .env are made by hand once (docs/vps-deploy.en.md). A missing .env
+      # stops here, before any file is copied into a folder that is not a stack.
+      - name: Check the stack folder
+        run: ssh vps "test -f '$STACK_DIR/.env'" || { echo "::error::$STACK_DIR/.env is missing on the server"; exit 1; }
+
+      # The stack's files come from the commit being deployed. The server's .env is never touched.
+      - name: Copy the stack files
+        run: |
+          scp -r \
+            infra/staging/compose.yml infra/staging/Caddyfile \
+            infra/staging/deploy.sh infra/staging/backup.sh infra/staging/restore.sh \
+            infra/staging/reset-demo.sh \
+            infra/staging/postgres-init \
+            "vps:$STACK_DIR/"
+
+      # The job's own token logs the server in to GHCR for this deploy only, in a docker config
+      # folder of its own (DOCKER_CONFIG). A demo and a production deploy can run at the same time,
+      # and one's logout must not end the other's login halfway through its pull. No lasting
+      # registry password is kept on the server.
+      - name: Deploy
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          TARGET: ${{ inputs.target }}
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | ssh vps "set -e
+            export DOCKER_CONFIG=\$(mktemp -d)
+            trap 'rm -rf \"\$DOCKER_CONFIG\"' EXIT
+            docker login ghcr.io -u '$GHCR_USER' --password-stdin
+            cd '$STACK_DIR' && ./deploy.sh '$TAG' '$TARGET'"
