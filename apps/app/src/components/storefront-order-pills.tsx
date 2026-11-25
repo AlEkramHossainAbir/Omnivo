@@ -2,10 +2,14 @@ import {
   Alert02Icon,
   CancelCircleIcon,
   Clock01Icon,
+  DeliveryBox01Icon,
+  DeliveryDelay01Icon,
   DeliveryReturn01Icon,
+  DeliveryTracking01Icon,
   DeliveryTruck01Icon,
   PackageDeliveredIcon,
   PackageIcon,
+  PackageMovingIcon,
   PackageReceiveIcon,
   PackageRemoveIcon,
 } from '@hugeicons/core-free-icons';
@@ -75,6 +79,41 @@ export function ParcelWaitPill({
   return (
     <Pill tone="warn" icon={PARCEL_WAIT_PILLS[parcelStatus]}>
       {t(`storefront.orders.parcelPills.${parcelStatus}`)}
+    </Pill>
+  );
+}
+
+// Step 28a.6: the pill of each of the twelve parcel statuses (approved with the mockup). Moved
+// here from storefront-order-parcels.tsx in step 28c: the new payout lists parcels too, and that
+// file (the parcel cards, Book courier, the label) would ride in its chunk. Work on its way is brand, as
+// the order's own pills (CLAUDE.md → Sales document statuses); delivered is good; a failed booking
+// is crit, because nothing moves until someone books it again; warn for what the shop must act on
+// (the courier holds it, it comes back, part of it came back); over and done is neutral. The
+// courier's news on the card use the same icons, so a step reads the same in both places
+export const PARCEL_PILLS = {
+  booking: { tone: 'brand', icon: Clock01Icon },
+  booking_failed: { tone: 'crit', icon: Alert02Icon },
+  booked: { tone: 'brand', icon: DeliveryBox01Icon },
+  picked_up: { tone: 'brand', icon: PackageMovingIcon },
+  in_transit: { tone: 'brand', icon: DeliveryTruck01Icon },
+  out_for_delivery: { tone: 'brand', icon: DeliveryTracking01Icon },
+  delivered: { tone: 'good', icon: PackageDeliveredIcon },
+  partly_delivered: { tone: 'warn', icon: PackageRemoveIcon },
+  on_hold: { tone: 'warn', icon: DeliveryDelay01Icon },
+  returning: { tone: 'warn', icon: DeliveryReturn01Icon },
+  returned: { tone: 'neutral', icon: PackageReceiveIcon },
+  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
+} as const satisfies Record<
+  ShipmentStatus,
+  { tone: 'brand' | 'good' | 'warn' | 'crit' | 'neutral'; icon: IconSvgElement }
+>;
+
+export function ParcelPill({ status }: { status: ShipmentStatus }) {
+  const { t } = useLocale();
+  const pill = PARCEL_PILLS[status];
+  return (
+    <Pill tone={pill.tone} icon={pill.icon}>
+      {t(`storefront.order.parcels.statuses.${status}`)}
     </Pill>
   );
 }

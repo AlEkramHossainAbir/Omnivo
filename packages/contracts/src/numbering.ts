@@ -29,6 +29,7 @@ export const DOCUMENT_TYPES = [
   'purchase.return',
   'purchase.debit_note',
   'purchase.refund',
+  'storefront.payout',
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -74,6 +75,8 @@ const DEFAULT_PREFIXES = {
   'purchase.return': 'PRN',
   'purchase.debit_note': 'DN',
   'purchase.refund': 'SRF',
+  // A courier's payout of the shop's COD money (step 28c). CPO, not PO: PO is the purchase order's
+  'storefront.payout': 'CPO',
 } satisfies Record<DocumentType, string>;
 
 // টেন্যান্ট কিছু না বদলালে এই ছাঁচ — DB-তে রো লেখা হয় শুধু প্রথম বদলের সময়।

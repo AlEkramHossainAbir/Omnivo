@@ -106,6 +106,20 @@ export function seedsShopOrders(): boolean {
   }
 }
 
+// Step 28c: Steadfast Dhaka's last week of delivered Cash on Delivery orders and one payout, for Shop
+// payouts (storefront-order-data.ts → seedPayoutWeek). Only with the shop orders. They move what
+// Steadfast Dhaka holds, which the 28b tests read, so a test asks for them with
+// test.use({ shopOrders: true, shopPayouts: true }); `pnpm dev:mock` has no key and gets them.
+export const MOCK_NO_SHOP_PAYOUTS_KEY = 'omnivo.mock.noShopPayouts';
+
+export function seedsShopPayouts(): boolean {
+  try {
+    return localStorage.getItem(MOCK_NO_SHOP_PAYOUTS_KEY) === null;
+  } catch {
+    return true;
+  }
+}
+
 export function meIn(
   workspace: Workspace,
   companyName: string,

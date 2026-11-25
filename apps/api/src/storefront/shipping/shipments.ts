@@ -14,6 +14,7 @@ import {
   receipts,
   storefrontOrders,
   storefrontPayments,
+  storefrontPayouts,
   storefrontShipmentEvents,
   storefrontShipments,
 } from '@omnivo/db';
@@ -335,6 +336,8 @@ export async function shipmentsOf(tx: Transaction, orderId: string): Promise<Sto
       codAccountId: courierAccounts.codAccountId,
       // Step 28b: the COD receipt's number, for the parcel card's link
       receiptNumber: receipts.number,
+      // Step 28c (decision 14): the payout's number, for the card's "Paid out on CPO-…"
+      payoutNo: storefrontPayouts.number,
     })
     .from(storefrontShipments)
     .innerJoin(
@@ -349,6 +352,13 @@ export async function shipmentsOf(tx: Transaction, orderId: string): Promise<Sto
       and(
         eq(receipts.tenantId, storefrontShipments.tenantId),
         eq(receipts.id, storefrontShipments.receiptId),
+      ),
+    )
+    .leftJoin(
+      storefrontPayouts,
+      and(
+        eq(storefrontPayouts.tenantId, storefrontShipments.tenantId),
+        eq(storefrontPayouts.id, storefrontShipments.payoutId),
       ),
     )
     .where(
@@ -375,7 +385,7 @@ export async function shipmentsOf(tx: Transaction, orderId: string): Promise<Sto
       ),
     )
     .orderBy(asc(storefrontShipmentEvents.occurredAt), asc(storefrontShipmentEvents.receivedAt));
-  return rows.map(({ parcel, accountName, provider, codAccountId, receiptNumber }) => ({
+  return rows.map(({ parcel, accountName, provider, codAccountId, receiptNumber, payoutNo }) => ({
     id: parcel.id,
     account: {
       id: parcel.courierAccountId,
@@ -397,6 +407,11 @@ export async function shipmentsOf(tx: Transaction, orderId: string): Promise<Sto
         : { id: parcel.receiptId, number: receiptNumber },
     receiptError:
       parcel.receiptError !== null && isErrorCode(parcel.receiptError) ? parcel.receiptError : null,
+    // Only a posted payout: a voided one cleared payout_id (0083)
+    payout:
+      parcel.payoutId === null || payoutNo === null
+        ? null
+        : { id: parcel.payoutId, number: payoutNo },
     bookedAt: parcel.bookedAt?.toISOString() ?? null,
     attempts: parcel.attempts,
     error: parcel.error !== null && isErrorCode(parcel.error) ? parcel.error : null,

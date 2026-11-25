@@ -1,21 +1,11 @@
 import {
   Alert02Icon,
-  CancelCircleIcon,
-  Clock01Icon,
-  DeliveryBox01Icon,
-  DeliveryDelay01Icon,
-  DeliveryReturn01Icon,
   DeliveryTracking01Icon,
-  DeliveryTruck01Icon,
   Loading03Icon,
-  PackageDeliveredIcon,
-  PackageMovingIcon,
-  PackageReceiveIcon,
-  PackageRemoveIcon,
   PrinterIcon,
   ShippingTruck01Icon,
 } from '@hugeicons/core-free-icons';
-import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import { HugeiconsIcon } from '@hugeicons/react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   bookShipmentInputSchema,
@@ -23,7 +13,6 @@ import {
   contractErrorMap,
   isZeroMoney,
   routes,
-  type ShipmentStatus,
   type StorefrontOrder,
   type StorefrontShipment,
 } from '@omnivo/contracts';
@@ -35,7 +24,6 @@ import {
   DialogClose,
   DialogContent,
   FormAlert,
-  Pill,
   SelectField,
   TextField,
 } from '@omnivo/ui';
@@ -47,47 +35,16 @@ import { useForm, useWatch } from 'react-hook-form';
 
 import { call } from '../lib/api';
 import { applyApiError } from '../lib/field-errors';
+import { useCan } from '../lib/permissions';
 import { settingsQuery } from '../lib/queries';
 import { parcelsNewestFirst, storefrontCourierChoicesQuery } from '../lib/storefront-orders';
 import { useTenantId, useTimeZone } from '../lib/workspace';
+import { PARCEL_PILLS, ParcelPill } from './storefront-order-pills';
 import { useShopMoney } from './storefront-parts';
 
 // Step 28a.6: a shop order's parcels on its page (approved with the mockup), the Book courier
 // dialog and the parcel's label. A file of its own, loaded with the order page: the list never
 // shows a parcel, and the Packed dialog only needs the choices query.
-
-// The pill of each of the twelve statuses (approved with the mockup). Work on its way is brand, as
-// the order's own pills (CLAUDE.md → Sales document statuses); delivered is good; a failed booking
-// is crit, because nothing moves until someone books it again; warn for what the shop must act on
-// (the courier holds it, it comes back, part of it came back); over and done is neutral. The
-// courier's news on the card use the same icons, so a step reads the same in both places
-export const PARCEL_PILLS = {
-  booking: { tone: 'brand', icon: Clock01Icon },
-  booking_failed: { tone: 'crit', icon: Alert02Icon },
-  booked: { tone: 'brand', icon: DeliveryBox01Icon },
-  picked_up: { tone: 'brand', icon: PackageMovingIcon },
-  in_transit: { tone: 'brand', icon: DeliveryTruck01Icon },
-  out_for_delivery: { tone: 'brand', icon: DeliveryTracking01Icon },
-  delivered: { tone: 'good', icon: PackageDeliveredIcon },
-  partly_delivered: { tone: 'warn', icon: PackageRemoveIcon },
-  on_hold: { tone: 'warn', icon: DeliveryDelay01Icon },
-  returning: { tone: 'warn', icon: DeliveryReturn01Icon },
-  returned: { tone: 'neutral', icon: PackageReceiveIcon },
-  cancelled: { tone: 'neutral', icon: CancelCircleIcon },
-} as const satisfies Record<
-  ShipmentStatus,
-  { tone: 'brand' | 'good' | 'warn' | 'crit' | 'neutral'; icon: IconSvgElement }
->;
-
-export function ParcelPill({ status }: { status: ShipmentStatus }) {
-  const { t } = useLocale();
-  const pill = PARCEL_PILLS[status];
-  return (
-    <Pill tone={pill.tone} icon={pill.icon}>
-      {t(`storefront.order.parcels.statuses.${status}`)}
-    </Pill>
-  );
-}
 
 // What the rider collects, as the shop writes money (paisa only when there is some), or that the
 // order is paid. A label always shows paisa: its own formatting is in ParcelLabel
@@ -129,6 +86,7 @@ function ParcelCard({
   const timeZone = useTimeZone();
   const collect = useCollect();
   const money = useShopMoney();
+  const canPayout = useCan()('storefront.payout.manage');
   const when = (iso: string) => format.dateTime(new Date(iso), timeZone);
   const byApi = parcel.account.provider !== 'manual';
   const courier = t(`storefront.couriers.names.${parcel.courier}`);
@@ -177,6 +135,24 @@ function ParcelCard({
         >
           {parcel.receipt.number ?? '—'}
         </Link>
+      ),
+    });
+  }
+  // Step 28c (decision 14): the posted payout that took the parcel's money to the bank. A link only
+  // for the people who record payouts: a packer opening it would get a refusal
+  if (parcel.payout !== null) {
+    facts.push({
+      label: t('storefront.order.parcels.payout'),
+      value: canPayout ? (
+        <Link
+          to="/storefront/payouts/$payoutId"
+          params={{ payoutId: parcel.payout.id }}
+          className="font-mono text-[13px] font-medium text-brand underline-offset-3 hover:underline"
+        >
+          {parcel.payout.number ?? '—'}
+        </Link>
+      ) : (
+        <span className="font-mono text-[13px] font-medium">{parcel.payout.number ?? '—'}</span>
       ),
     });
   }

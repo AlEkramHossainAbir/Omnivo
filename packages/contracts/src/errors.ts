@@ -813,6 +813,44 @@ export const ERROR_CODES = [
   'storefront_order_return_everything',
   // "Make the receipt" on a parcel whose COD receipt did not fail
   'storefront_cod_receipt_not_failed',
+  // Step 28c: the courier's payout. No courier account picked; a bank account that is not an
+  // active account holding money (or is a group, or is the courier's own COD account); no line, or
+  // more than MAX_PAYOUT_LINES; one parcel on two lines
+  'payout_pick_account',
+  'payout_bank_account_invalid',
+  'payout_lines_required',
+  'payout_too_many_lines',
+  'payout_line_twice',
+  // A line's charge box left empty
+  'payout_charge_required',
+  // The courier account has no COD account (it has nothing to pay out), or the payout has charges
+  // and the account has no charges account
+  'payout_account_no_cod',
+  'payout_account_no_charges',
+  // A parcel that this payout cannot take: another account's, still on its way, without a posted
+  // COD receipt in the COD account, or already in a posted payout (also a race: another payout
+  // took it a moment ago). The form reloads its parcels
+  'payout_parcel_unavailable',
+  // A charge line (no cash) with a charge of zero: it would pay nothing and take nothing
+  'payout_charge_line_zero',
+  // The charges are more than what the riders collected on its lines: the bank would pay the
+  // courier. Add the payout's delivered parcels too
+  'payout_below_zero',
+  // Dated before one of its COD receipts: the money was not in the courier's account yet
+  'payout_date_before_receipt',
+  // The CSV: empty or not a CSV, over MAX_PAYOUT_CSV_CHARS, over MAX_PAYOUT_CSV_ROWS rows, and a
+  // mapping box left empty
+  'payout_csv_unreadable',
+  'payout_csv_too_big',
+  'payout_csv_too_many_rows',
+  'payout_csv_column_required',
+  // A payout's entry is undone by voiding the payout on its own page, so its parcels are freed too
+  'journal_is_payout',
+  // Step 28c.3: a voided payout can't be voided again (a second tab's click), and a COD receipt
+  // that a posted payout paid out can't be voided (0083's receipts_paid_out): the payout took its
+  // money out of the COD account already, so the payout is voided first
+  'payout_voided',
+  'receipt_paid_out',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

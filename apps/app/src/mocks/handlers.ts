@@ -262,6 +262,17 @@ import {
   updateCourier,
 } from './storefront-shipping-data';
 import {
+  assertReceiptNotPaidOut,
+  createPayout,
+  getPayout,
+  listPayouts,
+  matchPayoutFile,
+  payoutParcelsOf,
+  payoutSetupOf,
+  toPayout,
+  voidPayout,
+} from './storefront-payout-data';
+import {
   findProduct,
   IMPORT_DELAY_MS,
   listProducts,
@@ -3734,6 +3745,8 @@ export const handlers = [
       const target = findReceipt(data, id);
       assertNotVoided(target);
       checkVersion(target.version, version);
+      // Step 28c: a COD receipt a posted courier payout took to the bank (receipt_paid_out)
+      assertReceiptNotPaidOut(data, id);
       transaction(data, () => {
         voidReceipt(data, target, input);
         record(data, 'receipt.voided', 'receipt', id);
@@ -6620,6 +6633,117 @@ export const handlers = [
         status: 'success',
         message: 'Webhook received',
       });
+    }),
+  ),
+
+  // --- Step 28c: Shop payouts (storefront-payout-data.ts) --------------------------------------
+  // storefront.payout.manage on every route (decision 9), never storefront.manage: an accountant
+  // records payouts without the shop's settings. Saving and voiding run in a transaction(), so a
+  // refused entry (a closed period) puts the journal back as it was
+
+  mock(
+    routes.storefrontPayouts.setup,
+    guarded(async () => {
+      const data = shopOrderData(routes.storefrontPayouts.setup.permission);
+      await delay();
+      return reply(routes.storefrontPayouts.setup, payoutSetupOf(data));
+    }),
+  ),
+
+  mock(
+    routes.storefrontPayouts.list,
+    guarded(({ request }) => {
+      const data = shopOrderData(routes.storefrontPayouts.list.permission);
+      const query = readQuery(routes.storefrontPayouts.list.query, request);
+      return reply(routes.storefrontPayouts.list, pageOf(listPayouts(data, query), query));
+    }),
+  ),
+
+  mock(
+    routes.storefrontPayouts.get,
+    guarded(({ params }) => {
+      const data = shopOrderData(routes.storefrontPayouts.get.permission);
+      const { id } = routes.storefrontPayouts.get.params.parse(params);
+      return reply(routes.storefrontPayouts.get, getPayout(data, id));
+    }),
+  ),
+
+  mock(
+    routes.storefrontPayouts.parcels,
+    guarded(async ({ params }) => {
+      const data = shopOrderData(routes.storefrontPayouts.parcels.permission);
+      const { id } = routes.storefrontPayouts.parcels.params.parse(params);
+      await delay();
+      return reply(routes.storefrontPayouts.parcels, payoutParcelsOf(data, id));
+    }),
+  ),
+
+  // No audit row: the saved map moves no money (mine 21)
+  mock(
+    routes.storefrontPayouts.match,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontPayouts.match.permission);
+      const { id } = routes.storefrontPayouts.match.params.parse(params);
+      const body = await readBody(routes.storefrontPayouts.match.body, request);
+      await delay();
+      return reply(routes.storefrontPayouts.match, matchPayoutFile(data, id, body));
+    }),
+  ),
+
+  mock(
+    routes.storefrontPayouts.create,
+    guarded(async ({ request }) => {
+      const data = shopOrderData(routes.storefrontPayouts.create.permission);
+      const body = await readBody(routes.storefrontPayouts.create.body, request);
+      const payout = transaction(data, () => {
+        const made = createPayout(data, body);
+        const view = toPayout(data, made);
+        record(
+          data,
+          'storefront_payout.created',
+          'storefront_payout',
+          made.id,
+          diff(
+            {},
+            {
+              number: made.number,
+              date: made.date,
+              courierAccount: view.account.name,
+              bankAccount: codeOf(data.accounts, made.bankAccountId),
+              reference: made.reference,
+              parcels: made.lines.length,
+              collected: made.collected,
+              charges: made.charges,
+              net: made.net,
+              entry: view.entry.number,
+            },
+          ),
+        );
+        return view;
+      });
+      return reply(routes.storefrontPayouts.create, payout);
+    }),
+  ),
+
+  mock(
+    routes.storefrontPayouts.void,
+    guarded(async ({ request, params }) => {
+      const data = shopOrderData(routes.storefrontPayouts.void.permission);
+      const { id } = routes.storefrontPayouts.void.params.parse(params);
+      const body = await readBody(routes.storefrontPayouts.void.body, request);
+      const payout = transaction(data, () => {
+        const { payout: voided, reversal } = voidPayout(data, id, body);
+        record(
+          data,
+          'storefront_payout.voided',
+          'storefront_payout',
+          id,
+          diff({}, { date: body.date, reason: body.reason, reversal: reversal.number }),
+        );
+        return toPayout(data, voided);
+      });
+      await delay();
+      return reply(routes.storefrontPayouts.void, payout);
     }),
   ),
 

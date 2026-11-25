@@ -6,7 +6,7 @@ import {
   Outlet,
   redirect,
 } from '@tanstack/react-router';
-import { INVITE_PATH, type StorefrontOrderView } from '@omnivo/contracts';
+import { INVITE_PATH, type PayoutStatus, type StorefrontOrderView } from '@omnivo/contracts';
 
 import { restoreSession } from './lib/session';
 import { sessionStore } from './lib/session-store';
@@ -1103,6 +1103,55 @@ const storefrontCouriersRoute = createRoute({
   ),
 });
 
+// Step 28c: the couriers' payouts (decision 13), storefront.payout.manage: the sidebar hides them,
+// and the API refuses the reads for anyone else. The list's two filters are search params, so Back
+// from a payout lands on the same list (approved with the mockup). The statuses are written out
+// for the same reason as ORDER_VIEWS: the contracts' storefront-payouts module stays out of the
+// first chunk; `satisfies` keeps them the contract's
+const PAYOUT_STATUSES_SEARCH: readonly PayoutStatus[] = Object.values({
+  posted: 'posted',
+  voided: 'voided',
+} as const satisfies { [Status in PayoutStatus]: Status });
+
+const storefrontPayoutsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/payouts',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { status?: PayoutStatus; account?: string } => {
+    const status = PAYOUT_STATUSES_SEARCH.find((candidate) => candidate === search.status);
+    return {
+      ...(status !== undefined && { status }),
+      ...(typeof search.account === 'string' &&
+        UUID.test(search.account) && { account: search.account }),
+    };
+  },
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-payouts'),
+    'StorefrontPayoutsPage',
+  ),
+});
+
+// "Record payout" in a courier account's row menu comes with ?account=. '/…/new' beats '/…/$id'
+const newStorefrontPayoutRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/payouts/new',
+  validateSearch: (search: Record<string, unknown>): { account?: string } =>
+    typeof search.account === 'string' && UUID.test(search.account)
+      ? { account: search.account }
+      : {},
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-payout'),
+    'NewStorefrontPayoutPage',
+  ),
+});
+
+const storefrontPayoutRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/payouts/$payoutId',
+  component: lazyRouteComponent(() => import('./routes/storefront-payout'), 'StorefrontPayoutPage'),
+});
+
 const storefrontCategoriesRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/storefront/categories',
@@ -1318,6 +1367,9 @@ const routeTree = rootRoute.addChildren([
     storefrontListingRoute,
     storefrontCouponsRoute,
     storefrontCouriersRoute,
+    storefrontPayoutsRoute,
+    newStorefrontPayoutRoute,
+    storefrontPayoutRoute,
     storefrontCategoriesRoute,
     storefrontSettingsRoute,
     storefrontAppearanceRoute,

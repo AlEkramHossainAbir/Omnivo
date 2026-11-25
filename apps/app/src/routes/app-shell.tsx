@@ -1,6 +1,7 @@
 import {
   ArrowDataTransferHorizontalIcon,
   BalanceScaleIcon,
+  BankIcon,
   Book02Icon,
   BookOpen02Icon,
   CalendarClockIcon,
@@ -677,7 +678,9 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
               group the shop sells from */}
           {/* Step 27b (decision 10): the group shows for the people who run the shop and for the
               packers, who may only read and move its orders. They see Shop orders alone */}
-          {(can('storefront.manage') || canShopOrders) && (
+          {/* Step 28c: and for the people who record the couriers' payouts, like an accountant
+              with no other shop permission, who sees Shop payouts alone */}
+          {(can('storefront.manage') || canShopOrders || can('storefront.payout.manage')) && (
             <NavGroup label={t('nav.storefront')}>
               {/* Decision 34: first, the page the shop's staff open every day. The count is the
                   orders that wait to be packed, crit like the approvals count: work to do */}
@@ -719,6 +722,13 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
                     {t('nav.storefrontCouriers')}
                   </NavLink>
                 </>
+              )}
+              {/* Step 28c (decision 13): after Shop couriers, the money those accounts hold. The
+                  icon is Bank, not Money receipts' MoneyReceive02 (P1): an accountant sees both */}
+              {can('storefront.payout.manage') && (
+                <NavLink to="/storefront/payouts" icon={BankIcon}>
+                  {t('nav.storefrontPayouts')}
+                </NavLink>
               )}
             </NavGroup>
           )}

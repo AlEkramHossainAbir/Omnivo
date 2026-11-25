@@ -40,6 +40,7 @@ import {
   HEAD_OFFICES,
   OWNER,
   seedsShopOrders,
+  seedsShopPayouts,
   seedsTradeHistory,
   seedsVatMonth,
   type Workspace,
@@ -249,7 +250,8 @@ function seed(workspace: Workspace): WorkspaceData {
   // Step 26g: after the stock (the shop counts in the Main store) and the catalog it lists from
   seedStorefront(data, garments);
   // Step 27b: after the shop it sells from (storefront-order-data.ts, fixtures.ts → seedsShopOrders)
-  if (garments && seedsShopOrders()) seedShopOrders(data);
+  // Step 28c: with Steadfast Dhaka's last week for Shop payouts (fixtures.ts → seedsShopPayouts)
+  if (garments && seedsShopOrders()) seedShopOrders(data, seedsShopPayouts());
   // Step 27c: the mockup's coupons (storefront-coupon-data.ts). A coupon needs no shop, but only
   // the garments workspace has one to run them
   if (garments) seedCoupons(data);

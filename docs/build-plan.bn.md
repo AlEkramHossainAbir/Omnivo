@@ -480,9 +480,15 @@ Shop appearance আর Shop pages (ধাপ ২৬h): লোগো আর দ�
   attention + bell + "Make the receipt"; "Record what came back" (ইনভয়েসের আগে sales return, বাকিটার ইনভয়েস) আর
   "Receive the return" (পুরো sales return, Returned, SMS), কুরিয়ারের কথায় স্টক ফেরে না; Shop couriers-এ Holds
   কলাম, Shop orders-এ Returned ট্যাব। Guide: [step-28b-cod-money.en.md](step-28b-cod-money.en.md)।
-- **২৮c:** কুরিয়ারের payout ডকুমেন্ট (চার্জ নিজের লাইনে, `storefront.payout.manage`), CSV matching (কলাম
-  mapping + Steadfast preset; আসল payout ফাইল দেখা হয়নি), রিটার্ন চার্জ।
-- **২৮d:** Pathao (ঠিকানা city, zone, area আলাদা করে)।
+- **২৮c (হয়েছে):** Storefront → Shop payouts: কুরিয়ারের payout ডকুমেন্ট (`CPO-…`, save করলেই posted, void করা
+  যায়; Dr Bank + Dr Courier charges / Cr COD account, পার্সেলপ্রতি লাইন, চার্জ বদলানো যায়, রিটার্ন বা cancel হওয়া
+  পার্সেলের চার্জ নিজের লাইনে), `storefront.payout.manage`; payout-এর CSV matching (ফাইলের text POST, কলাম mapping
+  কুরিয়ার অ্যাকাউন্টে রাখা, Steadfast preset অনুমান: আসল payout ফাইল দেখা হয়নি); ছাপার voucher, Shop couriers-এ
+  "Record payout", পার্সেল কার্ডে "Paid out on"। Steadfast-এর payments API আসল account পেলে। Guide:
+  [step-28c-courier-payouts.en.md](step-28c-courier-payouts.en.md)।
+- **২৮d (পরে, কোনো লক্ষ্য তারিখ নেই):** Pathao (ঠিকানা city, zone, area আলাদা করে)। এখন release-এ মনোযোগ, তাই
+  Pathao যোগ করার কোনো পরিকল্পিত সময় নেই। ততদিন Pathao manual অ্যাকাউন্ট দিয়ে চলে (হাতে বুকিং, COD receipt আর
+  payout একই ভাবে)।
 
 **দেখবেন:** শপে অর্ডার → OTP → কনফার্ম → Sales Order + ইনভয়েস + কনসাইনমেন্ট অটো তৈরি → ট্র্যাকিং SMS → রেমিট্যান্স এলে ব্যাংকে টাকা বসল। 🎉 **এটাই বাংলাদেশের বাজারে Omnivo-র সবচেয়ে বড় অস্ত্র।**
 
@@ -601,4 +607,5 @@ docs/adr/0002-better-auth-over-external-idp.md   ← ধাপ ০.১-এর �
 - [ ] **ধাপ ২৫** — বেটা লঞ্চের প্রস্তুতি 🚀
 - [x] **ধাপ ২৬** — শপের ভিত্তি (২৬a–২৬h: শপের সব স্ক্রিন, পাবলিক API, ERP-র Storefront মেনু, Appearance, Pages, seed; স্টেজিং এখনো মক শপে, wildcard হোস্ট বাকি)
 - [x] **ধাপ ২৭** — চেকআউট ও অর্ডার (২৭a–২৭d: অর্ডার DB-তে, স্টক hold, ফোন কোড SMS-এ, ট্র্যাকিং লিংক, limit; ERP-র Shop orders স্ক্রিন, Sales Order, challan, invoice আর sales return; কুপন; SSLCommerz দিয়ে অনলাইন পেমেন্ট, money receipt আর ফি; আসল SMS provider আর SSLCommerz sandbox দিয়ে যাচাই বাকি)
-- [ ] **ধাপ ২৮** — কুরিয়ার অটোমেশন (২৮a হয়েছে: Shop couriers, Packed-এ Steadfast বুকিং, webhook + poll, ট্র্যাকিং; ২৮b হয়েছে: COD account-এ Delivered-এ money receipt, আংশিক ডেলিভারি আর return; ২৮c payout + CSV matching আর ২৮d Pathao বাকি; আসল Steadfast দিয়ে যাচাই বাকি)
+- [x] **ধাপ ২৮** — কুরিয়ার অটোমেশন (২৮a–২৮c: Shop couriers, Packed-এ Steadfast বুকিং, webhook + poll, ট্র্যাকিং; COD account-এ Delivered-এ money receipt, আংশিক ডেলিভারি আর return; Shop payouts আর payout CSV matching; আসল Steadfast দিয়ে যাচাই বাকি)
+- [ ] **ধাপ ২৮d** — Pathao (পরে, কোনো লক্ষ্য তারিখ নেই: এখন release-এ মনোযোগ; ততদিন manual অ্যাকাউন্ট)

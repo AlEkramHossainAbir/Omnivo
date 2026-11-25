@@ -322,6 +322,11 @@ export const AUDIT_ACTIONS = [
   'storefront_order.partly_delivered',
   'storefront_order.returned',
   'storefront_order.cod_receipt_made',
+  // Step 28c: the courier's payout (entity = storefront_payout), made (with its number, account,
+  // bank account, parcel count and the three sums) and voided (with the date and the reason). A
+  // saved CSV map writes nothing here: it changes no money and no document
+  'storefront_payout.created',
+  'storefront_payout.voided',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -389,6 +394,7 @@ export const AUDIT_ENTITY_TYPES = [
   'storefront_coupon',
   'storefront_payment_gateway',
   'courier_account',
+  'storefront_payout',
 ] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 

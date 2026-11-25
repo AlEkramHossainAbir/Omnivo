@@ -25,6 +25,7 @@ import { storefrontCouponRoutes } from './storefront-coupons.js';
 import { storefrontOrderDeliveryRoutes, storefrontOrderRoutes } from './storefront-orders.js';
 import { shippingRoutes } from './shipping.js';
 import { storefrontPaymentRoutes } from './storefront-payments.js';
+import { storefrontPayoutRoutes } from './storefront-payouts.js';
 import { publicStorefrontRoutes } from './storefront.js';
 import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
@@ -172,6 +173,7 @@ type Routes = Readonly<{
   storefrontOrderDeliveries: typeof storefrontOrderDeliveryRoutes;
   storefrontCoupons: typeof storefrontCouponRoutes;
   storefrontPayments: typeof storefrontPaymentRoutes;
+  storefrontPayouts: typeof storefrontPayoutRoutes;
   shipping: typeof shippingRoutes;
 }>;
 
@@ -259,5 +261,6 @@ export const routes: Routes = {
   storefrontOrderDeliveries: storefrontOrderDeliveryRoutes,
   storefrontCoupons: storefrontCouponRoutes,
   storefrontPayments: storefrontPaymentRoutes,
+  storefrontPayouts: storefrontPayoutRoutes,
   shipping: shippingRoutes,
 };

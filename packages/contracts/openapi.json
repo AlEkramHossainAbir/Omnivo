@@ -249,6 +249,9 @@
       "name": "storefrontPayments"
     },
     {
+      "name": "storefrontPayouts"
+    },
+    {
       "name": "shipping"
     }
   ],
@@ -2225,7 +2228,7 @@
                           "maximum": 9007199254740991
                         },
                         "permissions": {
-                          "maxItems": 54,
+                          "maxItems": 55,
                           "type": "array",
                           "items": {
                             "type": "string",
@@ -2283,7 +2286,8 @@
                               "pos.return.create",
                               "storefront.manage",
                               "storefront.order.read",
-                              "storefront.order.manage"
+                              "storefront.order.manage",
+                              "storefront.payout.manage"
                             ]
                           }
                         }
@@ -3729,7 +3733,8 @@
                               "purchase.payment",
                               "purchase.return",
                               "purchase.debit_note",
-                              "purchase.refund"
+                              "purchase.refund",
+                              "storefront.payout"
                             ]
                           },
                           "prefix": {
@@ -3825,7 +3830,8 @@
                 "purchase.payment",
                 "purchase.return",
                 "purchase.debit_note",
-                "purchase.refund"
+                "purchase.refund",
+                "storefront.payout"
               ]
             }
           }
@@ -3903,7 +3909,8 @@
                         "purchase.payment",
                         "purchase.return",
                         "purchase.debit_note",
-                        "purchase.refund"
+                        "purchase.refund",
+                        "storefront.payout"
                       ]
                     },
                     "prefix": {
@@ -4048,7 +4055,8 @@
                 "storefront_order",
                 "storefront_coupon",
                 "storefront_payment_gateway",
-                "courier_account"
+                "courier_account",
+                "storefront_payout"
               ]
             }
           },
@@ -112599,7 +112607,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -113330,7 +113357,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -114112,7 +114158,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -114771,7 +114863,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -114850,6 +114961,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -115965,7 +116077,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -116696,7 +116827,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -117478,7 +117628,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -118137,7 +118333,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -118216,6 +118431,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -119601,7 +119817,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -120332,7 +120567,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -121114,7 +121368,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -121773,7 +122073,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -121852,6 +122171,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -122967,7 +123287,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -123698,7 +124037,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -124480,7 +124838,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -125139,7 +125543,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -125218,6 +125641,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -126343,7 +126767,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -127074,7 +127517,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -127856,7 +128318,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -128515,7 +129023,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -128594,6 +129121,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -129721,7 +130249,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -130452,7 +130999,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -131234,7 +131800,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -131893,7 +132505,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -131972,6 +132603,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -133097,7 +133729,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -133828,7 +134479,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -134610,7 +135280,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -135269,7 +135985,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -135348,6 +136083,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -136475,7 +137211,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -137206,7 +137961,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -137988,7 +138762,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -138647,7 +139467,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -138726,6 +139565,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -139847,7 +140687,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -140578,7 +141437,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -141360,7 +142238,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -142019,7 +142943,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -142098,6 +143041,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -143419,7 +144363,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -144150,7 +145113,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -144932,7 +145914,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -145591,7 +146619,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -145670,6 +146717,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -146797,7 +147845,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -147528,7 +148595,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -148310,7 +149396,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -148969,7 +150101,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -149048,6 +150199,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -150173,7 +151325,26 @@
                             "storefront_order_collected_required",
                             "storefront_order_return_nothing",
                             "storefront_order_return_everything",
-                            "storefront_cod_receipt_not_failed"
+                            "storefront_cod_receipt_not_failed",
+                            "payout_pick_account",
+                            "payout_bank_account_invalid",
+                            "payout_lines_required",
+                            "payout_too_many_lines",
+                            "payout_line_twice",
+                            "payout_charge_required",
+                            "payout_account_no_cod",
+                            "payout_account_no_charges",
+                            "payout_parcel_unavailable",
+                            "payout_charge_line_zero",
+                            "payout_below_zero",
+                            "payout_date_before_receipt",
+                            "payout_csv_unreadable",
+                            "payout_csv_too_big",
+                            "payout_csv_too_many_rows",
+                            "payout_csv_column_required",
+                            "journal_is_payout",
+                            "payout_voided",
+                            "receipt_paid_out"
                           ]
                         },
                         {
@@ -150904,7 +152075,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -151686,7 +152876,53 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
                                 ]
                               },
                               {
@@ -152345,7 +153581,26 @@
                                   "storefront_order_collected_required",
                                   "storefront_order_return_nothing",
                                   "storefront_order_return_everything",
-                                  "storefront_cod_receipt_not_failed"
+                                  "storefront_cod_receipt_not_failed",
+                                  "payout_pick_account",
+                                  "payout_bank_account_invalid",
+                                  "payout_lines_required",
+                                  "payout_too_many_lines",
+                                  "payout_line_twice",
+                                  "payout_charge_required",
+                                  "payout_account_no_cod",
+                                  "payout_account_no_charges",
+                                  "payout_parcel_unavailable",
+                                  "payout_charge_line_zero",
+                                  "payout_below_zero",
+                                  "payout_date_before_receipt",
+                                  "payout_csv_unreadable",
+                                  "payout_csv_too_big",
+                                  "payout_csv_too_many_rows",
+                                  "payout_csv_column_required",
+                                  "journal_is_payout",
+                                  "payout_voided",
+                                  "receipt_paid_out"
                                 ]
                               },
                               {
@@ -152424,6 +153679,7 @@
                           "courierCharge",
                           "receipt",
                           "receiptError",
+                          "payout",
                           "bookedAt",
                           "attempts",
                           "error",
@@ -154519,6 +155775,2127 @@
                     "lastTest",
                     "version",
                     "updatedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/storefront/payout-setup": {
+      "get": {
+        "operationId": "storefrontPayouts.setup",
+        "tags": [
+          "storefrontPayouts"
+        ],
+        "summary": "The courier accounts and the bank accounts a courier payout may use",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `storefront.payout.manage` permission.",
+        "x-permission": "storefront.payout.manage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "provider": {
+                            "type": "string",
+                            "enum": [
+                              "steadfast",
+                              "manual"
+                            ]
+                          },
+                          "courier": {
+                            "type": "string",
+                            "enum": [
+                              "pathao",
+                              "steadfast",
+                              "redx",
+                              "ecourier",
+                              "paperfly"
+                            ]
+                          },
+                          "archived": {
+                            "type": "boolean"
+                          },
+                          "codAccount": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "code",
+                                  "name"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "chargeAccount": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "code": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "code",
+                                  "name"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "holds": {
+                            "type": "object",
+                            "properties": {
+                              "amount": {
+                                "type": "string"
+                              },
+                              "parcels": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 9007199254740991
+                              }
+                            },
+                            "required": [
+                              "amount",
+                              "parcels"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "provider",
+                          "courier",
+                          "archived",
+                          "codAccount",
+                          "chargeAccount",
+                          "holds"
+                        ]
+                      }
+                    },
+                    "bankAccounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "code",
+                          "name"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "accounts",
+                    "bankAccounts"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/storefront/payouts": {
+      "get": {
+        "operationId": "storefrontPayouts.list",
+        "tags": [
+          "storefrontPayouts"
+        ],
+        "summary": "The couriers' payouts, newest date first",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `storefront.payout.manage` permission.",
+        "x-permission": "storefront.payout.manage",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "posted",
+                "voided"
+              ]
+            }
+          },
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "number": {
+                            "type": "string"
+                          },
+                          "date": {
+                            "type": "string",
+                            "format": "date",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                          },
+                          "account": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "courier": {
+                                "type": "string",
+                                "enum": [
+                                  "pathao",
+                                  "steadfast",
+                                  "redx",
+                                  "ecourier",
+                                  "paperfly"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "name",
+                              "courier"
+                            ]
+                          },
+                          "bankAccountId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "reference": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "parcels": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 9007199254740991
+                          },
+                          "collected": {
+                            "type": "string"
+                          },
+                          "charges": {
+                            "type": "string"
+                          },
+                          "net": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "posted",
+                              "voided"
+                            ]
+                          },
+                          "version": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          },
+                          "updatedAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "number",
+                          "date",
+                          "account",
+                          "bankAccountId",
+                          "reference",
+                          "parcels",
+                          "collected",
+                          "charges",
+                          "net",
+                          "status",
+                          "version",
+                          "updatedAt"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      },
+      "post": {
+        "operationId": "storefrontPayouts.create",
+        "tags": [
+          "storefrontPayouts"
+        ],
+        "summary": "Record a courier's payout; it is posted at once",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `storefront.payout.manage` permission.",
+        "x-permission": "storefront.payout.manage",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "date": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "bankAccountId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "reference": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 60
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "note": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 300
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "lines": {
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "shipmentId": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "charge": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "shipmentId",
+                        "charge"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "accountId",
+                  "date",
+                  "bankAccountId",
+                  "reference",
+                  "note",
+                  "lines"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "account": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "courier": {
+                          "type": "string",
+                          "enum": [
+                            "pathao",
+                            "steadfast",
+                            "redx",
+                            "ecourier",
+                            "paperfly"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "courier"
+                      ]
+                    },
+                    "bankAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "reference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "parcels": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "collected": {
+                      "type": "string"
+                    },
+                    "charges": {
+                      "type": "string"
+                    },
+                    "net": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "posted",
+                        "voided"
+                      ]
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "codAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "chargeAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "branchId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "lines": {
+                      "minItems": 1,
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "shipmentId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "cod",
+                              "charge"
+                            ]
+                          },
+                          "order": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "number": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "number"
+                            ]
+                          },
+                          "invoice": {
+                            "type": "string"
+                          },
+                          "trackingCode": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "collected": {
+                            "type": "string"
+                          },
+                          "charge": {
+                            "type": "string"
+                          },
+                          "courierCharge": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "receipt": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "shipmentId",
+                          "kind",
+                          "order",
+                          "invoice",
+                          "trackingCode",
+                          "collected",
+                          "charge",
+                          "courierCharge",
+                          "receipt"
+                        ]
+                      }
+                    },
+                    "entry": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "number": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "number"
+                      ]
+                    },
+                    "voidEntry": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "number": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "number"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "voidDate": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "voidReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "number",
+                    "date",
+                    "account",
+                    "bankAccountId",
+                    "reference",
+                    "parcels",
+                    "collected",
+                    "charges",
+                    "net",
+                    "status",
+                    "version",
+                    "updatedAt",
+                    "note",
+                    "codAccountId",
+                    "chargeAccountId",
+                    "branchId",
+                    "lines",
+                    "entry",
+                    "voidEntry",
+                    "voidDate",
+                    "voidReason"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/storefront/payouts/{id}": {
+      "get": {
+        "operationId": "storefrontPayouts.get",
+        "tags": [
+          "storefrontPayouts"
+        ],
+        "summary": "One courier payout with its parcels",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `storefront.payout.manage` permission.",
+        "x-permission": "storefront.payout.manage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "account": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "courier": {
+                          "type": "string",
+                          "enum": [
+                            "pathao",
+                            "steadfast",
+                            "redx",
+                            "ecourier",
+                            "paperfly"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "courier"
+                      ]
+                    },
+                    "bankAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "reference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "parcels": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "collected": {
+                      "type": "string"
+                    },
+                    "charges": {
+                      "type": "string"
+                    },
+                    "net": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "posted",
+                        "voided"
+                      ]
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "codAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "chargeAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "branchId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "lines": {
+                      "minItems": 1,
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "shipmentId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "cod",
+                              "charge"
+                            ]
+                          },
+                          "order": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "number": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "number"
+                            ]
+                          },
+                          "invoice": {
+                            "type": "string"
+                          },
+                          "trackingCode": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "collected": {
+                            "type": "string"
+                          },
+                          "charge": {
+                            "type": "string"
+                          },
+                          "courierCharge": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "receipt": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "shipmentId",
+                          "kind",
+                          "order",
+                          "invoice",
+                          "trackingCode",
+                          "collected",
+                          "charge",
+                          "courierCharge",
+                          "receipt"
+                        ]
+                      }
+                    },
+                    "entry": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "number": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "number"
+                      ]
+                    },
+                    "voidEntry": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "number": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "number"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "voidDate": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "voidReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "number",
+                    "date",
+                    "account",
+                    "bankAccountId",
+                    "reference",
+                    "parcels",
+                    "collected",
+                    "charges",
+                    "net",
+                    "status",
+                    "version",
+                    "updatedAt",
+                    "note",
+                    "codAccountId",
+                    "chargeAccountId",
+                    "branchId",
+                    "lines",
+                    "entry",
+                    "voidEntry",
+                    "voidDate",
+                    "voidReason"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/storefront/couriers/{id}/payout-parcels": {
+      "get": {
+        "operationId": "storefrontPayouts.parcels",
+        "tags": [
+          "storefrontPayouts"
+        ],
+        "summary": "A courier account's parcels that no payout has taken yet",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `storefront.payout.manage` permission.",
+        "x-permission": "storefront.payout.manage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "account": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "provider": {
+                          "type": "string",
+                          "enum": [
+                            "steadfast",
+                            "manual"
+                          ]
+                        },
+                        "courier": {
+                          "type": "string",
+                          "enum": [
+                            "pathao",
+                            "steadfast",
+                            "redx",
+                            "ecourier",
+                            "paperfly"
+                          ]
+                        },
+                        "archived": {
+                          "type": "boolean"
+                        },
+                        "codAccount": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "code": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "code",
+                                "name"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "chargeAccount": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid",
+                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                },
+                                "code": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "code",
+                                "name"
+                              ]
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "holds": {
+                          "type": "object",
+                          "properties": {
+                            "amount": {
+                              "type": "string"
+                            },
+                            "parcels": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "amount",
+                            "parcels"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "provider",
+                        "courier",
+                        "archived",
+                        "codAccount",
+                        "chargeAccount",
+                        "holds"
+                      ]
+                    },
+                    "parcels": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "shipmentId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "cod",
+                              "charge"
+                            ]
+                          },
+                          "order": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "number": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "number"
+                            ]
+                          },
+                          "invoice": {
+                            "type": "string"
+                          },
+                          "trackingCode": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "consignmentId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "booking",
+                              "booking_failed",
+                              "booked",
+                              "picked_up",
+                              "in_transit",
+                              "out_for_delivery",
+                              "delivered",
+                              "partly_delivered",
+                              "on_hold",
+                              "returning",
+                              "returned",
+                              "cancelled"
+                            ]
+                          },
+                          "collected": {
+                            "type": "string"
+                          },
+                          "courierCharge": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "receipt": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "receiptDate": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "lastSyncedAt": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "date-time",
+                                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "shipmentId",
+                          "kind",
+                          "order",
+                          "invoice",
+                          "trackingCode",
+                          "consignmentId",
+                          "status",
+                          "collected",
+                          "courierCharge",
+                          "receipt",
+                          "receiptDate",
+                          "lastSyncedAt"
+                        ]
+                      }
+                    },
+                    "csvMap": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "enum": [
+                                "invoice",
+                                "tracking_code",
+                                "consignment_id"
+                              ]
+                            },
+                            "keyColumn": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "collectedColumn": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "chargeColumn": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "keyColumn",
+                            "collectedColumn",
+                            "chargeColumn"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "account",
+                    "parcels",
+                    "csvMap"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/storefront/couriers/{id}/payout-match": {
+      "post": {
+        "operationId": "storefrontPayouts.match",
+        "tags": [
+          "storefrontPayouts"
+        ],
+        "summary": "Match the courier's payout CSV to the account's parcels",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `storefront.payout.manage` permission.",
+        "x-permission": "storefront.payout.manage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "csv": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000000
+                  },
+                  "map": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "enum": [
+                              "invoice",
+                              "tracking_code",
+                              "consignment_id"
+                            ]
+                          },
+                          "keyColumn": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 100
+                          },
+                          "collectedColumn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "chargeColumn": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "maxLength": 100
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "key",
+                          "keyColumn",
+                          "collectedColumn",
+                          "chargeColumn"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "csv",
+                  "map"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "columns": {
+                      "maxItems": 200,
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "map": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "key": {
+                              "type": "string",
+                              "enum": [
+                                "invoice",
+                                "tracking_code",
+                                "consignment_id"
+                              ]
+                            },
+                            "keyColumn": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 100
+                            },
+                            "collectedColumn": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "chargeColumn": {
+                              "anyOf": [
+                                {},
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "keyColumn",
+                            "collectedColumn",
+                            "chargeColumn"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "missing": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "rows": {
+                      "maxItems": 5000,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "row": {
+                            "type": "integer",
+                            "minimum": 2,
+                            "maximum": 9007199254740991
+                          },
+                          "key": {
+                            "type": "string"
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "matched",
+                              "different",
+                              "already_paid",
+                              "not_ready",
+                              "unknown",
+                              "twice",
+                              "invalid"
+                            ]
+                          },
+                          "shipmentId": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "payout": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "fileCollected": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "fileCharge": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "row",
+                          "key",
+                          "outcome",
+                          "shipmentId",
+                          "payout",
+                          "fileCollected",
+                          "fileCharge"
+                        ]
+                      }
+                    },
+                    "fileNet": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "columns",
+                    "map",
+                    "missing",
+                    "rows",
+                    "fileNet"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/storefront/payouts/{id}/void": {
+      "post": {
+        "operationId": "storefrontPayouts.void",
+        "tags": [
+          "storefrontPayouts"
+        ],
+        "summary": "Void a courier payout: reverse its entry and free its parcels",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `storefront.payout.manage` permission.",
+        "x-permission": "storefront.payout.manage",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  },
+                  "date": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "version",
+                  "date",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "number": {
+                      "type": "string"
+                    },
+                    "date": {
+                      "type": "string",
+                      "format": "date",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                    },
+                    "account": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "courier": {
+                          "type": "string",
+                          "enum": [
+                            "pathao",
+                            "steadfast",
+                            "redx",
+                            "ecourier",
+                            "paperfly"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "courier"
+                      ]
+                    },
+                    "bankAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "reference": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "parcels": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    },
+                    "collected": {
+                      "type": "string"
+                    },
+                    "charges": {
+                      "type": "string"
+                    },
+                    "net": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "posted",
+                        "voided"
+                      ]
+                    },
+                    "version": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "updatedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                    },
+                    "note": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "codAccountId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "chargeAccountId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "branchId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "lines": {
+                      "minItems": 1,
+                      "maxItems": 500,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "shipmentId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "cod",
+                              "charge"
+                            ]
+                          },
+                          "order": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              },
+                              "number": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "number"
+                            ]
+                          },
+                          "invoice": {
+                            "type": "string"
+                          },
+                          "trackingCode": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "collected": {
+                            "type": "string"
+                          },
+                          "charge": {
+                            "type": "string"
+                          },
+                          "courierCharge": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "receipt": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid",
+                                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                  },
+                                  "number": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "number"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "shipmentId",
+                          "kind",
+                          "order",
+                          "invoice",
+                          "trackingCode",
+                          "collected",
+                          "charge",
+                          "courierCharge",
+                          "receipt"
+                        ]
+                      }
+                    },
+                    "entry": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                        },
+                        "number": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "number"
+                      ]
+                    },
+                    "voidEntry": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            "number": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "number"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "voidDate": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "format": "date",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "voidReason": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "number",
+                    "date",
+                    "account",
+                    "bankAccountId",
+                    "reference",
+                    "parcels",
+                    "collected",
+                    "charges",
+                    "net",
+                    "status",
+                    "version",
+                    "updatedAt",
+                    "note",
+                    "codAccountId",
+                    "chargeAccountId",
+                    "branchId",
+                    "lines",
+                    "entry",
+                    "voidEntry",
+                    "voidDate",
+                    "voidReason"
                   ]
                 }
               }

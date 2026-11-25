@@ -59,6 +59,9 @@ export const PERMISSION_KEYS = [
   // moves them on without changing the shop's prices, and an order holds a phone and an address
   'storefront.order.read',
   'storefront.order.manage',
+  // Step 28c (decision 9): the couriers' payouts. Apart from running the shop and from moving its
+  // orders: a payout moves the courier's money into the bank, so it is the accountant's
+  'storefront.payout.manage',
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
@@ -138,4 +141,5 @@ export const PERMISSION_GROUP_OF = {
   'storefront.manage': 'storefront',
   'storefront.order.read': 'storefront',
   'storefront.order.manage': 'storefront',
+  'storefront.payout.manage': 'storefront',
 } as const satisfies Record<PermissionKey, PermissionGroup>;

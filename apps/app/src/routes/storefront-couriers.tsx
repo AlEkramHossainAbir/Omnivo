@@ -2,6 +2,7 @@ import {
   Alert02Icon,
   Archive02Icon,
   ArchiveRestoreIcon,
+  BankIcon,
   CheckmarkBadge01Icon,
   CheckmarkCircle02Icon,
   Copy01Icon,
@@ -49,6 +50,7 @@ import {
   toast,
 } from '@omnivo/ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { lazy, Suspense, useId, useMemo, useState } from 'react';
 
 import { DocumentNotice } from '../components/document-notice';
@@ -58,6 +60,7 @@ import {
   ViewShopLink,
 } from '../components/storefront-parts';
 import { ApiRequestError, call } from '../lib/api';
+import { useCan } from '../lib/permissions';
 import { storefrontCouriersQuery, storefrontSetupQuery } from '../lib/storefront';
 import { useOnline } from '../lib/use-online';
 import { useTenantId, useTimeZone } from '../lib/workspace';
@@ -336,6 +339,8 @@ export function StorefrontCouriersPage() {
   const timeZone = useTimeZone();
   const online = useOnline();
   const refresh = useStorefrontRefresh();
+  const navigate = useNavigate();
+  const canPayout = useCan()('storefront.payout.manage');
   const [view, setView] = useState<CourierAccountStatus>('active');
   const [acting, setActing] = useState<Acting>(null);
   const close = () => {
@@ -637,6 +642,22 @@ export function StorefrontCouriersPage() {
                           {t('storefront.couriers.renewToken')}
                         </DropdownMenuItem>
                       )}
+                      {/* Step 28c (P6): a new payout of this account, with its money. Only for
+                          the people who record payouts, and only when the account has a COD
+                          account: without one it holds no money to pay out */}
+                      {canPayout && account.codAccountId !== null && (
+                        <DropdownMenuItem
+                          icon={BankIcon}
+                          onSelect={() => {
+                            void navigate({
+                              to: '/storefront/payouts/new',
+                              search: { account: account.id },
+                            });
+                          }}
+                        >
+                          {t('storefront.couriers.recordPayout')}
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         icon={Archive02Icon}
                         onSelect={() => {
@@ -654,7 +675,7 @@ export function StorefrontCouriersPage() {
         },
       }),
     ]);
-  }, [t, format, timeZone, defaultId, testAccount, restoreAccount]);
+  }, [t, format, timeZone, defaultId, testAccount, restoreAccount, canPayout, navigate]);
 
   const rows = setup?.accounts.filter((account) => account.status === view);
   const openNew = () => {

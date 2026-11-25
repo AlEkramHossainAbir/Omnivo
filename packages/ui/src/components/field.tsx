@@ -137,6 +137,9 @@ export function TextField({ id, label, optional, hint, error, ...input }: TextFi
 export interface SelectOption {
   value: string;
   label: string;
+  // Step 28c: shown but not offered, like a courier account with no COD account in the payout's
+  // select: the person sees it exists and the words say why it can't be picked
+  disabled?: boolean | undefined;
 }
 
 export interface SelectProps extends Omit<ComponentProps<'select'>, 'className'> {
@@ -161,7 +164,7 @@ export function Select({ options, icon, invalid = false, ...select }: SelectProp
         {...select}
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </option>
         ))}

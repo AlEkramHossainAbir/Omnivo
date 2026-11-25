@@ -26,6 +26,7 @@ import { API_URL } from '../lib/api';
 import { codeOf } from './accounting-data';
 import { MockProblem } from './mock';
 import { chartOf } from './storefront-payment-data';
+import { payoutHoldsOf, payoutRefOf } from './storefront-payout-data';
 import type { MockCourierAccount, MockShipment, MockShopOrder } from './storefront-seed';
 import type { WorkspaceData } from './workspace-data';
 
@@ -36,9 +37,9 @@ import type { WorkspaceData } from './workspace-data';
 // the first time anything reads the shop's orders after that: the order page asks again every 3
 // seconds while a parcel books, so it sees the answer as it would see the worker's.
 //
-// This file imports no other storefront mock file but the seed's types and (step 28b) the payment
-// card's chartOf, which imports none either: storefront-order-data.ts imports it. The audit rows
-// are the handlers' (handlers.ts).
+// This file imports no other storefront mock file but the seed's types, (step 28b) the payment
+// card's chartOf and (step 28c) the payouts' holds and refs, which import none of the order files
+// either: storefront-order-data.ts imports it. The audit rows are the handlers' (handlers.ts).
 //
 // Step 28b: the courier's money (apps/api/src/storefront/shipping/cod-receipts.ts and
 // shipment-news.ts). An account's two money accounts and what it holds; a parcel's collected
@@ -137,26 +138,6 @@ function lockAccount(data: WorkspaceData, id: string, version: number): MockCour
   return account;
 }
 
-// Step 28b (decision 12): what a courier holds now, the API's holdsOf: the parcels whose COD
-// receipt is posted (a voided one went back out of the COD account), and what their riders
-// collected
-function holdsOf(data: WorkspaceData, accountId: string): CourierAccount['holds'] {
-  const held = data.storefront.orders
-    .flatMap((order) => order.shipments)
-    .filter(
-      (parcel) =>
-        parcel.accountId === accountId &&
-        parcel.receiptId !== null &&
-        data.billing.receipts.some(
-          (receipt) => receipt.id === parcel.receiptId && receipt.status === 'posted',
-        ),
-    );
-  return {
-    amount: sumMoney(held.map((parcel) => parcel.collectedAmount ?? '0')),
-    parcels: held.length,
-  };
-}
-
 // Never the keys, and never a token: only whether one is saved
 export function toCourierAccount(data: WorkspaceData, account: MockCourierAccount): CourierAccount {
   return {
@@ -174,7 +155,9 @@ export function toCourierAccount(data: WorkspaceData, account: MockCourierAccoun
     lastTest: account.lastTest,
     codAccountId: account.codAccountId,
     chargeAccountId: account.chargeAccountId,
-    holds: holdsOf(data, account.id),
+    // Step 28b (decision 12): what the courier holds now, the API's holdsOf. Step 28c: without the
+    // parcels a posted payout took to the bank (storefront-payout-data.ts)
+    holds: payoutHoldsOf(data, account.id),
     version: account.version,
     updatedAt: account.updatedAt,
   };
@@ -263,6 +246,7 @@ export function createCourier(
     archivedAt: null,
     lastWebhookAt: null,
     lastTest: null,
+    payoutCsvMap: null,
     version: 1,
     updatedAt: at,
   };
@@ -404,6 +388,8 @@ export function shipmentsOf(data: WorkspaceData, order: MockShopOrder): Storefro
       courierCharge: parcel.courierCharge,
       receipt: receiptRefOf(data, parcel.receiptId),
       receiptError: parcel.receiptError,
+      // Step 28c
+      payout: payoutRefOf(data, parcel.payoutId),
       bookedAt: parcel.bookedAt,
       attempts: parcel.attempts,
       error: parcel.error,
@@ -541,6 +527,7 @@ export function startShipment(
     courierCharge: null,
     receiptId: null,
     receiptError: null,
+    payoutId: null,
   };
   if (manual) step(parcel, 'booked', at, null);
   order.shipments.push(parcel);
@@ -793,6 +780,7 @@ export function seedCouriers(data: WorkspaceData, at: string): MockCourierAccoun
       archivedAt: null,
       lastWebhookAt: null,
       lastTest: null,
+      payoutCsvMap: null,
       version: 1,
       updatedAt: at,
       ...fields,
@@ -897,6 +885,7 @@ export function seedParcel(
     ...money,
     receiptId: null,
     receiptError: null,
+    payoutId: null,
   };
   order.shipments.push(parcel);
   return parcel;

@@ -23,7 +23,7 @@ import { accountChoiceSchema } from './storefront-payments.js';
 //   (a webhook, and a 15-minute poll when no webhook comes)
 // - manual: the shop books it on the courier's own website or app (or by phone) and types the
 //   courier's tracking code into the order. Nothing is called; the staff move the order as before
-// Pathao comes in step 28c: it needs the address as its own city, zone and area ids
+// Pathao comes in step 28d: it needs the address as its own city, zone and area ids
 export const COURIER_PROVIDERS = ['steadfast', 'manual'] as const;
 export type CourierProvider = (typeof COURIER_PROVIDERS)[number];
 
@@ -267,6 +267,9 @@ export const storefrontShipmentSchema = z.object({
   // archived since), the order needs attention, and the page has "Make the receipt"
   receipt: documentRefSchema.nullable(),
   receiptError: z.enum(ERROR_CODES).nullable(),
+  // Step 28c: the posted payout that paid this parcel out to the bank (the card's "Paid out on
+  // CPO-2026-27-0001"). null until one does, and again after it is voided
+  payout: documentRefSchema.nullable(),
   // When the courier gave it a tracking code. null while booking
   bookedAt: z.iso.datetime().nullable(),
   // Calls made to book it, and why the last one failed (courier_rejected_parcel: the courier said

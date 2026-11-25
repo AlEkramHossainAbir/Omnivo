@@ -70,6 +70,7 @@ import {
   seedTry,
   toPayment,
 } from './storefront-payment-data';
+import { createPayout } from './storefront-payout-data';
 import {
   bookableAtPack,
   cancelShipments,
@@ -1358,6 +1359,120 @@ function placeOrder(
   return order;
 }
 
+// Step 28c: Steadfast Dhaka's last week, for Shop payouts (fixtures.ts → seedsShopPayouts). Four
+// Cash on Delivery orders of one attar each, delivered 6 to 2 days ago, each with its COD receipt
+// into 1191 Cash with Steadfast. W-000008's money reached the bank 4 days ago: CPO-…-0001, Steadfast's
+// SFC-23618228, into the Dutch-Bangla account. W-000009 to W-000011 wait for the next payout, and
+// Steadfast has not said W-000011's charge yet. With W-000001's charge (paid online, nothing
+// collected), the new payout's list has three cash parcels and one charge-only line
+function seedPayoutWeek(
+  data: WorkspaceData,
+  dhaka: MockCourierAccount,
+  attar: MockListing,
+  zones: { inside: ShopDeliveryZone; outside: ShopDeliveryZone },
+  warehouseId: string,
+): void {
+  const days = (count: number) => count * 24 * 60;
+  const week = [
+    {
+      spec: {
+        name: 'Nasima Akter',
+        phone: '01715667788',
+        address: 'House 22, Road 11, Banani, Dhaka 1213',
+        zone: zones.inside,
+      },
+      delivered: days(6),
+      consignmentId: '148920512',
+      trackingCode: 'SFR2611190008',
+      courierCharge: '60.0000',
+    },
+    {
+      spec: {
+        name: 'Jahid Hasan',
+        phone: '01817334455',
+        address: 'Flat 3A, Lalmatia Block D, Dhaka 1207',
+        zone: zones.inside,
+      },
+      delivered: days(4),
+      consignmentId: '148920688',
+      trackingCode: 'SFR2611210019',
+      courierCharge: '60.0000',
+    },
+    {
+      spec: {
+        name: 'Rumana Chowdhury',
+        phone: '01914223344',
+        address: 'Road 2, Nasirabad H/S, Chattogram 4209',
+        zone: zones.outside,
+      },
+      delivered: days(3),
+      consignmentId: '148920745',
+      trackingCode: 'SFR2611220031',
+      courierCharge: '130.0000',
+    },
+    {
+      spec: {
+        name: 'Imran Kabir',
+        phone: '01556112233',
+        address: 'House 5, Sector 4, Uttara, Dhaka 1230',
+        zone: zones.inside,
+      },
+      delivered: days(2),
+      consignmentId: '148920802',
+      trackingCode: 'SFR2611230044',
+      courierCharge: null,
+    },
+  ];
+  const sent = week.map((day, index) => {
+    const order = placeOrder(
+      data,
+      8 + index,
+      { ...day.spec, lines: [{ listing: attar, quantity: 1 }], confirmed: day.delivered + days(1) },
+      warehouseId,
+    );
+    const at = (minutes: number) =>
+      new Date(Date.parse(confirmedAt(order)) + minutes * 60_000).toISOString();
+    makeShopSalesOrder(data, order, confirmedAt(order));
+    packAsPlanned(data, order, at(90));
+    shipShopOrder(data, order.id, order.version, at(180));
+    const parcel = seedParcel(
+      order,
+      dhaka,
+      { consignmentId: day.consignmentId, trackingCode: day.trackingCode },
+      at(92),
+      [
+        { status: 'picked_up', at: at(180), note: 'Picked up from Rahman Fashion' },
+        { status: 'out_for_delivery', at: at(days(1) - 150), note: null },
+      ],
+      { collectedAmount: codAmountOf(order), courierCharge: day.courierCharge },
+    );
+    // Steadfast's delivered notice: the parcel follows, and settleCod makes the COD receipt
+    deliverShopOrder(
+      data,
+      order.id,
+      { version: order.version, collectedAmount: null },
+      at(days(1)),
+    );
+    return { order, parcel, day: dayOf(data, at(days(1))) };
+  });
+  const first = sent[0];
+  const bank = data.accounts.find((account) => account.code === '1121');
+  if (!first || !bank) return;
+  const paidOn = dayOf(data, minutesAgo(days(4)));
+  createPayout(
+    data,
+    {
+      accountId: dhaka.id,
+      date: paidOn,
+      bankAccountId: bank.id,
+      reference: 'SFC-23618228',
+      note: null,
+      lines: [{ shipmentId: first.parcel.id, charge: '60' }],
+    },
+    minutesAgo(days(4)),
+  );
+}
+
 // Packed with what the plan suggests: FEFO for a batch line, the first serial numbers in stock for
 // a serial one (the seed's packer scans those)
 function packAsPlanned(data: WorkspaceData, order: MockShopOrder, at: string): void {
@@ -1575,8 +1690,9 @@ function seedTries(
 // line of each kind for the Packed dialog (a batch, a serial, an untracked polo), W-000006 is a
 // small one to cancel, and W-000007's sales order was refused when it was confirmed (the T-shirt
 // was archived for a moment); it is active again, so "Make the sales order" works. Farhana Islam
-// ordered twice: one customer in the ERP
-export function seedShopOrders(data: WorkspaceData): void {
+// ordered twice: one customer in the ERP. Step 28c: `payouts` adds Steadfast Dhaka's last week
+// (seedPayoutWeek)
+export function seedShopOrders(data: WorkspaceData, payouts = false): void {
   const shop = data.storefront.shop;
   const warehouseId = shop?.defaultWarehouseId ?? null;
   const [inside, outside] = shop?.deliveryZones ?? [];
@@ -1723,6 +1839,7 @@ export function seedShopOrders(data: WorkspaceData): void {
     // Step 28b: outside Dhaka, Steadfast charges more; nothing collected yet
     { collectedAmount: null, courierCharge: '130.0000' },
   );
+  if (payouts) seedPayoutWeek(data, dhaka, attar, { inside, outside }, warehouseId);
 
   // The bell of the newest order that is not refused, unread (27a's handler rings it)
   const newest = orders[5];

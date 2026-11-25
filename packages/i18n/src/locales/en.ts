@@ -164,6 +164,8 @@ export const en = {
     storefrontCoupons: 'Shop coupons',
     // Step 28a: after Shop settings in the menu, both set the shop up (decision 15)
     storefrontCouriers: 'Shop couriers',
+    // Step 28c (decision 13): after Shop couriers. "Shop" for the phone's nav row, like the others
+    storefrontPayouts: 'Shop payouts',
   },
   auth: {
     workspace: 'Workspace',
@@ -469,6 +471,8 @@ export const en = {
         revaluation: 'Stock revaluation',
       },
       accounting: { journal: 'Journal voucher' },
+      // Step 28c
+      storefront: { payout: 'Courier payout' },
     },
     yearStyles: {
       none: 'No year',
@@ -1017,6 +1021,7 @@ export const en = {
       pos_sale: 'POS sale',
       pos_shift: 'POS shift',
       pos_return: 'POS return',
+      storefront_payout: 'Courier payout',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
@@ -5537,6 +5542,8 @@ export const en = {
       edit: 'Edit',
       test: 'Test connection',
       renewToken: 'New webhook token',
+      // Step 28c (decision 14): a new payout of this account
+      recordPayout: 'Record payout',
       archive: 'Archive',
       restore: 'Restore',
       // The test's toast. courier = the courier's name
@@ -5644,6 +5651,210 @@ export const en = {
       archived: '{{name}} archived',
       restored: '{{name}} restored',
       tokenRenewed: 'New webhook token made',
+    },
+    // Step 28c: Storefront → Shop payouts (/storefront/payouts, decision 13), with
+    // storefront.payout.manage. A payout is the courier's transfer of the riders' cash to the
+    // bank, its charges taken off
+    payouts: {
+      title: 'Shop payouts',
+      description: 'The COD money your couriers send to the bank, with their charges taken off',
+      new: 'Record payout',
+      account: 'Courier account',
+      allAccounts: 'All courier accounts',
+      // An archived account keeps its payouts, and can still pay out (decision 4)
+      archivedAccount: '{{name}} (archived)',
+      view: 'Show',
+      views: { all: 'All', posted: 'Posted', voided: 'Voided' },
+      // PAYOUT_STATUSES
+      statuses: { posted: 'Posted', voided: 'Voided' },
+      columns: {
+        number: 'Number',
+        date: 'Date',
+        account: 'Courier account',
+        reference: 'Courier’s reference',
+        parcels: 'Parcels',
+        collected: 'Collected',
+        charges: 'Charges',
+        net: 'To the bank',
+        status: 'Status',
+      },
+      emptyTitle: 'No payouts yet',
+      emptyBody:
+        'When Steadfast sends the riders’ cash to your bank, record it here: tick the parcels it paid, or match its payout file.',
+      filteredEmptyTitle: 'No payout matches',
+      filteredEmptyBody: 'No payout has this courier account and status.',
+      showAll: 'Show every payout',
+      loadFailed: "Couldn't load the payouts. Refresh the page to try again.",
+    },
+    // Step 28c: a new payout (/storefront/payouts/new) and a payout's page
+    payout: {
+      back: 'Shop payouts',
+      newTitle: 'Record a courier payout',
+      newDescription:
+        'Tick the parcels this transfer paid. Saving posts it: the money moves out of the courier’s COD account into the bank.',
+      account: 'Courier account',
+      accountPlaceholder: 'Pick the courier account that paid',
+      // The account select's options (payoutAccountSchema.holds), whole taka
+      accountHolds_one: '{{name}} · holds {{amount}} in {{formatted}} parcel',
+      accountHolds_other: '{{name}} · holds {{amount}} in {{formatted}} parcels',
+      accountHoldsNothing: '{{name}} · holds nothing',
+      // Disabled: with no COD account there is nothing to pay out (payout_account_no_cod)
+      accountNoCod: '{{name}} · no COD account',
+      date: 'Date',
+      dateHint: 'The day the money reached the bank, as on the bank statement.',
+      bankAccount: 'Paid into',
+      bankAccountPlaceholder: 'Pick an account',
+      bankAccountHint: 'The bank or mobile wallet account the courier sent the money to.',
+      // The setup's bank accounts, without this courier account's own COD account (decision 7)
+      noBankAccounts:
+        'No other active account holds money. Tick “Holds money” on your bank account in the chart of accounts.',
+      reference: 'Courier’s reference',
+      referencePlaceholder: 'SFC-23618228',
+      referenceHint:
+        'The payment’s number in the courier’s panel, or the bank’s reference. It prints on the voucher.',
+      note: 'Note',
+      notePlaceholder: 'Tuesday’s Steadfast payout for the Mirpur pickup',
+      // No charges account: a line with a charge is refused (payout_account_no_charges)
+      noChargeAccount:
+        '{{name}} has no courier charges account, so only parcels with no charge can be paid out. Pick one in Shop couriers to record the charges.',
+      // The parcels card (payoutParcelsSchema)
+      parcelsTitle: 'Parcels',
+      parcelsDescription:
+        'The parcels of {{name}} that no payout has taken yet. Tick the ones this transfer paid.',
+      pickAccountFirst: 'Pick the courier account to see its parcels.',
+      matchFile: 'Match a payout file',
+      tickAll: 'Tick all',
+      clear: 'Clear',
+      columns: {
+        parcel: 'Parcel',
+        status: 'Status',
+        receipt: 'Money receipt',
+        collected: 'Collected',
+        charge: 'Charge',
+        net: 'To the bank',
+      },
+      // invoice = the courier's invoice (W-000123, W-000123-2)
+      tick: 'Pay out {{invoice}}',
+      chargeLabel: 'Charge for {{invoice}}',
+      // PAYOUT_LINE_KINDS, under the invoice: a charge line brought no cash (decision 4)
+      kinds: { cod: 'Delivered with cash', charge: 'Charge only: no cash came' },
+      // The courier's own charge (courierCharge, mine 22), under the charge box. courier = its name
+      courierSaid: '{{courier}} said {{amount}}',
+      courierSilent: '{{courier}} has not said its charge',
+      noParcelsTitle: 'Nothing to pay out',
+      noParcelsBody:
+        'Every parcel of {{name}} is paid out. A parcel shows here once it is delivered and its COD receipt is made, or once it came back with a charge.',
+      // The totals on subtle under the table
+      ticked_one: '{{formatted}} parcel ticked',
+      ticked_other: '{{formatted}} parcels ticked',
+      collected: 'Collected',
+      charges: 'Charges',
+      net: 'To the bank',
+      // After a file was matched (payoutMatchSchema.fileNet): the bank figure the file gives,
+      // held against the ticked lines'
+      fileNet: 'The file says {{amount}} reached the bank',
+      fileAgrees: 'Agrees',
+      fileOutBy: 'Out by {{amount}}',
+      save: 'Record payout',
+      saveHint:
+        'Saving posts the payout. A mistake is voided on the payout’s page, which frees its parcels again.',
+      created: '{{number}} recorded',
+      // The payout's own page
+      facts: {
+        account: 'Courier account',
+        bankAccount: 'Paid into',
+        date: 'Date',
+        reference: 'Courier’s reference',
+        codAccount: 'Out of',
+        chargeAccount: 'Charges to',
+        branch: 'Branch',
+        note: 'Note',
+      },
+      linesTitle: 'Parcels paid',
+      linesDescription: 'What each parcel brought, and what the courier kept',
+      // The lines' total row (approved with the mockup)
+      total: 'Total',
+      print: 'Print voucher',
+      entry: 'Journal entry',
+      voidEntry: 'Reversal',
+      void: 'Void payout',
+      voidTitle: 'Void {{number}}',
+      voidBody:
+        'Its entry is reversed on the void date, and its parcels can be paid out again. The payout stays in the list with its number.',
+      voidDate: 'Void date',
+      voidDateHint: 'The day it turned out wrong, like the day you found it was recorded twice.',
+      voidReason: 'Reason',
+      voidReasonPlaceholder: 'Recorded twice: the same Steadfast payment as CPO-2026-27-0003',
+      confirmVoid: 'Void payout',
+      voided: '{{number}} voided',
+      voidedNotice: 'Voided on {{date}}: {{reason}}. Its parcels can be paid out again.',
+      notFound: "This payout doesn't exist.",
+      loadFailed: "Couldn't load the payout. Refresh the page to try again.",
+      // The payout file dialog (decisions 10–12, mine 18 and 19). name = the courier account
+      csv: {
+        title: 'Match the courier’s payout file',
+        description:
+          'The payout’s CSV from {{name}}’s panel. Omnivo ticks the parcels it names and takes their charges.',
+        choose: 'Choose CSV file',
+        fileHint:
+          'One payout at a time, up to 1 MB and 5,000 rows. The file is read to tick the parcels, never kept.',
+        reading: 'Reading the file…',
+        matching: 'Matching…',
+        // The mapping step: the saved map or the preset names a column the file lacks.
+        // names = those names, in quotes, joined with commas
+        mapTitle: 'Which column is which?',
+        mapMissing: 'Not in the file: {{names}}. Pick the file’s own columns.',
+        mapFirst: 'Pick the file’s columns once. They are kept for {{name}}’s next file.',
+        key: 'Parcels are named by',
+        // PAYOUT_CSV_KEYS
+        keys: {
+          invoice: 'Invoice (W-000123)',
+          tracking_code: 'Tracking code',
+          consignment_id: 'Courier’s ID',
+        },
+        keyColumn: 'Its column',
+        collectedColumn: 'Collected column',
+        collectedHint:
+          'What the rider collected. Without it, a parcel with another amount can’t be found.',
+        chargeColumn: 'Charge column',
+        chargeHint:
+          'The courier’s charge for each parcel. Without it, the charges stay what the courier’s news said.',
+        columnPlaceholder: 'Pick a column',
+        columnNone: 'Not in the file',
+        match: 'Match the file',
+        changeColumns: 'Change the columns',
+        otherFile: 'Choose another file',
+        // The result, one line per row of the file. row = its line, the header being 1
+        row: 'Row {{row}}',
+        // PAYOUT_MATCH_OUTCOMES, as pills
+        outcomes: {
+          matched: 'Found',
+          different: 'Other amount',
+          already_paid: 'Already paid out',
+          not_ready: 'Not ready',
+          unknown: 'Not found',
+          twice: 'Twice in the file',
+          invalid: 'Can’t be read',
+        },
+        // label = the pill's words, count = its rows
+        outcomeCount: '{{label}}: {{formatted}}',
+        // The line under a row. file and ours = the two collected amounts, with paisa
+        different:
+          'The file says {{file}} collected, the money receipt {{ours}}. If the courier keeps the difference, add it to the charge.',
+        alreadyPaid: 'Paid out on {{payout}}.',
+        notReady:
+          'Not delivered yet, or its money receipt isn’t made. It can be paid out once it is.',
+        unknown: 'None of {{name}}’s parcels has this number.',
+        twice: 'An earlier row has the same number. Only the first one counts.',
+        invalid: 'The row has no parcel number, or an amount that isn’t a number.',
+        // Ticks the found and other-amount rows' parcels, with the file's charges
+        apply_one: 'Tick {{formatted}} parcel',
+        apply_other: 'Tick {{formatted}} parcels',
+        applyHint: 'The charges come from the file. Parcels ticked before stay ticked.',
+        noneToTick: 'No row names a parcel this payout can take.',
+        applied_one: '{{formatted}} parcel ticked from the file',
+        applied_other: '{{formatted}} parcels ticked from the file',
+      },
     },
     categories: {
       title: 'Shop categories',
@@ -6390,6 +6601,8 @@ export const en = {
         collected: 'Rider collected',
         charge: 'Courier’s charge',
         receipt: 'Money receipt',
+        // Step 28c (decision 14): the posted payout that paid the parcel's money out, as a link
+        payout: 'Paid out on',
         // Mine 14: the COD receipt's error sits on its parcel. reason = the error's own words
         receiptError: 'The COD receipt could not be made. {{reason}}',
         makeReceipt: 'Make the receipt',
@@ -6882,6 +7095,8 @@ export const en = {
       purchaseReturn: 'Purchase return',
       debitNote: 'Debit note',
       supplierRefund: 'Supplier refund',
+      // Step 28c
+      storefrontPayout: 'Courier payout',
     },
     bin: 'BIN {{bin}}',
     phone: 'Phone {{phone}}',
@@ -6945,6 +7160,18 @@ export const en = {
     supplierCredit: 'Their credit note',
     receivedInto: 'Received into',
     paidBackOn: 'Paid back on',
+    // Step 28c: a courier payout's voucher
+    courier: 'Courier',
+    paidInto: 'Paid into',
+    payoutColumns: {
+      parcel: 'Parcel',
+      trackingCode: 'Tracking code',
+      collected: 'Collected',
+      charge: 'Charge',
+    },
+    collected: 'Collected',
+    charges: 'Courier’s charges',
+    netToBank: 'Paid into the bank',
     signatures: {
       customer: 'Customer’s signature',
       receivedBy: 'Received by',
@@ -7194,6 +7421,10 @@ export const en = {
         read: 'See the shop’s orders, with the buyers’ phones and addresses',
         manage: 'Move the shop’s orders on and cancel them',
       },
+      // Step 28c
+      payout: {
+        manage: 'Record and void the couriers’ payouts of the shop’s COD money into the bank',
+      },
     },
   },
   invite: {
@@ -7279,6 +7510,7 @@ export const en = {
       storefront_coupon: 'Shop coupons',
       storefront_payment_gateway: 'Shop payment gateway',
       courier_account: 'Shop couriers',
+      storefront_payout: 'Courier payouts',
     },
     columns: {
       when: 'When',
@@ -7676,6 +7908,11 @@ export const en = {
         archived: 'Archived a courier account',
         restored: 'Restored an archived courier account',
       },
+      // Step 28c
+      storefront_payout: {
+        created: 'Recorded a courier’s payout',
+        voided: 'Voided a courier’s payout',
+      },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
     fields: {
@@ -7938,6 +8175,13 @@ export const en = {
       codAccount: 'COD account',
       chargeAccount: 'Courier charges account',
       cameBack: 'Lines that came back',
+      // Step 28c: a payout's created entry
+      courierAccount: 'Courier account',
+      bankAccount: 'Paid into',
+      parcels: 'Parcels',
+      collected: 'Collected',
+      charges: 'Charges',
+      net: 'To the bank',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -8942,6 +9186,37 @@ export const en = {
       'Tick what came back. If the shopper kept everything, use Mark delivered.',
     storefront_order_return_everything: 'Everything came back. Use Receive the return instead.',
     storefront_cod_receipt_not_failed: 'This parcel’s COD receipt did not fail. Reload the order.',
+    // Step 28c
+    payout_pick_account: 'Pick the courier account that paid.',
+    payout_bank_account_invalid:
+      'Pick the active bank or cash account the money went into, not the courier’s own COD account.',
+    payout_lines_required: 'Tick at least one parcel this payout paid.',
+    payout_too_many_lines:
+      'A payout takes at most 500 parcels. Record the rest as a second payout.',
+    payout_line_twice: 'This parcel is on the payout twice. Remove one of the lines.',
+    payout_charge_required: 'Type the courier’s charge for this parcel, or 0.',
+    payout_account_no_cod:
+      'This courier account has no COD account, so it holds no money to pay out. Pick one in Shop couriers.',
+    payout_account_no_charges:
+      'This payout has charges, and the courier account has no charges account. Pick one in Shop couriers.',
+    payout_parcel_unavailable:
+      'A parcel can’t be paid out any more: another payout took it, or it changed. Reload the parcels.',
+    payout_charge_line_zero:
+      'A parcel that brought no cash is here only for its charge. Type the charge, or untick it.',
+    payout_below_zero:
+      'The charges are more than the cash on these parcels. Tick the delivered parcels this payout paid too.',
+    payout_date_before_receipt:
+      'Pick a date on or after the COD receipts of these parcels: the money wasn’t with the courier before.',
+    payout_csv_unreadable:
+      'This file isn’t a CSV with a header row. Download the payout as CSV again.',
+    payout_csv_too_big: 'This file is too big. Download one payout at a time.',
+    payout_csv_too_many_rows: 'The file has more than 5,000 rows. Download one payout at a time.',
+    payout_csv_column_required: 'Pick the column.',
+    journal_is_payout:
+      'A courier payout’s entry can’t be reversed here. Void the payout on its own page: that frees its parcels too.',
+    payout_voided: 'This payout is voided and can no longer change. Reload the page.',
+    receipt_paid_out:
+      'A courier payout paid this COD money out to the bank. Void the payout first, then this receipt.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

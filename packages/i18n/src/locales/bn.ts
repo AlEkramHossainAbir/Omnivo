@@ -142,6 +142,8 @@ export const bn: Messages = {
     storefrontCoupons: 'শপের কুপন',
     // Step 28a
     storefrontCouriers: 'শপের কুরিয়ার',
+    // Step 28c
+    storefrontPayouts: 'শপের পেআউট',
   },
   auth: {
     workspace: 'ওয়ার্কস্পেস',
@@ -419,6 +421,8 @@ export const bn: Messages = {
         revaluation: 'স্টকের পুনর্মূল্যায়ন',
       },
       accounting: { journal: 'জার্নাল ভাউচার' },
+      // Step 28c
+      storefront: { payout: 'কুরিয়ার পেআউট' },
     },
     yearStyles: {
       none: 'বছর ছাড়া',
@@ -907,6 +911,7 @@ export const bn: Messages = {
       pos_sale: 'POS বিক্রি',
       pos_shift: 'POS শিফট',
       pos_return: 'POS ফেরত',
+      storefront_payout: 'কুরিয়ার পেআউট',
     },
     fromDocument: '{{document}} থেকে',
     stockEntryHint:
@@ -5131,6 +5136,8 @@ export const bn: Messages = {
       edit: 'বদলান',
       test: 'কানেকশন পরীক্ষা করুন',
       renewToken: 'নতুন webhook token',
+      // Step 28c
+      recordPayout: 'পেআউট লিখুন',
       archive: 'আর্কাইভ করুন',
       restore: 'ফিরিয়ে আনুন',
       testedWorked: '{{courier}} key মেনে নিয়েছে',
@@ -5231,6 +5238,181 @@ export const bn: Messages = {
       archived: '{{name}} আর্কাইভ হয়েছে',
       restored: '{{name}} ফিরিয়ে আনা হয়েছে',
       tokenRenewed: 'নতুন webhook token বানানো হয়েছে',
+    },
+    // Step 28c
+    payouts: {
+      title: 'শপের পেআউট',
+      description: 'কুরিয়াররা চার্জ কেটে যে COD টাকা আপনার ব্যাংকে পাঠায়',
+      new: 'পেআউট লিখুন',
+      account: 'কুরিয়ার অ্যাকাউন্ট',
+      allAccounts: 'সব কুরিয়ার অ্যাকাউন্ট',
+      archivedAccount: '{{name}} (আর্কাইভ করা)',
+      view: 'দেখান',
+      views: { all: 'সব', posted: 'পোস্ট করা', voided: 'বাতিল' },
+      statuses: { posted: 'পোস্ট করা', voided: 'বাতিল' },
+      columns: {
+        number: 'নম্বর',
+        date: 'তারিখ',
+        account: 'কুরিয়ার অ্যাকাউন্ট',
+        reference: 'কুরিয়ারের রেফারেন্স',
+        parcels: 'পার্সেল',
+        collected: 'রাইডার নিয়েছেন',
+        charges: 'চার্জ',
+        net: 'ব্যাংকে এসেছে',
+        status: 'অবস্থা',
+      },
+      emptyTitle: 'এখনো কোনো পেআউট নেই',
+      emptyBody:
+        'Steadfast রাইডারদের নেওয়া টাকা আপনার ব্যাংকে পাঠালে এখানে লিখুন: যে পার্সেলগুলোর টাকা এসেছে সেগুলোতে টিক দিন, বা তার পেআউট ফাইল মিলিয়ে নিন।',
+      filteredEmptyTitle: 'কোনো পেআউট মেলেনি',
+      filteredEmptyBody: 'এই কুরিয়ার অ্যাকাউন্ট আর অবস্থার কোনো পেআউট নেই।',
+      showAll: 'সব পেআউট দেখান',
+      loadFailed: 'পেআউটগুলো আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
+    },
+    payout: {
+      back: 'শপের পেআউট',
+      newTitle: 'কুরিয়ারের পেআউট লিখুন',
+      newDescription:
+        'এই ট্রান্সফারে যে পার্সেলগুলোর টাকা এসেছে সেগুলোতে টিক দিন। সেভ করলেই পোস্ট হয়: টাকা কুরিয়ারের COD অ্যাকাউন্ট থেকে ব্যাংকে যায়।',
+      account: 'কুরিয়ার অ্যাকাউন্ট',
+      accountPlaceholder: 'যে কুরিয়ার অ্যাকাউন্ট টাকা দিয়েছে সেটা বাছুন',
+      accountHolds_one: '{{name}} · {{formatted}}টা পার্সেলের {{amount}} কাছে আছে',
+      accountHolds_other: '{{name}} · {{formatted}}টা পার্সেলের {{amount}} কাছে আছে',
+      accountHoldsNothing: '{{name}} · কিছু কাছে নেই',
+      accountNoCod: '{{name}} · COD অ্যাকাউন্ট নেই',
+      date: 'তারিখ',
+      dateHint: 'যেদিন টাকা ব্যাংকে পৌঁছেছে, ব্যাংক স্টেটমেন্টে যেমন আছে।',
+      bankAccount: 'যে অ্যাকাউন্টে এসেছে',
+      bankAccountPlaceholder: 'একটা অ্যাকাউন্ট বাছুন',
+      bankAccountHint: 'যে ব্যাংক বা মোবাইল ওয়ালেট অ্যাকাউন্টে কুরিয়ার টাকা পাঠিয়েছে।',
+      noBankAccounts:
+        'টাকা রাখা হয় এমন আর কোনো চালু অ্যাকাউন্ট নেই। চার্ট অফ অ্যাকাউন্টসে আপনার ব্যাংক অ্যাকাউন্টে “টাকা রাখা হয়” টিক দিন।',
+      reference: 'কুরিয়ারের রেফারেন্স',
+      referencePlaceholder: 'SFC-23618228',
+      referenceHint:
+        'কুরিয়ারের প্যানেলে পেমেন্টের নম্বর, বা ব্যাংকের রেফারেন্স। এটা ভাউচারে প্রিন্ট হয়।',
+      note: 'নোট',
+      notePlaceholder: 'মিরপুর পিকআপের মঙ্গলবারের Steadfast পেআউট',
+      noChargeAccount:
+        '{{name}}-এর কুরিয়ার চার্জের অ্যাকাউন্ট নেই, তাই শুধু চার্জ ছাড়া পার্সেলের পেআউট হবে। চার্জ লিখতে শপের কুরিয়ার পেজে একটা বাছুন।',
+      parcelsTitle: 'পার্সেল',
+      parcelsDescription:
+        '{{name}}-এর যে পার্সেলগুলো এখনো কোনো পেআউটে যায়নি। এই ট্রান্সফারে যেগুলোর টাকা এসেছে সেগুলোতে টিক দিন।',
+      pickAccountFirst: 'পার্সেলগুলো দেখতে কুরিয়ার অ্যাকাউন্ট বাছুন।',
+      matchFile: 'পেআউট ফাইল মেলান',
+      tickAll: 'সবগুলোতে টিক দিন',
+      clear: 'মুছুন',
+      columns: {
+        parcel: 'পার্সেল',
+        status: 'অবস্থা',
+        receipt: 'মানি রিসিট',
+        collected: 'রাইডার নিয়েছেন',
+        charge: 'চার্জ',
+        net: 'ব্যাংকে',
+      },
+      tick: '{{invoice}}-এর পেআউট',
+      chargeLabel: '{{invoice}}-এর চার্জ',
+      kinds: { cod: 'নগদসহ পৌঁছেছে', charge: 'শুধু চার্জ: নগদ আসেনি' },
+      courierSaid: '{{courier}} বলেছে {{amount}}',
+      courierSilent: '{{courier}} এখনো চার্জ বলেনি',
+      noParcelsTitle: 'পেআউটের কিছু নেই',
+      noParcelsBody:
+        '{{name}}-এর সব পার্সেলের পেআউট হয়ে গেছে। পার্সেল পৌঁছে তার COD রিসিট বানানো হলে, বা চার্জসহ ফেরত এলে, এখানে আসে।',
+      ticked_one: '{{formatted}}টা পার্সেলে টিক',
+      ticked_other: '{{formatted}}টা পার্সেলে টিক',
+      collected: 'রাইডার নিয়েছেন',
+      charges: 'চার্জ',
+      net: 'ব্যাংকে',
+      fileNet: 'ফাইল বলছে ব্যাংকে {{amount}} এসেছে',
+      fileAgrees: 'মিলেছে',
+      fileOutBy: '{{amount}} গরমিল',
+      save: 'পেআউট লিখুন',
+      saveHint:
+        'সেভ করলেই পেআউট পোস্ট হয়। ভুল হলে পেআউটের পেজে বাতিল করুন, তাতে পার্সেলগুলো আবার ছাড়া পায়।',
+      created: '{{number}} লেখা হয়েছে',
+      facts: {
+        account: 'কুরিয়ার অ্যাকাউন্ট',
+        bankAccount: 'যে অ্যাকাউন্টে এসেছে',
+        date: 'তারিখ',
+        reference: 'কুরিয়ারের রেফারেন্স',
+        codAccount: 'যেখান থেকে গেছে',
+        chargeAccount: 'চার্জ যেখানে গেছে',
+        branch: 'শাখা',
+        note: 'নোট',
+      },
+      linesTitle: 'যে পার্সেলগুলোর টাকা এসেছে',
+      linesDescription: 'প্রতিটা পার্সেলে কত এসেছে, আর কুরিয়ার কত রেখেছে',
+      total: 'মোট',
+      print: 'ভাউচার প্রিন্ট করুন',
+      entry: 'জার্নাল এন্ট্রি',
+      voidEntry: 'রিভার্সাল',
+      void: 'পেআউট বাতিল করুন',
+      voidTitle: '{{number}} বাতিল করুন',
+      voidBody:
+        'বাতিলের তারিখে এর এন্ট্রি রিভার্স হবে, আর এর পার্সেলগুলোর আবার পেআউট হতে পারবে। পেআউটটা নম্বরসহ তালিকায় থেকে যাবে।',
+      voidDate: 'বাতিলের তারিখ',
+      voidDateHint: 'যেদিন ভুলটা ধরা পড়ল, যেমন যেদিন দেখলেন এটা দুবার লেখা হয়েছে।',
+      voidReason: 'কারণ',
+      voidReasonPlaceholder: 'দুবার লেখা: CPO-2026-27-0003-এর একই Steadfast পেমেন্ট',
+      confirmVoid: 'পেআউট বাতিল করুন',
+      voided: '{{number}} বাতিল হয়েছে',
+      voidedNotice: '{{date}}-এ বাতিল: {{reason}}। এর পার্সেলগুলোর আবার পেআউট হতে পারে।',
+      notFound: 'এই পেআউট নেই।',
+      loadFailed: 'পেআউটটা আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
+      csv: {
+        title: 'কুরিয়ারের পেআউট ফাইল মেলান',
+        description:
+          '{{name}}-এর প্যানেল থেকে পেআউটের CSV। ফাইলে যে পার্সেলগুলোর নাম আছে, Omnivo সেগুলোতে টিক দেয় আর তাদের চার্জ নেয়।',
+        choose: 'CSV ফাইল বাছুন',
+        fileHint:
+          'একবারে একটা পেআউট, সর্বোচ্চ 1 MB আর ৫,০০০ row। পার্সেলে টিক দিতে ফাইলটা পড়া হয়, রাখা হয় না।',
+        reading: 'ফাইলটা পড়া হচ্ছে…',
+        matching: 'মেলানো হচ্ছে…',
+        mapTitle: 'কোন কলামে কী আছে?',
+        mapMissing: 'ফাইলে নেই: {{names}}। ফাইলের নিজের কলামগুলো বাছুন।',
+        mapFirst: 'ফাইলের কলামগুলো একবার বাছুন। {{name}}-এর পরের ফাইলের জন্য এগুলো রাখা থাকবে।',
+        key: 'পার্সেল চেনা যায়',
+        keys: {
+          invoice: 'ইনভয়েস (W-000123)',
+          tracking_code: 'ট্র্যাকিং কোড',
+          consignment_id: 'কুরিয়ারের ID',
+        },
+        keyColumn: 'তার কলাম',
+        collectedColumn: 'রাইডার যা নিয়েছেন তার কলাম',
+        collectedHint: 'রাইডার যা নিয়েছেন। এটা ছাড়া অন্য পরিমাণের পার্সেল ধরা যায় না।',
+        chargeColumn: 'চার্জের কলাম',
+        chargeHint:
+          'প্রতিটা পার্সেলে কুরিয়ারের চার্জ। এটা ছাড়া চার্জ থাকে কুরিয়ারের খবরে যা এসেছিল।',
+        columnPlaceholder: 'একটা কলাম বাছুন',
+        columnNone: 'ফাইলে নেই',
+        match: 'ফাইল মেলান',
+        changeColumns: 'কলাম বদলান',
+        otherFile: 'অন্য ফাইল বাছুন',
+        row: 'Row {{row}}',
+        outcomes: {
+          matched: 'পাওয়া গেছে',
+          different: 'অন্য পরিমাণ',
+          already_paid: 'আগেই পেআউট হয়েছে',
+          not_ready: 'এখনো হয়নি',
+          unknown: 'পাওয়া যায়নি',
+          twice: 'ফাইলে দুবার',
+          invalid: 'পড়া যায় না',
+        },
+        outcomeCount: '{{label}}: {{formatted}}',
+        different:
+          'ফাইল বলছে রাইডার {{file}} নিয়েছেন, মানি রিসিটে {{ours}}। পার্থক্যটা কুরিয়ার রেখে দিলে চার্জে যোগ করুন।',
+        alreadyPaid: '{{payout}}-এ পেআউট হয়েছে।',
+        notReady: 'এখনো পৌঁছায়নি, বা তার মানি রিসিট বানানো হয়নি। হলে এর পেআউট হবে।',
+        unknown: '{{name}}-এর কোনো পার্সেলের এই নম্বর নেই।',
+        twice: 'আগের একটা row-তেও এই নম্বর আছে। শুধু প্রথমটা ধরা হয়।',
+        invalid: 'এই row-তে পার্সেলের নম্বর নেই, বা কোনো পরিমাণ সংখ্যা না।',
+        apply_one: '{{formatted}}টা পার্সেলে টিক দিন',
+        apply_other: '{{formatted}}টা পার্সেলে টিক দিন',
+        applyHint: 'চার্জ আসে ফাইল থেকে। আগে টিক দেওয়া পার্সেলগুলোতে টিক থেকে যায়।',
+        noneToTick: 'এই পেআউট নিতে পারে এমন কোনো পার্সেল কোনো row-তে নেই।',
+        applied_one: 'ফাইল থেকে {{formatted}}টা পার্সেলে টিক দেওয়া হয়েছে',
+        applied_other: 'ফাইল থেকে {{formatted}}টা পার্সেলে টিক দেওয়া হয়েছে',
+      },
     },
     categories: {
       title: 'শপের ক্যাটাগরি',
@@ -5872,6 +6054,8 @@ export const bn: Messages = {
         collected: 'রাইডার নিয়েছেন',
         charge: 'কুরিয়ারের চার্জ',
         receipt: 'মানি রিসিট',
+        // Step 28c
+        payout: 'যে পেআউটে টাকা এসেছে',
         receiptError: 'COD রিসিট বানানো যায়নি। {{reason}}',
         makeReceipt: 'রিসিট বানান',
         receiptMade: 'মানি রিসিট {{receipt}} বানানো হয়েছে',
@@ -6311,6 +6495,8 @@ export const bn: Messages = {
       purchaseReturn: 'পারচেজ রিটার্ন',
       debitNote: 'ডেবিট নোট',
       supplierRefund: 'সাপ্লায়ার রিফান্ড',
+      // Step 28c
+      storefrontPayout: 'কুরিয়ার পেআউট',
     },
     bin: 'BIN {{bin}}',
     phone: 'ফোন {{phone}}',
@@ -6371,6 +6557,18 @@ export const bn: Messages = {
     supplierCredit: 'তাদের ক্রেডিট নোট',
     receivedInto: 'যে অ্যাকাউন্টে এলো',
     paidBackOn: 'যার বিপরীতে ফেরত',
+    // Step 28c
+    courier: 'কুরিয়ার',
+    paidInto: 'যে অ্যাকাউন্টে এসেছে',
+    payoutColumns: {
+      parcel: 'পার্সেল',
+      trackingCode: 'ট্র্যাকিং কোড',
+      collected: 'রাইডার নিয়েছেন',
+      charge: 'চার্জ',
+    },
+    collected: 'রাইডার নিয়েছেন',
+    charges: 'কুরিয়ারের চার্জ',
+    netToBank: 'ব্যাংকে এসেছে',
     signatures: {
       customer: 'গ্রাহকের স্বাক্ষর',
       receivedBy: 'গ্রহণকারী',
@@ -6603,6 +6801,10 @@ export const bn: Messages = {
         read: 'শপের অর্ডার দেখা, ক্রেতার ফোন আর ঠিকানাসহ',
         manage: 'শপের অর্ডার এগিয়ে নেওয়া আর বাতিল করা',
       },
+      // Step 28c
+      payout: {
+        manage: 'শপের COD টাকা ব্যাংকে আসার কুরিয়ার পেআউট লেখা আর বাতিল করা',
+      },
     },
   },
   invite: {
@@ -6688,6 +6890,7 @@ export const bn: Messages = {
       storefront_coupon: 'শপের কুপন',
       storefront_payment_gateway: 'শপের পেমেন্ট গেটওয়ে',
       courier_account: 'শপের কুরিয়ার',
+      storefront_payout: 'কুরিয়ার পেআউট',
     },
     columns: {
       when: 'কখন',
@@ -7073,6 +7276,11 @@ export const bn: Messages = {
         archived: 'কুরিয়ার অ্যাকাউন্ট আর্কাইভ করেছেন',
         restored: 'আর্কাইভ করা কুরিয়ার অ্যাকাউন্ট ফিরিয়ে এনেছেন',
       },
+      // Step 28c
+      storefront_payout: {
+        created: 'কুরিয়ারের একটা পেআউট লিখেছেন',
+        voided: 'কুরিয়ারের একটা পেআউট বাতিল করেছেন',
+      },
     },
     fields: {
       name: 'নাম',
@@ -7325,6 +7533,13 @@ export const bn: Messages = {
       codAccount: 'COD অ্যাকাউন্ট',
       chargeAccount: 'কুরিয়ার চার্জের অ্যাকাউন্ট',
       cameBack: 'যে লাইনগুলো ফেরত এসেছে',
+      // Step 28c
+      courierAccount: 'কুরিয়ার অ্যাকাউন্ট',
+      bankAccount: 'যে অ্যাকাউন্টে এসেছে',
+      parcels: 'পার্সেল',
+      collected: 'রাইডার নিয়েছেন',
+      charges: 'চার্জ',
+      net: 'ব্যাংকে এসেছে',
     },
     loadFailed: 'অডিট লগ আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
   },
@@ -8284,6 +8499,35 @@ export const bn: Messages = {
     storefront_order_return_everything: 'সবই ফেরত এসেছে। এর বদলে "ফেরত মাল বুঝে নিন" চাপুন।',
     storefront_cod_receipt_not_failed:
       'এই পার্সেলের COD রিসিট ব্যর্থ হয়নি। অর্ডারটা আবার লোড করুন।',
+    // Step 28c
+    payout_pick_account: 'যে কুরিয়ার অ্যাকাউন্ট টাকা দিয়েছে সেটা বাছুন।',
+    payout_bank_account_invalid:
+      'যে চালু ব্যাংক বা ক্যাশ অ্যাকাউন্টে টাকা এসেছে সেটা বাছুন, কুরিয়ারের নিজের COD অ্যাকাউন্ট নয়।',
+    payout_lines_required: 'এই পেআউটে যে পার্সেলগুলোর টাকা এসেছে, অন্তত একটায় টিক দিন।',
+    payout_too_many_lines: 'একটা পেআউটে সর্বোচ্চ ৫০০টা পার্সেল। বাকিগুলো আরেকটা পেআউটে লিখুন।',
+    payout_line_twice: 'এই পার্সেল পেআউটে দুবার আছে। একটা লাইন সরান।',
+    payout_charge_required: 'এই পার্সেলের কুরিয়ার চার্জ লিখুন, না থাকলে 0।',
+    payout_account_no_cod:
+      'এই কুরিয়ার অ্যাকাউন্টের COD অ্যাকাউন্ট নেই, তাই পেআউটের কোনো টাকা এর কাছে নেই। শপের কুরিয়ার পেজে একটা বাছুন।',
+    payout_account_no_charges:
+      'এই পেআউটে চার্জ আছে, কিন্তু কুরিয়ার অ্যাকাউন্টের চার্জের অ্যাকাউন্ট নেই। শপের কুরিয়ার পেজে একটা বাছুন।',
+    payout_parcel_unavailable:
+      'একটা পার্সেলের পেআউট আর হয় না: অন্য পেআউট নিয়ে নিয়েছে, বা সেটা বদলেছে। পার্সেলগুলো আবার লোড করুন।',
+    payout_charge_line_zero:
+      'যে পার্সেলে নগদ আসেনি, সেটা এখানে শুধু তার চার্জের জন্য। চার্জ লিখুন, না হলে টিক তুলে দিন।',
+    payout_below_zero:
+      'এই পার্সেলগুলোর নগদের চেয়ে চার্জ বেশি। এই পেআউটে যে পৌঁছানো পার্সেলগুলোর টাকা এসেছে সেগুলোতেও টিক দিন।',
+    payout_date_before_receipt:
+      'এই পার্সেলগুলোর COD রিসিটের দিন বা তার পরের তারিখ বাছুন: তার আগে টাকা কুরিয়ারের কাছে ছিল না।',
+    payout_csv_unreadable: 'ফাইলটা header row সহ CSV না। পেআউটটা আবার CSV হিসেবে ডাউনলোড করুন।',
+    payout_csv_too_big: 'ফাইলটা অনেক বড়। একবারে একটা পেআউট ডাউনলোড করুন।',
+    payout_csv_too_many_rows: 'ফাইলে ৫,০০০-এর বেশি row আছে। একবারে একটা পেআউট ডাউনলোড করুন।',
+    payout_csv_column_required: 'কলামটা বাছুন।',
+    journal_is_payout:
+      'কুরিয়ার পেআউটের এন্ট্রি এখানে রিভার্স করা যায় না। পেআউটের নিজের পেজে বাতিল করুন: তাতে তার পার্সেলগুলোও ছাড়া পায়।',
+    payout_voided: 'এই পেআউট বাতিল হয়েছে, এটা আর বদলানো যায় না। পেজটা রিলোড করুন।',
+    receipt_paid_out:
+      'একটা কুরিয়ার পেআউট এই COD-র টাকা ব্যাংকে তুলে দিয়েছে। আগে পেআউটটা বাতিল করুন, তারপর এই রিসিট।',
   },
   ui: {
     dataTable: {

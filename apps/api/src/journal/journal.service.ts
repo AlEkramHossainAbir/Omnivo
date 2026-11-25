@@ -4,6 +4,7 @@ import {
   isPurchaseJournalSource,
   isSalesJournalSource,
   isStockJournalSource,
+  isStorefrontJournalSource,
   type JournalEntry,
   type JournalEntryInput,
   type JournalEntrySummary,
@@ -229,6 +230,16 @@ export class JournalService {
             409,
             'journal_is_pos',
             'This entry belongs to a POS shift. Correct it with the next count or a pay in or out.',
+          );
+        }
+        if (isStorefrontJournalSource(entry.source)) {
+          // A courier's payout (step 28c, mine 23): its parcels point at it. Reversing the entry
+          // alone would leave them paid out with their money back in the COD account; voiding the
+          // payout on its own page reverses the entry and frees them together.
+          throw new AppError(
+            409,
+            'journal_is_payout',
+            'This entry belongs to a courier payout. Void the payout on its own page.',
           );
         }
         if (entry.version !== input.version) throw versionConflict();

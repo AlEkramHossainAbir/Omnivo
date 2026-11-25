@@ -73,6 +73,8 @@ const DESCRIPTIONS = {
   'storefront.order.read': "See the online shop's orders, with the buyers' phones and addresses",
   'storefront.order.manage':
     "Move the online shop's orders on (packed, shipped, delivered) and cancel them",
+  'storefront.payout.manage':
+    "Record the couriers' payouts of the shop's cash on delivery money into the bank, and void them",
 } satisfies Record<PermissionKey, string>;
 
 export const PERMISSIONS = PERMISSION_KEYS.map((key) => ({ key, description: DESCRIPTIONS[key] }));

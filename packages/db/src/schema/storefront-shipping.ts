@@ -28,12 +28,14 @@ import { baseColumns } from '../base-columns.js';
 import { ledgerAccounts } from './ledger-accounts.js';
 import { receipts } from './receipts.js';
 import { storefrontOrders } from './storefront-orders.js';
+import { storefrontPayouts } from './storefront-payouts.js';
 import { tenants } from './tenants.js';
 
 // Step 28a: couriers (system design §14.6). The shop's courier accounts, the parcels its orders
 // are sent in, and what the courier said about each parcel. Migration 0078 gives the three tables
 // their rules. Step 28b: the courier's COD money (each account's two accounts, and what each
-// parcel collected and its receipt); migration 0081 adds their rules.
+// parcel collected and its receipt); migration 0081 adds their rules. Step 28c: the payout that
+// paid each parcel out, and each account's saved payout CSV map; migration 0083 adds their rules.
 
 // Raw bytes, as in storefront-payments.ts and sync.ts: drizzle 0.45 has no bytea column
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({
@@ -103,6 +105,12 @@ export const courierAccounts = pgTable(
     // account can be archived after it was picked (27d's reason)
     codAccountId: uuid('cod_account_id'),
     chargeAccountId: uuid('charge_account_id'),
+    // Step 28c (decision 11). Which columns of this courier's payout CSV hold what
+    // (payoutCsvMapSchema), saved when a file matched with a map the member gave, so the next file
+    // needs no mapping. The API parses it with that schema on every read, so an old shape becomes
+    // "no map" rather than a crash. Saving it bumps no version: it is a convenience, not the
+    // account's settings, and a member editing the account must not get a conflict for it (mine 21)
+    payoutCsvMap: jsonb('payout_csv_map'),
   },
   (table) => [
     // The target of the parcels' foreign key (a constraint, for 0070's reason)
@@ -155,6 +163,13 @@ export const courierAccounts = pgTable(
             AND ${table.keyVersion} >= 1
             AND ${table.webhookTokenHash} ~ '${sql.raw(HASH_PATTERN)}'
         END`,
+    ),
+    // An object of four short names at most (the map's own limits are 100 characters a name). The
+    // size cap keeps a bug from storing a whole file here
+    check(
+      'courier_accounts_payout_csv_map_check',
+      sql`${table.payoutCsvMap} IS NULL OR (jsonb_typeof(${table.payoutCsvMap}) = 'object'
+        AND octet_length(${table.payoutCsvMap}::text) <= 1024)`,
     ),
     check(
       'courier_accounts_test_check',
@@ -215,9 +230,17 @@ export const storefrontShipments = pgTable(
     // could not (an error code, like a payment try's receipt_error). Neither: none was due
     receiptId: uuid('receipt_id'),
     receiptError: text('receipt_error'),
+    // Step 28c (decision 6). The posted payout that paid this parcel out, set when it is posted and
+    // cleared when it is voided. One column, so a parcel is in one posted payout at most: two
+    // payouts at once lock the row, and the second finds it taken. When it may be set or cleared is
+    // 0083's guard
+    payoutId: uuid('payout_id'),
   },
   (table) => [
     unique('storefront_shipments_tenant_id_key').on(table.tenantId, table.id),
+    // Step 28c. The target of a payout line's foreign key: a line's parcel is one of its payout's
+    // courier account
+    unique('storefront_shipments_account_key').on(table.tenantId, table.courierAccountId, table.id),
     // The order's parcels, oldest first (the order page), and at most five: a sixth has no number
     unique('storefront_shipments_parcel_key').on(table.tenantId, table.orderId, table.parcelNo),
     // One invoice per courier account (decision 3): a retry can never make a second parcel at the
@@ -261,11 +284,30 @@ export const storefrontShipments = pgTable(
       columns: [table.tenantId, table.receiptId],
       foreignColumns: [receipts.tenantId, receipts.id],
     }),
-    // What each courier account holds (decision 12) and 28c's payout read the parcels with a COD
-    // receipt, per account. Partial: most parcels of a shop that takes online payment have none
-    index('storefront_shipments_cod_idx')
+    // Step 28c: in place of 28b's storefront_shipments_cod_idx. What each courier account holds
+    // (28b's decision 12: posted COD receipts no payout took) and the parcels a new payout can take
+    // (a COD receipt, or a charge the courier said), per account. Partial: a parcel leaves it once
+    // it is paid out, so it stays small however many parcels a shop has sent
+    index('storefront_shipments_payable_idx')
       .on(table.tenantId, table.courierAccountId)
-      .where(sql`${table.receiptId} IS NOT NULL`),
+      .where(
+        sql`${table.payoutId} IS NULL AND (${table.receiptId} IS NOT NULL OR ${table.courierCharge} IS NOT NULL)`,
+      ),
+    // A payout's parcels: the void clears them, and 0083's checks count them
+    index('storefront_shipments_payout_idx')
+      .on(table.tenantId, table.payoutId)
+      .where(sql`${table.payoutId} IS NOT NULL`),
+    // Its own courier account's payout only (storefront_payouts_account_key). No ON DELETE: a
+    // payout is never deleted
+    foreignKey({
+      name: 'storefront_shipments_payout_fk',
+      columns: [table.tenantId, table.courierAccountId, table.payoutId],
+      foreignColumns: [
+        storefrontPayouts.tenantId,
+        storefrontPayouts.courierAccountId,
+        storefrontPayouts.id,
+      ],
+    }),
     check(
       'storefront_shipments_values_check',
       sql`${table.status} IN (${sqlList(SHIPMENT_STATUSES)})

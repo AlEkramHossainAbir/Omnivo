@@ -575,6 +575,20 @@
       "when": 1795492308278,
       "tag": "0081_storefront-cod-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1795516240385,
+      "tag": "0082_storefront-payouts",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1795516258629,
+      "tag": "0083_storefront-payouts-rules",
+      "breakpoints": true
     }
   ]
 }

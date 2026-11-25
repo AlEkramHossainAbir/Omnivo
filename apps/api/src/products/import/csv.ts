@@ -14,7 +14,8 @@ import {
   productInputSchema,
   type TrackingMode,
 } from '@omnivo/contracts';
-import { CsvError, parse } from 'csv-parse/sync';
+
+import { decodeUtf8, readCsvRecords } from '../../common/csv/csv.js';
 
 // The CSV half of an import, without the database: bytes in, product inputs (or what is wrong)
 // out. Pure, so every rule is tested on its own (csv.spec.ts) without containers.
@@ -50,17 +51,6 @@ type Cells = Record<string, string>;
 
 function fileError(code: ErrorCode, params?: Record<string, string | number>): ProductImportError {
   return { row: null, column: null, code, ...(params && { params }) };
-}
-
-// Bytes → text. Excel's "CSV UTF-8" starts with a byte order mark; its plain "CSV" on Windows is
-// not UTF-8 at all, and a Bangla name would come out as question marks. fatal: true refuses such a
-// file instead of importing broken names.
-function decode(bytes: Uint8Array): string | null {
-  try {
-    return new TextDecoder('utf-8', { fatal: true, ignoreBOM: false }).decode(bytes);
-  } catch {
-    return null;
-  }
 }
 
 // The cells of the columns that describe the product, not one variant: in a product's later rows
@@ -153,15 +143,11 @@ const YES = new Set(['yes', 'y', 'true', '1']);
 const NO = new Set(['no', 'n', 'false', '0']);
 
 export function readProductsCsv(bytes: Uint8Array, lookups: ImportLookups): ReadFile {
-  const text = decode(bytes);
+  // Step 28c: the two reading steps moved to common/csv/csv.ts, for the payout match
+  const text = decodeUtf8(bytes);
   if (text === null) return { products: [], errors: [fileError('import_encoding')], rowCount: 0 };
-
-  let records: string[][];
-  try {
-    // relax_column_count: Excel leaves trailing empty cells out of short rows. bom: drop the BOM.
-    records = parse(text, { bom: true, trim: true, relax_column_count: true });
-  } catch (error) {
-    if (!(error instanceof CsvError)) throw error;
+  const records = readCsvRecords(text);
+  if (records === null) {
     return { products: [], errors: [fileError('import_csv_malformed')], rowCount: 0 };
   }
 

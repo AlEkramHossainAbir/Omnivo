@@ -5,6 +5,7 @@ import {
   type PaymentGatewayMode,
   type PaymentGatewayProvider,
   type PaymentGatewayTestProblem,
+  type PayoutCsvMap,
   type ShipmentStatus,
   type ShopCourier,
   type ShopCouponRule,
@@ -29,6 +30,7 @@ import {
 } from '@omnivo/contracts';
 
 import { findVariant } from './stock-data';
+import type { MockPayouts } from './storefront-payout-data';
 import type { WorkspaceData } from './workspace-data';
 
 // Step 26g: what the mock keeps of the online shop, and the garments workspace's open shop. A file
@@ -231,6 +233,8 @@ export interface MockCourierAccount {
   archivedAt: string | null;
   lastWebhookAt: string | null;
   lastTest: { at: string; problem: CourierTestProblem | null } | null;
+  // Step 28c: the payout file's columns, saved by the first file matched with a map (decision 11)
+  payoutCsvMap: PayoutCsvMap | null;
   version: number;
   updatedAt: string;
 }
@@ -261,6 +265,9 @@ export interface MockShipment {
   courierCharge: string | null;
   receiptId: string | null;
   receiptError: ErrorCode | null;
+  // Step 28c: the posted payout that paid it out (storefront-payout-data.ts); null again when it is
+  // voided
+  payoutId: string | null;
 }
 
 // Step 27c: a coupon as the table keeps it (storefront-coupon-data.ts has the rules). The mock has
@@ -297,6 +304,8 @@ export interface MockStorefront {
   gateway: MockGateway | null;
   // Step 28a: the shop's courier accounts, archived ones too, in the order they were made
   couriers: MockCourierAccount[];
+  // Step 28c: the couriers' payouts (storefront-payout-data.ts)
+  payouts: MockPayouts;
 }
 
 export function emptyStorefront(): MockStorefront {
@@ -316,6 +325,7 @@ export function emptyStorefront(): MockStorefront {
     coupons: [],
     gateway: null,
     couriers: [],
+    payouts: { items: [], counter: 0 },
   };
 }
 

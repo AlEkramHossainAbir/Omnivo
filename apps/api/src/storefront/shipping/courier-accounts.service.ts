@@ -11,7 +11,7 @@ import {
   type UpdateCourierAccountInput,
 } from '@omnivo/contracts';
 import { courierAccounts, receipts, storefrontShipments } from '@omnivo/db';
-import { and, asc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 
 import { audit, created, diff } from '../../common/audit/audit.js';
 import { isCheckViolation } from '../../common/db/pg-errors.js';
@@ -471,9 +471,10 @@ export class CourierAccountsService {
 
 // Step 28b (decision 12, mine 26): what each courier holds of the shop's money, the page's "Holds
 // ৳45,200 · 18 parcels": the parcels whose COD receipt is posted (a voided one stays linked and
-// counts no more). storefront_shipments_cod_idx finds them per account. Step 28c's payout takes
-// its parcels out of this sum
-async function holdsOf(tx: Transaction, accountIds: readonly string[]): Promise<Holds> {
+// counts no more). Step 28c (decision 15): and that no posted payout took, so a payout takes its
+// parcels out of this sum and a voided one puts them back. storefront_shipments_payable_idx finds
+// them per account (its condition covers this one). Exported: the payout pages show it too
+export async function holdsOf(tx: Transaction, accountIds: readonly string[]): Promise<Holds> {
   if (accountIds.length === 0) return new Map();
   const rows = await tx
     .select({
@@ -494,6 +495,7 @@ async function holdsOf(tx: Transaction, accountIds: readonly string[]): Promise<
         eq(storefrontShipments.tenantId, getTenantId()),
         inArray(storefrontShipments.courierAccountId, [...accountIds]),
         isNotNull(storefrontShipments.receiptId),
+        isNull(storefrontShipments.payoutId),
         eq(receipts.status, 'posted'),
       ),
     )
