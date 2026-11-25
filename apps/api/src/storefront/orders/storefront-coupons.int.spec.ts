@@ -30,6 +30,7 @@ import {
   createTestApp,
   createTestWorker,
   eventually,
+  lockWaitsOfApi,
   testConfig,
   testWorkerConfig,
 } from '../../testing/app.js';
@@ -223,8 +224,7 @@ async function inTurn<T>(table: string, sends: (() => Promise<T>)[]): Promise<T[
     for (const next of sends) {
       sent.push(next());
       await eventually(async () => {
-        const [row] = await tx`SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted`;
-        expect(row?.n).toBe(sent.length);
+        expect(await lockWaitsOfApi(tx)).toBe(sent.length);
       });
     }
     // Wrapped: a promise returned alone (or in an array) would be awaited before the gate opens,

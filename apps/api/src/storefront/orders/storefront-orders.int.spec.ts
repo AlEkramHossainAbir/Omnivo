@@ -28,6 +28,7 @@ import {
   createTestApp,
   createTestWorker,
   eventually,
+  lockWaitsOfApi,
   testConfig,
   testWorkerConfig,
 } from '../../testing/app.js';
@@ -296,14 +297,18 @@ async function addCustomer(name: string, phone: string, extra: object = {}) {
 
 // Sends requests "at the same moment" for sure (27a's shop-orders.int.spec.ts has the long
 // story): a transaction of the test's own locks `table`, and only once `waiting` requests wait for
-// a lock does the gate open
-async function atOnce<T>(table: string, waiting: number, run: () => Promise<T>): Promise<T> {
+// a lock does the gate open. `withWorker`: one of them is a worker job the test runs itself
+async function atOnce<T>(
+  table: string,
+  waiting: number,
+  run: () => Promise<T>,
+  withWorker = false,
+): Promise<T> {
   const gate = await sql.begin(async (tx) => {
     await tx`LOCK TABLE ${tx(table)} IN SHARE MODE`;
     const sent = run();
     await eventually(async () => {
-      const [row] = await tx`SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted`;
-      expect(row?.n).toBe(waiting);
+      expect(await lockWaitsOfApi(tx, { withWorker })).toBe(waiting);
     });
     return { sent };
   });
@@ -898,11 +903,15 @@ describe('at the same moment', () => {
         }),
       );
     // The one that locks the order first waits at the sales orders; the other at the order
-    const [page] = await atOnce('sales_orders', 2, () =>
-      Promise.all([
-        send('POST', `/storefront/orders/${id}/sales-order`, { version: failed.version }),
-        runJob(),
-      ]),
+    const [page] = await atOnce(
+      'sales_orders',
+      2,
+      () =>
+        Promise.all([
+          send('POST', `/storefront/orders/${id}/sales-order`, { version: failed.version }),
+          runJob(),
+        ]),
+      true,
     );
     // The page wins (200) or finds the job made it (the version moved on)
     expect([200, 409]).toContain(page.statusCode);
