@@ -23,6 +23,7 @@ import {
   type Receipt,
   type ReceiptAllocation,
   type ReceiptInput,
+  type ReceiptMethod,
   type RefundSourceType,
   type StockLine,
   subtractMoney,
@@ -884,10 +885,11 @@ const RECEIPT_CODES = { invoice: 'receipt_invoice_invalid', over: 'receipt_over_
 // receipt and no entry.
 // Step 27d: `fee` is the gateway's fee of a shop order paid online (the API's createForShop): the
 // money account gets what the gateway pays out, and the fee goes to its expense account, in the
-// receipt's own entry, so a void reverses the fee too
+// receipt's own entry, so a void reverses the fee too. Step 28b: and the `courier` method of a
+// delivered parcel's COD receipt, which only the API makes (the form's ReceiptInput never has it)
 export function createReceipt(
   data: WorkspaceData,
-  input: ReceiptInput,
+  input: Omit<ReceiptInput, 'method'> & { method: ReceiptMethod },
   fee: { accountId: string; amount: string } | null = null,
 ): MockReceipt {
   const customer = customerOf(data, input.customerId, null);

@@ -1,12 +1,17 @@
 import {
   compareQuantity,
+  type CourierExportRow,
+  isOpenShipment,
   isQuantity,
+  isZeroMoney,
   type PackStorefrontOrderFormValues,
   routes,
+  type ShipmentStatus,
   type StorefrontOrder,
   type StorefrontOrderSort,
   type StorefrontOrderView,
   type StorefrontPackPlan,
+  type StorefrontShipment,
   sumQuantity,
 } from '@omnivo/contracts';
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query';
@@ -62,6 +67,28 @@ export function storefrontPackPlanQuery(tenantId: string, orderId: string) {
   return queryOptions({
     queryKey: ['storefront', tenantId, 'orders', 'pack-plan', orderId],
     queryFn: () => call(routes.storefrontOrders.getPackPlan, { params: { id: orderId } }),
+    staleTime: 0,
+    gcTime: 0,
+  });
+}
+
+// Step 28a.6: the accounts the Packed dialog and Book courier offer (courierChoices). Asked each
+// time one of them opens, like the pack plan: an account archived a minute ago must not be offered
+export function storefrontCourierChoicesQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['storefront', tenantId, 'orders', 'courier-choices'],
+    queryFn: () => call(routes.storefrontOrders.courierChoices),
+    staleTime: 0,
+  });
+}
+
+// Step 28b: what the "Record what came back" dialog opens with, asked each time it opens like the
+// pack plan (the challan does not change, but an order moved in another tab would answer 409)
+export function storefrontReturnPlanQuery(tenantId: string, orderId: string) {
+  return queryOptions({
+    queryKey: ['storefront', tenantId, 'orders', 'return-plan', orderId],
+    queryFn: () =>
+      call(routes.storefrontOrderDeliveries.getReturnPlan, { params: { id: orderId } }),
     staleTime: 0,
     gcTime: 0,
   });
@@ -187,4 +214,138 @@ export function pickedOf(
   );
   // sumQuantity writes four decimals; the count shows what a person would write
   return { picked: plainQuantity(picked), complete: compareQuantity(picked, quantity) === 0 };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28a: the order's parcels
+
+// The order's parcels come oldest first (storefrontOrderSchema). The page shows the newest first:
+// the one that matters now is on top, and an earlier failed one sits under it
+export function parcelsNewestFirst(order: StorefrontOrder): StorefrontShipment[] {
+  return [...order.shipments].reverse();
+}
+
+// The parcel on its way, if any. The database keeps at most one per order (28a.2's open_idx)
+export function openParcel(order: StorefrontOrder): StorefrontShipment | null {
+  return order.shipments.find((parcel) => isOpenShipment(parcel.status)) ?? null;
+}
+
+// "Needs attention" on the order's page, by the API's own rule for the list (parcelNeedsAttention):
+// a packed order whose last parcel failed to book. "Book again" made a new parcel, so a failed one
+// under a newer one no longer counts
+export function parcelFailed(order: StorefrontOrder): StorefrontShipment | null {
+  const last = order.shipments.at(-1);
+  return order.status === 'packed' && last?.status === 'booking_failed' ? last : null;
+}
+
+// "Book courier": a packed order with no parcel on its way (none yet, or the last one failed or
+// was cancelled). The API refuses the rest with storefront_order_not_bookable
+export function canBook(order: StorefrontOrder): boolean {
+  return order.status === 'packed' && openParcel(order) === null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28b: the parcel at the shopper's door
+
+// The parcel the courier took to the door, by the API's own rule (cod-receipts.ts doorParcel): the
+// newest one that is not still booking or failed (the courier never had it), not a cancelled
+// booking, and not one received back. Delivered asks what its rider collected, and its COD receipt
+// is the one the page talks about
+export function doorParcel(order: StorefrontOrder): StorefrontShipment | null {
+  const skip: readonly ShipmentStatus[] = ['booking', 'booking_failed', 'cancelled', 'returned'];
+  return parcelsNewestFirst(order).find((parcel) => !skip.includes(parcel.status)) ?? null;
+}
+
+// Whether Delivered (and Record what came back) asks what the rider collected: only when a COD
+// receipt will be made, so the parcel's account has a COD account and the rider had something to
+// collect (an order paid online has codAmount 0)
+export function asksCollected(parcel: StorefrontShipment | null): parcel is StorefrontShipment {
+  return parcel !== null && parcel.account.hasCodAccount && !isZeroMoney(parcel.codAmount);
+}
+
+// What the amount box starts with: what the courier said the rider collected, else what the rider
+// was to collect. Shown as the shop writes money ("538", "247.50"): the API keeps four decimals
+export function collectedStart(parcel: StorefrontShipment): string {
+  return plainMoney(parcel.collectedAmount ?? parcel.codAmount);
+}
+
+// "538.0000" → "538", "247.5000" → "247.50": what a person would type in a money box
+export function plainMoney(amount: string): string {
+  const [whole = '0', fraction = ''] = amount.split('.');
+  const paisa = fraction.padEnd(2, '0').slice(0, 2);
+  return paisa === '00' ? whole : `${whole}.${paisa}`;
+}
+
+// The three moves of a shipped order (approved with the mockup), and which one is the primary
+// button: the one the newest parcel asks for. The courier said part of it came back → Record what
+// came back; it is bringing it back (or says it is back) → Receive the return; else Mark delivered.
+// A manual parcel never says, so the three are always there
+export type DoorMove = 'cameBack' | 'receive' | 'deliver';
+
+export function primaryDoorMove(order: StorefrontOrder): DoorMove {
+  const status = order.shipments.at(-1)?.status;
+  if (status === 'partly_delivered') return 'cameBack';
+  if (status === 'returning' || status === 'returned') return 'receive';
+  return 'deliver';
+}
+
+// A delivered parcel whose COD receipt could not be made (mine 14: the error sits on the parcel).
+// The newest one: "Make the receipt" fixes one at a time
+export function receiptFailed(order: StorefrontOrder): StorefrontShipment | null {
+  return parcelsNewestFirst(order).find((parcel) => parcel.receiptError !== null) ?? null;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28a: the export for a courier's bulk upload (decision 19)
+
+// The columns of Steadfast's bulk upload, in its own words, which the other couriers' panels take
+// too. They stay English in a Bangla app: the courier's panel reads them, not a person
+export const COURIER_CSV_COLUMNS = [
+  'Invoice',
+  'Name',
+  'Address',
+  'Phone',
+  'Amount',
+  'Note',
+] as const;
+
+// One CSV cell. Quoted when it holds a comma, a quote or a line break (an address often has all
+// three), with its quotes doubled. A shopper typed the name and the address: one that starts with
+// = + - or @ would run as a formula when the file is opened in Excel, so it gets a ' in front
+// (OWASP's CSV injection advice). Only those two: a phone or an amount never starts that way, and
+// a ' there would reach the courier's panel
+function csvCell(value: string, typed = false): string {
+  const safe = typed && /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  return /[",\r\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+}
+
+// Found in 28a.7: the API answers money with 4 decimals ("538.0000"), and a courier's panel wants
+// taka and paisa ("538.00"). Every shop amount is whole paisa (its prices, and a percent off rounds
+// to the paisa), so the last two digits are always 0 and cutting them loses nothing
+function paisaOf(amount: string): string {
+  const [whole = '0', fraction = ''] = amount.split('.');
+  return `${whole}.${fraction.padEnd(2, '0').slice(0, 2)}`;
+}
+
+// The whole file. note(count) is the rider's line ("3 items", in the reader's words). CRLF, as
+// RFC 4180 says, and a byte order mark first, so Excel reads a Bangla name as UTF-8, not as
+// question marks. The amount with paisa and a dot (paisaOf): the courier's panel reads it
+export function courierCsv(
+  rows: readonly CourierExportRow[],
+  note: (count: number) => string,
+): string {
+  const lines = [
+    COURIER_CSV_COLUMNS.join(','),
+    ...rows.map((row) =>
+      [
+        csvCell(row.invoice),
+        csvCell(row.name, true),
+        csvCell(row.address, true),
+        csvCell(row.phone),
+        csvCell(paisaOf(row.amount)),
+        csvCell(note(row.itemCount), true),
+      ].join(','),
+    ),
+  ];
+  return `\uFEFF${lines.join('\r\n')}\r\n`;
 }

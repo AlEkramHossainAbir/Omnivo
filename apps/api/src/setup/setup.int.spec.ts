@@ -159,6 +159,8 @@ describe('starting the setup', () => {
           'sales.receipt.manage',
           'sales.refund.manage',
           'sales.report.read',
+          // Step 28c: the courier's payouts
+          'storefront.payout.manage',
         ],
       ],
       [

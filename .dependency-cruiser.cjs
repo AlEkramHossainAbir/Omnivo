@@ -8,7 +8,14 @@ module.exports = {
       // Step 17c: a bill line points at a goods receipt line, and a goods receipt a bill made points
       // at its bill. The two tables reference each other, and Drizzle reads a table's foreign keys
       // only when it is asked for them, after both files have loaded. Only these two files.
-      from: { pathNot: '^packages/db/src/schema/(bills|goods-receipts)\\.ts$' },
+      // Step 28c: the same for a parcel and its payout. The parcel keeps the payout that paid it
+      // (payout_id), and each payout line points at its parcel. Only these two files too.
+      from: {
+        pathNot: [
+          '^packages/db/src/schema/(bills|goods-receipts)\\.ts$',
+          '^packages/db/src/schema/storefront-(shipping|payouts)\\.ts$',
+        ],
+      },
       to: { circular: true },
     },
     {

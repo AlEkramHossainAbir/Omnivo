@@ -197,6 +197,10 @@ const RUNNING_THE_SHOP = ['storefront.manage'] as const;
 // Step 27a: the shop's orders, for the same two roles (27a's decision 11). Apart from
 // storefront.manage, so an owner can give a packer the orders without the shop's prices
 const SHOP_ORDERS = ['storefront.order.read', 'storefront.order.manage'] as const;
+// Step 28c (decision 9, mine 32): the courier's payouts move the shop's COD money into the bank,
+// so they are the accountant's, in every industry, and the two managers' who run a shop. There is
+// no Admin template: the Owner has every permission, and the managers stand in for an admin
+const SHOP_PAYOUTS = ['storefront.payout.manage'] as const;
 
 // Some roles have few permissions today because the modules they will use (stock, sales) do not
 // exist yet. Each of those steps adds its permissions to these templates for new workspaces.
@@ -237,6 +241,8 @@ const ACCOUNTANT: RoleTemplate = {
     ...STOCK_REPORTS,
     // Step 21c: and sending them by email on a schedule
     ...SCHEDULING_REPORTS,
+    // Step 28c: the courier's payouts
+    ...SHOP_PAYOUTS,
   ],
 };
 
@@ -766,6 +772,7 @@ export const INDUSTRY_TEMPLATES = {
           ...SCHEDULING_REPORTS,
           ...RUNNING_THE_SHOP,
           ...SHOP_ORDERS,
+          ...SHOP_PAYOUTS,
         ],
       },
       {
@@ -846,6 +853,7 @@ export const INDUSTRY_TEMPLATES = {
           ...SCHEDULING_REPORTS,
           ...RUNNING_THE_SHOP,
           ...SHOP_ORDERS,
+          ...SHOP_PAYOUTS,
         ],
       },
     ],

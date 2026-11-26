@@ -148,6 +148,9 @@ test('a customer and an order saved offline reach the server when the connection
 });
 
 test('a refused change waits on the Sync page until it is fixed', async ({ page, context }) => {
+  // Two trips offline and back, three toasts that must close and a form between them: on the CI
+  // runner's phone project it ran past 30 seconds while the last toast was still open
+  test.slow();
   await context.setOffline(true);
   // H&M's code: the device cannot know it is taken
   await addCustomerOffline(page, 'Moulvibazar Garments', 'C-00001');

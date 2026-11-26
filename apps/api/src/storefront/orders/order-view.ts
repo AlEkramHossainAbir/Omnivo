@@ -1,9 +1,13 @@
 import {
+  compareMoney,
   SHOP_ORDER_STATUSES,
   storefrontImageSchema,
   type ShopOrder,
   type ShopOrderStatus,
+  type ShopShipment,
   type ShopTracking,
+  subtractMoney,
+  sumMoney,
 } from '@omnivo/contracts';
 import type { storefrontOrderLines, storefrontOrders } from '@omnivo/db';
 
@@ -84,10 +88,23 @@ export function orderOf(
   };
 }
 
+// Step 28a (decision 20): what the rider collects, the total less what the paid tries took, to the
+// paisa and never below zero: a shopper who paid twice owes nothing at the door (the second
+// payment is a refund, 27d). Four decimals, like every amount the API answers ("578.0000");
+// "0.0000" for an order paid online
+export function codAmountOf(total: string, paid: readonly string[]): string {
+  const left = subtractMoney(total, sumMoney(paid));
+  return compareMoney(left, '0') > 0 ? left : '0.0000';
+}
+
 // What a tracking link and the /track form show (26e's shopTrackingSchema): no name, phone,
 // address or line, because the link gets forwarded. Each field picked by name, never `...order`.
-// No parcel yet: couriers come in step 28
-export function trackingOf(order: OrderRow, lines: readonly OrderLineRow[]): ShopTracking {
+// Step 28a: and its parcels, read by the caller (shop-orders.service.ts, as omnivo_shop)
+export function trackingOf(
+  order: OrderRow,
+  lines: readonly OrderLineRow[],
+  shipments: readonly ShopShipment[],
+): ShopTracking {
   return {
     orderNo: numberOf(order),
     placedAt: order.createdAt.toISOString(),
@@ -97,6 +114,6 @@ export function trackingOf(order: OrderRow, lines: readonly OrderLineRow[]): Sho
     itemCount: lines.reduce((count, line) => count + line.quantity, 0),
     total: order.total,
     paymentMethod: order.paymentMethod,
-    shipments: [],
+    shipments: [...shipments],
   };
 }

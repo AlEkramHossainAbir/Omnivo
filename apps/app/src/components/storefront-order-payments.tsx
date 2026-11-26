@@ -74,10 +74,17 @@ export function invoiceTookPayment(order: StorefrontOrder): boolean {
 // - cancelled: the order was cancelled (or returned) after the shopper paid;
 // - cod: a cash on delivery order with a paid try (the shopper paid, then chose to pay the rider);
 // - twice: an online order paid twice (two tabs).
-export function refundCase(order: StorefrontOrder): 'cancelled' | 'cod' | 'twice' | null {
+// Step 28b: and
+// - partly: an online order whose parcel came back in part. Its invoice took only what the shopper
+//   kept (the sales return came before it), so the rest of the payment waits to be paid back.
+//   Before twice: a return and a second payment both mean money back, and this one names it all.
+export function refundCase(
+  order: StorefrontOrder,
+): 'cancelled' | 'cod' | 'twice' | 'partly' | null {
   const paid = paidTries(order);
   if (paid.length === 0) return null;
   if (order.status === 'cancelled' || order.status === 'returned') return 'cancelled';
+  if (order.status === 'delivered' && order.salesReturn !== null) return 'partly';
   if (order.paymentMethod === 'cod') return 'cod';
   return paid.length > 1 ? 'twice' : null;
 }
@@ -101,6 +108,7 @@ export function RefundNotice({ order }: { order: StorefrontOrder }) {
     cancelled: t('storefront.order.paidCancelled', { amount }),
     cod: t('storefront.order.paidOnCod', { amount }),
     twice: t('storefront.order.paidTwice', { amount }),
+    partly: t('storefront.order.paidPartly', { amount }),
   }[kind];
   const withReceipt = paid.filter((payment) => payment.receipt !== null);
   const receipt = withReceipt[withReceipt.length - 1]?.receipt ?? null;

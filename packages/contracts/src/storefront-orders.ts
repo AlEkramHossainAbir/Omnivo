@@ -7,7 +7,20 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 import { TRACKING_MODES } from './products.js';
 import { quantitySchema } from './quantities.js';
 import { documentRefSchema } from './sales.js';
-import { MAX_SERIALS_PER_LINE, optionalIdSchema, serialNumberSchema } from './stock.js';
+import {
+  bookShipmentInputSchema,
+  collectedAmountSchema,
+  courierChoicesSchema,
+  courierExportSchema,
+  SHIPMENT_STATUSES,
+  storefrontShipmentSchema,
+} from './shipping.js';
+import {
+  MAX_SERIALS_PER_LINE,
+  MAX_STOCK_LINES,
+  optionalIdSchema,
+  serialNumberSchema,
+} from './stock.js';
 import { storefrontImageViewSchema } from './storefront-admin.js';
 import {
   SHOP_CART_MAX_LINES,
@@ -36,14 +49,15 @@ export const STOREFRONT_ORDER_STATUSES = SHOP_ORDER_STATUSES.filter(
 );
 export type StorefrontOrderStatus = (typeof STOREFRONT_ORDER_STATUSES)[number];
 
-// The list's tabs. "New" is a confirmed order: nobody has packed it yet. Returned has no tab until
-// step 28 brings the courier's returns; it shows under All
+// The list's tabs. "New" is a confirmed order: nobody has packed it yet. Step 28b: Returned has its
+// own tab now that an order can get there (Receive the return), after Cancelled
 export const STOREFRONT_ORDER_VIEWS = [
   'confirmed',
   'packed',
   'shipped',
   'delivered',
   'cancelled',
+  'returned',
   'all',
 ] as const;
 export type StorefrontOrderView = (typeof STOREFRONT_ORDER_VIEWS)[number];
@@ -74,8 +88,14 @@ export const storefrontOrderSummarySchema = z.object({
   // The pieces in the order (the sum of the lines' quantities), as "3 items" on a phone's card
   itemCount: z.number().int().min(1),
   total: z.string(),
-  // The sales order could not be made (decision 1): the list shows a crit "Needs attention" pill
+  // The sales order could not be made (decision 1), or (step 28a) its parcel's booking failed five
+  // times, or (step 28b) its COD receipt could not be made: the list shows a crit "Needs
+  // attention" pill
   needsAttention: z.boolean(),
+  // Step 28b: where the order's newest parcel is, so the Shipped tab can say which orders wait for
+  // the staff: a partly delivered or returned parcel needs "Record what came back" or "Receive the
+  // return" on the order's page. null: no parcel
+  parcelStatus: z.enum(SHIPMENT_STATUSES).nullable(),
 });
 export type StorefrontOrderSummary = z.infer<typeof storefrontOrderSummarySchema>;
 
@@ -158,6 +178,8 @@ export const storefrontOrderSchema = storefrontOrderSummarySchema.extend({
   salesOrder: documentRefSchema.nullable(),
   delivery: documentRefSchema.nullable(),
   invoice: documentRefSchema.nullable(),
+  // The sales return of a cancelled packed order (27b); step 28b: also of a returned order (the
+  // whole challan) and of a partly delivered one (what came back, made before its invoice)
   salesReturn: documentRefSchema.nullable(),
   // Why the sales order could not be made (decision 1): the error the sales order's own rules
   // gave ("sales_variant_archived"). The page shows it with "Make the sales order"
@@ -166,6 +188,14 @@ export const storefrontOrderSchema = storefrontOrderSummarySchema.extend({
   // to pay online. A paid online order has one paid try; two paid ones mean the shopper paid twice
   // (a second tab), and the page says one of them is to be refunded
   payments: z.array(storefrontOrderPaymentSchema).max(SHOP_PAYMENT_TRIES),
+  // Step 28a: what the rider collects at the door, a decimal string with paisa: the total less
+  // what paid tries took (never below zero; "0.00" for an order paid online). The API works it
+  // out, so the label, the export and the courier's booking all say the same amount
+  codAmount: z.string(),
+  // Step 28a: the order's parcels, oldest first. Empty until it is booked with a courier. More than
+  // one only when an earlier one was cancelled or failed and the order was booked again: at most
+  // one is on its way at a time (isOpenShipment)
+  shipments: z.array(storefrontShipmentSchema).max(5),
   version: z.number().int(),
   updatedAt: z.iso.datetime(),
 });
@@ -239,6 +269,12 @@ export const packStorefrontOrderInputSchema = z
   .object({
     version: versionSchema,
     lines: z.array(packLineInputSchema).min(1).max(SHOP_CART_MAX_LINES),
+    // Step 28a (decision 2): the courier account to book the parcel with, once the challan is
+    // posted. The dialog starts with the default account; '' = "Don't book now" (a shop's own
+    // rider, or a booking made later with "Book courier"). Only an active account that books by
+    // API: the API refuses a manual or archived one (courier_account_not_bookable). Left out is
+    // "Don't book now" too (28a.3): a page loaded before 28a, still open in a tab, packs as before
+    courierAccountId: optionalIdSchema.default(null),
   })
   .superRefine((input, ctx) => {
     // Each line once: two entries for one line would pack it twice
@@ -273,9 +309,117 @@ export const packStorefrontOrderInputSchema = z
 export type PackStorefrontOrderInput = z.infer<typeof packStorefrontOrderInputSchema>;
 export type PackStorefrontOrderFormValues = z.input<typeof packStorefrontOrderInputSchema>;
 
-// Shipped, Delivered and "Make the sales order": the version is all they need
+// Shipped and "Make the sales order": the version is all they need
 export const storefrontOrderVersionInputSchema = z.object({ version: versionSchema });
 export type StorefrontOrderVersionInput = z.infer<typeof storefrontOrderVersionInputSchema>;
+
+// Delivered. Step 28b (decision 5): and what the rider collected, for the COD receipt, when the
+// parcel's account has a COD account (the dialog asks only then, starting with what the courier
+// said). '' or left out = what the courier said, else the parcel's codAmount, so a page loaded
+// before 28b delivers as before
+export const deliverStorefrontOrderInputSchema = z.object({
+  version: versionSchema,
+  collectedAmount: collectedAmountSchema.default(null),
+});
+export type DeliverStorefrontOrderInput = z.infer<typeof deliverStorefrontOrderInputSchema>;
+export type DeliverStorefrontOrderFormValues = z.input<typeof deliverStorefrontOrderInputSchema>;
+
+// ---------------------------------------------------------------------------------------------
+// Step 28b: what came back (decisions 6 and 7)
+
+// What the "Record what came back" dialog opens with: the challan's lines, one row per batch (a
+// line packed from two batches is two rows), each with what it took and its serial numbers. The
+// goods go back into the warehouse they left from, at what they cost (15d's rule)
+export const storefrontReturnPlanSchema = z.object({
+  warehouse: z.object({ id: z.uuid(), name: z.string() }),
+  lines: z.array(
+    z.object({
+      deliveryLineId: z.uuid(),
+      position: z.number().int().min(1).max(SHOP_CART_MAX_LINES),
+      name: z.string(),
+      packSize: z.string(),
+      sku: z.string(),
+      unitCode: z.string(),
+      // What the challan line took, in the base unit
+      quantity: z.string(),
+      tracking: z.enum(TRACKING_MODES),
+      batch: z.object({ lotNumber: z.string(), expiresOn: z.iso.date().nullable() }).nullable(),
+      // The pieces in the box, for a serial product: the member ticks the ones that came back
+      serialNumbers: z.array(z.string()),
+    }),
+  ),
+});
+export type StorefrontReturnPlan = z.infer<typeof storefrontReturnPlanSchema>;
+
+// One challan line that came back, whole or in part. A serial product names its pieces, and the
+// quantity is their count (15d's returnLineRules, which the sales return runs again)
+const cameBackLineInputSchema = z.object({
+  deliveryLineId: z.uuid(),
+  quantity: quantitySchema,
+  serialNumbers: z.array(serialNumberSchema).max(MAX_SERIALS_PER_LINE),
+});
+
+// "Record what came back" on a shipped order the shopper kept part of (decision 6): a sales return
+// of these lines before the invoice, then the invoice of the rest and the delivery charge, then the
+// COD receipt for what was collected, in one transaction: the order is Delivered. Only the lines
+// that came back are sent; none is storefront_order_return_nothing (that is Mark delivered), and
+// every piece is storefront_order_return_everything (that is Receive the return), which only the
+// API can tell: it has the challan
+export const partlyDeliverStorefrontOrderInputSchema = z
+  .object({
+    version: versionSchema,
+    lines: z
+      .array(cameBackLineInputSchema)
+      .min(1, errorCode('storefront_order_return_nothing'))
+      .max(MAX_STOCK_LINES),
+    collectedAmount: collectedAmountSchema.default(null),
+    // Why it came back ("Wrong size"), kept on the sales return's note for the staff
+    reason: optionalText(200),
+  })
+  .superRefine((input, ctx) => {
+    // A challan line once, and a serial number once, as on a sales return (its own rules say the
+    // same again in the API; here the error lands on the dialog's box)
+    const lines = new Set<string>();
+    const serials = new Set<string>();
+    input.lines.forEach((line, lineIndex) => {
+      if (lines.has(line.deliveryLineId)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['lines', lineIndex, 'deliveryLineId'],
+          message: errorCode('return_line_twice'),
+        });
+      }
+      lines.add(line.deliveryLineId);
+      line.serialNumbers.forEach((serial, serialIndex) => {
+        if (serials.has(serial)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['lines', lineIndex, 'serialNumbers', serialIndex],
+            message: errorCode('stock_serial_twice'),
+          });
+        }
+        serials.add(serial);
+      });
+    });
+  });
+export type PartlyDeliverStorefrontOrderInput = z.infer<
+  typeof partlyDeliverStorefrontOrderInputSchema
+>;
+export type PartlyDeliverStorefrontOrderFormValues = z.input<
+  typeof partlyDeliverStorefrontOrderInputSchema
+>;
+
+// "Receive the return" (decision 7): the whole parcel is back in the shop. A sales return of the
+// whole challan, the sales order closed, the order Returned and the shopper's SMS. The member
+// presses it once the goods are on the shelf, never the courier's news alone: a parcel lost on the
+// way must not come back into stock
+export const returnStorefrontOrderInputSchema = z.object({
+  version: versionSchema,
+  // Why it came back ("Customer refused the parcel"), for the staff only, like a cancel's reason
+  reason: optionalText(200),
+});
+export type ReturnStorefrontOrderInput = z.infer<typeof returnStorefrontOrderInputSchema>;
+export type ReturnStorefrontOrderFormValues = z.input<typeof returnStorefrontOrderInputSchema>;
 
 // Cancel (decision 8): a reason is kept on the order for the staff, never sent to the shopper
 export const cancelStorefrontOrderInputSchema = z.object({
@@ -290,6 +434,7 @@ export type CancelStorefrontOrderFormValues = z.input<typeof cancelStorefrontOrd
 
 const idParamsSchema = z.object({ id: z.uuid() });
 const paymentParamsSchema = z.object({ id: z.uuid(), paymentId: z.uuid() });
+const shipmentParamsSchema = z.object({ id: z.uuid(), shipmentId: z.uuid() });
 
 export const storefrontOrderRoutes = {
   listOrders: defineRoute({
@@ -311,6 +456,28 @@ export const storefrontOrderRoutes = {
     permission: 'storefront.order.read',
     status: 200,
     response: storefrontOrderCountsSchema,
+  }),
+  // Step 28a: declared before getOrder in the controller, like countOrders, or "courier-export"
+  // would reach it as an id
+  courierExport: defineRoute({
+    method: 'GET',
+    path: '/storefront/orders/courier-export',
+    summary: "The packed orders with no parcel yet, as rows for a courier's bulk upload",
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    response: courierExportSchema,
+  }),
+  // Step 28a.6: the accounts the Packed dialog and Book courier offer, for a packer without
+  // storefront.manage. Before getOrder too
+  courierChoices: defineRoute({
+    method: 'GET',
+    path: '/storefront/orders/courier-choices',
+    summary: 'The active courier accounts a packer can book with, and the default one',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    response: courierChoicesSchema,
   }),
   getOrder: defineRoute({
     method: 'GET',
@@ -366,17 +533,6 @@ export const storefrontOrderRoutes = {
     body: storefrontOrderVersionInputSchema,
     response: storefrontOrderSchema,
   }),
-  deliverOrder: defineRoute({
-    method: 'POST',
-    path: '/storefront/orders/:id/deliver',
-    summary: 'Delivered: post the invoice for the challan and the delivery charge',
-    auth: 'bearer',
-    permission: 'storefront.order.manage',
-    status: 200,
-    params: idParamsSchema,
-    body: storefrontOrderVersionInputSchema,
-    response: storefrontOrderSchema,
-  }),
   // Step 27d: "Make the receipt", after the receipt of a paid try could not be made
   makePaymentReceipt: defineRoute({
     method: 'POST',
@@ -389,6 +545,36 @@ export const storefrontOrderRoutes = {
     body: storefrontOrderVersionInputSchema,
     response: storefrontOrderSchema,
   }),
+  // Step 28a: "Book courier" on a packed order with no parcel on its way. An API account books in
+  // the worker (the answer's parcel is `booking`), a manual one takes the typed tracking code
+  bookShipment: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/shipments',
+    summary: 'Book courier: send a packed order with a courier account',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: idParamsSchema,
+    body: bookShipmentInputSchema,
+    response: storefrontOrderSchema,
+  }),
+  // Step 28a: "Book again" after five failed tries (decision 4). The same parcel row, so the
+  // courier is asked with the same order number and cannot make a second parcel
+  retryShipment: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/shipments/:shipmentId/retry',
+    summary: 'Book again a parcel whose booking failed',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: shipmentParamsSchema,
+    body: storefrontOrderVersionInputSchema,
+    response: storefrontOrderSchema,
+  }),
+  // Step 28a: a booked parcel nobody has picked up yet is cancelled with the order (the API asks
+  // the courier to cancel it, or says to cancel it on the courier's panel); once the courier has
+  // it, the order is refused (storefront_order_parcel_on_its_way): it comes back as a return
+  // (step 28b's returnOrder)
   cancelOrder: defineRoute({
     method: 'POST',
     path: '/storefront/orders/:id/cancel',
@@ -398,6 +584,73 @@ export const storefrontOrderRoutes = {
     status: 200,
     params: idParamsSchema,
     body: cancelStorefrontOrderInputSchema,
+    response: storefrontOrderSchema,
+  }),
+};
+
+// Step 28b: the moves at the shopper's door, a group of their own: Delivered (27b, which 28b gives
+// the collected amount), what came back, and the COD receipt. With them in the group above, its
+// inferred type is more than TypeScript will write into the declaration file (TS7056, as for the
+// route table in 27d): each route repeats the order's answer. Same rules: storefront.order.manage,
+// the order in the answer
+export const storefrontOrderDeliveryRoutes = {
+  deliverOrder: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/deliver',
+    summary:
+      "Delivered: post the invoice for the challan and the delivery charge, and the rider's COD receipt",
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: idParamsSchema,
+    body: deliverStorefrontOrderInputSchema,
+    response: storefrontOrderSchema,
+  }),
+  // The challan's lines for "Record what came back"
+  getReturnPlan: defineRoute({
+    method: 'GET',
+    path: '/storefront/orders/:id/return-plan',
+    summary:
+      'What the "Record what came back" dialog opens with: the challan lines and their pieces',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: idParamsSchema,
+    response: storefrontReturnPlanSchema,
+  }),
+  partlyDeliverOrder: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/partly-deliver',
+    summary:
+      'Partly delivered: a sales return of what came back, the invoice of the rest, the COD receipt',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: idParamsSchema,
+    body: partlyDeliverStorefrontOrderInputSchema,
+    response: storefrontOrderSchema,
+  }),
+  returnOrder: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/return',
+    summary: 'Receive the return: the whole parcel came back, a sales return of the whole challan',
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: idParamsSchema,
+    body: returnStorefrontOrderInputSchema,
+    response: storefrontOrderSchema,
+  }),
+  // "Make the receipt", after a delivered parcel's COD receipt could not be made
+  makeCodReceipt: defineRoute({
+    method: 'POST',
+    path: '/storefront/orders/:id/shipments/:shipmentId/receipt',
+    summary: "Make a delivered parcel's COD receipt again, after it failed",
+    auth: 'bearer',
+    permission: 'storefront.order.manage',
+    status: 200,
+    params: shipmentParamsSchema,
+    body: storefrontOrderVersionInputSchema,
     response: storefrontOrderSchema,
   }),
 };

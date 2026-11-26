@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import { contractErrorMap } from './errors.js';
 import {
   overAllocated,
+  PAYMENT_METHODS,
+  RECEIPT_METHODS,
   receiptAllocationsInputSchema,
   receiptInputSchema,
   voidReceiptInputSchema,
@@ -41,6 +43,15 @@ function errorsOf(result: {
     (result.error?.issues ?? []).map((issue) => [issue.path.map(String).join('.'), issue.message]),
   );
 }
+
+// Step 28b (decision 4): only a shop order's Delivered writes a courier receipt
+describe("a receipt's method", () => {
+  it('may be courier when read, but the form never takes it', () => {
+    expect(RECEIPT_METHODS).toEqual([...PAYMENT_METHODS, 'courier']);
+    expect(PAYMENT_METHODS).not.toContain('courier');
+    expect(receiptInputSchema.safeParse(receipt({ method: 'courier' })).success).toBe(false);
+  });
+});
 
 describe('receipt input', () => {
   it('takes a receipt applied in full, in part, or not at all (an advance)', () => {

@@ -127,3 +127,27 @@ describe('payment config', () => {
     expect(() => loadConfig(env({ CREDENTIALS_KEY: short }))).toThrow(/Invalid environment/);
   });
 });
+
+// Step 28a.3: the couriers, like the gateway, and the same key
+describe('shipping config', () => {
+  const production = { NODE_ENV: 'production', STOREFRONT_MEDIA_URL: 'https://files.example.com' };
+  const key = Buffer.alloc(32, 7).toString('base64');
+
+  it('uses the fake courier outside production and the real ones in production', () => {
+    expect(loadConfig(env({})).shipping.mode).toBe('fake');
+    expect(loadConfig(env(production)).shipping.mode).toBe('live');
+    expect(loadConfig(env({ COURIER_MODE: 'live' })).shipping.mode).toBe('live');
+  });
+
+  it('refuses the fake courier in production', () => {
+    expect(() => loadConfig(env({ ...production, COURIER_MODE: 'fake' }))).toThrow(
+      /COURIER_MODE=fake/,
+    );
+  });
+
+  it("seals with the gateway's key", () => {
+    expect(loadConfig(env({})).shipping.credentialsKey).toBeNull();
+    const config = loadConfig(env({ CREDENTIALS_KEY: key }));
+    expect(config.shipping.credentialsKey).toBe(config.payments.credentialsKey);
+  });
+});

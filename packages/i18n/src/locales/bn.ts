@@ -15,7 +15,10 @@ export const bn: Messages = {
     loadingMore: 'আরও আনা হচ্ছে…',
   },
   shell: {
-    mainNav: 'প্রধান',
+    modules: 'মডিউল',
+    moduleWaiting_one: '{{name}}, {{formatted}}টি অপেক্ষায়',
+    moduleWaiting_other: '{{name}}, {{formatted}}টি অপেক্ষায়',
+    moduleMenu: '{{name}} মেনু',
     workspaces: 'ওয়ার্কস্পেস',
     switchWorkspace: 'ওয়ার্কস্পেস বদলান',
     switchFailed: 'ওয়ার্কস্পেস বদলানো যায়নি। আবার চেষ্টা করুন।',
@@ -54,6 +57,41 @@ export const bn: Messages = {
     setPinToLock: 'লক করতে PIN সেট করুন',
   },
   nav: {
+    modules: {
+      home: 'হোম',
+      sell: 'বিক্রি',
+      buy: 'কেনাকাটা',
+      stock: 'স্টক',
+      accounts: 'হিসাব',
+      shop: 'শপ',
+      reports: 'রিপোর্ট',
+      setup: 'সেটআপ',
+    },
+    sections: {
+      counter: 'কাউন্টার',
+      orders: 'অর্ডার',
+      moneyIn: 'টাকা আসা',
+      comesBack: 'যা ফেরত আসে',
+      customers: 'কাস্টমার',
+      ordering: 'অর্ডার দেওয়া',
+      moneyOut: 'টাকা যাওয়া',
+      goesBack: 'যা ফেরত যায়',
+      approvals: 'অনুমোদন ও সাপ্লায়ার',
+      products: 'প্রোডাক্ট',
+      stockLevels: 'স্টক',
+      places: 'কোথায় আছে',
+      books: 'হিসাবের বই',
+      trade: 'বিক্রি ও কেনাকাটা',
+      stockReports: 'স্টক',
+      files: 'ফাইল ও ইমেইল',
+      ordersAndMoney: 'অর্ডার ও টাকা',
+      catalog: 'ক্যাটালগ',
+      look: 'চেহারা ও পেজ',
+      shopSetup: 'শপ সেটআপ',
+      people: 'মানুষ',
+      counterSetup: 'কাউন্টার',
+      workspace: 'ওয়ার্কস্পেস',
+    },
     overview: 'সারসংক্ষেপ',
     kitchenSink: 'কিচেন সিঙ্ক',
     workspace: 'ওয়ার্কস্পেস',
@@ -140,6 +178,10 @@ export const bn: Messages = {
     storefrontOrders: 'শপের অর্ডার',
     // ধাপ ২৭c: ক্যাটালগের পরে, দুটোই শপের দাম নিয়ে (সিদ্ধান্ত ২৯)
     storefrontCoupons: 'শপের কুপন',
+    // Step 28a
+    storefrontCouriers: 'শপের কুরিয়ার',
+    // Step 28c
+    storefrontPayouts: 'শপের পেআউট',
   },
   auth: {
     workspace: 'ওয়ার্কস্পেস',
@@ -417,6 +459,8 @@ export const bn: Messages = {
         revaluation: 'স্টকের পুনর্মূল্যায়ন',
       },
       accounting: { journal: 'জার্নাল ভাউচার' },
+      // Step 28c
+      storefront: { payout: 'কুরিয়ার পেআউট' },
     },
     yearStyles: {
       none: 'বছর ছাড়া',
@@ -905,6 +949,7 @@ export const bn: Messages = {
       pos_sale: 'POS বিক্রি',
       pos_shift: 'POS শিফট',
       pos_return: 'POS ফেরত',
+      storefront_payout: 'কুরিয়ার পেআউট',
     },
     fromDocument: '{{document}} থেকে',
     stockEntryHint:
@@ -2838,6 +2883,7 @@ export const bn: Messages = {
       cheque: 'চেক',
       mobile_wallet: 'মোবাইল ওয়ালেট',
       card: 'কার্ড',
+      courier: 'কুরিয়ারের COD',
     },
     columns: {
       number: 'নম্বর',
@@ -5080,6 +5126,332 @@ export const bn: Messages = {
       updated: 'পেমেন্ট গেটওয়ে সেভ হয়েছে',
       loadFailed: 'পেমেন্ট গেটওয়ে আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
     },
+    // Step 28a
+    couriers: {
+      title: 'শপের কুরিয়ার',
+      description:
+        'আপনার পার্সেল যে কুরিয়ারগুলোতে যায়, আর প্যাক করার ডায়ালগ প্রথমে যেটায় বুক করে',
+      add: 'কুরিয়ার অ্যাকাউন্ট যোগ করুন',
+      view: 'দেখান',
+      views: { active: 'চালু', archived: 'আর্কাইভ করা' },
+      statuses: { active: 'চালু', archived: 'আর্কাইভ করা' },
+      isDefault: 'প্রথমে এটায় বুক হয়',
+      providers: {
+        steadfast: '{{courier}} · এর API দিয়ে বুক হয়',
+        manual: '{{courier}} · হাতে বুক করা হয়',
+      },
+      names: {
+        pathao: 'Pathao',
+        steadfast: 'Steadfast',
+        redx: 'RedX',
+        ecourier: 'eCourier',
+        paperfly: 'Paperfly',
+      },
+      columns: {
+        account: 'অ্যাকাউন্ট',
+        news: 'কুরিয়ারের খবর',
+        test: 'শেষ পরীক্ষা',
+        // Step 28b
+        holds: 'কাছে আছে',
+        status: 'অবস্থা',
+        actions: 'কাজ',
+      },
+      newsAt: 'শেষ এসেছে {{date}}',
+      newsNever: 'এখনো আসেনি',
+      newsNeverHint:
+        'কুরিয়ারের প্যানেলে webhook পেস্ট করুন। ততক্ষণ Omnivo প্রতি ১৫ মিনিটে জিজ্ঞেস করে।',
+      newsManual: 'হাতে এগোনো হয়',
+      neverTested: 'পরীক্ষা হয়নি',
+      testWorked: 'key মেনেছে {{date}}',
+      testRejected: 'key মানেনি {{date}}',
+      testUnreachable: 'উত্তর আসেনি {{date}}',
+      // Step 28b
+      holds_one: '{{amount}} · {{formatted}}টা পার্সেল',
+      holds_other: '{{amount}} · {{formatted}}টা পার্সেল',
+      holdsNothing: 'এখনো কিছু না',
+      holdsNoAccount: 'COD অ্যাকাউন্ট নেই',
+      actionsFor: '{{name}}-এর কাজ',
+      edit: 'বদলান',
+      test: 'কানেকশন পরীক্ষা করুন',
+      renewToken: 'নতুন webhook token',
+      // Step 28c
+      recordPayout: 'পেআউট লিখুন',
+      archive: 'আর্কাইভ করুন',
+      restore: 'ফিরিয়ে আনুন',
+      testedWorked: '{{courier}} key মেনে নিয়েছে',
+      testedRejected: '{{courier}} key মানেনি। বদলান-এ গিয়ে দেখে নিন।',
+      testedUnreachable: '{{courier}} উত্তর দেয়নি। কয়েক মিনিট পরে আবার চেষ্টা করুন।',
+      emptyTitle: 'এখনো কোনো কুরিয়ার অ্যাকাউন্ট নেই',
+      emptyBody:
+        'অর্ডার প্যাক হওয়ার সাথে সাথে পার্সেল বুক করতে আপনার Steadfast অ্যাকাউন্ট যোগ করুন, অথবা যে কুরিয়ারে হাতে বুক করেন সেটা যোগ করুন, যাতে তার ট্র্যাকিং কোড অর্ডারে থাকে।',
+      archivedEmptyTitle: 'আর্কাইভ করা কোনো কুরিয়ার অ্যাকাউন্ট নেই',
+      archivedEmptyBody:
+        'যে অ্যাকাউন্ট আর্কাইভ করবেন তা এখানে দেখাবে। এর যে পার্সেল পথে আছে, সেগুলোর খবর তখনো আসে।',
+      loadFailed: 'কুরিয়ার অ্যাকাউন্ট আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
+      default: {
+        title: 'প্যাক করার সময় বুক',
+        description:
+          'প্যাক করার ডায়ালগ যে কুরিয়ার দিয়ে শুরু হয়। যিনি প্যাক করেন তিনি তখনো বদলাতে পারেন।',
+        label: 'যেটায় বুক হবে',
+        none: 'প্যাক করার সময় বুক করবেন না',
+        hint: 'শুধু API দিয়ে বুক করে এমন অ্যাকাউন্ট। কোনোটা না বাছলে পার্সেল বুক হয় "কুরিয়ারে বুক করুন" দিয়ে, অথবা হাতে।',
+        noApiAccount:
+          'অর্ডার প্যাক হওয়ার সাথে সাথে পার্সেল বুক করতে একটা Steadfast অ্যাকাউন্ট যোগ করুন।',
+        save: 'সেভ করুন',
+        saved: 'প্যাক করার সময় প্রথমে {{name}}-এ বুক হবে',
+        cleared: 'প্যাক করার সময় প্রথমে কোনো কুরিয়ারে বুক হবে না',
+      },
+      form: {
+        addTitle: 'কুরিয়ার অ্যাকাউন্ট যোগ করুন',
+        editTitle: '{{name}} বদলান',
+        provider: 'যেভাবে বুক হয়',
+        providers: { steadfast: 'Steadfast, এর API দিয়ে', manual: 'অন্য কুরিয়ার, হাতে' },
+        providerHints: {
+          steadfast:
+            'Omnivo প্রতিটা পার্সেল Steadfast-এ বুক করে, আর Steadfast-এর খবরে অর্ডার এগোয়।',
+          manual:
+            'আপনি কুরিয়ারের নিজের ওয়েবসাইট বা অ্যাপে বুক করেন, তারপর তার ট্র্যাকিং কোড অর্ডারে লেখেন।',
+        },
+        providerFixed:
+          'অ্যাকাউন্টের কুরিয়ার বদলানো যায় না। অন্য কুরিয়ারের জন্য নতুন অ্যাকাউন্ট যোগ করুন।',
+        name: 'নাম',
+        namePlaceholder: 'Steadfast ঢাকা',
+        nameHint:
+          'শুধু আপনার টিম এটা দেখে। এক কুরিয়ারে দুটো অ্যাকাউন্ট থাকলে, প্রতি পিকআপ পয়েন্টে একটা, দুটো আলাদা নাম লাগবে।',
+        apiKey: 'API key',
+        secretKey: 'Secret key',
+        keysHint: 'দুটোই আপনার Steadfast প্যানেলের API পেজে আছে।',
+        keySavedPlaceholder: 'সেভ করা আছে',
+        keysSavedHint:
+          'key সেভ করা আছে, কখনো দেখানো হয় না। কোনো key রেখে দিতে তার বক্স খালি রাখুন, বদলাতে নতুনটা লিখুন।',
+        courier: 'কুরিয়ার',
+        courierPlaceholder: 'একটা কুরিয়ার বাছুন',
+        courierHint: 'যার ওয়েবসাইট বা অ্যাপে বুক করেন। ট্র্যাকিং পেজে এর নাম দেখায়।',
+        // Step 28b
+        codAccount: 'COD অ্যাকাউন্ট',
+        codAccountNone: 'কোনোটা না: রাইডারের টাকা হাতে লিখুন',
+        codAccountHint:
+          'টাকা রাখা হয় এমন একটা অ্যাকাউন্ট, যেমন “Steadfast-এর কাছে নগদ”। পার্সেল পৌঁছালে রাইডার যা নিয়েছেন তার একটা মানি রিসিট এতে জমা হয়। এর ব্যালান্সই কুরিয়ারের কাছে আপনার পাওনা।',
+        codAccountSavedHint:
+          'বদলালে শুধু পরের রিসিটগুলো বদলায়। আগে বানানো রিসিট যে অ্যাকাউন্টে গেছে, সেখানেই থাকে।',
+        chargeAccount: 'কুরিয়ার চার্জের অ্যাকাউন্ট',
+        chargeAccountNone: 'এখনো কোনোটা না',
+        chargeAccountHint:
+          'একটা খরচের অ্যাকাউন্ট, যেমন “কুরিয়ার চার্জ”। কুরিয়ারের পেআউট লেখার সময় তার ডেলিভারি আর ফেরতের চার্জ এখানে যায়।',
+        accountOption: '{{code}} · {{name}}',
+        noCodAccounts:
+          'টাকা রাখা হয় এমন কোনো চালু অ্যাকাউন্ট এখনো নেই। চার্ট অব অ্যাকাউন্টসে নগদ অ্যাকাউন্টের নিচে একটা যোগ করুন, যেমন “Steadfast-এর কাছে নগদ”।',
+        noChargeAccounts:
+          'কোনো চালু খরচের অ্যাকাউন্ট এখনো নেই। চার্ট অব অ্যাকাউন্টসে একটা যোগ করুন।',
+        create: 'অ্যাকাউন্ট যোগ করুন',
+        save: 'বদল সেভ করুন',
+        created: 'কুরিয়ার অ্যাকাউন্ট {{name}} যোগ হয়েছে',
+        updated: 'কুরিয়ার অ্যাকাউন্ট সেভ হয়েছে',
+      },
+      webhook: {
+        title: 'Steadfast-এ webhook পেস্ট করুন',
+        description:
+          'Steadfast প্রতিটা পার্সেলের খবর এই ঠিকানায় পাঠায়। আপনার Steadfast প্যানেলের webhook সেটিংসে দুটোই পেস্ট করুন।',
+        url: 'Callback URL',
+        token: 'Auth token (Bearer)',
+        tokenHint: 'শুধু এই একবার দেখানো হয়। হারালে অ্যাকাউন্টের মেনু থেকে নতুন একটা বানান।',
+        copyUrl: 'URL কপি করুন',
+        copyToken: 'token কপি করুন',
+        copied: 'কপি হয়েছে',
+        poll: 'প্রথম খবর আসা পর্যন্ত Omnivo প্রতি ১৫ মিনিটে Steadfast-কে জিজ্ঞেস করে, তাই অর্ডার তখনো এগোয়, শুধু একটু পরে।',
+        done: 'হয়ে গেছে',
+      },
+      renewing: {
+        title: '{{name}}-এর জন্য নতুন webhook token বানাবেন?',
+        body: 'পুরনো token সাথে সাথে কাজ বন্ধ করবে। নতুনটা Steadfast-এর প্যানেলে পেস্ট না করা পর্যন্ত এর খবর ফিরিয়ে দেওয়া হবে।',
+        submit: 'নতুন token বানান',
+      },
+      archiving: {
+        title: '{{name}} আর্কাইভ করবেন?',
+        body: 'এটা দিয়ে আর কোনো নতুন পার্সেল যাবে না। এর যে পার্সেল পথে আছে, সেগুলোর খবর তখনো আসবে।',
+        bodyDefault:
+          'এটা দিয়ে আর কোনো নতুন পার্সেল যাবে না, আর প্যাক করার সময় প্রথমে কোনো কুরিয়ারে বুক হবে না। এর যে পার্সেল পথে আছে, সেগুলোর খবর তখনো আসবে।',
+        submit: 'অ্যাকাউন্ট আর্কাইভ করুন',
+      },
+      archived: '{{name}} আর্কাইভ হয়েছে',
+      restored: '{{name}} ফিরিয়ে আনা হয়েছে',
+      tokenRenewed: 'নতুন webhook token বানানো হয়েছে',
+    },
+    // Step 28c
+    payouts: {
+      title: 'শপের পেআউট',
+      description: 'কুরিয়াররা চার্জ কেটে যে COD টাকা আপনার ব্যাংকে পাঠায়',
+      new: 'পেআউট লিখুন',
+      account: 'কুরিয়ার অ্যাকাউন্ট',
+      allAccounts: 'সব কুরিয়ার অ্যাকাউন্ট',
+      archivedAccount: '{{name}} (আর্কাইভ করা)',
+      view: 'দেখান',
+      views: { all: 'সব', posted: 'পোস্ট করা', voided: 'বাতিল' },
+      statuses: { posted: 'পোস্ট করা', voided: 'বাতিল' },
+      columns: {
+        number: 'নম্বর',
+        date: 'তারিখ',
+        account: 'কুরিয়ার অ্যাকাউন্ট',
+        reference: 'কুরিয়ারের রেফারেন্স',
+        parcels: 'পার্সেল',
+        collected: 'রাইডার নিয়েছেন',
+        charges: 'চার্জ',
+        net: 'ব্যাংকে এসেছে',
+        status: 'অবস্থা',
+      },
+      emptyTitle: 'এখনো কোনো পেআউট নেই',
+      emptyBody:
+        'Steadfast রাইডারদের নেওয়া টাকা আপনার ব্যাংকে পাঠালে এখানে লিখুন: যে পার্সেলগুলোর টাকা এসেছে সেগুলোতে টিক দিন, বা তার পেআউট ফাইল মিলিয়ে নিন।',
+      filteredEmptyTitle: 'কোনো পেআউট মেলেনি',
+      filteredEmptyBody: 'এই কুরিয়ার অ্যাকাউন্ট আর অবস্থার কোনো পেআউট নেই।',
+      showAll: 'সব পেআউট দেখান',
+      loadFailed: 'পেআউটগুলো আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
+    },
+    payout: {
+      back: 'শপের পেআউট',
+      newTitle: 'কুরিয়ারের পেআউট লিখুন',
+      newDescription:
+        'এই ট্রান্সফারে যে পার্সেলগুলোর টাকা এসেছে সেগুলোতে টিক দিন। সেভ করলেই পোস্ট হয়: টাকা কুরিয়ারের COD অ্যাকাউন্ট থেকে ব্যাংকে যায়।',
+      account: 'কুরিয়ার অ্যাকাউন্ট',
+      accountPlaceholder: 'যে কুরিয়ার অ্যাকাউন্ট টাকা দিয়েছে সেটা বাছুন',
+      accountHolds_one: '{{name}} · {{formatted}}টা পার্সেলের {{amount}} কাছে আছে',
+      accountHolds_other: '{{name}} · {{formatted}}টা পার্সেলের {{amount}} কাছে আছে',
+      accountHoldsNothing: '{{name}} · কিছু কাছে নেই',
+      accountNoCod: '{{name}} · COD অ্যাকাউন্ট নেই',
+      date: 'তারিখ',
+      dateHint: 'যেদিন টাকা ব্যাংকে পৌঁছেছে, ব্যাংক স্টেটমেন্টে যেমন আছে।',
+      bankAccount: 'যে অ্যাকাউন্টে এসেছে',
+      bankAccountPlaceholder: 'একটা অ্যাকাউন্ট বাছুন',
+      bankAccountHint: 'যে ব্যাংক বা মোবাইল ওয়ালেট অ্যাকাউন্টে কুরিয়ার টাকা পাঠিয়েছে।',
+      noBankAccounts:
+        'টাকা রাখা হয় এমন আর কোনো চালু অ্যাকাউন্ট নেই। চার্ট অফ অ্যাকাউন্টসে আপনার ব্যাংক অ্যাকাউন্টে “টাকা রাখা হয়” টিক দিন।',
+      reference: 'কুরিয়ারের রেফারেন্স',
+      referencePlaceholder: 'SFC-23618228',
+      referenceHint:
+        'কুরিয়ারের প্যানেলে পেমেন্টের নম্বর, বা ব্যাংকের রেফারেন্স। এটা ভাউচারে প্রিন্ট হয়।',
+      note: 'নোট',
+      notePlaceholder: 'মিরপুর পিকআপের মঙ্গলবারের Steadfast পেআউট',
+      noChargeAccount:
+        '{{name}}-এর কুরিয়ার চার্জের অ্যাকাউন্ট নেই, তাই শুধু চার্জ ছাড়া পার্সেলের পেআউট হবে। চার্জ লিখতে শপের কুরিয়ার পেজে একটা বাছুন।',
+      parcelsTitle: 'পার্সেল',
+      parcelsDescription:
+        '{{name}}-এর যে পার্সেলগুলো এখনো কোনো পেআউটে যায়নি। এই ট্রান্সফারে যেগুলোর টাকা এসেছে সেগুলোতে টিক দিন।',
+      pickAccountFirst: 'পার্সেলগুলো দেখতে কুরিয়ার অ্যাকাউন্ট বাছুন।',
+      matchFile: 'পেআউট ফাইল মেলান',
+      tickAll: 'সবগুলোতে টিক দিন',
+      clear: 'মুছুন',
+      columns: {
+        parcel: 'পার্সেল',
+        status: 'অবস্থা',
+        receipt: 'মানি রিসিট',
+        collected: 'রাইডার নিয়েছেন',
+        charge: 'চার্জ',
+        net: 'ব্যাংকে',
+      },
+      tick: '{{invoice}}-এর পেআউট',
+      chargeLabel: '{{invoice}}-এর চার্জ',
+      kinds: { cod: 'নগদসহ পৌঁছেছে', charge: 'শুধু চার্জ: নগদ আসেনি' },
+      courierSaid: '{{courier}} বলেছে {{amount}}',
+      courierSilent: '{{courier}} এখনো চার্জ বলেনি',
+      noParcelsTitle: 'পেআউটের কিছু নেই',
+      noParcelsBody:
+        '{{name}}-এর সব পার্সেলের পেআউট হয়ে গেছে। পার্সেল পৌঁছে তার COD রিসিট বানানো হলে, বা চার্জসহ ফেরত এলে, এখানে আসে।',
+      ticked_one: '{{formatted}}টা পার্সেলে টিক',
+      ticked_other: '{{formatted}}টা পার্সেলে টিক',
+      collected: 'রাইডার নিয়েছেন',
+      charges: 'চার্জ',
+      net: 'ব্যাংকে',
+      fileNet: 'ফাইল বলছে ব্যাংকে {{amount}} এসেছে',
+      fileAgrees: 'মিলেছে',
+      fileOutBy: '{{amount}} গরমিল',
+      save: 'পেআউট লিখুন',
+      saveHint:
+        'সেভ করলেই পেআউট পোস্ট হয়। ভুল হলে পেআউটের পেজে বাতিল করুন, তাতে পার্সেলগুলো আবার ছাড়া পায়।',
+      created: '{{number}} লেখা হয়েছে',
+      facts: {
+        account: 'কুরিয়ার অ্যাকাউন্ট',
+        bankAccount: 'যে অ্যাকাউন্টে এসেছে',
+        date: 'তারিখ',
+        reference: 'কুরিয়ারের রেফারেন্স',
+        codAccount: 'যেখান থেকে গেছে',
+        chargeAccount: 'চার্জ যেখানে গেছে',
+        branch: 'শাখা',
+        note: 'নোট',
+      },
+      linesTitle: 'যে পার্সেলগুলোর টাকা এসেছে',
+      linesDescription: 'প্রতিটা পার্সেলে কত এসেছে, আর কুরিয়ার কত রেখেছে',
+      total: 'মোট',
+      print: 'ভাউচার প্রিন্ট করুন',
+      entry: 'জার্নাল এন্ট্রি',
+      voidEntry: 'রিভার্সাল',
+      void: 'পেআউট বাতিল করুন',
+      voidTitle: '{{number}} বাতিল করুন',
+      voidBody:
+        'বাতিলের তারিখে এর এন্ট্রি রিভার্স হবে, আর এর পার্সেলগুলোর আবার পেআউট হতে পারবে। পেআউটটা নম্বরসহ তালিকায় থেকে যাবে।',
+      voidDate: 'বাতিলের তারিখ',
+      voidDateHint: 'যেদিন ভুলটা ধরা পড়ল, যেমন যেদিন দেখলেন এটা দুবার লেখা হয়েছে।',
+      voidReason: 'কারণ',
+      voidReasonPlaceholder: 'দুবার লেখা: CPO-2026-27-0003-এর একই Steadfast পেমেন্ট',
+      confirmVoid: 'পেআউট বাতিল করুন',
+      voided: '{{number}} বাতিল হয়েছে',
+      voidedNotice: '{{date}}-এ বাতিল: {{reason}}। এর পার্সেলগুলোর আবার পেআউট হতে পারে।',
+      notFound: 'এই পেআউট নেই।',
+      loadFailed: 'পেআউটটা আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
+      csv: {
+        title: 'কুরিয়ারের পেআউট ফাইল মেলান',
+        description:
+          '{{name}}-এর প্যানেল থেকে পেআউটের CSV। ফাইলে যে পার্সেলগুলোর নাম আছে, Omnivo সেগুলোতে টিক দেয় আর তাদের চার্জ নেয়।',
+        choose: 'CSV ফাইল বাছুন',
+        fileHint:
+          'একবারে একটা পেআউট, সর্বোচ্চ 1 MB আর ৫,০০০ row। পার্সেলে টিক দিতে ফাইলটা পড়া হয়, রাখা হয় না।',
+        reading: 'ফাইলটা পড়া হচ্ছে…',
+        matching: 'মেলানো হচ্ছে…',
+        mapTitle: 'কোন কলামে কী আছে?',
+        mapMissing: 'ফাইলে নেই: {{names}}। ফাইলের নিজের কলামগুলো বাছুন।',
+        mapFirst: 'ফাইলের কলামগুলো একবার বাছুন। {{name}}-এর পরের ফাইলের জন্য এগুলো রাখা থাকবে।',
+        key: 'পার্সেল চেনা যায়',
+        keys: {
+          invoice: 'ইনভয়েস (W-000123)',
+          tracking_code: 'ট্র্যাকিং কোড',
+          consignment_id: 'কুরিয়ারের ID',
+        },
+        keyColumn: 'তার কলাম',
+        collectedColumn: 'রাইডার যা নিয়েছেন তার কলাম',
+        collectedHint: 'রাইডার যা নিয়েছেন। এটা ছাড়া অন্য পরিমাণের পার্সেল ধরা যায় না।',
+        chargeColumn: 'চার্জের কলাম',
+        chargeHint:
+          'প্রতিটা পার্সেলে কুরিয়ারের চার্জ। এটা ছাড়া চার্জ থাকে কুরিয়ারের খবরে যা এসেছিল।',
+        columnPlaceholder: 'একটা কলাম বাছুন',
+        columnNone: 'ফাইলে নেই',
+        match: 'ফাইল মেলান',
+        changeColumns: 'কলাম বদলান',
+        otherFile: 'অন্য ফাইল বাছুন',
+        row: 'Row {{row}}',
+        outcomes: {
+          matched: 'পাওয়া গেছে',
+          different: 'অন্য পরিমাণ',
+          already_paid: 'আগেই পেআউট হয়েছে',
+          not_ready: 'এখনো হয়নি',
+          unknown: 'পাওয়া যায়নি',
+          twice: 'ফাইলে দুবার',
+          invalid: 'পড়া যায় না',
+        },
+        outcomeCount: '{{label}}: {{formatted}}',
+        different:
+          'ফাইল বলছে রাইডার {{file}} নিয়েছেন, মানি রিসিটে {{ours}}। পার্থক্যটা কুরিয়ার রেখে দিলে চার্জে যোগ করুন।',
+        alreadyPaid: '{{payout}}-এ পেআউট হয়েছে।',
+        notReady: 'এখনো পৌঁছায়নি, বা তার মানি রিসিট বানানো হয়নি। হলে এর পেআউট হবে।',
+        unknown: '{{name}}-এর কোনো পার্সেলের এই নম্বর নেই।',
+        twice: 'আগের একটা row-তেও এই নম্বর আছে। শুধু প্রথমটা ধরা হয়।',
+        invalid: 'এই row-তে পার্সেলের নম্বর নেই, বা কোনো পরিমাণ সংখ্যা না।',
+        apply_one: '{{formatted}}টা পার্সেলে টিক দিন',
+        apply_other: '{{formatted}}টা পার্সেলে টিক দিন',
+        applyHint: 'চার্জ আসে ফাইল থেকে। আগে টিক দেওয়া পার্সেলগুলোতে টিক থেকে যায়।',
+        noneToTick: 'এই পেআউট নিতে পারে এমন কোনো পার্সেল কোনো row-তে নেই।',
+        applied_one: 'ফাইল থেকে {{formatted}}টা পার্সেলে টিক দেওয়া হয়েছে',
+        applied_other: 'ফাইল থেকে {{formatted}}টা পার্সেলে টিক দেওয়া হয়েছে',
+      },
+    },
     categories: {
       title: 'শপের ক্যাটাগরি',
       description: 'শপ তার লিস্টিংগুলো যেভাবে সাজায়, মেনুতে যে ক্রমে দেখায়',
@@ -5479,6 +5851,7 @@ export const bn: Messages = {
         shipped: 'পাঠানো হয়েছে',
         delivered: 'পৌঁছেছে',
         cancelled: 'বাতিল',
+        returned: 'ফেরত এসেছে',
         all: 'সব',
       },
       statuses: {
@@ -5490,6 +5863,8 @@ export const bn: Messages = {
         returned: 'ফেরত এসেছে',
       },
       needsAttention: 'নজর দিন',
+      // Step 28b
+      parcelPills: { partly_delivered: 'আংশিক পৌঁছেছে', returning: 'ফেরত আসছে' },
       columns: {
         order: 'অর্ডার',
         confirmed: 'কনফার্ম হয়েছে',
@@ -5512,10 +5887,19 @@ export const bn: Messages = {
         shipped: 'পথে কোনো অর্ডার নেই।',
         delivered: 'এখনো কোনো অর্ডার পৌঁছায়নি।',
         cancelled: 'কোনো অর্ডার বাতিল হয়নি।',
+        returned: 'কোনো অর্ডার ফেরত আসেনি।',
       },
       noMatchTitle: 'কোনো অর্ডার মেলেনি',
       noMatchBody: 'নম্বর বা ফোন মিলিয়ে দেখুন। খোঁজা হয় শুধু এই ট্যাবে।',
       searchAll: 'সব অর্ডারে খুঁজুন',
+      // Step 28a
+      exportCourier: 'কুরিয়ারের জন্য এক্সপোর্ট',
+      exporting: 'এক্সপোর্ট হচ্ছে…',
+      exported_one: 'ফাইলে প্যাক করা {{formatted}}টা অর্ডার',
+      exported_other: 'ফাইলে প্যাক করা {{formatted}}টা অর্ডার',
+      exportedMore:
+        'একটা ফাইলে যত ধরে, তার চেয়ে বেশি অর্ডার অপেক্ষায় আছে। এগুলো কুরিয়ারে বুক করুন, তারপর আবার এক্সপোর্ট করুন।',
+      exportEmpty: 'কোনো প্যাক করা অর্ডার কুরিয়ারের অপেক্ষায় নেই।',
       loadFailed: 'শপের অর্ডার আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
     },
     // ধাপ ২৭b: একটা অর্ডারের পেজ (/storefront/orders/$orderId)
@@ -5532,11 +5916,31 @@ export const bn: Messages = {
       ship: 'পাঠানো হয়েছে বলে চিহ্ন দিন',
       deliver: 'পৌঁছেছে বলে চিহ্ন দিন',
       cancel: 'অর্ডার বাতিল করুন',
+      // Step 28a
+      book: 'কুরিয়ারে বুক করুন',
+      // Step 28b
+      recordCameBack: 'যা ফেরত এসেছে তা লিখুন',
+      receiveReturn: 'ফেরত মাল বুঝে নিন',
       salesOrderMade: '{{number}}-এর সেলস অর্ডার {{salesOrder}} বানানো হয়েছে',
       packed: '{{number}} প্যাক হয়েছে। চালান {{delivery}} পোস্ট হয়েছে।',
       shipped: '{{number}} পাঠানো হয়েছে',
       delivered: '{{number}} পৌঁছেছে। ইনভয়েস {{invoice}} পোস্ট হয়েছে।',
       cancelled: '{{number}} বাতিল হয়েছে। ক্রেতা একটা SMS পাবেন।',
+      // Step 28a
+      packedBooking:
+        '{{number}} প্যাক হয়েছে। চালান {{delivery}} পোস্ট হয়েছে। পার্সেল {{courier}}-এ বুক হচ্ছে।',
+      bookingStarted: '{{number}}-এর পার্সেল {{courier}}-এ বুক হচ্ছে',
+      booked: '{{number}} {{courier}}-এ বুক হয়েছে, কোড {{code}}',
+      bookingAgain: '{{number}}-এর পার্সেল আবার বুক হচ্ছে',
+      // Step 28b
+      deliveredWithReceipt:
+        '{{number}} পৌঁছেছে। ইনভয়েস {{invoice}} আর মানি রিসিট {{receipt}} পোস্ট হয়েছে।',
+      partlyDelivered:
+        '{{number}} আংশিক পৌঁছেছে। সেলস রিটার্ন {{salesReturn}} আর ইনভয়েস {{invoice}} পোস্ট হয়েছে।',
+      partlyDeliveredWithReceipt:
+        '{{number}} আংশিক পৌঁছেছে। সেলস রিটার্ন {{salesReturn}}, ইনভয়েস {{invoice}} আর মানি রিসিট {{receipt}} পোস্ট হয়েছে।',
+      returnReceived:
+        '{{number}} ফেরত এসেছে। সেলস রিটার্ন {{salesReturn}} পোস্ট হয়েছে। ক্রেতা একটা SMS পাবেন।',
       next: {
         confirmed:
           'মাল প্যাক করে প্যাক হয়েছে বলে চিহ্ন দিন। তাতে চালান পোস্ট হয়, স্টক বের হয়, আর আটকে রাখা স্টক ছাড়া পায়।',
@@ -5546,13 +5950,37 @@ export const bn: Messages = {
       },
       recordPayment: 'টাকা জমা লিখুন',
       deliveredPaid: 'ইনভয়েসের টাকা শোধ হয়েছে: অনলাইন পেমেন্টের মানি রিসিট এতে ধরা হয়েছে।',
+      // Step 28b
+      nextDeliveredCod:
+        'রাইডারের টাকা মানি রিসিট {{receipt}}-এ {{courier}}-এর COD অ্যাকাউন্টে জমা হয়েছে। আপনার ব্যাংকে এর পেআউট পরে লেখা হয়।',
+      nextDeliveredNothing:
+        'রাইডার কিছু নেননি, তাই কোনো মানি রিসিট বানানো হয়নি। টাকা এলে সেটা লিখে রাখুন।',
       paidCancelled:
         'ক্রেতা এই অর্ডারের জন্য অনলাইনে {{amount}} দিয়েছেন। আপনার SSLCommerz প্যানেল থেকে টাকাটা ফেরত দিন, তারপর রিফান্ড লিখুন।',
       paidTwice:
         'ক্রেতা অনলাইনে দুবার টাকা দিয়েছেন, প্রতিবার {{amount}}। আপনার SSLCommerz প্যানেল থেকে একটা ফেরত দিন, তারপর রিফান্ড লিখুন।',
       paidOnCod:
         'ক্রেতা অনলাইনেও {{amount}} দিয়েছেন, তারপর ক্যাশ অন ডেলিভারি বেছেছেন। রাইডারকে নগদ না নিতে বলুন। রাইডার নগদও নিয়ে থাকলে একটা ফেরত দিন।',
+      // Step 28b
+      paidPartly:
+        'ক্রেতা অনলাইনে {{amount}} দিয়েছেন, আর পার্সেলের একটা অংশ ফেরত এসেছে। ইনভয়েসে ধরা হয়েছে শুধু যা তিনি রেখেছেন। বাকি টাকা আপনার SSLCommerz প্যানেল থেকে ফেরত দিন, তারপর রিফান্ড লিখুন।',
       recordRefund: 'রিফান্ড লিখুন',
+      // Step 28a
+      nextNoParcel:
+        'কুরিয়ারে বুক করুন, অথবা পার্সেল দোকান থেকে বের হলে পাঠানো হয়েছে বলে চিহ্ন দিন।',
+      nextBooking: 'Omnivo পার্সেলটা {{courier}}-এ বুক করছে।',
+      nextBooked:
+        '{{courier}}-এর রাইডার পার্সেল নিয়ে গেলে অর্ডার নিজে থেকেই পাঠানো হয়েছে-তে যাবে।',
+      nextShipped:
+        '{{courier}} পৌঁছে দিলে অর্ডার নিজে থেকেই পৌঁছেছে-তে যাবে। তাতে ইনভয়েস পোস্ট হয়।',
+      nextManual: '{{courier}} পার্সেল নিয়ে গেলে পাঠানো হয়েছে বলে চিহ্ন দিন।',
+      // Step 28b
+      nextPartly:
+        '{{courier}} পার্সেলের একটা অংশ পৌঁছে দিয়েছে। ফেরত আসা মাল দোকানের তাকে উঠলে যা ফেরত এসেছে তা লিখুন। তাতে সেগুলোর সেলস রিটার্ন আর বাকিটার ইনভয়েস পোস্ট হয়।',
+      nextReturning:
+        '{{courier}} পার্সেলটা ফেরত আনছে। দোকানের তাকে উঠলে ফেরত মাল বুঝে নিন। তাতে মাল স্টকে ফেরে আর ক্রেতা একটা SMS পান।',
+      parcelFailed: '{{courier}} পার্সেলটা বুক করেনি। {{reason}}',
+      bookAgain: 'আবার বুক করুন',
       documentError: 'সেলস অর্ডার বানানো যায়নি। {{reason}}',
       noSalesOrder: 'এই অর্ডারের এখনো সেলস অর্ডার নেই। মাল প্যাকের আগে বানান।',
       linesTitle: 'পণ্য',
@@ -5625,6 +6053,85 @@ export const bn: Messages = {
       deliverTitle: '{{number}} পৌঁছেছে বলে চিহ্ন দেবেন?',
       deliverBody:
         'এতে আজকের তারিখে {{total}}-এর একটা ইনভয়েস পোস্ট হবে। টাকা জমা না লেখা পর্যন্ত এটা বাকি থাকে।',
+      // Step 28b
+      deliverBodyCod:
+        'এতে আজকের তারিখে {{total}}-এর একটা ইনভয়েস পোস্ট হবে, আর রাইডার যা নিয়েছেন তার একটা মানি রিসিট {{courier}}-এর COD অ্যাকাউন্টে জমা হবে।',
+      deliverBodyPaid:
+        'এতে আজকের তারিখে {{total}}-এর একটা ইনভয়েস পোস্ট হবে। অনলাইন পেমেন্টের মানি রিসিট এতে ধরা হবে, তাই এটা শোধ থাকবে।',
+      collected: 'রাইডার যা নিয়েছেন',
+      collectedHint:
+        'রাইডারের নেওয়ার কথা ছিল {{amount}}। ক্রেতা কম দিলে কম লিখুন: বাকিটা ইনভয়েসে পাওনা থাকে। কিছু না নিলে কোনো রিসিট বানানো হয় না।',
+      // Step 28a
+      parcels: {
+        title: 'পার্সেল',
+        titleNumber: 'পার্সেল {{number}}',
+        description: '{{account}} দিয়ে পাঠানো',
+        statuses: {
+          booking: 'বুক হচ্ছে',
+          booking_failed: 'বুকিং ব্যর্থ',
+          booked: 'বুক হয়েছে',
+          picked_up: 'নিয়ে গেছে',
+          in_transit: 'পথে আছে',
+          out_for_delivery: 'ডেলিভারির জন্য বের হয়েছে',
+          delivered: 'পৌঁছেছে',
+          partly_delivered: 'আংশিক পৌঁছেছে',
+          on_hold: 'আটকে আছে',
+          returning: 'ফেরত যাচ্ছে',
+          returned: 'ফেরত এসেছে',
+          cancelled: 'বাতিল',
+        },
+        courier: 'কুরিয়ার',
+        trackingCode: 'ট্র্যাকিং কোড',
+        consignmentId: 'কুরিয়ারের আইডি',
+        cod: 'রাইডার নেবেন',
+        codNothing: 'কিছু না: অনলাইনে পেমেন্ট হয়েছে',
+        bookedAt: 'বুক হয়েছে',
+        lastSynced: 'শেষ খবর',
+        neverSynced: 'এখনো আসেনি',
+        // Step 28b
+        collected: 'রাইডার নিয়েছেন',
+        charge: 'কুরিয়ারের চার্জ',
+        receipt: 'মানি রিসিট',
+        // Step 28c
+        payout: 'যে পেআউটে টাকা এসেছে',
+        receiptError: 'COD রিসিট বানানো যায়নি। {{reason}}',
+        makeReceipt: 'রিসিট বানান',
+        receiptMade: 'মানি রিসিট {{receipt}} বানানো হয়েছে',
+        bookingNow: '{{courier}}-এ বুক হচ্ছে…',
+        bookingRetry_one: '{{formatted}} বার চেষ্টা হয়েছে। Omnivo নিজে থেকেই আবার চেষ্টা করবে।',
+        bookingRetry_other: '{{formatted}} বার চেষ্টা হয়েছে। Omnivo নিজে থেকেই আবার চেষ্টা করবে।',
+        courierSaid: 'কুরিয়ার বলেছে: “{{detail}}”',
+        eventsTitle: 'কুরিয়ারের খবর',
+        noEvents: 'কুরিয়ারের কাছ থেকে এখনো কোনো খবর আসেনি।',
+        manual: 'হাতে বুক করা। অর্ডারের বাটন দিয়ে অর্ডার এগিয়ে নিন।',
+        printLabel: 'লেবেল প্রিন্ট করুন',
+      },
+      booking: {
+        title: '{{number}}-এর জন্য কুরিয়ারে বুক করুন',
+        description:
+          'কুরিয়ার পাবে ক্রেতার নাম, মোবাইল নম্বর আর ঠিকানা, আর রাইডার যা নেবেন: {{amount}}।',
+        descriptionPaid:
+          'কুরিয়ার পাবে ক্রেতার নাম, মোবাইল নম্বর আর ঠিকানা। অর্ডারের পেমেন্ট হয়ে গেছে, তাই রাইডার কিছু নেবেন না।',
+        account: 'কুরিয়ার অ্যাকাউন্ট',
+        accountPlaceholder: 'একটা অ্যাকাউন্ট বাছুন',
+        accountOption: '{{name}} · {{courier}}',
+        apiHint: 'Omnivo এখনই পার্সেলটা {{courier}}-এ বুক করবে, আর কুরিয়ারের খবরে অর্ডার এগোবে।',
+        trackingCode: 'ট্র্যাকিং কোড',
+        trackingCodePlaceholder: 'SFR2611120042',
+        trackingCodeHint:
+          'আগে কুরিয়ারের ওয়েবসাইট বা অ্যাপে পার্সেল বুক করুন, তারপর তার দেওয়া কোড লিখুন।',
+        noAccounts: 'এখনো কোনো চালু কুরিয়ার অ্যাকাউন্ট নেই। শপের কুরিয়ার পেজে একটা যোগ করুন।',
+        submit: 'কুরিয়ারে বুক করুন',
+      },
+      label: {
+        title: 'পার্সেলের লেবেল {{number}}',
+        from: 'যেখান থেকে',
+        to: 'যার কাছে',
+        order: 'অর্ডার',
+        collect: '{{amount}} নিন',
+        paid: 'পেমেন্ট হয়ে গেছে। কিছু নেবেন না।',
+        courierLine: '{{courier}} · {{code}}',
+      },
       packing: {
         title: '{{number}} প্যাক করুন',
         description:
@@ -5643,8 +6150,46 @@ export const bn: Messages = {
         serials: 'সিরিয়াল নম্বর',
         serialsHint: 'প্রতি লাইনে একটা, বা স্ক্যান করুন। এই লাইনে লাগবে {{needed}}টা।',
         serialsCount: '{{needed}}টার {{entered}}টা লেখা হয়েছে',
+        // Step 28a
+        courier: 'যেটা দিয়ে পাঠাবেন',
+        courierNone: 'এখন বুক করবেন না',
+        courierHint: 'চালান পোস্ট হলে Omnivo পার্সেলটা {{courier}}-এ বুক করবে।',
+        courierNoneHint:
+          'পরে "কুরিয়ারে বুক করুন" দিয়ে বুক করুন, অথবা কুরিয়ারের ওয়েবসাইটে হাতে।',
         submit: 'প্যাক হয়েছে বলে চিহ্ন দিন',
         loadFailed: 'কী প্যাক করতে হবে তা আনা যায়নি। এটা বন্ধ করে আবার চেষ্টা করুন।',
+      },
+      // Step 28b
+      cameBack: {
+        title: '{{number}}-এর যা ফেরত এসেছে তা লিখুন',
+        description:
+          'যে মাল ফেরত এসেছে তাতে টিক দিন। একটা সেলস রিটার্ন সেগুলো {{warehouse}}-এ ফেরত আনবে, আর ইনভয়েসে ধরা হবে শুধু যা ক্রেতা রেখেছেন।',
+        take: 'ফেরত এসেছে: {{name}}',
+        sent: '{{quantity}} পাঠানো হয়েছিল',
+        batch: 'ব্যাচ {{lot}}',
+        batchExpires: 'ব্যাচ {{lot}} · মেয়াদ {{date}}',
+        quantity: 'কতগুলো ফেরত এসেছে',
+        serials: 'যে সিরিয়াল নম্বরগুলো ফেরত এসেছে',
+        serialsNone: 'যে সিরিয়াল নম্বরগুলো ফেরত এসেছে সেগুলোতে টিক দিন।',
+        collected: 'রাইডার যা নিয়েছেন',
+        collectedHint:
+          'ক্রেতা যা রেখেছেন তার জন্য। পুরো পার্সেলের জন্য রাইডারের নেওয়ার কথা ছিল {{amount}}। কিছু না নিলে কোনো রিসিট বানানো হয় না।',
+        collectedFromCourier: '{{courier}} বলছে রাইডার {{amount}} নিয়েছেন।',
+        reason: 'কেন ফেরত এসেছে',
+        reasonPlaceholder: 'ক্রেতা দ্বিতীয় ফেস ওয়াশটা চাননি',
+        reasonHint: 'শুধু আপনার টিম এটা দেখে। এটা সেলস রিটার্নে লেখা থাকে।',
+        submit: 'যা ফেরত এসেছে তা লিখুন',
+        loadFailed: 'পার্সেলে কী গিয়েছিল তা আনা যায়নি। এটা বন্ধ করে আবার চেষ্টা করুন।',
+      },
+      receiving: {
+        title: '{{number}} ফেরত বুঝে নেবেন?',
+        body: 'একটা সেলস রিটার্ন চালান {{delivery}}-এর সব মাল স্টকে ফেরত আনবে, আর সেলস অর্ডার বাতিল হবে। অর্ডারটা ফেরত এসেছে-তে যাবে, আর ক্রেতা একটা SMS পাবেন।',
+        check: 'পার্সেল দোকানের তাকে উঠলে তবেই এটা করুন, শুধু কুরিয়ারের কথায় নয়।',
+        reason: 'কেন ফেরত এসেছে',
+        reasonPlaceholder: 'ক্রেতা ফোন ধরেননি',
+        reasonHint: 'শুধু আপনার টিম এটা দেখে। এটা সেলস রিটার্নে লেখা থাকে।',
+        keep: 'এখন না',
+        submit: 'ফেরত মাল বুঝে নিন',
       },
       cancelling: {
         title: '{{number}} বাতিল করবেন?',
@@ -5652,6 +6197,9 @@ export const bn: Messages = {
           'এর জন্য আটকে রাখা স্টক আবার ছাড়া পাবে, আর এর সেলস অর্ডার বাতিল হবে। ক্রেতা অর্ডার বাতিলের একটা SMS পাবেন।',
         bodyPacked:
           'একটা সেলস রিটার্ন প্যাক করা মাল স্টকে ফেরত আনবে, আর সেলস অর্ডার বাতিল হবে। ক্রেতা অর্ডার বাতিলের একটা SMS পাবেন।',
+        // Step 28a
+        parcelBooked:
+          '{{courier}}-এ বুক করা এর পার্সেলও এখানে বাতিল হবে। কুরিয়ারের প্যানেলেও বাতিল করুন, যাতে কোনো রাইডার এটা নিতে না আসে।',
         reason: 'কারণ',
         reasonPlaceholder: 'ক্রেতা ফোন ধরেননি',
         reasonHint: 'শুধু আপনার টিম এটা দেখে। SMS-এ কারণ বলা হয় না।',
@@ -5985,6 +6533,8 @@ export const bn: Messages = {
       purchaseReturn: 'পারচেজ রিটার্ন',
       debitNote: 'ডেবিট নোট',
       supplierRefund: 'সাপ্লায়ার রিফান্ড',
+      // Step 28c
+      storefrontPayout: 'কুরিয়ার পেআউট',
     },
     bin: 'BIN {{bin}}',
     phone: 'ফোন {{phone}}',
@@ -6045,6 +6595,18 @@ export const bn: Messages = {
     supplierCredit: 'তাদের ক্রেডিট নোট',
     receivedInto: 'যে অ্যাকাউন্টে এলো',
     paidBackOn: 'যার বিপরীতে ফেরত',
+    // Step 28c
+    courier: 'কুরিয়ার',
+    paidInto: 'যে অ্যাকাউন্টে এসেছে',
+    payoutColumns: {
+      parcel: 'পার্সেল',
+      trackingCode: 'ট্র্যাকিং কোড',
+      collected: 'রাইডার নিয়েছেন',
+      charge: 'চার্জ',
+    },
+    collected: 'রাইডার নিয়েছেন',
+    charges: 'কুরিয়ারের চার্জ',
+    netToBank: 'ব্যাংকে এসেছে',
     signatures: {
       customer: 'গ্রাহকের স্বাক্ষর',
       receivedBy: 'গ্রহণকারী',
@@ -6277,6 +6839,10 @@ export const bn: Messages = {
         read: 'শপের অর্ডার দেখা, ক্রেতার ফোন আর ঠিকানাসহ',
         manage: 'শপের অর্ডার এগিয়ে নেওয়া আর বাতিল করা',
       },
+      // Step 28c
+      payout: {
+        manage: 'শপের COD টাকা ব্যাংকে আসার কুরিয়ার পেআউট লেখা আর বাতিল করা',
+      },
     },
   },
   invite: {
@@ -6361,6 +6927,8 @@ export const bn: Messages = {
       storefront_order: 'শপের অর্ডার',
       storefront_coupon: 'শপের কুপন',
       storefront_payment_gateway: 'শপের পেমেন্ট গেটওয়ে',
+      courier_account: 'শপের কুরিয়ার',
+      storefront_payout: 'কুরিয়ার পেআউট',
     },
     columns: {
       when: 'কখন',
@@ -6681,6 +7249,8 @@ export const bn: Messages = {
         launched: 'অনলাইন শপ খুলেছেন',
         // ধাপ ২৬h
         theme_updated: 'শপের লোগো বা রং বদলেছেন',
+        // Step 28a
+        default_courier_set: 'শপ প্রথমে কোন কুরিয়ারে বুক করবে তা বেছেছেন',
         home_moved: 'শপের হোম পেজের একটা ব্লক সরিয়েছেন',
         page_saved: 'শপের একটা পেজ লিখেছেন বা বদলেছেন',
         page_deleted: 'শপের একটা পেজ মুছেছেন',
@@ -6714,6 +7284,13 @@ export const bn: Messages = {
         shipped: 'শপের অর্ডার পাঠানো হয়েছে বলে চিহ্ন দিয়েছেন',
         delivered: 'শপের অর্ডার পৌঁছেছে বলে চিহ্ন দিয়েছেন',
         cancelled: 'শপের অর্ডার বাতিল করেছেন',
+        // Step 28a
+        shipment_booked: 'শপের অর্ডারের পার্সেল কুরিয়ারে বুক করেছেন',
+        shipment_retried: 'বুকিং ব্যর্থ হওয়ার পর শপের অর্ডারের পার্সেল আবার বুক করেছেন',
+        // Step 28b
+        partly_delivered: 'শপের আংশিক পৌঁছানো অর্ডারের ফেরত আসা মাল লিখেছেন',
+        returned: 'শপের ফেরত আসা অর্ডার বুঝে নিয়েছেন',
+        cod_receipt_made: 'শপের পৌঁছানো অর্ডারের COD রিসিট আবার বানিয়েছেন',
       },
       // Step 27c
       storefront_coupon: {
@@ -6727,6 +7304,20 @@ export const bn: Messages = {
         created: 'শপের পেমেন্ট গেটওয়ে সেভ করেছেন',
         updated: 'শপের পেমেন্ট গেটওয়ে বদলেছেন',
         tested: 'শপের পেমেন্ট গেটওয়ে পরীক্ষা করেছেন',
+      },
+      // Step 28a
+      courier_account: {
+        created: 'কুরিয়ার অ্যাকাউন্ট যোগ করেছেন',
+        updated: 'কুরিয়ার অ্যাকাউন্ট বদলেছেন',
+        tested: 'কুরিয়ার অ্যাকাউন্ট পরীক্ষা করেছেন',
+        token_renewed: 'কুরিয়ার অ্যাকাউন্টের নতুন webhook token বানিয়েছেন',
+        archived: 'কুরিয়ার অ্যাকাউন্ট আর্কাইভ করেছেন',
+        restored: 'আর্কাইভ করা কুরিয়ার অ্যাকাউন্ট ফিরিয়ে এনেছেন',
+      },
+      // Step 28c
+      storefront_payout: {
+        created: 'কুরিয়ারের একটা পেআউট লিখেছেন',
+        voided: 'কুরিয়ারের একটা পেআউট বাতিল করেছেন',
       },
     },
     fields: {
@@ -6969,6 +7560,24 @@ export const bn: Messages = {
       feeAccount: 'গেটওয়ের ফি-এর অ্যাকাউন্ট',
       password: 'পাসওয়ার্ড',
       testResult: 'পরীক্ষার ফল',
+      // Step 28a
+      provider: 'যেভাবে বুক হয়',
+      courier: 'কুরিয়ার',
+      keys: 'Key',
+      webhookToken: 'Webhook token',
+      defaultCourier: 'প্রথমে যেটায় বুক হয়',
+      trackingCode: 'ট্র্যাকিং কোড',
+      // Step 28b
+      codAccount: 'COD অ্যাকাউন্ট',
+      chargeAccount: 'কুরিয়ার চার্জের অ্যাকাউন্ট',
+      cameBack: 'যে লাইনগুলো ফেরত এসেছে',
+      // Step 28c
+      courierAccount: 'কুরিয়ার অ্যাকাউন্ট',
+      bankAccount: 'যে অ্যাকাউন্টে এসেছে',
+      parcels: 'পার্সেল',
+      collected: 'রাইডার নিয়েছেন',
+      charges: 'চার্জ',
+      net: 'ব্যাংকে এসেছে',
     },
     loadFailed: 'অডিট লগ আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
   },
@@ -7071,6 +7680,12 @@ export const bn: Messages = {
       // Step 27a: a shop order got its phone code. {{total}} arrives as money ("৳578")
       storefront: {
         order_confirmed: 'শপে নতুন অর্ডার {{number}}, মোট {{total}}।',
+        // Step 28a: {{courier}} is the account's name ("Steadfast")
+        shipment_failed:
+          '{{courier}} {{number}}-এর পার্সেল বুক করেনি। আবার বুক করতে অর্ডারটা খুলুন।',
+        // Step 28b
+        cod_receipt_failed:
+          '{{courier}} {{number}} পৌঁছে দিয়েছে, কিন্তু এর COD রিসিট বানানো যায়নি। বানাতে অর্ডারটা খুলুন।',
       },
     },
   },
@@ -7875,6 +8490,82 @@ export const bn: Messages = {
       'এই সার্ভার এখনো পেমেন্ট গেটওয়ের পাসওয়ার্ড রাখতে পারে না। যিনি আপনার Omnivo চালান, তাঁকে CREDENTIALS_KEY সেট করতে বলুন।',
     account_used_by_shop:
       'শপের অনলাইন পেমেন্ট এই অ্যাকাউন্ট ব্যবহার করে। আগে শপের সেটিংস → অনলাইন পেমেন্ট থেকে অন্য একটা বাছুন, অথবা এটা আর্কাইভ করুন।',
+    // Step 28a
+    courier_key_format:
+      'কুরিয়ারের প্যানেলে যেভাবে দেখায় সেভাবে key লিখুন: অক্ষর আর অঙ্ক, কোনো স্পেস ছাড়া।',
+    courier_key_required: 'কুরিয়ারের প্যানেল থেকে দুটো key-ই লিখুন।',
+    courier_pick_one: 'এই পার্সেলগুলো যে কুরিয়ারে বুক করেন সেটা বাছুন।',
+    courier_key_missing:
+      'এই সার্ভার এখনো কুরিয়ারের key রাখতে পারে না। যিনি আপনার Omnivo চালান, তাঁকে CREDENTIALS_KEY সেট করতে বলুন।',
+    courier_account_not_bookable:
+      'API দিয়ে বুক করে এমন একটা চালু কুরিয়ার অ্যাকাউন্ট বাছুন। ম্যানুয়াল অ্যাকাউন্টে বুক হয় "কুরিয়ারে বুক করুন" দিয়ে, কুরিয়ার কোড দেওয়ার পরে।',
+    courier_account_archived: 'এই কুরিয়ার অ্যাকাউন্ট আর্কাইভ করা। বদলাতে আগে ফিরিয়ে আনুন।',
+    courier_provider_fixed:
+      'কুরিয়ার অ্যাকাউন্টের কুরিয়ার বদলানো যায় না। অন্য কুরিয়ারের জন্য নতুন অ্যাকাউন্ট যোগ করুন।',
+    courier_pick_account: 'পার্সেলটা কোন কুরিয়ার অ্যাকাউন্টে যাবে সেটা বাছুন।',
+    courier_tracking_code_required: 'এই পার্সেলের জন্য কুরিয়ারের দেওয়া ট্র্যাকিং কোড লিখুন।',
+    courier_tracking_code_format:
+      'কুরিয়ার যেভাবে দেখায় সেভাবে ট্র্যাকিং কোড লিখুন: অক্ষর, অঙ্ক আর ড্যাশ।',
+    storefront_order_not_bookable:
+      'শুধু প্যাক করা অর্ডারই কুরিয়ারে যায়। আগে প্যাক হয়েছে বলে চিহ্ন দিন।',
+    storefront_order_has_parcel: 'এই অর্ডারের পার্সেল আগেই রওনা হয়েছে। দেখতে পেজটা আবার লোড করুন।',
+    storefront_shipment_not_failed:
+      'এই পার্সেলের বুকিং ব্যর্থ হয়নি। কোথায় আছে দেখতে পেজটা আবার লোড করুন।',
+    storefront_order_parcel_on_its_way:
+      'পার্সেল এখন কুরিয়ারের কাছে, তাই অর্ডার বাতিল করা যাবে না। কুরিয়ারকে ফেরত দিতে বলুন।',
+    storefront_order_parcel_booking:
+      'পার্সেলটা কুরিয়ারে বুক হচ্ছে। বুক হলে বা বুকিং ব্যর্থ হলে তারপর বাতিল করুন।',
+    courier_rejected_keys:
+      'কুরিয়ার অ্যাকাউন্টের key মানেনি। শপের কুরিয়ার পেজে key দেখে নিন, তারপর আবার বুক করুন।',
+    courier_rejected_parcel:
+      'কুরিয়ার পার্সেলটা নেয়নি। কুরিয়ার যা বলেছে তা ঠিক করে আবার বুক করুন।',
+    courier_unreachable: 'কুরিয়ার উত্তর দেয়নি। কয়েক মিনিট পরে আবার বুক করুন।',
+    courier_invoice_taken:
+      'এই অর্ডারের নম্বরে কুরিয়ারের কাছে আগেই একটা পার্সেল আছে। কুরিয়ারের প্যানেলে সেটা খুঁজে বাতিল করুন, তারপর আবার বুক করুন।',
+    courier_webhook_token_invalid:
+      'এই webhook token ঠিক না। শপের কুরিয়ার পেজ থেকে token পেস্ট করুন।',
+    // Step 28b
+    courier_cod_account_invalid:
+      'টাকা রাখা হয় এমন একটা চালু অ্যাকাউন্ট বাছুন, যেমন “Steadfast-এর কাছে নগদ”, অথবা কোনোটাই না।',
+    courier_charge_account_invalid:
+      'একটা চালু খরচের অ্যাকাউন্ট বাছুন, যেমন “কুরিয়ার চার্জ”, অথবা কোনোটাই না।',
+    storefront_order_collected_over:
+      'এই পার্সেলে রাইডার সর্বোচ্চ {{amount}} নিতে পারেন। কুরিয়ার যত নিয়েছে বলছে, তত লিখুন।',
+    storefront_order_collected_required: 'রাইডার কত নিয়েছেন লিখুন। কুরিয়ার এখনো বলেনি।',
+    storefront_order_return_nothing:
+      'কী ফেরত এসেছে টিক দিন। ক্রেতা সব রেখে দিলে "পৌঁছেছে বলে চিহ্ন দিন" চাপুন।',
+    storefront_order_return_everything: 'সবই ফেরত এসেছে। এর বদলে "ফেরত মাল বুঝে নিন" চাপুন।',
+    storefront_cod_receipt_not_failed:
+      'এই পার্সেলের COD রিসিট ব্যর্থ হয়নি। অর্ডারটা আবার লোড করুন।',
+    // Step 28c
+    payout_pick_account: 'যে কুরিয়ার অ্যাকাউন্ট টাকা দিয়েছে সেটা বাছুন।',
+    payout_bank_account_invalid:
+      'যে চালু ব্যাংক বা ক্যাশ অ্যাকাউন্টে টাকা এসেছে সেটা বাছুন, কুরিয়ারের নিজের COD অ্যাকাউন্ট নয়।',
+    payout_lines_required: 'এই পেআউটে যে পার্সেলগুলোর টাকা এসেছে, অন্তত একটায় টিক দিন।',
+    payout_too_many_lines: 'একটা পেআউটে সর্বোচ্চ ৫০০টা পার্সেল। বাকিগুলো আরেকটা পেআউটে লিখুন।',
+    payout_line_twice: 'এই পার্সেল পেআউটে দুবার আছে। একটা লাইন সরান।',
+    payout_charge_required: 'এই পার্সেলের কুরিয়ার চার্জ লিখুন, না থাকলে 0।',
+    payout_account_no_cod:
+      'এই কুরিয়ার অ্যাকাউন্টের COD অ্যাকাউন্ট নেই, তাই পেআউটের কোনো টাকা এর কাছে নেই। শপের কুরিয়ার পেজে একটা বাছুন।',
+    payout_account_no_charges:
+      'এই পেআউটে চার্জ আছে, কিন্তু কুরিয়ার অ্যাকাউন্টের চার্জের অ্যাকাউন্ট নেই। শপের কুরিয়ার পেজে একটা বাছুন।',
+    payout_parcel_unavailable:
+      'একটা পার্সেলের পেআউট আর হয় না: অন্য পেআউট নিয়ে নিয়েছে, বা সেটা বদলেছে। পার্সেলগুলো আবার লোড করুন।',
+    payout_charge_line_zero:
+      'যে পার্সেলে নগদ আসেনি, সেটা এখানে শুধু তার চার্জের জন্য। চার্জ লিখুন, না হলে টিক তুলে দিন।',
+    payout_below_zero:
+      'এই পার্সেলগুলোর নগদের চেয়ে চার্জ বেশি। এই পেআউটে যে পৌঁছানো পার্সেলগুলোর টাকা এসেছে সেগুলোতেও টিক দিন।',
+    payout_date_before_receipt:
+      'এই পার্সেলগুলোর COD রিসিটের দিন বা তার পরের তারিখ বাছুন: তার আগে টাকা কুরিয়ারের কাছে ছিল না।',
+    payout_csv_unreadable: 'ফাইলটা header row সহ CSV না। পেআউটটা আবার CSV হিসেবে ডাউনলোড করুন।',
+    payout_csv_too_big: 'ফাইলটা অনেক বড়। একবারে একটা পেআউট ডাউনলোড করুন।',
+    payout_csv_too_many_rows: 'ফাইলে ৫,০০০-এর বেশি row আছে। একবারে একটা পেআউট ডাউনলোড করুন।',
+    payout_csv_column_required: 'কলামটা বাছুন।',
+    journal_is_payout:
+      'কুরিয়ার পেআউটের এন্ট্রি এখানে রিভার্স করা যায় না। পেআউটের নিজের পেজে বাতিল করুন: তাতে তার পার্সেলগুলোও ছাড়া পায়।',
+    payout_voided: 'এই পেআউট বাতিল হয়েছে, এটা আর বদলানো যায় না। পেজটা রিলোড করুন।',
+    receipt_paid_out:
+      'একটা কুরিয়ার পেআউট এই COD-র টাকা ব্যাংকে তুলে দিয়েছে। আগে পেআউটটা বাতিল করুন, তারপর এই রিসিট।',
   },
   ui: {
     dataTable: {

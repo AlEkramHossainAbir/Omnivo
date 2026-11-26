@@ -1,7 +1,14 @@
 import { shopOrderSchema, shopTrackingSchema } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
-import { historyOf, type OrderLineRow, orderOf, type OrderRow, trackingOf } from './order-view.js';
+import {
+  codAmountOf,
+  historyOf,
+  type OrderLineRow,
+  orderOf,
+  type OrderRow,
+  trackingOf,
+} from './order-view.js';
 
 const TENANT = '0193a000-0000-7000-8000-000000000001';
 const ORDER = '0193a000-0000-7000-8000-000000000002';
@@ -107,7 +114,7 @@ describe('order view', () => {
   });
 
   it('gives a tracking link no name, phone, address or line', () => {
-    const answer = shopTrackingSchema.parse(trackingOf(order(), LINES));
+    const answer = shopTrackingSchema.parse(trackingOf(order(), LINES, []));
     expect(answer).toEqual({
       orderNo: 'W-000123',
       placedAt: PLACED.toISOString(),
@@ -121,6 +128,28 @@ describe('order view', () => {
   });
 
   it('refuses to show an order without a number', () => {
-    expect(() => trackingOf(order({ orderNo: null }), LINES)).toThrow(/no number/);
+    expect(() => trackingOf(order({ orderNo: null }), LINES, [])).toThrow(/no number/);
+  });
+
+  // Step 28a: the parcels the caller read, as they came
+  it('gives a tracking link its parcels', () => {
+    const parcel = {
+      courier: 'steadfast' as const,
+      trackingCode: 'SFR2611230042',
+      trackingUrl: 'https://steadfast.com.bd/t/SFR2611230042',
+      events: [{ status: 'booked' as const, at: PLACED.toISOString(), note: null }],
+    };
+    const answer = shopTrackingSchema.parse(trackingOf(order(), LINES, [parcel]));
+    expect(answer.shipments).toEqual([parcel]);
+  });
+});
+
+describe('what the rider collects (step 28a.3)', () => {
+  it('is the total less what was paid, never below zero', () => {
+    expect(codAmountOf('578.0000', [])).toBe('578.0000');
+    expect(codAmountOf('578.0000', ['578.0000'])).toBe('0.0000');
+    // Paid twice (a second tab): nothing at the door, the second payment is a refund
+    expect(codAmountOf('578.0000', ['578.0000', '578.0000'])).toBe('0.0000');
+    expect(codAmountOf('578.5000', ['100.0000'])).toBe('478.5000');
   });
 });

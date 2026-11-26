@@ -50,6 +50,14 @@ export function storefrontPaymentSetupQuery(tenantId: string) {
   });
 }
 
+// Step 28a: the Shop couriers page's one read (every account, archived ones too, and the default)
+export function storefrontCouriersQuery(tenantId: string) {
+  return queryOptions({
+    queryKey: ['storefront', tenantId, 'couriers'],
+    queryFn: () => call(routes.shipping.getCouriers),
+  });
+}
+
 export function storefrontCategoriesQuery(tenantId: string) {
   return queryOptions({
     queryKey: ['storefront', tenantId, 'categories'],

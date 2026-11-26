@@ -33,8 +33,9 @@ function accountError(field: 'moneyAccountId' | 'feeAccountId', code: ErrorCode)
 }
 
 // The chart as the two selects need it: every account, small enough to read whole (a few hundred
-// at most, as for the receipt form's moneyAccountIds)
-async function chartOf(tx: Transaction) {
+// at most, as for the receipt form's moneyAccountIds). Step 28b: exported for the courier
+// account's COD and charge accounts (courier-accounts.service.ts), the same two kinds
+export async function chartOf(tx: Transaction) {
   const rows = await tx
     .select({
       id: ledgerAccounts.id,
@@ -106,7 +107,12 @@ export class StorefrontPaymentGatewayService {
     const key = this.key();
     return this.withTenant(async (tx) => {
       const chart = await this.checkAccounts(tx, input);
-      const { sealed, keyVersion } = sealSecret(key, getTenantId(), input.password);
+      const { sealed, keyVersion } = sealSecret(
+        key,
+        'storefront_payment_gateways',
+        getTenantId(),
+        input.password,
+      );
       const [row] = await tx
         .insert(storefrontPaymentGateways)
         .values({
@@ -149,14 +155,22 @@ export class StorefrontPaymentGatewayService {
       if (before === null) throw notSetUp();
       if (before.version !== input.version) throw versionConflict();
       const chart = await this.checkAccounts(tx, input);
-      const sealed = key === null ? null : sealSecret(key, getTenantId(), input.password);
+      const sealed =
+        key === null
+          ? null
+          : sealSecret(key, 'storefront_payment_gateways', getTenantId(), input.password);
       // A new password that is the old one is no change (the audit and the last test agree). Only
       // checkable when the saved one opens; when it does not, the new one is a change anyway
       const passwordChanged =
         sealed !== null &&
         (key === null ||
-          openSecret(key, getTenantId(), before.passwordSealed, before.keyVersion) !==
-            input.password);
+          openSecret(
+            key,
+            'storefront_payment_gateways',
+            getTenantId(),
+            before.passwordSealed,
+            before.keyVersion,
+          ) !== input.password);
       // The last test said something about the store id, the password and the address (mode);
       // a change to any of them makes it say nothing any more. The accounts are not tested
       const reach =
@@ -197,7 +211,13 @@ export class StorefrontPaymentGatewayService {
     const key = this.key();
     const saved = await this.withTenant((tx) => this.find(tx, false));
     if (saved === null) throw notSetUp();
-    const password = openSecret(key, saved.tenantId, saved.passwordSealed, saved.keyVersion);
+    const password = openSecret(
+      key,
+      'storefront_payment_gateways',
+      saved.tenantId,
+      saved.passwordSealed,
+      saved.keyVersion,
+    );
     // A password this key cannot open (sealed by another key) cannot reach the gateway either:
     // it is refused, and saving it again seals it with this server's key
     const problem: PaymentGatewayTestProblem | null =

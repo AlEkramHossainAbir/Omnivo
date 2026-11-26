@@ -3,7 +3,14 @@ export { DESKTOP_QUERY, useMediaQuery } from './lib/use-media-query.js';
 export { parseIsoDate, toIsoDate } from './lib/iso-date.js';
 export { buildTree, filterTree, flattenTree, type TreeNode } from './lib/tree.js';
 
-export { AppShell, NavGroup, NavItem, SidebarNav } from './components/app-shell.js';
+export {
+  AppShell,
+  ModuleRail,
+  ModuleRailItem,
+  NavGroup,
+  NavItem,
+  SidebarNav,
+} from './components/app-shell.js';
 export { Button, IconButton } from './components/button.js';
 export { Card, CardHeader } from './components/card.js';
 export { Checkbox, CheckboxGroup, type CheckboxOption } from './components/checkbox.js';

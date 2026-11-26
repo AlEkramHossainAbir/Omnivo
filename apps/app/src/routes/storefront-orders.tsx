@@ -1,5 +1,7 @@
-import { Search01Icon, ShoppingBag01Icon } from '@hugeicons/core-free-icons';
+import { Download04Icon, Search01Icon, ShoppingBag01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
+  routes,
   STOREFRONT_ORDER_VIEWS,
   type StorefrontOrderSort,
   type StorefrontOrderSummary,
@@ -15,16 +17,23 @@ import {
   PageHeader,
   SegmentedControl,
   type SortingState,
+  toast,
+  toIsoDate,
 } from '@omnivo/ui';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
-import { NeedsAttentionPill, OrderStatusPill } from '../components/storefront-order-pills';
+import {
+  NeedsAttentionPill,
+  OrderStatusPill,
+  ParcelWaitPill,
+} from '../components/storefront-order-pills';
 import { StorefrontOffline, useShopMoney, ViewShopLink } from '../components/storefront-parts';
+import { ApiRequestError, call } from '../lib/api';
 import { useCan } from '../lib/permissions';
 import { storefrontSetupQuery } from '../lib/storefront';
-import { type OrderFilter, storefrontOrdersQuery } from '../lib/storefront-orders';
+import { courierCsv, type OrderFilter, storefrontOrdersQuery } from '../lib/storefront-orders';
 import { useDebounced } from '../lib/use-debounced';
 import { useOnline } from '../lib/use-online';
 import { useTenantId, useTimeZone } from '../lib/workspace';
@@ -34,6 +43,59 @@ import { useTenantId, useTimeZone } from '../lib/workspace';
 // order returns to the tab it was opened from. A row opens the order's page.
 
 const column = dataTableColumns<StorefrontOrderSummary>();
+
+// A file the browser makes itself: a Blob, a hidden link, a click (the product import's template
+// does the same)
+function saveCsv(fileName: string, text: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+// Step 28a (decision 19): "Export for courier", for a shop that books on the courier's own panel.
+// The packed orders with no parcel on its way, whatever tab is open (approved with the mockup), as
+// a CSV in the courier's bulk-upload columns. An empty answer is a toast, never an empty file: a
+// file with only a header uploads as nothing and looks like the courier's fault
+function ExportButton() {
+  const { t, format, errorText } = useLocale();
+  const exporter = useMutation({
+    mutationFn: () => call(routes.storefrontOrders.courierExport),
+    onSuccess: ({ rows, more }) => {
+      if (rows.length === 0) {
+        toast(t('storefront.orders.exportEmpty'));
+        return;
+      }
+      const items = (count: number) =>
+        t('storefront.orders.items', { count, formatted: format.number(count) });
+      // The local day in the name, so two exports of one day sort together
+      saveCsv(`courier-orders-${toIsoDate(new Date())}.csv`, courierCsv(rows, items));
+      const done = t('storefront.orders.exported', {
+        count: rows.length,
+        formatted: format.number(rows.length),
+      });
+      // One toast: a second would replace the first before it is read
+      toast(more ? `${done}. ${t('storefront.orders.exportedMore')}` : done);
+    },
+    onError: (error) => {
+      toast(errorText(error instanceof ApiRequestError ? error.code : 'unknown_error'));
+    },
+  });
+  return (
+    <Button
+      variant="secondary"
+      disabled={exporter.isPending}
+      onClick={() => {
+        exporter.mutate();
+      }}
+    >
+      <HugeiconsIcon icon={Download04Icon} size={17} strokeWidth={1.5} />
+      {exporter.isPending ? t('storefront.orders.exporting') : t('storefront.orders.exportCourier')}
+    </Button>
+  );
+}
 
 // Confirmed and Total sort both ways; the newest confirmed first is the contract's default
 const DEFAULT_SORT: SortingState = [{ id: 'confirmedAt', desc: true }];
@@ -156,6 +218,12 @@ export function StorefrontOrdersPage() {
           cell: ({ row }) => (
             <span className="inline-flex flex-wrap justify-end gap-1.5 min-[860px]:justify-start">
               <OrderStatusPill status={row.original.status} />
+              {/* Step 28b: a shipped order that waits for the staff (partly delivered, coming
+                  back), so the Shipped tab says which ones need the order's page */}
+              <ParcelWaitPill
+                status={row.original.status}
+                parcelStatus={row.original.parcelStatus}
+              />
               {row.original.needsAttention && <NeedsAttentionPill />}
             </span>
           ),
@@ -211,7 +279,13 @@ export function StorefrontOrdersPage() {
       <PageHeader
         title={t('storefront.orders.title')}
         description={t('storefront.orders.description')}
-        actions={shop !== null && <ViewShopLink href={shop.shopUrl} />}
+        actions={
+          <>
+            {shop !== null && <ViewShopLink href={shop.shopUrl} />}
+            {/* For booking, so .manage, like the route; online only, like the page */}
+            {online && can('storefront.order.manage') && <ExportButton />}
+          </>
+        }
       />
       {!online && <StorefrontOffline />}
       {online && (

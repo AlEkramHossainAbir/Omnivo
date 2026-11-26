@@ -10,6 +10,7 @@ import {
   defaultLineDescription,
   type Invoice,
   isZeroMoney,
+  type Payout,
   plainQuantity,
   type PurchaseOrder,
   type PurchaseReturn,
@@ -46,8 +47,10 @@ import { useIsoDate, useQuantity, useTenantId, useWarehouses } from './stock-par
 // Print (or Save as PDF), so it works offline and needs no PDF service. Each page renders its sheet
 // next to itself; PrintSheet keeps it hidden on the screen and alone on paper.
 
-// "Print" in a document's header: the browser prints the sheet of the page
-export function PrintButton() {
+// "Print" in a document's header: the browser prints the sheet of the page. Step 28c: `label` for
+// a page whose sheet has its own name ("Print voucher" on a courier payout, approved with its
+// mockup); every other page says Print
+export function PrintButton({ label }: { label?: string }) {
   const { t } = useLocale();
   return (
     <Button
@@ -57,7 +60,7 @@ export function PrintButton() {
       }}
     >
       <HugeiconsIcon icon={PrinterIcon} size={17} strokeWidth={1.5} />
-      {t('print.print')}
+      {label ?? t('print.print')}
     </Button>
   );
 }
@@ -1096,6 +1099,69 @@ export function SupplierRefundPrint({
       </div>
       <InWords amount={refund.amount} />
       <Note note={refund.note} />
+    </Sheet>
+  );
+}
+
+// Step 28c: a courier payout's voucher (approved with the mockup), signed by whoever recorded it and
+// whoever authorised it, like a supplier payment's. The courier, its reference and the bank account
+// at the top, because the bank statement is matched by them; then each parcel with its tracking
+// code (what the courier's panel shows), what it brought and what the courier kept, and the bank
+// figure in words
+export function PayoutPrint({ payout, bankAccount }: { payout: Payout; bankAccount: string }) {
+  const { t, format } = useLocale();
+  const isoDate = useIsoDate();
+  const money = (value: string) => format.money(value, { decimals: 2 });
+  return (
+    <Sheet
+      title={t('print.titles.storefrontPayout')}
+      meta={[
+        { label: t('print.number'), value: payout.number },
+        { label: t('print.date'), value: isoDate(payout.date) },
+        { label: t('print.courier'), value: payout.account.name },
+        payout.reference === null ? null : { label: t('print.reference'), value: payout.reference },
+        { label: t('print.paidInto'), value: bankAccount },
+      ]}
+      signatures={[t('print.signatures.preparedBy'), t('print.signatures.authorised')]}
+    >
+      <table className="w-full border-collapse text-caption">
+        <thead>
+          <tr>
+            <th scope="col" className={HEAD}>
+              {t('print.payoutColumns.parcel')}
+            </th>
+            <th scope="col" className={HEAD}>
+              {t('print.payoutColumns.trackingCode')}
+            </th>
+            <th scope="col" className={cn(HEAD, 'text-right')}>
+              {t('print.payoutColumns.collected')}
+            </th>
+            <th scope="col" className={cn(HEAD, 'text-right')}>
+              {t('print.payoutColumns.charge')}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {payout.lines.map((line) => (
+            <tr key={line.shipmentId} className="break-inside-avoid">
+              <td className={cn(CELL, 'font-mono tabular-nums')}>{line.invoice}</td>
+              <td className={cn(CELL, 'font-mono tabular-nums')}>{line.trackingCode ?? '—'}</td>
+              <td className={cn(CELL, 'text-right tabular-nums')}>{money(line.collected)}</td>
+              <td className={cn(CELL, 'text-right tabular-nums')}>{money(line.charge)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <dl className="ml-auto grid w-72 break-inside-avoid grid-cols-[1fr_auto] gap-x-4 gap-y-1 tabular-nums">
+        <dt>{t('print.collected')}</dt>
+        <dd className="text-right">{money(payout.collected)}</dd>
+        <dt>{t('print.charges')}</dt>
+        <dd className="text-right">{money(payout.charges)}</dd>
+        <dt className="border-t border-ink pt-1 font-semibold">{t('print.netToBank')}</dt>
+        <dd className="border-t border-ink pt-1 text-right font-semibold">{money(payout.net)}</dd>
+      </dl>
+      <InWords amount={payout.net} />
+      <Note note={payout.note} />
     </Sheet>
   );
 }

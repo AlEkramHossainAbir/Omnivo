@@ -5,13 +5,21 @@ import {
   type PartyRef,
   type Receipt,
   type ReceiptInput,
+  type ReceiptMethod,
   type ReceiptStatus,
   type ReceiptSummary,
   subtractMoney,
   type VoidReceiptInput,
 } from '@omnivo/contracts';
-import { invoices, parties, receiptAllocations, receipts, refunds } from '@omnivo/db';
-import { and, asc, desc, eq, type SQL, sql } from 'drizzle-orm';
+import {
+  invoices,
+  parties,
+  receiptAllocations,
+  receipts,
+  refunds,
+  storefrontShipments,
+} from '@omnivo/db';
+import { and, asc, desc, eq, isNotNull, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created } from '../common/audit/audit.js';
@@ -26,6 +34,10 @@ import { NumberingService } from '../numbering/numbering.service.js';
 import { type Allocation, allocationChanges, checkAllocations } from './allocations.js';
 import { SalesBooksService } from './sales-books.service.js';
 import { assertBranch, assertCustomer, assertMoneyAccount } from './sales-lines.js';
+
+// Step 28b: what insert() takes: the form's receipt, or a shop's with any of RECEIPT_METHODS. The
+// form's input (ReceiptInput) is one of these, so create() passes it as it is
+type ShopReceiptInput = Omit<ReceiptInput, 'method'> & { method: ReceiptMethod };
 
 type ReceiptRow = typeof receipts.$inferSelect;
 
@@ -52,6 +64,15 @@ function toSummary(row: ReceiptRow, customer: PartyRef): ReceiptSummary {
 
 function voided(): AppError {
   return new AppError(409, 'receipt_voided', 'This receipt is voided and cannot be changed.');
+}
+
+// Step 28c (mine 26): a COD receipt whose money a posted courier payout took to the bank
+function paidOutError(): AppError {
+  return new AppError(
+    409,
+    'receipt_paid_out',
+    'A courier payout paid this money out. Void the payout first.',
+  );
 }
 
 function overAllocatedError(): AppError {
@@ -128,10 +149,12 @@ export class ReceiptsService {
 
   // Step 27d: a shop order's online payment (decision 6), made by the worker in the caller's
   // transaction: posted at once, an advance (no invoice yet), with the gateway's fee in its entry.
-  // Refused with the receipt's own error codes (a closed period, a money account archived since)
+  // Refused with the receipt's own error codes (a closed period, a money account archived since).
+  // Step 28b: and a delivered parcel's COD money, by `courier` (RECEIPT_METHODS), which the form's
+  // own input (ReceiptInput, PAYMENT_METHODS) never takes
   async createForShop(
     tx: Transaction,
-    input: ReceiptInput,
+    input: ShopReceiptInput,
     fee: { accountId: string; amount: string } | null,
   ): Promise<string> {
     return (await this.insert(tx, input, fee)).id;
@@ -219,10 +242,26 @@ export class ReceiptsService {
 
   // A bounced cheque or a receipt typed by mistake: its money comes off the invoices, and its entry
   // is reversed on the void date. The receipt stays, voided, so its number is never reused or
-  // missing from the series. Not while a posted refund pays some of it back (step 15d).
+  // missing from the series. Not while a posted refund pays some of it back (step 15d), nor while
+  // a posted courier payout pays it out (step 28c).
   void(id: string, input: VoidReceiptInput): Promise<Receipt> {
     return this.withTenant(async (tx) => {
       const row = await this.lock(tx, id, input.version);
+      // The lock on the receipt makes a payout that is being saved finish first (its line reads
+      // the receipt FOR SHARE), and one saved after this waits and then finds the receipt voided.
+      // So what this finds is what there is; 0083's receipts_paid_out is the last word
+      const [paidOut] = await tx
+        .select({ id: storefrontShipments.id })
+        .from(storefrontShipments)
+        .where(
+          and(
+            eq(storefrontShipments.tenantId, getTenantId()),
+            eq(storefrontShipments.receiptId, id),
+            isNotNull(storefrontShipments.payoutId),
+          ),
+        )
+        .limit(1);
+      if (paidOut) throw paidOutError();
       // The lock on the receipt makes a new refund of it wait (RefundsService locks it too), so
       // what this finds is what there is. The database's receipts_void_check is the last word.
       const [refund] = await tx
@@ -330,7 +369,7 @@ export class ReceiptsService {
   // payment's (createForShop, step 27d). currentActorId(): the person, or null for the worker
   private async insert(
     tx: Transaction,
-    input: ReceiptInput,
+    input: ShopReceiptInput,
     fee: { accountId: string; amount: string } | null,
   ): Promise<ReceiptRow> {
     const customer = await assertCustomer(tx, input.customerId);

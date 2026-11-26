@@ -8,6 +8,7 @@ import {
   formatDocumentNumber,
   isNegativeMoney,
   isPosJournalSource,
+  isStorefrontJournalSource,
   isPurchaseJournalSource,
   isSalesJournalSource,
   isStockJournalSource,
@@ -304,6 +305,8 @@ export function postDraft(data: WorkspaceData, entry: JournalEntry): void {
 // narration; the Reverse button refuses every sales entry (journal_is_sales, step 15c).
 // allowPurchase: the same for a voided supplier payment (bill-data.ts); a bill is corrected by a
 // debit note (17d), never reversed (journal_is_purchase, step 17c).
+// allowPayout: only a voided courier payout (storefront-payout-data.ts, step 28c): Reverse alone
+// would leave its parcels paid out (journal_is_payout).
 export function reverseEntry(
   data: WorkspaceData,
   entry: JournalEntry,
@@ -312,11 +315,13 @@ export function reverseEntry(
     allowYearClose = false,
     allowSales = false,
     allowPurchase = false,
+    allowPayout = false,
     narration,
   }: {
     allowYearClose?: boolean;
     allowSales?: boolean;
     allowPurchase?: boolean;
+    allowPayout?: boolean;
     narration?: string;
   } = {},
 ): JournalEntry {
@@ -335,6 +340,9 @@ export function reverseEntry(
   }
   // Step 20b: a shift's cash is put right by the next count, or a pay in or out the other way
   if (isPosJournalSource(entry.source)) throw new MockProblem(409, 'journal_is_pos');
+  if (isStorefrontJournalSource(entry.source) && !allowPayout) {
+    throw new MockProblem(409, 'journal_is_payout');
+  }
   if (entry.reversedBy !== null) throw new MockProblem(409, 'journal_already_reversed');
   if (date < entry.date) {
     throw new MockProblem(409, 'journal_reversal_date', { date: ['journal_reversal_date'] });

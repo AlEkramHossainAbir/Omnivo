@@ -6,7 +6,7 @@ import {
   Outlet,
   redirect,
 } from '@tanstack/react-router';
-import { INVITE_PATH, type StorefrontOrderView } from '@omnivo/contracts';
+import { INVITE_PATH, type PayoutStatus, type StorefrontOrderView } from '@omnivo/contracts';
 
 import { restoreSession } from './lib/session';
 import { sessionStore } from './lib/session-store';
@@ -1039,6 +1039,8 @@ const ORDER_VIEWS: readonly StorefrontOrderView[] = Object.values({
   shipped: 'shipped',
   delivered: 'delivered',
   cancelled: 'cancelled',
+  // Step 28b (mine 18): the orders received back
+  returned: 'returned',
   all: 'all',
 } as const satisfies { [View in StorefrontOrderView]: View });
 
@@ -1088,6 +1090,66 @@ const storefrontCouponsRoute = createRoute({
     () => import('./routes/storefront-coupons'),
     'StorefrontCouponsPage',
   ),
+});
+
+// Step 28a: the shop's courier accounts (decision 15), storefront.manage. One page: an account opens
+// in a dialog
+const storefrontCouriersRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/couriers',
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-couriers'),
+    'StorefrontCouriersPage',
+  ),
+});
+
+// Step 28c: the couriers' payouts (decision 13), storefront.payout.manage: the sidebar hides them,
+// and the API refuses the reads for anyone else. The list's two filters are search params, so Back
+// from a payout lands on the same list (approved with the mockup). The statuses are written out
+// for the same reason as ORDER_VIEWS: the contracts' storefront-payouts module stays out of the
+// first chunk; `satisfies` keeps them the contract's
+const PAYOUT_STATUSES_SEARCH: readonly PayoutStatus[] = Object.values({
+  posted: 'posted',
+  voided: 'voided',
+} as const satisfies { [Status in PayoutStatus]: Status });
+
+const storefrontPayoutsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/payouts',
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { status?: PayoutStatus; account?: string } => {
+    const status = PAYOUT_STATUSES_SEARCH.find((candidate) => candidate === search.status);
+    return {
+      ...(status !== undefined && { status }),
+      ...(typeof search.account === 'string' &&
+        UUID.test(search.account) && { account: search.account }),
+    };
+  },
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-payouts'),
+    'StorefrontPayoutsPage',
+  ),
+});
+
+// "Record payout" in a courier account's row menu comes with ?account=. '/…/new' beats '/…/$id'
+const newStorefrontPayoutRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/payouts/new',
+  validateSearch: (search: Record<string, unknown>): { account?: string } =>
+    typeof search.account === 'string' && UUID.test(search.account)
+      ? { account: search.account }
+      : {},
+  component: lazyRouteComponent(
+    () => import('./routes/storefront-payout'),
+    'NewStorefrontPayoutPage',
+  ),
+});
+
+const storefrontPayoutRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/storefront/payouts/$payoutId',
+  component: lazyRouteComponent(() => import('./routes/storefront-payout'), 'StorefrontPayoutPage'),
 });
 
 const storefrontCategoriesRoute = createRoute({
@@ -1304,6 +1366,10 @@ const routeTree = rootRoute.addChildren([
     storefrontListingsRoute,
     storefrontListingRoute,
     storefrontCouponsRoute,
+    storefrontCouriersRoute,
+    storefrontPayoutsRoute,
+    newStorefrontPayoutRoute,
+    storefrontPayoutRoute,
     storefrontCategoriesRoute,
     storefrontSettingsRoute,
     storefrontAppearanceRoute,
@@ -1316,7 +1382,15 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const router = createRouter({ routeTree });
+// Step 29 (CLAUDE.md → The router preloads on intent): every page is its own chunk
+// (lazyRouteComponent), so pointing at a rail item or a nav link for 50ms downloads that page
+// while the pointer is still on it, and the click then paints at once. It downloads the chunk, it
+// does not render the page: a page that did its work in a route loader would do it on a hover too
+export const router = createRouter({
+  routeTree,
+  defaultPreload: 'intent',
+  defaultPreloadDelay: 50,
+});
 
 // <Link to="…"> আর navigate({ to }) এখন route tree থেকে টাইপ পায় — ভুল path compile error
 declare module '@tanstack/react-router' {

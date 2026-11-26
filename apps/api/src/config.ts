@@ -42,10 +42,21 @@ const paymentEnvSchema = z.object({
     .optional(),
 });
 
+// Step 28a: couriers. Both processes use it: the API books a manual parcel and answers the
+// courier's webhook and "Test connection", and the worker books an API parcel and polls.
+const shippingEnvSchema = z.object({
+  // Which couriers the API talks to (decision 6). fake: an answer in the courier's shapes from
+  // this process itself (shipping/fake-courier.ts), for development, CI and the tests; it books
+  // nothing and is refused in production. live: each provider's own API (Steadfast). Left out:
+  // live in production, fake everywhere else, like PAYMENT_GATEWAY
+  COURIER_MODE: z.enum(['fake', 'live']).optional(),
+});
+
 // process.env-এর সব মান string | undefined — এখানে একবার যাচাই করে টাইপ-নিরাপদ Config বানানো
 const envSchema = sharedEnvSchema
   .extend(storageEnvSchema.shape)
   .extend(paymentEnvSchema.shape)
+  .extend(shippingEnvSchema.shape)
   .extend({
     PORT: z.coerce.number().int().positive().default(3000),
     API_BASE_URL: z.url(),
@@ -81,6 +92,7 @@ const envSchema = sharedEnvSchema
 const workerEnvSchema = sharedEnvSchema
   .extend(storageEnvSchema.shape)
   .extend(paymentEnvSchema.shape)
+  .extend(shippingEnvSchema.shape)
   .extend({
     // The relay's own database role (omnivo_worker): it may read every tenant's outbox rows, and
     // nothing else. The jobs themselves use DATABASE_URL (omnivo_app) with a tenant context.
@@ -132,6 +144,28 @@ function paymentConfig(e: z.output<typeof paymentEnvSchema> & { NODE_ENV: string
 
 export type PaymentsConfig = ReturnType<typeof paymentConfig>;
 
+// Step 28a: the couriers' mode and the key that seals each courier account's keys. The key is the
+// payment gateway's CREDENTIALS_KEY (decision 7): one secret that seals what the tenants typed,
+// with the table in each seal's context (payments/credentials.ts), so a key sealed for a courier
+// never opens as a gateway password
+function shippingConfig(
+  e: z.output<typeof shippingEnvSchema> & { NODE_ENV: string },
+  payments: PaymentsConfig,
+) {
+  const production = e.NODE_ENV === 'production';
+  const mode = e.COURIER_MODE ?? (production ? 'live' : 'fake');
+  // The fake courier "books" every parcel without telling anyone: on a live shop the order would
+  // say Booked and no rider would ever come. Refused before the API takes a request
+  if (production && mode === 'fake') {
+    throw new Error(
+      'Invalid environment — COURIER_MODE=fake books nothing for real, so production cannot use it.',
+    );
+  }
+  return { mode, credentialsKey: payments.credentialsKey };
+}
+
+export type ShippingConfig = ReturnType<typeof shippingConfig>;
+
 function parseEnv<S extends z.ZodType>(schema: S, env: Record<string, string | undefined>) {
   const parsed = schema.safeParse(env);
   if (!parsed.success) {
@@ -167,6 +201,7 @@ function phoneCodeKey(jwtSecret: string): Buffer {
 
 export function loadConfig(env: Record<string, string | undefined>) {
   const e = parseEnv(envSchema, env);
+  const payments = paymentConfig(e);
   return {
     port: e.PORT,
     apiBaseUrl: e.API_BASE_URL,
@@ -180,7 +215,9 @@ export function loadConfig(env: Record<string, string | undefined>) {
     secureCookies: e.NODE_ENV === 'production',
     storage: storageConfig(e),
     // Step 27d: the payment gateway and the key that seals its passwords
-    payments: paymentConfig(e),
+    payments,
+    // Step 28a: the couriers (fake or live) and the same key, for the courier accounts' keys
+    shipping: shippingConfig(e, payments),
     // Step 26f: the public shop API (storefront/)
     storefront: {
       baseDomain: e.SHOP_BASE_DOMAIN,
@@ -211,6 +248,7 @@ export type Config = ReturnType<typeof loadConfig>;
 
 export function loadWorkerConfig(env: Record<string, string | undefined>) {
   const e = parseEnv(workerEnvSchema, env);
+  const payments = paymentConfig(e);
   return {
     databaseUrl: e.DATABASE_URL,
     relayDatabaseUrl: e.WORKER_DATABASE_URL,
@@ -224,7 +262,9 @@ export function loadWorkerConfig(env: Record<string, string | undefined>) {
     // The report exports (step 11) go to the same bucket as the uploads
     storage: storageConfig(e),
     // Step 27d: the sweep asks the gateway before it deletes an unpaid online order
-    payments: paymentConfig(e),
+    payments,
+    // Step 28a: the worker books the API parcels and polls the ones on their way
+    shipping: shippingConfig(e, payments),
     relay: {
       // How long the relay sleeps when it found nothing to publish. One second keeps an invitation
       // email about a second behind the click, for one cheap index read per second.
@@ -239,6 +279,14 @@ export function loadWorkerConfig(env: Record<string, string | undefined>) {
       // shows up while the admin is still looking at the team page.
       attempts: 5,
       backoffMs: 2_000,
+    },
+    // Step 28a (decision 4): booking a parcel tries five times too, but over about 15 minutes (1,
+    // 2, 4 and 8 minutes apart): a courier's API that is down is usually down for minutes, not
+    // seconds, and a parcel booked 10 minutes late is still picked up the same day. Then the
+    // parcel fails, the bell rings and the page offers "Book again"
+    courierRetry: {
+      attempts: 5,
+      backoffMs: 60_000,
     },
     // Published outbox rows are kept this long for debugging ("did the event go out?"), then
     // deleted by an hourly job

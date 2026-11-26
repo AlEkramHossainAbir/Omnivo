@@ -15,7 +15,14 @@ export const en = {
     loadingMore: 'Loading more…',
   },
   shell: {
-    mainNav: 'Main',
+    // The rail of the eight modules (CLAUDE.md → Module rail); the module menu beside it is
+    // labelled by the open module's own name, so it needs no key of its own
+    modules: 'Modules',
+    // A rail item with work waiting says so: the dot alone is not a count
+    moduleWaiting_one: '{{name}}, {{formatted}} waiting',
+    moduleWaiting_other: '{{name}}, {{formatted}} waiting',
+    // Said by the live region when the menu changes, for someone who cannot see the rail
+    moduleMenu: '{{name}} menu',
     workspaces: 'Workspaces',
     switchWorkspace: 'Switch workspace',
     switchFailed: "Couldn't switch workspace. Try again.",
@@ -63,6 +70,43 @@ export const en = {
     setPinToLock: 'Set a PIN to lock',
   },
   nav: {
+    // The eight modules of the rail. Short words: they sit under a 20px icon in 72px
+    modules: {
+      home: 'Home',
+      sell: 'Sell',
+      buy: 'Buy',
+      stock: 'Stock',
+      accounts: 'Accounts',
+      shop: 'Shop',
+      reports: 'Reports',
+      setup: 'Setup',
+    },
+    // A module's links are grouped by the order of work, not by the alphabet
+    sections: {
+      counter: 'Counter',
+      orders: 'Orders',
+      moneyIn: 'Money in',
+      comesBack: 'What comes back',
+      customers: 'Customers',
+      ordering: 'Ordering',
+      moneyOut: 'Money out',
+      goesBack: 'What goes back',
+      approvals: 'Approvals and suppliers',
+      products: 'Products',
+      stockLevels: 'Stock',
+      places: 'Where it is',
+      books: 'The books',
+      trade: 'Sales and purchase',
+      stockReports: 'Stock',
+      files: 'Files and emails',
+      ordersAndMoney: 'Orders and money',
+      catalog: 'Catalog',
+      look: 'Look and pages',
+      shopSetup: 'Shop setup',
+      people: 'People',
+      counterSetup: 'Counter',
+      workspace: 'Workspace',
+    },
     overview: 'Overview',
     kitchenSink: 'Kitchen sink',
     workspace: 'Workspace',
@@ -162,6 +206,10 @@ export const en = {
     // Step 27c: after Catalog, both about the shop's prices (decision 29). "Shop" for the phone's
     // nav row, like the others
     storefrontCoupons: 'Shop coupons',
+    // Step 28a: after Shop settings in the menu, both set the shop up (decision 15)
+    storefrontCouriers: 'Shop couriers',
+    // Step 28c (decision 13): after Shop couriers. "Shop" for the phone's nav row, like the others
+    storefrontPayouts: 'Shop payouts',
   },
   auth: {
     workspace: 'Workspace',
@@ -467,6 +515,8 @@ export const en = {
         revaluation: 'Stock revaluation',
       },
       accounting: { journal: 'Journal voucher' },
+      // Step 28c
+      storefront: { payout: 'Courier payout' },
     },
     yearStyles: {
       none: 'No year',
@@ -1015,6 +1065,7 @@ export const en = {
       pos_sale: 'POS sale',
       pos_shift: 'POS shift',
       pos_return: 'POS return',
+      storefront_payout: 'Courier payout',
     },
     fromDocument: 'From {{document}}',
     stockEntryHint:
@@ -3030,6 +3081,8 @@ export const en = {
       cheque: 'Cheque',
       mobile_wallet: 'Mobile wallet',
       card: 'Card',
+      // Step 28b: the cash a courier's rider collected, made by a shop order's Delivered only
+      courier: 'Courier COD',
     },
     columns: {
       number: 'Number',
@@ -5472,6 +5525,381 @@ export const en = {
       updated: 'Payment gateway saved',
       loadFailed: "Couldn't load the payment gateway. Refresh the page to try again.",
     },
+    // Step 28a: Storefront → Shop couriers (/storefront/couriers, decision 15), storefront.manage.
+    // An account books with the courier's API (Steadfast) or names a courier the shop books by
+    // hand (decision 14)
+    couriers: {
+      title: 'Shop couriers',
+      description:
+        'The couriers your parcels go with, and the one the Packed dialog books with first',
+      add: 'Add courier account',
+      view: 'Show',
+      views: { active: 'Active', archived: 'Archived' },
+      statuses: { active: 'Active', archived: 'Archived' },
+      // A second, brand pill on the default account's row (decision 13)
+      isDefault: 'Books first',
+      // The line under the account's name. courier = the courier's name (names below)
+      providers: {
+        steadfast: '{{courier}} · books by its API',
+        manual: '{{courier}} · booked by hand',
+      },
+      // SHOP_COURIERS. Names, so the same in Bangla, like the shop's own list
+      names: {
+        pathao: 'Pathao',
+        steadfast: 'Steadfast',
+        redx: 'RedX',
+        ecourier: 'eCourier',
+        paperfly: 'Paperfly',
+      },
+      columns: {
+        account: 'Account',
+        news: 'Courier’s news',
+        test: 'Last test',
+        // Step 28b (decision 12)
+        holds: 'Holds',
+        status: 'Status',
+        // 28a.6: the row menu's column, read by screen readers only
+        actions: 'Actions',
+      },
+      // The news column (lastWebhookAt, decision 16). date = the date and time in the
+      // workspace's time zone
+      newsAt: 'Last arrived {{date}}',
+      newsNever: 'None yet',
+      newsNeverHint:
+        'Paste the webhook into the courier’s panel. Until then, Omnivo asks every 15 minutes.',
+      newsManual: 'Moved by hand',
+      // The last test column (lastTest)
+      neverTested: 'Not tested',
+      testWorked: 'Keys accepted {{date}}',
+      testRejected: 'Keys refused {{date}}',
+      testUnreachable: 'No answer {{date}}',
+      // Step 28b (decision 12): what the courier holds of the shop's cash, the posted COD
+      // receipts of its parcels (a voided one drops out). amount = whole taka, count = the
+      // parcels
+      holds_one: '{{amount}} · {{formatted}} parcel',
+      holds_other: '{{amount}} · {{formatted}} parcels',
+      holdsNothing: 'Nothing yet',
+      // No COD account: the rider's cash is a receipt typed by hand, as before 28b
+      holdsNoAccount: 'No COD account',
+      // The row menu
+      actionsFor: 'Actions for {{name}}',
+      edit: 'Edit',
+      test: 'Test connection',
+      renewToken: 'New webhook token',
+      // Step 28c (decision 14): a new payout of this account
+      recordPayout: 'Record payout',
+      archive: 'Archive',
+      restore: 'Restore',
+      // The test's toast. courier = the courier's name
+      testedWorked: '{{courier}} accepted the keys',
+      testedRejected: '{{courier}} refused the keys. Check them in Edit.',
+      testedUnreachable: '{{courier}} did not answer. Try again in a few minutes.',
+      emptyTitle: 'No courier account yet',
+      emptyBody:
+        'Add your Steadfast account to book parcels as orders are packed, or a courier you book by hand, to keep its tracking codes on the orders.',
+      archivedEmptyTitle: 'No archived courier account',
+      archivedEmptyBody:
+        'An account you archive shows here. Its parcels on their way still get the courier’s news.',
+      loadFailed: "Couldn't load the courier accounts. Refresh the page to try again.",
+      // The card above the list (setDefaultCourier, decision 13)
+      default: {
+        title: 'Book at Packed',
+        description:
+          'The courier the Packed dialog starts with. Whoever packs the order can still change it.',
+        label: 'Book with',
+        none: 'Don’t book at Packed',
+        hint: 'Only an account that books by its API. With none, a parcel is booked with Book courier, or by hand.',
+        noApiAccount: 'Add a Steadfast account to book parcels as orders are packed.',
+        save: 'Save',
+        saved: 'Packed books with {{name}} first',
+        cleared: 'Packed books with no courier first',
+      },
+      // The account dialog (create and update, by provider)
+      form: {
+        addTitle: 'Add a courier account',
+        editTitle: 'Edit {{name}}',
+        provider: 'How it books',
+        providers: { steadfast: 'Steadfast, by its API', manual: 'Another courier, by hand' },
+        providerHints: {
+          steadfast:
+            'Omnivo books each parcel with Steadfast, and Steadfast’s news move the order.',
+          manual:
+            'You book on the courier’s own website or app, then type its tracking code into the order.',
+        },
+        // Editing: the provider is shown, not offered (courier_provider_fixed)
+        providerFixed: 'An account’s courier can’t change. Add a new account for another courier.',
+        name: 'Name',
+        namePlaceholder: 'Steadfast Dhaka',
+        nameHint:
+          'Only your team sees it. Two accounts with one courier, one per pickup point, need two names.',
+        apiKey: 'API key',
+        secretKey: 'Secret key',
+        keysHint: 'Both are on the API page of your Steadfast panel.',
+        // A saved account: the boxes start empty, and an empty box keeps its key
+        keySavedPlaceholder: 'Saved',
+        keysSavedHint:
+          'The keys are saved and never shown. Leave a box empty to keep its key, or type a new one.',
+        courier: 'Courier',
+        courierPlaceholder: 'Pick a courier',
+        courierHint: 'Whose website or app you book on. The tracking page names it.',
+        // Step 28b (decisions 2, 3 and 20): active accounts only, code · name. Empty is a real
+        // choice, so its option says what it means
+        codAccount: 'COD account',
+        codAccountNone: 'None: record the rider’s cash by hand',
+        codAccountHint:
+          'An account that holds money, like “Cash with Steadfast”. When a parcel is delivered, a money receipt for what the rider collected goes into it. Its balance is what the courier owes you.',
+        // Editing an account that has one: the receipts already made stay where they went
+        codAccountSavedHint:
+          'A change counts for the next receipts only. The receipts already made stay in the account they went into.',
+        chargeAccount: 'Courier charges account',
+        chargeAccountNone: 'None yet',
+        chargeAccountHint:
+          'An expense account, like “Courier charges”. The courier’s delivery and return charges go here when its payout is recorded.',
+        accountOption: '{{code}} · {{name}}',
+        noCodAccounts:
+          'No active account holds money yet. Add one, like “Cash with Steadfast”, under the cash accounts in the chart of accounts.',
+        noChargeAccounts: 'No active expense account yet. Add one in the chart of accounts.',
+        create: 'Add account',
+        save: 'Save changes',
+        created: 'Courier account {{name}} added',
+        updated: 'Courier account saved',
+      },
+      // After an API account is added, and after New webhook token. The token is in the answer
+      // once (courierAccountSavedSchema), so the dialog says so
+      webhook: {
+        title: 'Paste the webhook into Steadfast',
+        description:
+          'Steadfast sends each parcel’s news to this address. Paste both into the webhook settings of your Steadfast panel.',
+        url: 'Callback URL',
+        token: 'Auth token (Bearer)',
+        tokenHint: 'Shown only this once. If it is lost, make a new one from the account’s menu.',
+        copyUrl: 'Copy URL',
+        copyToken: 'Copy token',
+        copied: 'Copied',
+        poll: 'Until the first news arrive, Omnivo asks Steadfast every 15 minutes, so orders still move, only later.',
+        done: 'Done',
+      },
+      renewing: {
+        title: 'Make a new webhook token for {{name}}?',
+        body: 'The old token stops working at once. Steadfast’s news are refused until you paste the new one into its panel.',
+        submit: 'Make new token',
+      },
+      archiving: {
+        title: 'Archive {{name}}?',
+        body: 'No new parcel goes with it. Its parcels on their way still get the courier’s news.',
+        // The default account: archiving it clears the default too (28a.2)
+        bodyDefault:
+          'No new parcel goes with it, and Packed books with no courier first. Its parcels on their way still get the courier’s news.',
+        submit: 'Archive account',
+      },
+      archived: '{{name}} archived',
+      restored: '{{name}} restored',
+      tokenRenewed: 'New webhook token made',
+    },
+    // Step 28c: Storefront → Shop payouts (/storefront/payouts, decision 13), with
+    // storefront.payout.manage. A payout is the courier's transfer of the riders' cash to the
+    // bank, its charges taken off
+    payouts: {
+      title: 'Shop payouts',
+      description: 'The COD money your couriers send to the bank, with their charges taken off',
+      new: 'Record payout',
+      account: 'Courier account',
+      allAccounts: 'All courier accounts',
+      // An archived account keeps its payouts, and can still pay out (decision 4)
+      archivedAccount: '{{name}} (archived)',
+      view: 'Show',
+      views: { all: 'All', posted: 'Posted', voided: 'Voided' },
+      // PAYOUT_STATUSES
+      statuses: { posted: 'Posted', voided: 'Voided' },
+      columns: {
+        number: 'Number',
+        date: 'Date',
+        account: 'Courier account',
+        reference: 'Courier’s reference',
+        parcels: 'Parcels',
+        collected: 'Collected',
+        charges: 'Charges',
+        net: 'To the bank',
+        status: 'Status',
+      },
+      emptyTitle: 'No payouts yet',
+      emptyBody:
+        'When Steadfast sends the riders’ cash to your bank, record it here: tick the parcels it paid, or match its payout file.',
+      filteredEmptyTitle: 'No payout matches',
+      filteredEmptyBody: 'No payout has this courier account and status.',
+      showAll: 'Show every payout',
+      loadFailed: "Couldn't load the payouts. Refresh the page to try again.",
+    },
+    // Step 28c: a new payout (/storefront/payouts/new) and a payout's page
+    payout: {
+      back: 'Shop payouts',
+      newTitle: 'Record a courier payout',
+      newDescription:
+        'Tick the parcels this transfer paid. Saving posts it: the money moves out of the courier’s COD account into the bank.',
+      account: 'Courier account',
+      accountPlaceholder: 'Pick the courier account that paid',
+      // The account select's options (payoutAccountSchema.holds), whole taka
+      accountHolds_one: '{{name}} · holds {{amount}} in {{formatted}} parcel',
+      accountHolds_other: '{{name}} · holds {{amount}} in {{formatted}} parcels',
+      accountHoldsNothing: '{{name}} · holds nothing',
+      // Disabled: with no COD account there is nothing to pay out (payout_account_no_cod)
+      accountNoCod: '{{name}} · no COD account',
+      date: 'Date',
+      dateHint: 'The day the money reached the bank, as on the bank statement.',
+      bankAccount: 'Paid into',
+      bankAccountPlaceholder: 'Pick an account',
+      bankAccountHint: 'The bank or mobile wallet account the courier sent the money to.',
+      // The setup's bank accounts, without this courier account's own COD account (decision 7)
+      noBankAccounts:
+        'No other active account holds money. Tick “Holds money” on your bank account in the chart of accounts.',
+      reference: 'Courier’s reference',
+      referencePlaceholder: 'SFC-23618228',
+      referenceHint:
+        'The payment’s number in the courier’s panel, or the bank’s reference. It prints on the voucher.',
+      note: 'Note',
+      notePlaceholder: 'Tuesday’s Steadfast payout for the Mirpur pickup',
+      // No charges account: a line with a charge is refused (payout_account_no_charges)
+      noChargeAccount:
+        '{{name}} has no courier charges account, so only parcels with no charge can be paid out. Pick one in Shop couriers to record the charges.',
+      // The parcels card (payoutParcelsSchema)
+      parcelsTitle: 'Parcels',
+      parcelsDescription:
+        'The parcels of {{name}} that no payout has taken yet. Tick the ones this transfer paid.',
+      pickAccountFirst: 'Pick the courier account to see its parcels.',
+      matchFile: 'Match a payout file',
+      tickAll: 'Tick all',
+      clear: 'Clear',
+      columns: {
+        parcel: 'Parcel',
+        status: 'Status',
+        receipt: 'Money receipt',
+        collected: 'Collected',
+        charge: 'Charge',
+        net: 'To the bank',
+      },
+      // invoice = the courier's invoice (W-000123, W-000123-2)
+      tick: 'Pay out {{invoice}}',
+      chargeLabel: 'Charge for {{invoice}}',
+      // PAYOUT_LINE_KINDS, under the invoice: a charge line brought no cash (decision 4)
+      kinds: { cod: 'Delivered with cash', charge: 'Charge only: no cash came' },
+      // The courier's own charge (courierCharge, mine 22), under the charge box. courier = its name
+      courierSaid: '{{courier}} said {{amount}}',
+      courierSilent: '{{courier}} has not said its charge',
+      noParcelsTitle: 'Nothing to pay out',
+      noParcelsBody:
+        'Every parcel of {{name}} is paid out. A parcel shows here once it is delivered and its COD receipt is made, or once it came back with a charge.',
+      // The totals on subtle under the table
+      ticked_one: '{{formatted}} parcel ticked',
+      ticked_other: '{{formatted}} parcels ticked',
+      collected: 'Collected',
+      charges: 'Charges',
+      net: 'To the bank',
+      // After a file was matched (payoutMatchSchema.fileNet): the bank figure the file gives,
+      // held against the ticked lines'
+      fileNet: 'The file says {{amount}} reached the bank',
+      fileAgrees: 'Agrees',
+      fileOutBy: 'Out by {{amount}}',
+      save: 'Record payout',
+      saveHint:
+        'Saving posts the payout. A mistake is voided on the payout’s page, which frees its parcels again.',
+      created: '{{number}} recorded',
+      // The payout's own page
+      facts: {
+        account: 'Courier account',
+        bankAccount: 'Paid into',
+        date: 'Date',
+        reference: 'Courier’s reference',
+        codAccount: 'Out of',
+        chargeAccount: 'Charges to',
+        branch: 'Branch',
+        note: 'Note',
+      },
+      linesTitle: 'Parcels paid',
+      linesDescription: 'What each parcel brought, and what the courier kept',
+      // The lines' total row (approved with the mockup)
+      total: 'Total',
+      print: 'Print voucher',
+      entry: 'Journal entry',
+      voidEntry: 'Reversal',
+      void: 'Void payout',
+      voidTitle: 'Void {{number}}',
+      voidBody:
+        'Its entry is reversed on the void date, and its parcels can be paid out again. The payout stays in the list with its number.',
+      voidDate: 'Void date',
+      voidDateHint: 'The day it turned out wrong, like the day you found it was recorded twice.',
+      voidReason: 'Reason',
+      voidReasonPlaceholder: 'Recorded twice: the same Steadfast payment as CPO-2026-27-0003',
+      confirmVoid: 'Void payout',
+      voided: '{{number}} voided',
+      voidedNotice: 'Voided on {{date}}: {{reason}}. Its parcels can be paid out again.',
+      notFound: "This payout doesn't exist.",
+      loadFailed: "Couldn't load the payout. Refresh the page to try again.",
+      // The payout file dialog (decisions 10–12, mine 18 and 19). name = the courier account
+      csv: {
+        title: 'Match the courier’s payout file',
+        description:
+          'The payout’s CSV from {{name}}’s panel. Omnivo ticks the parcels it names and takes their charges.',
+        choose: 'Choose CSV file',
+        fileHint:
+          'One payout at a time, up to 1 MB and 5,000 rows. The file is read to tick the parcels, never kept.',
+        reading: 'Reading the file…',
+        matching: 'Matching…',
+        // The mapping step: the saved map or the preset names a column the file lacks.
+        // names = those names, in quotes, joined with commas
+        mapTitle: 'Which column is which?',
+        mapMissing: 'Not in the file: {{names}}. Pick the file’s own columns.',
+        mapFirst: 'Pick the file’s columns once. They are kept for {{name}}’s next file.',
+        key: 'Parcels are named by',
+        // PAYOUT_CSV_KEYS
+        keys: {
+          invoice: 'Invoice (W-000123)',
+          tracking_code: 'Tracking code',
+          consignment_id: 'Courier’s ID',
+        },
+        keyColumn: 'Its column',
+        collectedColumn: 'Collected column',
+        collectedHint:
+          'What the rider collected. Without it, a parcel with another amount can’t be found.',
+        chargeColumn: 'Charge column',
+        chargeHint:
+          'The courier’s charge for each parcel. Without it, the charges stay what the courier’s news said.',
+        columnPlaceholder: 'Pick a column',
+        columnNone: 'Not in the file',
+        match: 'Match the file',
+        changeColumns: 'Change the columns',
+        otherFile: 'Choose another file',
+        // The result, one line per row of the file. row = its line, the header being 1
+        row: 'Row {{row}}',
+        // PAYOUT_MATCH_OUTCOMES, as pills
+        outcomes: {
+          matched: 'Found',
+          different: 'Other amount',
+          already_paid: 'Already paid out',
+          not_ready: 'Not ready',
+          unknown: 'Not found',
+          twice: 'Twice in the file',
+          invalid: 'Can’t be read',
+        },
+        // label = the pill's words, count = its rows
+        outcomeCount: '{{label}}: {{formatted}}',
+        // The line under a row. file and ours = the two collected amounts, with paisa
+        different:
+          'The file says {{file}} collected, the money receipt {{ours}}. If the courier keeps the difference, add it to the charge.',
+        alreadyPaid: 'Paid out on {{payout}}.',
+        notReady:
+          'Not delivered yet, or its money receipt isn’t made. It can be paid out once it is.',
+        unknown: 'None of {{name}}’s parcels has this number.',
+        twice: 'An earlier row has the same number. Only the first one counts.',
+        invalid: 'The row has no parcel number, or an amount that isn’t a number.',
+        // Ticks the found and other-amount rows' parcels, with the file's charges
+        apply_one: 'Tick {{formatted}} parcel',
+        apply_other: 'Tick {{formatted}} parcels',
+        applyHint: 'The charges come from the file. Parcels ticked before stay ticked.',
+        noneToTick: 'No row names a parcel this payout can take.',
+        applied_one: '{{formatted}} parcel ticked from the file',
+        applied_other: '{{formatted}} parcels ticked from the file',
+      },
+    },
     categories: {
       title: 'Shop categories',
       description: 'How the shop groups its listings, in the order its menu shows them',
@@ -5917,13 +6345,14 @@ export const en = {
       searchPlaceholder: 'Order number, name or phone',
       view: 'Show',
       // The tabs (STOREFRONT_ORDER_VIEWS). "New" is a confirmed order nobody has packed yet
-      // (decision 13); returned has no tab until step 28, it shows under All
+      // (decision 13). Step 28b (mine 18): Returned, the orders received back
       views: {
         confirmed: 'New',
         packed: 'Packed',
         shipped: 'Shipped',
         delivered: 'Delivered',
         cancelled: 'Cancelled',
+        returned: 'Returned',
         all: 'All',
       },
       // The status pill (STOREFRONT_ORDER_STATUSES), the tab's own word
@@ -5937,6 +6366,9 @@ export const en = {
       },
       // A second, crit pill: the sales order could not be made (decision 16)
       needsAttention: 'Needs attention',
+      // Step 28b (mine 18): a second, warn pill on a shipped order whose newest parcel did not
+      // all reach the shopper (parcelStatus). The staff act once the goods are back
+      parcelPills: { partly_delivered: 'Partly delivered', returning: 'Coming back' },
       columns: {
         order: 'Order',
         confirmed: 'Confirmed',
@@ -5960,10 +6392,21 @@ export const en = {
         shipped: 'No order is on its way.',
         delivered: 'No order is delivered yet.',
         cancelled: 'No order was cancelled.',
+        // Step 28b
+        returned: 'No order came back.',
       },
       noMatchTitle: 'No order matches',
       noMatchBody: 'Check the number or the phone. The search looks in this tab only.',
       searchAll: 'Search every order',
+      // Step 28a: the packed orders with no parcel, for a courier's bulk upload (decision 19). The
+      // file's column names are the courier's, so they stay in code; its Note is `items_*`
+      exportCourier: 'Export for courier',
+      exporting: 'Exporting…',
+      exported_one: '{{formatted}} packed order in the file',
+      exported_other: '{{formatted}} packed orders in the file',
+      exportedMore:
+        'More orders wait than one file holds. Book these with the courier, then export again.',
+      exportEmpty: 'No packed order waits for a courier.',
       loadFailed: "Couldn't load the shop orders. Refresh the page to try again.",
     },
     // Step 27b: one order's page (/storefront/orders/$orderId): the next step's button, the
@@ -5983,12 +6426,32 @@ export const en = {
       ship: 'Mark shipped',
       deliver: 'Mark delivered',
       cancel: 'Cancel order',
+      // Step 28a: on a packed order with no parcel on its way (or one that was cancelled)
+      book: 'Book courier',
+      // Step 28b (decisions 6 and 7): on a shipped order, once the goods are back on the shelf
+      recordCameBack: 'Record what came back',
+      receiveReturn: 'Receive the return',
       // The toasts. number = the order's (W-000123), the others the documents' own
       salesOrderMade: 'Sales order {{salesOrder}} made for {{number}}',
       packed: '{{number}} packed. Challan {{delivery}} posted.',
       shipped: '{{number}} shipped',
       delivered: '{{number}} delivered. Invoice {{invoice}} posted.',
       cancelled: '{{number}} cancelled. The shopper gets an SMS.',
+      // Step 28a. courier = the account's name, code = the tracking code
+      packedBooking:
+        '{{number}} packed. Challan {{delivery}} posted. Booking the parcel with {{courier}}.',
+      bookingStarted: 'Booking {{number}}’s parcel with {{courier}}',
+      booked: '{{number}} booked with {{courier}}, code {{code}}',
+      bookingAgain: 'Booking {{number}}’s parcel again',
+      // Step 28b. receipt = the COD money receipt's number, salesReturn = the return's
+      deliveredWithReceipt:
+        '{{number}} delivered. Invoice {{invoice}} and money receipt {{receipt}} posted.',
+      partlyDelivered:
+        '{{number}} partly delivered. Sales return {{salesReturn}} and invoice {{invoice}} posted.',
+      partlyDeliveredWithReceipt:
+        '{{number}} partly delivered. Sales return {{salesReturn}}, invoice {{invoice}} and money receipt {{receipt}} posted.',
+      returnReceived:
+        '{{number}} returned. Sales return {{salesReturn}} posted. The shopper gets an SMS.',
       // The neutral document notice under the header: what the next step does
       next: {
         confirmed:
@@ -6002,6 +6465,12 @@ export const en = {
       recordPayment: 'Record payment',
       // Step 27d (decision 6): a delivered order paid online. The invoice took its receipt
       deliveredPaid: 'The invoice is paid: it took the online payment’s money receipt.',
+      // Step 28b (decision 4): what came in at the door. They replace next.delivered. receipt =
+      // the COD receipt's number, courier = the account's name
+      nextDeliveredCod:
+        'The rider’s cash came in on money receipt {{receipt}}, into {{courier}}’s COD account. Its payout to your bank is recorded later.',
+      nextDeliveredNothing:
+        'The rider collected nothing, so no money receipt was made. Record the money when it comes.',
       // Step 27d (decision 7): money the shop has to give back. Each notice ends with "Record
       // refund", a new refund for the order's customer. amount = one payment try's amount
       paidCancelled:
@@ -6012,7 +6481,30 @@ export const en = {
       // A cash on delivery order with a paid try: the shopper paid, then chose to pay on delivery
       paidOnCod:
         'The shopper paid {{amount}} online too, then chose cash on delivery. Tell the rider to take no cash. If the rider took it as well, pay one back.',
+      // Step 28b: a partly delivered order paid online. Its invoice took only what the shopper
+      // kept, so the rest of the payment is left over, to pay back
+      paidPartly:
+        'The shopper paid {{amount}} online, and part of the parcel came back. The invoice took only what they kept. Pay the rest back from your SSLCommerz panel, then record the refund.',
       recordRefund: 'Record refund',
+      // Step 28a: the next step's line once the order has a parcel (decision 5). courier = the
+      // account's name. They replace next.packed and next.shipped
+      nextNoParcel: 'Book a courier, or mark it shipped when the parcel leaves the shop.',
+      nextBooking: 'Omnivo is booking the parcel with {{courier}}.',
+      nextBooked:
+        'The order moves to Shipped by itself when {{courier}}’s rider picks the parcel up.',
+      nextShipped:
+        'The order moves to Delivered by itself when {{courier}} delivers it. That posts the invoice.',
+      // A parcel booked by hand: the staff move the order, as before
+      nextManual: 'Mark it shipped when {{courier}} picks the parcel up.',
+      // Step 28b (decisions 6 and 7): a shipped order whose parcel did not all reach the
+      // shopper (the newest parcel's status). They replace nextShipped
+      nextPartly:
+        '{{courier}} delivered part of the parcel. Once the goods that came back are on the shelf, record what came back. That posts a sales return of them and the invoice of the rest.',
+      nextReturning:
+        '{{courier}} is bringing the parcel back. Once it is on the shelf, receive the return. That brings the goods back into stock and texts the shopper.',
+      // The crit notice of a booking that failed (decision 4). reason = the error's own words
+      parcelFailed: '{{courier}} did not book the parcel. {{reason}}',
+      bookAgain: 'Book again',
       // Decision 1: the crit notice. reason = the error's own words (errors.*), a whole sentence
       documentError: 'The sales order could not be made. {{reason}}',
       // Decision 29: an order confirmed before 27b has no sales order and no error
@@ -6107,6 +6599,101 @@ export const en = {
       deliverTitle: 'Mark {{number}} delivered?',
       deliverBody:
         'This posts an invoice for {{total}}, dated today. It stays unpaid until you record the money.',
+      // Step 28b (decisions 4 and 5): the parcel's courier account has a COD account. courier =
+      // the account's name
+      deliverBodyCod:
+        'This posts an invoice for {{total}}, dated today, and a money receipt into {{courier}}’s COD account for what the rider collected.',
+      // An order paid online: the invoice takes that payment's receipt (27d), so it is not unpaid
+      deliverBodyPaid:
+        'This posts an invoice for {{total}}, dated today. It takes the online payment’s money receipt, so it is paid.',
+      // The amount box: only with a COD account and something to collect. amount = the
+      // parcel's codAmount, what the courier was told to collect
+      collected: 'What the rider collected',
+      collectedHint:
+        'The rider was to collect {{amount}}. Type less if the shopper paid less: the rest stays owed on the invoice. With nothing collected, no receipt is made.',
+      // Step 28a: one card per parcel, newest first (storefrontShipmentSchema)
+      parcels: {
+        title: 'Parcel',
+        // An order booked again: number = the parcel's place, from 1
+        titleNumber: 'Parcel {{number}}',
+        // account = the courier account's name
+        description: 'Sent with {{account}}',
+        // The pill (SHIPMENT_STATUSES). The courier's steps on the card use the same words
+        statuses: {
+          booking: 'Booking',
+          booking_failed: 'Booking failed',
+          booked: 'Booked',
+          picked_up: 'Picked up',
+          in_transit: 'In transit',
+          out_for_delivery: 'Out for delivery',
+          delivered: 'Delivered',
+          partly_delivered: 'Partly delivered',
+          on_hold: 'On hold',
+          returning: 'Going back',
+          returned: 'Returned',
+          cancelled: 'Cancelled',
+        },
+        courier: 'Courier',
+        trackingCode: 'Tracking code',
+        consignmentId: 'Courier’s ID',
+        cod: 'Rider collects',
+        codNothing: 'Nothing: paid online',
+        bookedAt: 'Booked',
+        lastSynced: 'Last news',
+        neverSynced: 'None yet',
+        // Step 28b (decision 5): from the courier's notice, or what the member typed
+        collected: 'Rider collected',
+        charge: 'Courier’s charge',
+        receipt: 'Money receipt',
+        // Step 28c (decision 14): the posted payout that paid the parcel's money out, as a link
+        payout: 'Paid out on',
+        // Mine 14: the COD receipt's error sits on its parcel. reason = the error's own words
+        receiptError: 'The COD receipt could not be made. {{reason}}',
+        makeReceipt: 'Make the receipt',
+        receiptMade: 'Money receipt {{receipt}} made',
+        // While booking. count = the calls made so far (attempts)
+        bookingNow: 'Booking with {{courier}}…',
+        bookingRetry_one: 'Tried {{formatted}} time. Omnivo tries again by itself.',
+        bookingRetry_other: 'Tried {{formatted}} times. Omnivo tries again by itself.',
+        // A refused parcel: the courier's own words (errorDetail), as they came
+        courierSaid: 'The courier said: “{{detail}}”',
+        eventsTitle: 'The courier’s news',
+        noEvents: 'No news from the courier yet.',
+        manual: 'Booked by hand. Move the order with its buttons.',
+        printLabel: 'Print label',
+      },
+      // The Book courier dialog (bookShipment)
+      booking: {
+        title: 'Book a courier for {{number}}',
+        // amount = the order's codAmount
+        description:
+          'The courier gets the shopper’s name, mobile number and address, and what the rider collects: {{amount}}.',
+        descriptionPaid:
+          'The courier gets the shopper’s name, mobile number and address. The order is paid, so the rider collects nothing.',
+        account: 'Courier account',
+        accountPlaceholder: 'Pick an account',
+        // name = the account's, courier = the courier's name
+        accountOption: '{{name}} · {{courier}}',
+        apiHint:
+          'Omnivo books the parcel with {{courier}} now, and the courier’s news move the order.',
+        trackingCode: 'Tracking code',
+        trackingCodePlaceholder: 'SFR2611120042',
+        trackingCodeHint:
+          'Book the parcel on the courier’s website or app first, then type the code it gave.',
+        noAccounts: 'No active courier account yet. Add one in Shop couriers.',
+        submit: 'Book courier',
+      },
+      // The parcel's label, a print sheet (one per parcel)
+      label: {
+        title: 'Parcel label {{number}}',
+        from: 'From',
+        to: 'To',
+        order: 'Order',
+        // amount = the parcel's codAmount, always with paisa
+        collect: 'Collect {{amount}}',
+        paid: 'Paid. Collect nothing.',
+        courierLine: '{{courier}} · {{code}}',
+      },
       // The Packed dialog (decisions 5, 14, 15, 32)
       packing: {
         title: 'Pack {{number}}',
@@ -6132,8 +6719,55 @@ export const en = {
         // needed = the line's quantity
         serialsHint: 'One per line, or scan them. This line needs {{needed}}.',
         serialsCount: '{{entered}} of {{needed}} typed',
+        // Step 28a (decision 13): API accounts only, starting with the default
+        courier: 'Send with',
+        courierNone: 'Don’t book now',
+        courierHint: 'Omnivo books the parcel with {{courier}} once the challan is posted.',
+        courierNoneHint: 'Book it later with Book courier, or by hand on the courier’s website.',
         submit: 'Mark packed',
         loadFailed: "Couldn't load what to pack. Close this and try again.",
+      },
+      // Step 28b (decision 6, mine 16): the "Record what came back" dialog (partlyDeliverOrder).
+      // Its rows are the challan's lines (getReturnPlan), in the challan's order
+      cameBack: {
+        title: 'Record what came back of {{number}}',
+        description:
+          'Tick the goods that came back. A sales return brings them back into {{warehouse}}, and the invoice bills only what the shopper kept.',
+        // The line's checkbox. name = the product's name
+        take: 'Came back: {{name}}',
+        // quantity = what the challan line took, with its unit ("3 pcs")
+        sent: '{{quantity}} sent',
+        batch: 'Batch {{lot}}',
+        batchExpires: 'Batch {{lot}} · expires {{date}}',
+        quantity: 'How many came back',
+        // A serial product: one tick per serial number that left on the line
+        serials: 'Serial numbers that came back',
+        // Step 28b.6 (mine 49): a ticked serial line with no serial number ticked
+        serialsNone: 'Tick the serial numbers that came back.',
+        collected: 'What the rider collected',
+        // amount = the parcel's codAmount, for the whole parcel
+        collectedHint:
+          'For what the shopper kept. The rider was to collect {{amount}} for the whole parcel. With nothing collected, no receipt is made.',
+        // The courier's notice named it (collectedAmount), and the box starts with it
+        collectedFromCourier: '{{courier}} says the rider collected {{amount}}.',
+        reason: 'Why it came back',
+        reasonPlaceholder: 'The shopper did not want the second face wash',
+        reasonHint: 'Only your team sees this. It goes on the sales return.',
+        submit: 'Record what came back',
+        loadFailed: "Couldn't load what the parcel took. Close this and try again.",
+      },
+      // Step 28b (decision 7): the "Receive the return" dialog (returnOrder). delivery = the
+      // challan's number
+      receiving: {
+        title: 'Receive {{number}} back?',
+        body: 'A sales return brings everything on challan {{delivery}} back into stock, and the sales order is cancelled. The order moves to Returned, and the shopper gets an SMS.',
+        // Decision 7: stock comes back only once the parcel is here
+        check: 'Do this once the parcel is on your shelf, not on the courier’s word alone.',
+        reason: 'Why it came back',
+        reasonPlaceholder: 'The shopper did not answer the phone',
+        reasonHint: 'Only your team sees this. It goes on the sales return.',
+        keep: 'Not yet',
+        submit: 'Receive the return',
       },
       // The Cancel dialog (decisions 8 and 19)
       cancelling: {
@@ -6142,6 +6776,9 @@ export const en = {
           'The stock held for it is free again, and its sales order is cancelled. The shopper gets an SMS that the order was cancelled.',
         bodyPacked:
           'A sales return brings the packed goods back into stock, and the sales order is cancelled. The shopper gets an SMS that the order was cancelled.',
+        // Step 28a (decision 21): the order has a booked parcel. courier = the account's name
+        parcelBooked:
+          'Its parcel booked with {{courier}} is cancelled here too. Cancel it on the courier’s panel as well, so no rider comes for it.',
         reason: 'Why',
         reasonPlaceholder: 'The shopper did not answer the phone',
         reasonHint: 'Only your team sees this. The SMS does not say why.',
@@ -6502,6 +7139,8 @@ export const en = {
       purchaseReturn: 'Purchase return',
       debitNote: 'Debit note',
       supplierRefund: 'Supplier refund',
+      // Step 28c
+      storefrontPayout: 'Courier payout',
     },
     bin: 'BIN {{bin}}',
     phone: 'Phone {{phone}}',
@@ -6565,6 +7204,18 @@ export const en = {
     supplierCredit: 'Their credit note',
     receivedInto: 'Received into',
     paidBackOn: 'Paid back on',
+    // Step 28c: a courier payout's voucher
+    courier: 'Courier',
+    paidInto: 'Paid into',
+    payoutColumns: {
+      parcel: 'Parcel',
+      trackingCode: 'Tracking code',
+      collected: 'Collected',
+      charge: 'Charge',
+    },
+    collected: 'Collected',
+    charges: 'Courier’s charges',
+    netToBank: 'Paid into the bank',
     signatures: {
       customer: 'Customer’s signature',
       receivedBy: 'Received by',
@@ -6814,6 +7465,10 @@ export const en = {
         read: 'See the shop’s orders, with the buyers’ phones and addresses',
         manage: 'Move the shop’s orders on and cancel them',
       },
+      // Step 28c
+      payout: {
+        manage: 'Record and void the couriers’ payouts of the shop’s COD money into the bank',
+      },
     },
   },
   invite: {
@@ -6898,6 +7553,8 @@ export const en = {
       storefront_order: 'Shop orders',
       storefront_coupon: 'Shop coupons',
       storefront_payment_gateway: 'Shop payment gateway',
+      courier_account: 'Shop couriers',
+      storefront_payout: 'Courier payouts',
     },
     columns: {
       when: 'When',
@@ -7229,6 +7886,8 @@ export const en = {
         launched: 'Opened the online shop',
         // Step 26h
         theme_updated: 'Changed the shop’s logo or colors',
+        // Step 28a
+        default_courier_set: 'Chose the courier the shop books with first',
         home_moved: 'Moved a block on the shop’s home page',
         page_saved: 'Wrote or changed a shop page',
         page_deleted: 'Deleted a shop page',
@@ -7263,6 +7922,13 @@ export const en = {
         shipped: 'Marked a shop order shipped',
         delivered: 'Marked a shop order delivered',
         cancelled: 'Cancelled a shop order',
+        // Step 28a
+        shipment_booked: 'Booked a shop order’s parcel with a courier',
+        shipment_retried: 'Booked a shop order’s parcel again after it failed',
+        // Step 28b
+        partly_delivered: 'Recorded what came back of a partly delivered shop order',
+        returned: 'Received a returned shop order back',
+        cod_receipt_made: 'Made a delivered shop order’s COD receipt again',
       },
       // Step 27c
       storefront_coupon: {
@@ -7276,6 +7942,20 @@ export const en = {
         created: 'Saved the shop’s payment gateway',
         updated: 'Changed the shop’s payment gateway',
         tested: 'Tested the shop’s payment gateway',
+      },
+      // Step 28a
+      courier_account: {
+        created: 'Added a courier account',
+        updated: 'Changed a courier account',
+        tested: 'Tested a courier account',
+        token_renewed: 'Made a new webhook token for a courier account',
+        archived: 'Archived a courier account',
+        restored: 'Restored an archived courier account',
+      },
+      // Step 28c
+      storefront_payout: {
+        created: 'Recorded a courier’s payout',
+        voided: 'Voided a courier’s payout',
       },
     },
     // changes-এর ঘরের নাম → লেখা। তালিকায় না থাকলে কাঁচা নামই দেখায় (নতুন সার্ভারের নতুন ঘর)
@@ -7527,6 +8207,25 @@ export const en = {
       feeAccount: 'Gateway fee account',
       password: 'Password',
       testResult: 'Test result',
+      // Step 28a: a courier account and a parcel. The keys' and the token's change say only
+      // "changed"
+      provider: 'How it books',
+      courier: 'Courier',
+      keys: 'Keys',
+      webhookToken: 'Webhook token',
+      defaultCourier: 'Books first',
+      trackingCode: 'Tracking code',
+      // Step 28b: a courier account's two accounts (by code), and what came back
+      codAccount: 'COD account',
+      chargeAccount: 'Courier charges account',
+      cameBack: 'Lines that came back',
+      // Step 28c: a payout's created entry
+      courierAccount: 'Courier account',
+      bankAccount: 'Paid into',
+      parcels: 'Parcels',
+      collected: 'Collected',
+      charges: 'Charges',
+      net: 'To the bank',
     },
     loadFailed: "Couldn't load the audit log. Refresh the page to try again.",
   },
@@ -7641,6 +8340,12 @@ export const en = {
       // Step 27a: a shop order got its phone code. {{total}} arrives as money ("৳578")
       storefront: {
         order_confirmed: 'New shop order {{number}} for {{total}}.',
+        // Step 28a: {{courier}} is the account's name ("Steadfast")
+        shipment_failed:
+          '{{courier}} did not book the parcel of {{number}}. Open the order to book it again.',
+        // Step 28b: {{courier}} is the account's name, as above
+        cod_receipt_failed:
+          '{{number}} was delivered by {{courier}}, but its COD receipt could not be made. Open the order to make it.',
       },
     },
   },
@@ -8480,6 +9185,82 @@ export const en = {
       'This server cannot keep a gateway password yet. Ask whoever runs Omnivo for you to set CREDENTIALS_KEY.',
     account_used_by_shop:
       'The shop’s online payments use this account. Choose another one in Shop settings → Online payment first, or archive it.',
+    // Step 28a
+    courier_key_format:
+      'Type the key as the courier’s panel shows it: letters and digits, with no spaces.',
+    courier_key_required: 'Type both keys from the courier’s panel.',
+    courier_pick_one: 'Pick the courier you book these parcels with.',
+    courier_key_missing:
+      'This server cannot keep a courier’s keys yet. Ask whoever runs Omnivo for you to set CREDENTIALS_KEY.',
+    courier_account_not_bookable:
+      'Pick an active courier account that books by its API. A manual one is booked with Book courier, once the courier gives you its code.',
+    courier_account_archived: 'This courier account is archived. Restore it to change it.',
+    courier_provider_fixed:
+      'A courier account’s courier can’t change. Add a new account for the other courier.',
+    courier_pick_account: 'Pick the courier account to send the parcel with.',
+    courier_tracking_code_required: 'Type the tracking code the courier gave for this parcel.',
+    courier_tracking_code_format:
+      'Type the tracking code as the courier shows it: letters, digits and dashes.',
+    storefront_order_not_bookable: 'Only a packed order goes to a courier. Mark it packed first.',
+    storefront_order_has_parcel:
+      'This order’s parcel is on its way already. Reload the page to see it.',
+    storefront_shipment_not_failed: 'This parcel did not fail. Reload the page to see where it is.',
+    storefront_order_parcel_on_its_way:
+      'The courier has the parcel now, so the order can’t be cancelled. Ask the courier to return it.',
+    storefront_order_parcel_booking:
+      'The parcel is being booked with the courier. Cancel once it is booked or its booking failed.',
+    courier_rejected_keys:
+      'The courier refused the account’s keys. Check them in Shop couriers, then book again.',
+    courier_rejected_parcel: 'The courier refused the parcel. Fix what it says, then book again.',
+    courier_unreachable: 'The courier did not answer. Book again in a few minutes.',
+    courier_invoice_taken:
+      'The courier already has a parcel with this order’s number. Find it on the courier’s panel and cancel it there, then book again.',
+    courier_webhook_token_invalid:
+      'This webhook token is not right. Paste the token from Shop couriers.',
+    // Step 28b
+    courier_cod_account_invalid:
+      'Pick an active account that holds money, like Cash with Steadfast, or none.',
+    courier_charge_account_invalid:
+      'Pick an active expense account, like Courier charges, or none.',
+    storefront_order_collected_over:
+      'The rider collects at most {{amount}} for this parcel. Type what the courier says was collected.',
+    storefront_order_collected_required:
+      'Type what the rider collected. The courier has not said it yet.',
+    storefront_order_return_nothing:
+      'Tick what came back. If the shopper kept everything, use Mark delivered.',
+    storefront_order_return_everything: 'Everything came back. Use Receive the return instead.',
+    storefront_cod_receipt_not_failed: 'This parcel’s COD receipt did not fail. Reload the order.',
+    // Step 28c
+    payout_pick_account: 'Pick the courier account that paid.',
+    payout_bank_account_invalid:
+      'Pick the active bank or cash account the money went into, not the courier’s own COD account.',
+    payout_lines_required: 'Tick at least one parcel this payout paid.',
+    payout_too_many_lines:
+      'A payout takes at most 500 parcels. Record the rest as a second payout.',
+    payout_line_twice: 'This parcel is on the payout twice. Remove one of the lines.',
+    payout_charge_required: 'Type the courier’s charge for this parcel, or 0.',
+    payout_account_no_cod:
+      'This courier account has no COD account, so it holds no money to pay out. Pick one in Shop couriers.',
+    payout_account_no_charges:
+      'This payout has charges, and the courier account has no charges account. Pick one in Shop couriers.',
+    payout_parcel_unavailable:
+      'A parcel can’t be paid out any more: another payout took it, or it changed. Reload the parcels.',
+    payout_charge_line_zero:
+      'A parcel that brought no cash is here only for its charge. Type the charge, or untick it.',
+    payout_below_zero:
+      'The charges are more than the cash on these parcels. Tick the delivered parcels this payout paid too.',
+    payout_date_before_receipt:
+      'Pick a date on or after the COD receipts of these parcels: the money wasn’t with the courier before.',
+    payout_csv_unreadable:
+      'This file isn’t a CSV with a header row. Download the payout as CSV again.',
+    payout_csv_too_big: 'This file is too big. Download one payout at a time.',
+    payout_csv_too_many_rows: 'The file has more than 5,000 rows. Download one payout at a time.',
+    payout_csv_column_required: 'Pick the column.',
+    journal_is_payout:
+      'A courier payout’s entry can’t be reversed here. Void the payout on its own page: that frees its parcels too.',
+    payout_voided: 'This payout is voided and can no longer change. Reload the page.',
+    receipt_paid_out:
+      'A courier payout paid this COD money out to the bank. Void the payout first, then this receipt.',
   } satisfies Record<ErrorCode, string>,
   ui: {
     dataTable: {

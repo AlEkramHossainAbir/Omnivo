@@ -295,3 +295,20 @@
     }
   }
 }
+
+@layer components {
+  /* CLAUDE.md → Module switch motion: the module menu's list enters with a 160ms fade and a 4px
+     upward slide, keyed on the module id so React remounts it and the animation runs again.
+     Under prefers-reduced-motion the base layer's own rule turns every animation off, so there is
+     nothing to repeat here. */
+  @keyframes module-menu-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+
+  .module-menu-in {
+    animation: module-menu-in 160ms ease-out;
+  }
+}

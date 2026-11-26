@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { SHOP_ORDER_STATUSES } from './storefront.js';
 import {
   cancelStorefrontOrderInputSchema,
+  deliverStorefrontOrderInputSchema,
   packStorefrontOrderInputSchema,
+  partlyDeliverStorefrontOrderInputSchema,
+  returnStorefrontOrderInputSchema,
   STOREFRONT_ORDER_STATUSES,
   storefrontOrderPaymentSchema,
   storefrontOrderQuerySchema,
@@ -43,6 +46,7 @@ const PACK: PackStorefrontOrderFormValues = {
       picks: [{ batchId: '', quantity: '1', serialNumbers: ['356938035643809'] }],
     },
   ],
+  courierAccountId: '',
 };
 
 describe('the statuses the ERP shows', () => {
@@ -63,9 +67,27 @@ describe('the statuses the ERP shows', () => {
   it('has no tab for orders that wait for their code', () => {
     expect(storefrontOrderQuerySchema.safeParse({ view: 'pending' }).success).toBe(false);
   });
+
+  // Step 28b: an order can be returned now, so it has a tab
+  it('has a Returned tab after Cancelled', () => {
+    expect(storefrontOrderQuerySchema.parse({ view: 'returned' }).view).toBe('returned');
+  });
 });
 
 describe('Packed', () => {
+  it('books with the courier the dialog picked, and "Don\'t book now" as null (step 28a)', () => {
+    expect(packStorefrontOrderInputSchema.parse(PACK).courierAccountId).toBeNull();
+    const courier = '4e5f6a7b-8c9d-4e0f-a1b2-c3d4e5f6a7b8';
+    expect(
+      packStorefrontOrderInputSchema.parse({ ...PACK, courierAccountId: courier }).courierAccountId,
+    ).toBe(courier);
+    // 28a.3: a body without the field (an older page) does not book either
+    expect(
+      packStorefrontOrderInputSchema.parse({ version: PACK.version, lines: PACK.lines })
+        .courierAccountId,
+    ).toBeNull();
+  });
+
   it('takes a line split over two batches, and no batch as null', () => {
     const parsed = packStorefrontOrderInputSchema.parse(PACK);
     expect(parsed.lines[0]?.picks.map((pick) => pick.batchId)).toEqual([BATCH_A, BATCH_B]);
@@ -108,6 +130,7 @@ describe('Packed', () => {
         { position: 1, picks: [{ batchId: BATCH_A, quantity: '0', serialNumbers: [] }] },
         { position: 2, picks: [] },
       ],
+      courierAccountId: '',
     });
     expect(Object.keys(errorsOf(result)).sort()).toEqual([
       'lines.0.picks.0.quantity',
@@ -122,6 +145,65 @@ describe('Cancel', () => {
     expect(
       cancelStorefrontOrderInputSchema.safeParse({ version: 2, reason: 'x'.repeat(201) }).success,
     ).toBe(false);
+  });
+});
+
+// Step 28b
+describe('Delivered', () => {
+  it('takes what the rider collected, and none (a page from before 28b) as null', () => {
+    expect(deliverStorefrontOrderInputSchema.parse({ version: 5 })).toEqual({
+      version: 5,
+      collectedAmount: null,
+    });
+    expect(
+      deliverStorefrontOrderInputSchema.parse({ version: 5, collectedAmount: '578' })
+        .collectedAmount,
+    ).toBe('578');
+  });
+});
+
+describe('Record what came back', () => {
+  const LINE_A = '1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d';
+  const LINE_B = '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e';
+
+  it('takes the lines that came back, what was collected and why', () => {
+    const parsed = partlyDeliverStorefrontOrderInputSchema.parse({
+      version: 6,
+      lines: [{ deliveryLineId: LINE_A, quantity: '1', serialNumbers: [] }],
+      collectedAmount: '300',
+      reason: 'Wrong size',
+    });
+    expect(parsed).toMatchObject({ collectedAmount: '300', reason: 'Wrong size' });
+  });
+
+  it('needs at least one line: nothing back is Mark delivered', () => {
+    expect(
+      errorsOf(
+        partlyDeliverStorefrontOrderInputSchema.safeParse({ version: 6, lines: [], reason: '' }),
+      ),
+    ).toEqual({ lines: ['storefront_order_return_nothing'] });
+  });
+
+  it('refuses a challan line twice and a serial number twice, on the second one', () => {
+    const result = partlyDeliverStorefrontOrderInputSchema.safeParse({
+      version: 6,
+      lines: [
+        { deliveryLineId: LINE_A, quantity: '1', serialNumbers: ['356938035643809'] },
+        { deliveryLineId: LINE_B, quantity: '1', serialNumbers: ['356938035643809'] },
+        { deliveryLineId: LINE_A, quantity: '1', serialNumbers: [] },
+      ],
+      reason: '',
+    });
+    expect(errorsOf(result)).toEqual({
+      'lines.1.serialNumbers.0': ['stock_serial_twice'],
+      'lines.2.deliveryLineId': ['return_line_twice'],
+    });
+  });
+});
+
+describe('Receive the return', () => {
+  it('keeps no reason as null', () => {
+    expect(returnStorefrontOrderInputSchema.parse({ version: 7, reason: '' }).reason).toBeNull();
   });
 });
 
@@ -165,10 +247,16 @@ describe('the routes', () => {
   });
 
   // Decision 9: a packer reads and moves orders without storefront.manage (the shop's prices and
-  // pages), and every move is .manage, never .read
+  // pages), and every move is .manage, never .read. Two reads are .manage too: the pack plan, and
+  // (step 28a) the courier export, which is for booking and holds many shoppers' phones at once,
+  // and the courier choices, which only the one who books needs
   it('read with storefront.order.read and change with storefront.order.manage', () => {
     for (const route of routes) {
-      const changes = route.method !== 'GET' || route.path.endsWith('/pack-plan');
+      const changes =
+        route.method !== 'GET' ||
+        route.path.endsWith('/pack-plan') ||
+        route.path.endsWith('/courier-export') ||
+        route.path.endsWith('/courier-choices');
       expect([route.path, route.permission]).toEqual([
         route.path,
         changes ? 'storefront.order.manage' : 'storefront.order.read',

@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 
 import { AttachmentsModule } from '../attachments/attachments.module.js';
+import { JournalModule } from '../journal/journal.module.js';
+import { NumberingModule } from '../numbering/numbering.module.js';
 import { ProductsModule } from '../products/products.module.js';
 import { SalesModule } from '../sales/sales.module.js';
 import { StorefrontAppearanceService } from './admin/appearance.service.js';
@@ -29,6 +31,15 @@ import { StorefrontOrdersController } from './orders/storefront-orders.controlle
 import { StorefrontOrdersService } from './orders/storefront-orders.service.js';
 import { PublicStorefrontController } from './public-storefront.controller.js';
 import { PublicStorefrontService } from './public-storefront.service.js';
+import { ShopOrderMoves } from './orders/order-moves.js';
+import { ShopCodReceipts } from './shipping/cod-receipts.js';
+import { CourierAccountsController } from './shipping/courier-accounts.controller.js';
+import { CourierAccountsService } from './shipping/courier-accounts.service.js';
+import { CourierWebhooks } from './shipping/courier-webhooks.js';
+import { ShipmentNews } from './shipping/shipment-news.js';
+import { PayoutBooks } from './payouts/payout-books.js';
+import { PayoutsController } from './payouts/payouts.controller.js';
+import { PayoutsService } from './payouts/payouts.service.js';
 import { ShopDb } from './shop-db.js';
 
 // Step 26f: the online shop's side of the API: the public reads (/public/v1). Step 26g adds the
@@ -44,9 +55,14 @@ import { ShopDb } from './shop-db.js';
 // the reason above. Step 27d adds paying online: the shop's payment routes (orders/shop-payments.*,
 // as omnivo_shop), the Payment card (admin/payment-gateway.*), and the money receipt of a paid try
 // (orders/payment-receipts.ts), which "Make the receipt" shares with the worker. The gateway itself
-// comes from InfraModule (PAYMENT_GATEWAY)
+// comes from InfraModule (PAYMENT_GATEWAY). Step 28a adds couriers (shipping/): the Shop couriers
+// page and the courier's webhook (one controller), the parcels of a shop order (shipping/
+// shipments.ts, used by the order moves), and the courier's news, which moves an order with the
+// buttons' own code (orders/order-moves.ts). The adapters come from InfraModule (COURIERS); the
+// booking job and the poll run in the worker. Step 28c adds the courier's payout (payouts/), a
+// document of its own with its number and its entry, so it imports the journal and the numbering
 @Module({
-  imports: [AttachmentsModule, SalesModule, ProductsModule],
+  imports: [AttachmentsModule, SalesModule, ProductsModule, JournalModule, NumberingModule],
   controllers: [
     PublicStorefrontController,
     ShopOrdersController,
@@ -55,6 +71,8 @@ import { ShopDb } from './shop-db.js';
     StorefrontOrdersController,
     StorefrontCouponsController,
     StorefrontPaymentsController,
+    CourierAccountsController,
+    PayoutsController,
   ],
   providers: [
     ShopDb,
@@ -77,6 +95,14 @@ import { ShopDb } from './shop-db.js';
     ShopPaymentsService,
     ShopPaymentReceipts,
     StorefrontPaymentGatewayService,
+    ShopOrderMoves,
+    // Step 28b: Delivered's COD receipt (ShopOrderMoves needs it)
+    ShopCodReceipts,
+    CourierAccountsService,
+    CourierWebhooks,
+    ShipmentNews,
+    PayoutBooks,
+    PayoutsService,
   ],
 })
 export class StorefrontModule {}

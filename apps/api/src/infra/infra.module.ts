@@ -14,13 +14,16 @@ import { createWithUser } from '../common/tenant/with-user.js';
 import type { Config } from '../config.js';
 import { StorageService } from '../storage/storage.service.js';
 import { createGateway } from '../payments/create-gateway.js';
+import { createCouriers } from '../shipping/create-couriers.js';
 import {
   AUTH,
   CONFIG,
+  COURIERS,
   DB,
   PAYMENT_GATEWAY,
   PAYMENTS_CONFIG,
   REDIS,
+  SHIPPING_CONFIG,
   STORAGE_CONFIG,
   WITH_TENANT,
   WITH_USER,
@@ -66,6 +69,9 @@ export class InfraModule implements OnApplicationShutdown {
         // Step 27d: the gateway for the shop's payments and the Payment card's test
         { provide: PAYMENTS_CONFIG, useValue: config.payments },
         { provide: PAYMENT_GATEWAY, useFactory: () => createGateway(config.payments) },
+        // Step 28a: the couriers, for a webhook and "Test connection" (the worker books and polls)
+        { provide: SHIPPING_CONFIG, useValue: config.shipping },
+        { provide: COURIERS, useFactory: () => createCouriers(config.shipping) },
       ],
       exports: [
         CONFIG,
@@ -77,6 +83,8 @@ export class InfraModule implements OnApplicationShutdown {
         StorageService,
         PAYMENTS_CONFIG,
         PAYMENT_GATEWAY,
+        SHIPPING_CONFIG,
+        COURIERS,
       ],
     };
   }

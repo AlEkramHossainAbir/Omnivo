@@ -2,7 +2,7 @@ import {
   type CreditNoteReason,
   type LanguageCode,
   type OutputDocument,
-  type PaymentMethod,
+  type ReceiptMethod,
   SHARE_LINK_DAYS,
 } from '@omnivo/contracts';
 
@@ -78,7 +78,9 @@ export interface DocumentCopy {
   reference: string;
   allocationColumns: { invoice: string; date: string; total: string; amount: string };
   advance: string;
-  methods: Record<PaymentMethod, string>;
+  // Step 28b: a receipt's methods (RECEIPT_METHODS), so a courier's COD receipt prints its own
+  // words; refunds and supplier payments read the same words by their PAYMENT_METHODS
+  methods: Record<ReceiptMethod, string>;
   reasons: Record<CreditNoteReason, string>;
   note: string;
   inWords: (words: string) => string;
@@ -166,6 +168,7 @@ export const DOCUMENT_COPY = {
       cheque: 'Cheque',
       mobile_wallet: 'Mobile wallet',
       card: 'Card',
+      courier: 'Courier COD',
     },
     reasons: {
       goods_returned: 'Goods came back',
@@ -269,6 +272,7 @@ export const DOCUMENT_COPY = {
       cheque: 'চেক',
       mobile_wallet: 'মোবাইল ওয়ালেট',
       card: 'কার্ড',
+      courier: 'কুরিয়ারের COD',
     },
     reasons: {
       goods_returned: 'মাল ফেরত এসেছে',

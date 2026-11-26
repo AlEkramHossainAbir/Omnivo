@@ -1,11 +1,17 @@
 import {
+  type CourierProvider,
+  type CourierTestProblem,
   type ErrorCode,
   type PaymentGatewayMode,
   type PaymentGatewayProvider,
   type PaymentGatewayTestProblem,
+  type PayoutCsvMap,
+  type ShipmentStatus,
+  type ShopCourier,
   type ShopCouponRule,
   type ShopPaymentMethod,
   type ShopPaymentStatus,
+  type ShopShipmentStatus,
   type ShopTextPageSlug,
   slugFromName,
   STOREFRONT_DEFAULT_THEME,
@@ -24,6 +30,7 @@ import {
 } from '@omnivo/contracts';
 
 import { findVariant } from './stock-data';
+import type { MockPayouts } from './storefront-payout-data';
 import type { WorkspaceData } from './workspace-data';
 
 // Step 26g: what the mock keeps of the online shop, and the garments workspace's open shop. A file
@@ -168,6 +175,8 @@ export interface MockShopOrder {
   // Step 27d: the order's visits to the payment page, oldest first (27d.2's storefront_payments).
   // Empty for a Cash on Delivery order that never tried to pay online
   payments: MockShopPayment[];
+  // Step 28a: the order's parcels, oldest first (28a.2's storefront_shipments)
+  shipments: MockShipment[];
   version: number;
   updatedAt: string;
 }
@@ -203,6 +212,64 @@ export interface MockGateway {
   updatedAt: string;
 }
 
+// Step 28a: a courier account, as the API's courier_accounts row keeps it. The mock keeps the keys
+// in plain text, as it keeps the gateway's password: it has no key to seal them with, and it never
+// answers them (storefront-shipping-data.ts → toCourierAccount). Step 28b: the webhook token too,
+// in plain text where the API keeps only its hash: the mock's webhook (handlers.ts) compares the
+// token a test posts with, and the page still sees only whether there is one
+export interface MockCourierAccount {
+  id: string;
+  provider: CourierProvider;
+  name: string;
+  courier: ShopCourier;
+  // null for a manual account
+  keys: { apiKey: string; secretKey: string } | null;
+  // null for a manual account
+  webhookToken: string | null;
+  // Step 28b: where the rider's cash goes, and where the courier's charges will (null = none)
+  codAccountId: string | null;
+  chargeAccountId: string | null;
+  isDefault: boolean;
+  archivedAt: string | null;
+  lastWebhookAt: string | null;
+  lastTest: { at: string; problem: CourierTestProblem | null } | null;
+  // Step 28c: the payout file's columns, saved by the first file matched with a map (decision 11)
+  payoutCsvMap: PayoutCsvMap | null;
+  version: number;
+  updatedAt: string;
+}
+
+// Step 28a: one parcel, as the API's storefront_shipments row keeps it, with its steps. A parcel in
+// `booking` has bookUntil: when the pretend worker answers (storefront-shipping-data.ts)
+export interface MockShipment {
+  id: string;
+  accountId: string;
+  parcelNo: number;
+  invoice: string;
+  courier: ShopCourier;
+  status: ShipmentStatus;
+  consignmentId: string | null;
+  trackingCode: string | null;
+  codAmount: string;
+  bookedAt: string | null;
+  attempts: number;
+  error: ErrorCode | null;
+  errorDetail: string | null;
+  events: { status: ShopShipmentStatus; at: string; note: string | null }[];
+  lastSyncedAt: string | null;
+  bookUntil: string | null;
+  // Step 28b: what the rider collected and the courier's charge, as its notice said or a member
+  // typed at Delivered; the COD receipt made for it (looked up by id, like the order's documents),
+  // or why it could not be made
+  collectedAmount: string | null;
+  courierCharge: string | null;
+  receiptId: string | null;
+  receiptError: ErrorCode | null;
+  // Step 28c: the posted payout that paid it out (storefront-payout-data.ts); null again when it is
+  // voided
+  payoutId: string | null;
+}
+
 // Step 27c: a coupon as the table keeps it (storefront-coupon-data.ts has the rules). The mock has
 // no shop checkout, so the orders that have a code are not real orders here:
 // - used: how many orders hold a use now (the API counts them with storefront_coupon_uses())
@@ -235,6 +302,10 @@ export interface MockStorefront {
   coupons: MockCoupon[];
   // Step 27d: null until the Online payment card is saved the first time
   gateway: MockGateway | null;
+  // Step 28a: the shop's courier accounts, archived ones too, in the order they were made
+  couriers: MockCourierAccount[];
+  // Step 28c: the couriers' payouts (storefront-payout-data.ts)
+  payouts: MockPayouts;
 }
 
 export function emptyStorefront(): MockStorefront {
@@ -253,6 +324,8 @@ export function emptyStorefront(): MockStorefront {
     orders: [],
     coupons: [],
     gateway: null,
+    couriers: [],
+    payouts: { items: [], counter: 0 },
   };
 }
 

@@ -69,6 +69,7 @@ export const JOURNAL_SOURCES = [
   'pos_sale',
   'pos_shift',
   'pos_return',
+  'storefront_payout',
 ] as const;
 export type JournalSource = (typeof JOURNAL_SOURCES)[number];
 
@@ -134,6 +135,18 @@ export function isPosJournalSource(value: string): value is PosJournalSource {
   return POS_JOURNAL_SOURCES.some((source) => source === value);
 }
 
+// The source of a courier's payout (step 28c). The journal's Reverse refuses it (journal_is_payout):
+// voiding the payout on its own page reverses the entry and frees its parcels together, so the
+// parcels and the books never disagree.
+export const STOREFRONT_JOURNAL_SOURCES = [
+  'storefront_payout',
+] as const satisfies readonly JournalSource[];
+export type StorefrontJournalSource = (typeof STOREFRONT_JOURNAL_SOURCES)[number];
+
+export function isStorefrontJournalSource(value: string): value is StorefrontJournalSource {
+  return STOREFRONT_JOURNAL_SOURCES.some((source) => source === value);
+}
+
 // Every source whose entry points at the document that made it (journal_entries_document_check in
 // the database holds the same list)
 export const DOCUMENT_JOURNAL_SOURCES = [
@@ -141,6 +154,7 @@ export const DOCUMENT_JOURNAL_SOURCES = [
   ...SALES_JOURNAL_SOURCES,
   ...PURCHASE_JOURNAL_SOURCES,
   ...POS_JOURNAL_SOURCES,
+  ...STOREFRONT_JOURNAL_SOURCES,
 ] as const satisfies readonly JournalSource[];
 
 // '2026-07-01' and -1 → '2026-06-30'. The arithmetic runs in UTC, so no time zone can move the

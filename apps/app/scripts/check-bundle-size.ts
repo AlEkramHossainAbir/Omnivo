@@ -23,7 +23,9 @@ import { z } from 'zod';
 // Step 27d: 250 KB (you chose this). The online payment's words (27d.5) and its contracts (the
 // Online payment card, the order's payment tries and the shop's payment routes, which the route
 // table carries) took it to 246.4 KB; the card and the order page stay in their lazy chunks.
-const INITIAL_BUDGET = 250 * 1024;
+// Step 28b: 255 KB (you chose this). The COD screens' words (28b.5) and the order's four new routes
+// took it to 251.0 KB; the dialogs of what came back are a lazy chunk of their own.
+const INITIAL_BUDGET = 255 * 1024;
 // Step 17d: a lazy chunk is 105 KB for now. Almost every page loads the contracts' whole route
 // table (about 28 KB gz) to call the API, and 17d's three documents grew it enough to push pages
 // that 17d never touched (team, units) over 100 KB. Loading each module's routes with its own

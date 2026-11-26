@@ -30,6 +30,12 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // storefront.order_confirmed: params { id, number, total } — a shop order got its phone code
 // (step 27a); sent to the owners and the people with storefront.order.read. total is the amount
 // as a decimal string, which the bell writes as money
+// storefront.shipment_failed: params { id, number, courier } — five tries did not book a shop
+// order's parcel (step 28a, decision 4); sent to the owners and the people with
+// storefront.order.manage, and the bell opens the order. courier = the account's name
+// storefront.cod_receipt_failed: params { id, number, courier } — a delivered shop order's COD
+// receipt could not be made (step 28b, decision 4: the courier's news delivered it, nobody was
+// there to see the error); sent like shipment_failed, and the bell opens the order
 export const NOTIFICATION_TYPES = [
   'workspace.ready',
   'member.joined',
@@ -49,6 +55,8 @@ export const NOTIFICATION_TYPES = [
   'pos.sold_short',
   'pos.shift_variance',
   'storefront.order_confirmed',
+  'storefront.shipment_failed',
+  'storefront.cod_receipt_failed',
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 

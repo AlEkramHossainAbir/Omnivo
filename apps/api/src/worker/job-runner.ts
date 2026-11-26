@@ -19,6 +19,7 @@ import type { WorkerConfig } from '../config.js';
 import { CONFIG } from '../infra/tokens.js';
 import { ReportScheduleSweep } from '../reports/report-schedule-sweep.js';
 import { PendingOrderSweep } from '../storefront/orders/pending-order-sweep.js';
+import { ShipmentPoll } from '../storefront/shipping/shipment-poll.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { OutboxRelay } from './outbox-relay.js';
@@ -31,6 +32,7 @@ import {
   QUEUE_NAMES,
   Queues,
   REPORT_SCHEDULE_SWEEP,
+  SHIPMENT_POLL,
 } from './queues.js';
 
 // How many jobs of one queue run at the same time in one worker process. Jobs spend most of their
@@ -51,6 +53,7 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     private readonly syncLog: SyncLogCleanup,
     private readonly reportSweep: ReportScheduleSweep,
     private readonly orderSweep: PendingOrderSweep,
+    private readonly shipmentPoll: ShipmentPoll,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -69,6 +72,7 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     await this.queues.scheduleCleanup();
     await this.queues.scheduleReportSweep();
     await this.queues.schedulePendingOrderSweep();
+    await this.queues.scheduleShipmentPoll();
   }
 
   // close() stops taking new jobs and waits for the running ones, before the database closes
@@ -98,6 +102,12 @@ export class JobRunner implements OnApplicationBootstrap, BeforeApplicationShutd
     if (job.name === PENDING_ORDER_SWEEP) {
       const deleted = await this.orderSweep.run();
       if (deleted > 0) this.logger.log(`shop orders: ${String(deleted)} without a code deleted`);
+      return;
+    }
+    // Step 28a: like the sweeps, no retries of its own; the next poll is 15 minutes later
+    if (job.name === SHIPMENT_POLL) {
+      const asked = await this.shipmentPoll.run();
+      if (asked > 0) this.logger.log(`parcels: asked the couriers about ${String(asked)}`);
       return;
     }
     // A job we cannot read will never become readable: no retries

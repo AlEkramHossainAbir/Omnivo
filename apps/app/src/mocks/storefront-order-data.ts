@@ -1,14 +1,21 @@
 import {
   addMoney,
+  billableQuantity,
+  type BookShipmentInput,
   compareMoney,
   compareQuantity,
   type CustomerInput,
+  type DeliverStorefrontOrderInput,
   type DocumentRef,
   type ErrorCode,
+  isOpenShipment,
   isTrackingMode,
+  isZeroMoney,
   listingPricing,
   multiplyMoney,
   type PackStorefrontOrderInput,
+  type PartlyDeliverStorefrontOrderInput,
+  type ReturnStorefrontOrderInput,
   productInputSchema,
   type SalesLineInput,
   type ShopDeliveryZone,
@@ -20,6 +27,7 @@ import {
   type StorefrontOrderSort,
   type StorefrontOrderSummary,
   type StorefrontPackPlan,
+  type StorefrontReturnPlan,
   type StorefrontSetup,
   subtractQuantity,
   sumMoney,
@@ -28,7 +36,15 @@ import {
 } from '@omnivo/contracts';
 import type { z } from 'zod';
 
-import { confirmWithCredit, postInvoice, saveInvoice } from './invoice-data';
+import {
+  allocateReceipt,
+  confirmWithCredit,
+  createReceipt,
+  dueOn,
+  findInvoice,
+  postInvoice,
+  saveInvoice,
+} from './invoice-data';
 import { MockProblem } from './mock';
 import { saveProduct } from './product-data';
 import { postReturn, saveReturn } from './return-data';
@@ -54,9 +70,27 @@ import {
   seedTry,
   toPayment,
 } from './storefront-payment-data';
+import { createPayout } from './storefront-payout-data';
+import {
+  bookableAtPack,
+  cancelShipments,
+  codAmountOf,
+  courierNotice,
+  followOrder,
+  parcelNeedsAttention,
+  retryShipment,
+  seedCouriers,
+  seedParcel,
+  settleBookings,
+  shipmentsOf,
+  startShipment,
+  step,
+} from './storefront-shipping-data';
 import {
   type MockCategory,
+  type MockCourierAccount,
   type MockListing,
+  type MockShipment,
   type MockShopOrder,
   type MockShopOrderLine,
   seedPhoto,
@@ -117,7 +151,10 @@ function summaryOf(order: MockShopOrder): StorefrontOrderSummary {
     paymentMethod: order.paymentMethod,
     itemCount: itemCount(order),
     total: order.total,
-    needsAttention: order.documentError !== null,
+    // Step 28a: or its last parcel failed to book (step 28b: or a COD receipt failed)
+    needsAttention: order.documentError !== null || parcelNeedsAttention(order),
+    // Step 28b: the newest parcel's status, for the Shipped tab's second pill
+    parcelStatus: order.shipments.at(-1)?.status ?? null,
   };
 }
 
@@ -151,6 +188,8 @@ export function shopOrderPage(
   query: OrderQuery,
 ): { items: StorefrontOrderSummary[]; nextCursor: string | null } {
   const search = query.search ?? '';
+  // Step 28a: the pretend worker's bookings first, as any read sees the worker's
+  settleBookings(data);
   const found = data.storefront.orders.filter(
     (order) =>
       (query.view === 'all' || order.status === query.view) &&
@@ -167,6 +206,7 @@ export function shopOrderCounts(data: WorkspaceData): StorefrontOrderCounts {
 }
 
 export function findShopOrder(data: WorkspaceData, id: string): MockShopOrder {
+  settleBookings(data);
   const found = data.storefront.orders.find((order) => order.id === id);
   if (!found) throw new MockProblem(404, 'not_found');
   return found;
@@ -232,6 +272,9 @@ export function toShopOrder(data: WorkspaceData, order: MockShopOrder): Storefro
     documentError: order.documentError,
     // Step 27d
     payments: order.payments.map((payment) => toPayment(data, payment)),
+    // Step 28a
+    codAmount: codAmountOf(order),
+    shipments: shipmentsOf(data, order),
     version: order.version,
     updatedAt: order.updatedAt,
   };
@@ -574,9 +617,11 @@ export function packShopOrder(
   id: string,
   input: PackStorefrontOrderInput,
   at: string = now(),
-): { order: MockShopOrder; delivery: MockDelivery } {
+): { order: MockShopOrder; delivery: MockDelivery; courier: MockCourierAccount | null } {
   const order = lockShopOrder(data, id, input.version);
   if (order.status !== 'confirmed') throw stepInvalid();
+  // Step 28a: the courier first, so a wrong pick is refused before any stock moves
+  if (input.courierAccountId !== null) bookableAtPack(data, input.courierAccountId);
   const salesOrder = salesOrderOf(data, order);
 
   // Every line of the order once, and the picks of each add up to what the shopper ordered
@@ -641,7 +686,35 @@ export function packShopOrder(
     );
   }
   move(order, 'packed', at, { deliveryId: delivery.id });
-  return { order, delivery };
+  // Step 28a: the parcel with the challan; the pretend worker books it (storefront-shipping-data.ts)
+  const courier =
+    input.courierAccountId === null
+      ? null
+      : startShipment(data, order, { accountId: input.courierAccountId, trackingCode: '' }, at);
+  return { order, delivery, courier };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28a: Book courier and Book again (the parcel's rules are storefront-shipping-data.ts's)
+
+export function bookShopOrder(
+  data: WorkspaceData,
+  id: string,
+  input: BookShipmentInput,
+): { order: MockShopOrder; courier: MockCourierAccount } {
+  const order = lockShopOrder(data, id, input.version);
+  return { order, courier: startShipment(data, order, input) };
+}
+
+export function retryShopParcel(
+  data: WorkspaceData,
+  id: string,
+  shipmentId: string,
+  version: number,
+): { order: MockShopOrder; courier: MockCourierAccount; invoice: string } {
+  const order = lockShopOrder(data, id, version);
+  const { account, parcel } = retryShipment(data, order, shipmentId);
+  return { order, courier: account, invoice: parcel.invoice };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -656,40 +729,71 @@ export function shipShopOrder(
   const order = lockShopOrder(data, id, version);
   if (order.status !== 'packed') throw stepInvalid();
   move(order, 'shipped', at);
+  // Step 28a: a parcel booked by hand follows the button
+  followOrder(data, order, 'picked_up', at);
   return order;
 }
 
-// A posted invoice for what the challan took, at the sales order's prices, and the delivery
-// charge after it; dated that day and unpaid (the rider's cash is a money receipt)
+// What a Delivered made, for the handler's audit rows
+export interface DeliveredShopOrder {
+  order: MockShopOrder;
+  invoiceId: string;
+  receiptId: string | null;
+}
+
+// Mark delivered: a posted invoice for what the challan took, at the sales order's prices, and the
+// delivery charge after it, dated that day. Step 28b: and the rider's COD receipt for what was
+// collected (settleCod)
 export function deliverShopOrder(
   data: WorkspaceData,
   id: string,
-  version: number,
+  input: Pick<DeliverStorefrontOrderInput, 'version' | 'collectedAmount'>,
   at: string = now(),
-): { order: MockShopOrder; invoiceId: string } {
-  const order = lockShopOrder(data, id, version);
+): DeliveredShopOrder {
+  const order = lockShopOrder(data, id, input.version);
+  return { order, ...deliverIn(data, order, input.collectedAmount, null, at) };
+}
+
+// The move itself, after the lock: Mark delivered, Record what came back (`salesReturnId`: the
+// sales return of what came back, posted just before) and the courier's news. The order is moved
+// last: transaction() puts back the documents of a refused move, not the shop's own rows, so every
+// refusal (the invoice's, the collected amount's) comes before the order changes
+function deliverIn(
+  data: WorkspaceData,
+  order: MockShopOrder,
+  collected: string | null,
+  salesReturnId: string | null,
+  at: string,
+): { invoiceId: string; receiptId: string | null } {
   if (order.status !== 'shipped' || order.deliveryId === null) throw stepInvalid();
   const salesOrder = salesOrderOf(data, order);
   const challan = findDelivery(data, order.deliveryId);
   const branchId = branchOf(data, salesOrder.warehouseId);
   if (branchId === null) throw new Error(`Warehouse ${salesOrder.warehouseId} has no branch`);
-  const goods = challan.lines.map((line) => {
+  // Step 28b: what did not come back before the invoice (the invoice's own rule, 15d); a line
+  // that came back whole is not billed. The mock's shop orders have no coupon, so no discount
+  const goods = challan.lines.flatMap((line) => {
     const soLine = salesOrder.lines.find((item) => item.id === line.orderLineId);
     if (soLine === undefined) throw new Error(`Challan line ${line.id} has no order line`);
-    return {
-      variantId: line.variantId,
-      unitId: line.unitId,
-      quantity: line.quantity,
-      description: soLine.description,
-      unitPrice: soLine.unitPrice,
-      discountType: 'amount' as const,
-      discount: '0',
-      taxRateId: soLine.taxRate.id,
-      deliveryLineId: line.id,
-      orderLineId: null,
-      batchId: null,
-      serialNumbers: [],
-    };
+    const kept = billableQuantity(line);
+    if (compareQuantity(kept, '0') <= 0) return [];
+    return [
+      {
+        variantId: line.variantId,
+        unitId: line.unitId,
+        // A shop's challan is in the base unit, so what is kept is the line's quantity
+        quantity: compareQuantity(kept, line.baseQuantity) === 0 ? line.quantity : kept,
+        description: soLine.description,
+        unitPrice: soLine.unitPrice,
+        discountType: 'amount' as const,
+        discount: '0',
+        taxRateId: soLine.taxRate.id,
+        deliveryLineId: line.id,
+        orderLineId: null,
+        batchId: null,
+        serialNumbers: [],
+      },
+    ];
   });
   const charges = salesOrder.lines.slice(order.lines.length).map((soLine) => ({
     variantId: soLine.variantId,
@@ -717,10 +821,344 @@ export function deliverShopOrder(
   });
   // Never over the limit: it moves the amount from "on order" to "owed" and adds nothing
   postInvoice(data, draft, false);
-  move(order, 'delivered', at, { invoiceId: draft.id });
   // Step 27d (decision 6): the invoice takes the advances of the paid tries
   applyPaymentsToInvoice(data, order, draft.id);
-  return { order, invoiceId: draft.id };
+  // Step 28b: then the rider's money, which pays what the advances left
+  const receiptId = settleCod(
+    data,
+    order,
+    draft.id,
+    collected,
+    salesReturnId === null ? 'delivered' : 'partly_delivered',
+    at,
+  );
+  move(order, 'delivered', at, {
+    invoiceId: draft.id,
+    ...(salesReturnId === null ? {} : { salesReturnId }),
+  });
+  return { invoiceId: draft.id, receiptId };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28b: the COD receipt (the API's cod-receipts.ts)
+
+// The parcel the courier took to the door: the newest one not still booking or failed, not a
+// cancelled booking, and not one received back
+function doorParcelOf(order: MockShopOrder): MockShipment | undefined {
+  const skip = ['booking', 'booking_failed', 'cancelled', 'returned'];
+  return order.shipments.toReversed().find((parcel) => !skip.includes(parcel.status));
+}
+
+// What the rider collected goes on the parcel, and a posted receipt for it into the courier
+// account's COD account, paying the invoice. The amount: what was typed, else what the courier
+// said, else (a whole delivery) the parcel's codAmount. A receipt the books refuse is kept on the
+// parcel as its error and rings the bell: the Delivered stays (the API's savepoint)
+function settleCod(
+  data: WorkspaceData,
+  order: MockShopOrder,
+  invoiceId: string,
+  typed: string | null,
+  door: 'delivered' | 'partly_delivered',
+  at: string,
+): string | null {
+  const parcel = doorParcelOf(order);
+  // No parcel at the door (undefined !== null too), or one that has its receipt already
+  if (parcel?.receiptId !== null) return null;
+  const account = data.storefront.couriers.find((item) => item.id === parcel.accountId);
+  const codAccountId = account?.codAccountId ?? null;
+  const collected =
+    typed ?? parcel.collectedAmount ?? (door === 'delivered' ? parcel.codAmount : null);
+  if (collected === null && codAccountId !== null) {
+    throw new MockProblem(422, 'storefront_order_collected_required', {
+      collectedAmount: ['storefront_order_collected_required'],
+    });
+  }
+  if (collected !== null && compareMoney(collected, parcel.codAmount) > 0) {
+    throw new MockProblem(
+      422,
+      'storefront_order_collected_over',
+      { collectedAmount: ['storefront_order_collected_over'] },
+      { amount: parcel.codAmount },
+    );
+  }
+  // The parcel follows the order: a manual one always, an API one whose news is late
+  if (isOpenShipment(parcel.status)) {
+    parcel.status = door;
+    step(parcel, door, at, null);
+  }
+  parcel.collectedAmount = collected === null ? null : addMoney(collected, '0');
+  if (account === undefined || codAccountId === null || collected === null) return null;
+  if (isZeroMoney(collected)) return null;
+  try {
+    return makeCodReceiptIn(data, order, parcel, invoiceId, at);
+  } catch (error) {
+    if (!(error instanceof MockProblem)) throw error;
+    parcel.receiptError = error.code;
+    data.notifications.unshift({
+      id: crypto.randomUUID(),
+      type: 'storefront.cod_receipt_failed',
+      params: { id: order.id, number: order.orderNo, courier: account.name },
+      readAt: null,
+      createdAt: at,
+    });
+    return null;
+  }
+}
+
+// The receipt (the API's make): the sales order's customer and branch, the COD account the
+// courier account names now, the courier's code as the reference (its payout lists it), then as
+// much of it as the invoice still owes. Throws the receipt's own refusal
+function makeCodReceiptIn(
+  data: WorkspaceData,
+  order: MockShopOrder,
+  parcel: MockShipment,
+  invoiceId: string,
+  at: string,
+): string {
+  const account = data.storefront.couriers.find((item) => item.id === parcel.accountId);
+  if (account?.codAccountId == null || parcel.collectedAmount === null) {
+    throw new MockProblem(409, 'receipt_account_invalid');
+  }
+  const salesOrder = salesOrderOf(data, order);
+  const branchId = branchOf(data, salesOrder.warehouseId);
+  if (branchId === null) throw new Error(`Warehouse ${salesOrder.warehouseId} has no branch`);
+  const receipt = createReceipt(data, {
+    customerId: salesOrder.customer.id,
+    date: dayOf(data, at),
+    amount: parcel.collectedAmount,
+    accountId: account.codAccountId,
+    method: 'courier',
+    reference: (parcel.trackingCode ?? parcel.invoice).slice(0, 60),
+    branchId,
+    note: `COD for shop order ${order.orderNo} (${account.name} ${parcel.invoice})`,
+    allocations: [],
+  });
+  parcel.receiptId = receipt.id;
+  parcel.receiptError = null;
+  // More than is owed stays an advance; less leaves the invoice partly paid
+  const due = dueOn(data, findInvoice(data, invoiceId));
+  if (compareMoney(due, '0') > 0) {
+    const amount = compareMoney(receipt.amount, due) < 0 ? receipt.amount : due;
+    allocateReceipt(data, receipt, [{ invoiceId, amount }]);
+  }
+  return receipt.id;
+}
+
+// "Make the receipt" on a parcel whose COD receipt was refused. The handler calls it outside
+// transaction(): a refusal again is kept on the parcel and still answered
+export function makeShopCodReceipt(
+  data: WorkspaceData,
+  id: string,
+  shipmentId: string,
+  version: number,
+  at: string = now(),
+): { order: MockShopOrder; receiptId: string } {
+  const order = lockShopOrder(data, id, version);
+  const parcel = order.shipments.find((item) => item.id === shipmentId);
+  if (
+    parcel?.receiptError == null ||
+    parcel.receiptId !== null ||
+    parcel.collectedAmount === null ||
+    order.invoiceId === null
+  ) {
+    throw new MockProblem(409, 'storefront_cod_receipt_not_failed');
+  }
+  try {
+    const receiptId = makeCodReceiptIn(data, order, parcel, order.invoiceId, at);
+    Object.assign(order, { version: order.version + 1, updatedAt: at });
+    return { order, receiptId };
+  } catch (error) {
+    if (error instanceof MockProblem) parcel.receiptError = error.code;
+    throw error;
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28b: what came back (decisions 6 and 7)
+
+// The challan's lines as the return plan shows them, each with the shop order line it was packed
+// for (the sales order's line i is the order's line i, the maker's rule)
+function challanLinesOf(data: WorkspaceData, order: MockShopOrder) {
+  if (order.deliveryId === null) throw stepInvalid();
+  const salesOrder = salesOrderOf(data, order);
+  const challan = findDelivery(data, order.deliveryId);
+  return {
+    challan,
+    lines: challan.lines.map((line) => {
+      const index = salesOrder.lines.findIndex((item) => item.id === line.orderLineId);
+      const ordered = order.lines[index];
+      if (ordered === undefined) throw new Error(`Challan line ${line.id} has no shop order line`);
+      return { line, ordered };
+    }),
+  };
+}
+
+export function returnPlanOf(data: WorkspaceData, id: string): StorefrontReturnPlan {
+  const order = findShopOrder(data, id);
+  if (order.status !== 'shipped') throw stepInvalid();
+  const { challan, lines } = challanLinesOf(data, order);
+  const warehouse = data.stock.warehouses.find((place) => place.id === challan.warehouseId);
+  if (!warehouse) throw new Error(`Warehouse ${challan.warehouseId} is missing`);
+  return {
+    warehouse: { id: warehouse.id, name: warehouse.name },
+    lines: lines.map(({ line, ordered }) => {
+      const { product, variant, unitCode } = variantOf(data, ordered);
+      return {
+        deliveryLineId: line.id,
+        position: ordered.position,
+        name: ordered.name,
+        packSize: ordered.packSize,
+        sku: variant.sku,
+        unitCode,
+        quantity: billableQuantity(line),
+        tracking: isTrackingMode(product.tracking) ? product.tracking : 'none',
+        batch:
+          line.lotNumber === null ? null : { lotNumber: line.lotNumber, expiresOn: line.expiresOn },
+        serialNumbers: line.serialNumbers,
+      };
+    }),
+  };
+}
+
+// What "Record what came back" and "Receive the return" made, for the audit rows
+export interface CameBackShopOrder {
+  order: MockShopOrder;
+  salesReturnId: string;
+  salesOrderId: string | null;
+}
+
+// A posted sales return of what came back, dated that day, into the warehouse the goods left from
+function returnOf(
+  data: WorkspaceData,
+  order: MockShopOrder,
+  lines: { deliveryLineId: string; quantity: string; serialNumbers: string[] }[],
+  note: string | null,
+  at: string,
+): string {
+  const { challan } = challanLinesOf(data, order);
+  const draft = saveReturn(data, {
+    customerId: challan.customer.id,
+    date: dayOf(data, at),
+    warehouseId: challan.warehouseId,
+    reason: 'other',
+    note,
+    lines: lines.map((back) => {
+      const line = challan.lines.find((item) => item.id === back.deliveryLineId);
+      if (line === undefined) throw new Error(`Challan line ${back.deliveryLineId} is missing`);
+      return {
+        variantId: line.variantId,
+        unitId: line.unitId,
+        quantity: back.quantity,
+        batchId: line.batchId,
+        serialNumbers: back.serialNumbers,
+        deliveryLineId: line.id,
+      };
+    }),
+  });
+  postReturn(data, draft);
+  return draft.id;
+}
+
+// Record what came back (decision 6): the sales return of the ticked lines, in the dialog's order
+// (its errors land under the dialog's rows), then Delivered with the invoice of the rest and the
+// COD receipt, then the sales order closed. Every piece back is Receive the return
+export function partlyDeliverShopOrder(
+  data: WorkspaceData,
+  id: string,
+  input: PartlyDeliverStorefrontOrderInput,
+  at: string = now(),
+): CameBackShopOrder & { invoiceId: string; receiptId: string | null } {
+  const order = lockShopOrder(data, id, input.version);
+  if (order.status !== 'shipped' || order.deliveryId === null) throw stepInvalid();
+  const { lines } = challanLinesOf(data, order);
+  const fieldErrors: Record<string, ErrorCode[]> = {};
+  input.lines.forEach((line, index) => {
+    if (!lines.some((item) => item.line.id === line.deliveryLineId)) {
+      fieldErrors[`lines.${String(index)}.deliveryLineId`] = ['storefront_order_line_missing'];
+    }
+  });
+  if (Object.keys(fieldErrors).length > 0) {
+    throw new MockProblem(409, 'storefront_order_line_missing', fieldErrors);
+  }
+  const back = new Map(input.lines.map((line) => [line.deliveryLineId, line.quantity]));
+  if (
+    lines.every(
+      ({ line }) => compareQuantity(back.get(line.id) ?? '0', billableQuantity(line)) >= 0,
+    )
+  ) {
+    throw new MockProblem(409, 'storefront_order_return_everything');
+  }
+  const salesReturnId = returnOf(data, order, input.lines, input.reason, at);
+  const delivered = deliverIn(data, order, input.collectedAmount, salesReturnId, at);
+  const salesOrder = order.salesOrderId === null ? undefined : findOrder(data, order.salesOrderId);
+  if (salesOrder) changeOrderStatus(data, salesOrder, 'close');
+  return { order, salesReturnId, salesOrderId: salesOrder?.id ?? null, ...delivered };
+}
+
+// Receive the return (decision 7): a sales return of the whole challan, the sales order cancelled,
+// the parcel returned, the order Returned. The SMS to the shopper is the API's: the mock sends none
+export function returnShopOrder(
+  data: WorkspaceData,
+  id: string,
+  input: ReturnStorefrontOrderInput,
+  at: string = now(),
+): CameBackShopOrder {
+  const order = lockShopOrder(data, id, input.version);
+  if (order.status !== 'shipped') throw stepInvalid();
+  const { lines } = challanLinesOf(data, order);
+  const salesReturnId = returnOf(
+    data,
+    order,
+    lines.map(({ line }) => ({
+      deliveryLineId: line.id,
+      quantity: billableQuantity(line),
+      serialNumbers: line.serialNumbers,
+    })),
+    input.reason,
+    at,
+  );
+  const salesOrder = order.salesOrderId === null ? undefined : findOrder(data, order.salesOrderId);
+  if (salesOrder) changeOrderStatus(data, salesOrder, 'cancel');
+  // The parcel the courier had, unless it says returned already
+  const parcel = order.shipments
+    .toReversed()
+    .find((item) => !['booking', 'booking_failed', 'cancelled'].includes(item.status));
+  if (parcel !== undefined && parcel.status !== 'returned') {
+    parcel.status = 'returned';
+    step(parcel, 'returned', at, null);
+  }
+  move(order, 'returned', at, { salesReturnId });
+  return { order, salesReturnId, salesOrderId: salesOrder?.id ?? null };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 28b: the courier's news (storefront-shipping-data.ts reads the notice)
+
+// The order follows the parcel: Shipped once the goods left. `deliver` says the courier delivered
+// it: the handler then runs courierDeliver in a transaction() of its own, the API's savepoint
+export function shopCourierNews(
+  data: WorkspaceData,
+  accountId: string,
+  authorization: string | null,
+  body: unknown,
+  at: string = now(),
+): { order: MockShopOrder; shipped: boolean; deliver: boolean } | null {
+  const news = courierNotice(data, accountId, authorization, body, at);
+  if (news === null) return null;
+  const { order } = news;
+  if (news.shipped) move(order, 'shipped', at);
+  return { order, shipped: news.shipped, deliver: news.delivered && order.status === 'shipped' };
+}
+
+// The courier's Delivered: the invoice and the COD receipt for what its notice said. A Delivered
+// the books refuse leaves the order Shipped (the handler's transaction() puts its documents
+// back), and Mark delivered then shows why
+export function courierDeliver(
+  data: WorkspaceData,
+  order: MockShopOrder,
+  at: string = now(),
+): { invoiceId: string; receiptId: string | null } {
+  return deliverIn(data, order, null, null, at);
 }
 
 export interface CancelledShopOrder {
@@ -740,6 +1178,9 @@ export function cancelShopOrder(
 ): CancelledShopOrder {
   const order = lockShopOrder(data, id, input.version);
   if (order.status !== 'confirmed' && order.status !== 'packed') throw stepInvalid();
+  // Step 28a: a parcel only booked is cancelled with the order; one booking or with the courier
+  // refuses the cancel
+  cancelShipments(order, at);
   let salesReturnId: string | null = null;
   if (order.status === 'packed') {
     if (order.deliveryId === null) throw stepInvalid();
@@ -910,11 +1351,126 @@ function placeOrder(
     salesReturnId: null,
     documentError: null,
     payments: [],
+    shipments: [],
     version: 1,
     updatedAt: confirmed,
   };
   data.storefront.orders.unshift(order);
   return order;
+}
+
+// Step 28c: Steadfast Dhaka's last week, for Shop payouts (fixtures.ts → seedsShopPayouts). Four
+// Cash on Delivery orders of one attar each, delivered 6 to 2 days ago, each with its COD receipt
+// into 1191 Cash with Steadfast. W-000008's money reached the bank 4 days ago: CPO-…-0001, Steadfast's
+// SFC-23618228, into the Dutch-Bangla account. W-000009 to W-000011 wait for the next payout, and
+// Steadfast has not said W-000011's charge yet. With W-000001's charge (paid online, nothing
+// collected), the new payout's list has three cash parcels and one charge-only line
+function seedPayoutWeek(
+  data: WorkspaceData,
+  dhaka: MockCourierAccount,
+  attar: MockListing,
+  zones: { inside: ShopDeliveryZone; outside: ShopDeliveryZone },
+  warehouseId: string,
+): void {
+  const days = (count: number) => count * 24 * 60;
+  const week = [
+    {
+      spec: {
+        name: 'Nasima Akter',
+        phone: '01715667788',
+        address: 'House 22, Road 11, Banani, Dhaka 1213',
+        zone: zones.inside,
+      },
+      delivered: days(6),
+      consignmentId: '148920512',
+      trackingCode: 'SFR2611190008',
+      courierCharge: '60.0000',
+    },
+    {
+      spec: {
+        name: 'Jahid Hasan',
+        phone: '01817334455',
+        address: 'Flat 3A, Lalmatia Block D, Dhaka 1207',
+        zone: zones.inside,
+      },
+      delivered: days(4),
+      consignmentId: '148920688',
+      trackingCode: 'SFR2611210019',
+      courierCharge: '60.0000',
+    },
+    {
+      spec: {
+        name: 'Rumana Chowdhury',
+        phone: '01914223344',
+        address: 'Road 2, Nasirabad H/S, Chattogram 4209',
+        zone: zones.outside,
+      },
+      delivered: days(3),
+      consignmentId: '148920745',
+      trackingCode: 'SFR2611220031',
+      courierCharge: '130.0000',
+    },
+    {
+      spec: {
+        name: 'Imran Kabir',
+        phone: '01556112233',
+        address: 'House 5, Sector 4, Uttara, Dhaka 1230',
+        zone: zones.inside,
+      },
+      delivered: days(2),
+      consignmentId: '148920802',
+      trackingCode: 'SFR2611230044',
+      courierCharge: null,
+    },
+  ];
+  const sent = week.map((day, index) => {
+    const order = placeOrder(
+      data,
+      8 + index,
+      { ...day.spec, lines: [{ listing: attar, quantity: 1 }], confirmed: day.delivered + days(1) },
+      warehouseId,
+    );
+    const at = (minutes: number) =>
+      new Date(Date.parse(confirmedAt(order)) + minutes * 60_000).toISOString();
+    makeShopSalesOrder(data, order, confirmedAt(order));
+    packAsPlanned(data, order, at(90));
+    shipShopOrder(data, order.id, order.version, at(180));
+    const parcel = seedParcel(
+      order,
+      dhaka,
+      { consignmentId: day.consignmentId, trackingCode: day.trackingCode },
+      at(92),
+      [
+        { status: 'picked_up', at: at(180), note: 'Picked up from Rahman Fashion' },
+        { status: 'out_for_delivery', at: at(days(1) - 150), note: null },
+      ],
+      { collectedAmount: codAmountOf(order), courierCharge: day.courierCharge },
+    );
+    // Steadfast's delivered notice: the parcel follows, and settleCod makes the COD receipt
+    deliverShopOrder(
+      data,
+      order.id,
+      { version: order.version, collectedAmount: null },
+      at(days(1)),
+    );
+    return { order, parcel, day: dayOf(data, at(days(1))) };
+  });
+  const first = sent[0];
+  const bank = data.accounts.find((account) => account.code === '1121');
+  if (!first || !bank) return;
+  const paidOn = dayOf(data, minutesAgo(days(4)));
+  createPayout(
+    data,
+    {
+      accountId: dhaka.id,
+      date: paidOn,
+      bankAccountId: bank.id,
+      reference: 'SFC-23618228',
+      note: null,
+      lines: [{ shipmentId: first.parcel.id, charge: '60' }],
+    },
+    minutesAgo(days(4)),
+  );
 }
 
 // Packed with what the plan suggests: FEFO for a batch line, the first serial numbers in stock for
@@ -940,6 +1496,7 @@ function packAsPlanned(data: WorkspaceData, order: MockShopOrder, at: string): v
               : line.picks,
         };
       }),
+      courierAccountId: null,
     },
     at,
   );
@@ -1133,8 +1690,9 @@ function seedTries(
 // line of each kind for the Packed dialog (a batch, a serial, an untracked polo), W-000006 is a
 // small one to cancel, and W-000007's sales order was refused when it was confirmed (the T-shirt
 // was archived for a moment); it is active again, so "Make the sales order" works. Farhana Islam
-// ordered twice: one customer in the ERP
-export function seedShopOrders(data: WorkspaceData): void {
+// ordered twice: one customer in the ERP. Step 28c: `payouts` adds Steadfast Dhaka's last week
+// (seedPayoutWeek)
+export function seedShopOrders(data: WorkspaceData, payouts = false): void {
   const shop = data.storefront.shop;
   const warehouseId = shop?.defaultWarehouseId ?? null;
   const [inside, outside] = shop?.deliveryZones ?? [];
@@ -1235,7 +1793,12 @@ export function seedShopOrders(data: WorkspaceData): void {
 
   packAsPlanned(data, delivered, after(delivered, 90));
   shipShopOrder(data, delivered.id, delivered.version, after(delivered, 180));
-  deliverShopOrder(data, delivered.id, delivered.version, after(delivered, days(1)));
+  deliverShopOrder(
+    data,
+    delivered.id,
+    { version: delivered.version, collectedAmount: null },
+    after(delivered, days(1)),
+  );
   cancelShopOrder(
     data,
     cancelled.id,
@@ -1245,6 +1808,38 @@ export function seedShopOrders(data: WorkspaceData): void {
   packAsPlanned(data, shipped, after(shipped, 120));
   shipShopOrder(data, shipped.id, shipped.version, after(shipped, 240));
   packAsPlanned(data, packed, after(packed, 200));
+
+  // Step 28a: the shop's couriers, and the parcels Steadfast Dhaka carried: W-000001 to the door,
+  // W-000003 on its way to Chattogram. W-000004 waits for Book courier (or the export)
+  const [dhaka] = seedCouriers(data, minutesAgo(13 * 24 * 60));
+  if (!dhaka) return;
+  seedParcel(
+    delivered,
+    dhaka,
+    { consignmentId: '148920107', trackingCode: 'SFR2611140017' },
+    after(delivered, 92),
+    [
+      { status: 'picked_up', at: after(delivered, 180), note: 'Picked up from Rahman Fashion' },
+      { status: 'in_transit', at: after(delivered, 300), note: 'At the Dhanmondi hub' },
+      { status: 'out_for_delivery', at: after(delivered, days(1) - 150), note: null },
+      { status: 'delivered', at: after(delivered, days(1)), note: null },
+    ],
+    // Step 28b: paid online, so the rider collected nothing; Steadfast's charge inside Dhaka
+    { collectedAmount: '0.0000', courierCharge: '60.0000' },
+  );
+  seedParcel(
+    shipped,
+    dhaka,
+    { consignmentId: '148920331', trackingCode: 'SFR2611210042' },
+    after(shipped, 122),
+    [
+      { status: 'picked_up', at: after(shipped, 240), note: 'Picked up from Rahman Fashion' },
+      { status: 'in_transit', at: after(shipped, 600), note: 'Reached the Chattogram hub' },
+    ],
+    // Step 28b: outside Dhaka, Steadfast charges more; nothing collected yet
+    { collectedAmount: null, courierCharge: '130.0000' },
+  );
+  if (payouts) seedPayoutWeek(data, dhaka, attar, { inside, outside }, warehouseId);
 
   // The bell of the newest order that is not refused, unread (27a's handler rings it)
   const newest = orders[5];

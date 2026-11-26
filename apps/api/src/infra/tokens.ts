@@ -16,3 +16,8 @@ export const RELAY_DB = Symbol('RELAY_DB');
 // it (payments/gateway.ts)
 export const PAYMENTS_CONFIG = Symbol('PAYMENTS_CONFIG');
 export const PAYMENT_GATEWAY = Symbol('PAYMENT_GATEWAY');
+
+// Step 28a: the couriers' part of the config, and the adapters made from it (shipping/courier.ts):
+// one per provider that books by API
+export const SHIPPING_CONFIG = Symbol('SHIPPING_CONFIG');
+export const COURIERS = Symbol('COURIERS');

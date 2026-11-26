@@ -22,8 +22,10 @@ import { stockMovementReportRoutes } from './stock-movement-report.js';
 import { storefrontRoutes } from './storefront-admin.js';
 import { storefrontAppearanceRoutes } from './storefront-appearance.js';
 import { storefrontCouponRoutes } from './storefront-coupons.js';
-import { storefrontOrderRoutes } from './storefront-orders.js';
+import { storefrontOrderDeliveryRoutes, storefrontOrderRoutes } from './storefront-orders.js';
+import { shippingRoutes } from './shipping.js';
 import { storefrontPaymentRoutes } from './storefront-payments.js';
+import { storefrontPayoutRoutes } from './storefront-payouts.js';
 import { publicStorefrontRoutes } from './storefront.js';
 import { creditNoteRoutes } from './credit-notes.js';
 import { customFieldRoutes } from './custom-fields.js';
@@ -168,8 +170,11 @@ type Routes = Readonly<{
   storefront: typeof storefrontRoutes;
   storefrontAppearance: typeof storefrontAppearanceRoutes;
   storefrontOrders: typeof storefrontOrderRoutes;
+  storefrontOrderDeliveries: typeof storefrontOrderDeliveryRoutes;
   storefrontCoupons: typeof storefrontCouponRoutes;
   storefrontPayments: typeof storefrontPaymentRoutes;
+  storefrontPayouts: typeof storefrontPayoutRoutes;
+  shipping: typeof shippingRoutes;
 }>;
 
 // API-র প্রতিটা endpoint এখানে। নতুন মডিউল = এখানে এক লাইন; API-র টেস্ট দেখে যে Nest-এর রুট আর
@@ -253,6 +258,9 @@ export const routes: Routes = {
   storefront: storefrontRoutes,
   storefrontAppearance: storefrontAppearanceRoutes,
   storefrontOrders: storefrontOrderRoutes,
+  storefrontOrderDeliveries: storefrontOrderDeliveryRoutes,
   storefrontCoupons: storefrontCouponRoutes,
   storefrontPayments: storefrontPaymentRoutes,
+  storefrontPayouts: storefrontPayoutRoutes,
+  shipping: shippingRoutes,
 };

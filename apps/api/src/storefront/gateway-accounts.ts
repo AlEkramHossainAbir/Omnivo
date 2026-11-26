@@ -45,7 +45,15 @@ export class GatewayAccounts {
     if (row === undefined) return null;
     const key = this.config.credentialsKey;
     const password =
-      key === null ? null : openSecret(key, tenantId, row.passwordSealed, row.keyVersion);
+      key === null
+        ? null
+        : openSecret(
+            key,
+            'storefront_payment_gateways',
+            tenantId,
+            row.passwordSealed,
+            row.keyVersion,
+          );
     if (password === null) {
       // The workspace and why, never the value
       this.logger.error(

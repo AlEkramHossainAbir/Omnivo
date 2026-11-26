@@ -1462,6 +1462,32 @@ export interface CourierAdapter {
   পেজে নাম, ঠিকানা বা পুরো ফোন নম্বর নেই, কারণ লিংক অন্যকে পাঠানো যায়), আর গুরুত্বপূর্ণ ধাপে SMS পাবে। SMS
   হারালে `/track`-এ ফোন + অর্ডার নম্বর দিয়ে একই পেজ দেখা যায় (এক IP থেকে ১৫ মিনিটে ১০ বার ভুল হলে থামে)।
 
+**যা বানানো হয়েছে (ধাপ ২৮a, ২০২৬-১১-২৩):** উপরের ইন্টারফেসটা পরিকল্পনা ছিল; আসল কোডে `CourierAdapter` ছোট রাখা
+হয়েছে, আর এটা `apps/api/src/shipping/`-এ থাকে (contracts-এ নয়, কারণ শুধু API আর worker এটা চেনে):
+
+- `book` / `find` (invoice দিয়ে খোঁজা) / `status` / `readNotice` (webhook-এর body) / `test` (keys ঠিক কিনা)। এখন
+  দুইটা: `SteadfastAdapter` আর `FakeCourier` (`COURIER_MODE=fake|live`, production-এ fake চলে না, ২৭d-র fake
+  gateway-এর মতো)। Pathao পরে (২৮d, এখন কোনো লক্ষ্য তারিখ নেই, release আগে), কারণ তার ঠিকানা city/zone/area
+  আলাদা লাগে। `checkServiceability`, `quote`,
+  `cancelConsignment` আর `printLabel` নেই: Steadfast-এর cancel API নেই (কুরিয়ারের প্যানেলে cancel), আর লেবেল ERP
+  নিজেই A6 শিটে ছাপে।
+- **Manual অ্যাকাউন্ট:** যে কুরিয়ারের API নেই, তার জন্য অ্যাকাউন্ট শুধু কুরিয়ারের নাম রাখে; Book courier-এ
+  ট্র্যাকিং কোড হাতে লেখা হয়, অর্ডার বাটন দিয়ে চলে। CSV export (Steadfast-এর bulk upload কলাম) আর লেবেল দুই ধরনের
+  অ্যাকাউন্টেই কাজে লাগে।
+- **কখন বুক হয়:** confirm-এ নয়, **Packed-এ** (তখনই batch/serial বাছা হয় আর বাক্স তৈরি)। Packed dialog-এর "Send
+  with" শুরু হয় ডিফল্ট অ্যাকাউন্ট দিয়ে; ডিফল্ট না থাকলে "Don't book now"। তাই "বুক বন্ধ" মানে শুধু ডিফল্ট নেই।
+- **Idempotency:** কুরিয়ারের `invoice` = আমাদের অর্ডার নম্বর (`W-000123`, দ্বিতীয় পার্সেল `W-000123-2`), আর
+  `storefront_shipments`-এ `UNIQUE (tenant_id, courier_account_id, invoice)` + অর্ডারপ্রতি একটাই চলমান পার্সেল।
+  টাইমআউটের পরের চেষ্টায় worker আগে invoice দিয়ে কুরিয়ারকে জিজ্ঞেস করে।
+- **Webhook:** অ্যাকাউন্টপ্রতি একটা ঠিকানা `POST /public/v1/couriers/steadfast/<account id>`, অ্যাকাউন্টের নিজের
+  Bearer token (একবারই দেখানো হয়, শুধু hash রাখা)। Steadfast signature দেয় না, তাই token-ই যাচাই। body-র shape
+  ভুল হলেও 400 দেওয়া হয় না (দিলে কুরিয়ার পাঠানো বন্ধ করে); অপড়া notice raw রেখে দেওয়া হয়।
+- **ইভেন্ট:** `storefront_shipment_events` append-only, `event_key` দিয়ে একবারই। Picked up → Shipped (আর ক্রেতাকে
+  SMS), delivered → Delivered (ইনভয়েস, ২৭b-র মতো)। পিক আপের পরে cancel নয়, সেটা return (২৮b)।
+- কুরিয়ারের keys `CREDENTIALS_KEY` দিয়ে sealed, `courier_accounts` শুধু `omnivo_app` পড়ে; শপ শুধু ট্র্যাকিং কোড
+  পাওয়া পার্সেল আর পড়া যায় এমন ইভেন্ট দেখে (`omnivo_shop`-এর column grant + restrictive policy)।
+- আসল Steadfast API এখনো চালানো হয়নি (test account নেই); প্রথম live শপের আগে একটা আসল পার্সেল বুক করে দেখতে হবে।
+
 **COD-র টাকা: সবচেয়ে বেশি অবহেলিত অংশ।** কুরিয়ার ক্রেতার কাছ থেকে টাকা তোলে, কিন্তু আপনাকে দেয় ৩–৭ দিন পরে, চার্জ কেটে। তাই হিসাব হবে এভাবে:
 
 | ঘটনা | জার্নাল |
@@ -1475,6 +1501,62 @@ export interface CourierAdapter {
 - প্রতিটা কুরিয়ারের জন্য আলাদা **control account**, তাই "কোন কুরিয়ারের কাছে কত টাকা আটকে আছে" এক রিপোর্টেই দেখা যাবে। এটা টেন্যান্টদের কাছে বিশাল ভ্যালু।
 - রেমিট্যান্স CSV আপলোড বা API দিয়ে এলে অটো-ম্যাচিং (consignment_id ধরে), না মিললে "unmatched" তালিকা।
 - **Partial delivery ও exchange** (কিছু আইটেম ফেরত) শুরু থেকেই ডেটা মডেলে ধরে রাখুন; বাংলাদেশে এটা খুবই সাধারণ।
+
+**যা বানানো হয়েছে (ধাপ ২৮b, ২০২৬-১১-২৪):** উপরের টেবিলটা পরিকল্পনা ছিল; আসল হিসাব একটু আলাদা, কারণ আমাদের ফ্লোতে
+ইনভয়েস (আর তাই receivable) আসে Delivered-এ, Shipped-এ নয়।
+
+- **COD account = টাকা রাখার একটা account:** কুরিয়ার অ্যাকাউন্টে একটা "COD account" বাছা হয় ("Cash with
+  Steadfast", cash account-গুলোর নিচে), আর একটা "Courier charges account" (খরচ)। আলাদা control account বা নতুন
+  posting কোড লাগেনি: account-টার balance-ই "কুরিয়ারের কাছে কত টাকা", trial balance আর ledger-এ দেখা যায়, আর Shop
+  couriers পেজের Holds কলামে ("৳45,200 · 18 parcels")। খালি রাখলে আগের মতো হাতে money receipt।
+- **Delivered-এ:** ইনভয়েস posted (Dr AR / Cr Sales + VAT), তারপর COD account-এ একটা posted money receipt (method
+  `courier`, শুধু receipt-এর জন্য, ফর্ম বা refund-এ নেই), ইনভয়েসে applied: Dr COD account / Cr AR। Shipped-এ কোনো
+  এন্ট্রি নেই। Receipt পার্সেলের (`storefront_shipments.receipt_id`), অর্ডারের নয়, কারণ payout-এর লাইন হবে পার্সেল।
+- **কত টাকা:** Steadfast-এর delivered / partial_delivered notice-এর `cod_amount`, পার্সেলের `codAmount`-এর বেশি হলে
+  কেটে (raw notice-এ কুরিয়ারের সংখ্যা থাকে); `delivery_charge` পার্সেলে রাখা হয়, payout-এর জন্য। হাতে "Mark
+  delivered"-এ member নিজে লেখে। ৳0 = receipt নেই, বাকিটা ইনভয়েসে পাওনা থাকে।
+- **কখনো নীরবে ব্যর্থ নয়:** receipt একটা savepoint-এ, তাই ব্যর্থ হলেও কুরিয়ারের খবর আর Delivered থাকে; পার্সেলে
+  error, অর্ডার Needs attention, পার্সেলপ্রতি একবার bell (`storefront.cod_receipt_failed`), আর "Make the receipt"।
+  একটা trigger (`storefront_shipments_cod_guard`) দেখে receipt posted, `courier`, সংগ্রহের সমান আর ঠিক COD account-এ,
+  আর একবার লাগানোর পরে বদলায় না।
+- **Partial delivery আর return:** কুরিয়ারের কথায় স্টক কখনো ফেরে না (পথে হারানো পার্সেল স্টকে ঢুকে যেত)। আংশিক
+  হলে member "Record what came back"-এ যা ফিরল টিক দেয়: ইনভয়েসের আগে তার sales return (১৫d-র "return before
+  billing"), তারপর বাকিটার ইনভয়েস আর COD receipt। পুরোটা ফিরলে "Receive the return": পুরো challan-এর sales return,
+  sales order cancel, অর্ডার Returned, ক্রেতাকে SMS। Shop orders-এ Returned ট্যাব আর Shipped-এ দ্বিতীয় `warn` pill।
+- Void হওয়া COD receipt পার্সেলে লেগে থাকে, Holds থেকে বাদ যায়, আবার বানানো যায় না (২৭d-র মতো)।
+
+**যা বানানো হয়েছে (ধাপ ২৮c, ২০২৬-১১-২৫):** কুরিয়ার যখন riders-এর টাকা (চার্জ কেটে) ব্যাংকে পাঠায়, সেটা একটা
+payout ডকুমেন্ট।
+
+- **ডকুমেন্ট:** `storefront_payouts` আর তার লাইন `storefront_payout_lines` (পার্সেলপ্রতি একটা), নম্বর `CPO-…`
+  (series `storefront.payout`), journal source `storefront_payout`, permission `storefront.payout.manage` (Owner,
+  আর Accountant, Shop manager ও Manager template)। Draft নেই: Save করলেই posted।
+- **এন্ট্রি:** Dr Bank (net) + Dr Courier charges / Cr COD account (যা সংগ্রহ হয়েছিল)। net শূন্যের নিচে হলে refuse
+  (`payout_below_zero`), শূন্য হলে bank লাইন নেই। চার্জে input VAT নেই (কুরিয়ার পার্সেলপ্রতি Mushak 6.3 দেয় না)।
+  Branch = শপের warehouse-এর branch; bank account = টাকা রাখার active account, COD account নয়।
+- **কোন পার্সেল নেওয়া যায়:** অ্যাকাউন্টের যে পার্সেল কোনো posted payout এখনো নেয়নি। COD লাইন = বর্তমান COD
+  account-এ posted COD receipt আছে (collected = receipt-এর টাকা, বদলায় না); charge লাইন = টাকা আনেনি কিন্তু চার্জ
+  আছে (returned, cancelled, paid online)। চার্জ শুরু হয় কুরিয়ারের `courier_charge` থেকে, member বদলাতে পারে;
+  কুরিয়ার কম দিলে পার্থক্যটা চার্জে যায়।
+- **পার্সেল আর payout জোড়া:** `storefront_shipments.payout_id` post-এ বসে, void-এ মোছে; payout বানানোর সময়
+  পার্সেলগুলো `FOR UPDATE` lock, trigger দিয়ে guard, আর একটা deferred constraint trigger COMMIT-এ দেখে যোগফল
+  লাইনের সমান আর posted payout-এর সব পার্সেল তাকেই দেখায়। তারিখ লাইনগুলোর সবচেয়ে নতুন COD receipt-এর আগে নয়,
+  period lock-ও খাটে।
+- **Void:** money receipt-এর মতো (তারিখ + কারণ), এন্ট্রি reverse হয়, পার্সেলগুলো আবার নেওয়া যায়। Journal-এর
+  Reverse এই এন্ট্রি refuse করে (`journal_is_payout`), আর payout নেওয়া COD receipt void করা যায় না
+  (`receipt_paid_out`): আগে payout void।
+- **CSV matching:** ফাইল upload হয় না, storage বা worker job নেই: browser ফাইলের text একটা match route-এ POST করে
+  (≤১ MB, ≤৫,০০০ সারি), API সেটা শেয়ার করা `apps/api/src/common/csv/csv.ts` দিয়ে পড়ে (আগে product import-এর)।
+  কলাম mapping (key: invoice, tracking code বা consignment id; collected; charge) কুরিয়ার অ্যাকাউন্টে
+  (`payout_csv_map`) থাকে। ফলাফল: Found, Other amount (দুই সংখ্যাই দেখায়, member ঠিক করে), Already paid out, Not
+  ready, Not found, Twice in the file, Can’t be read। **Steadfast preset একটা অনুমান:** আসল payout ফাইল দেখা হয়নি।
+  Steadfast-এর payments API (`GET /payments`) আসল account না পাওয়া পর্যন্ত অপেক্ষায়, কারণ তার উত্তরের গঠন কোথাও
+  লেখা নেই।
+- **স্ক্রিন:** Storefront → Shop payouts (তালিকা, নতুন payout, payout-এর পেজ, ছাপার voucher), Shop couriers-এর row
+  menu-তে "Record payout", পার্সেল কার্ডে "Paid out on CPO-…"। Holds-এর মানে একই: posted COD receipt আছে আর payout
+  নেয়নি এমন পার্সেল।
+- **Pathao (২৮d) পরে:** এখন কোনো লক্ষ্য তারিখ নেই, কারণ এখন release-এ মনোযোগ। ততদিন Pathao (বা অন্য যেকোনো
+  কুরিয়ার) manual অ্যাকাউন্ট দিয়ে চলে: হাতে বুকিং, COD receipt আর payout একই ভাবে।
 
 **চেকআউটে ডেলিভারি চার্জ:** `quote()` দিয়ে লাইভ দাম আনা যায়, কিন্তু কুরিয়ার API ধীর বা ডাউন হলে চেকআউট আটকে যাবে। তাই ডিফল্ট হবে টেন্যান্টের নিজের **zone-ভিত্তিক চার্জ টেবিল**, আর লাইভ quote হবে ঐচ্ছিক ও ক্যাশড (টাইমআউট ১ সেকেন্ড, ব্যর্থ হলে zone চার্জে ফলব্যাক)।
 

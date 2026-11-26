@@ -9,17 +9,22 @@ import { DocumentFileMaker } from '../documents/file-maker.js';
 import type { WorkerConfig } from '../config.js';
 import {
   CONFIG,
+  COURIERS,
   DB,
   PAYMENT_GATEWAY,
   PAYMENTS_CONFIG,
   REDIS,
   RELAY_DB,
+  SHIPPING_CONFIG,
   STORAGE_CONFIG,
   WITH_TENANT,
 } from '../infra/tokens.js';
 import { PostingService } from '../journal/posting.service.js';
 import { createGateway } from '../payments/create-gateway.js';
 import { LowStockHandler } from '../inventory/low-stock.handler.js';
+import { StockBooksService } from '../inventory/stock-books.service.js';
+import { StockPostingService } from '../inventory/stock-posting.service.js';
+import { ValueAccess } from '../inventory/value-access.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
 import { MailService } from '../mail/mail.service.js';
@@ -36,6 +41,8 @@ import { ReportScheduleSweep } from '../reports/report-schedule-sweep.js';
 import { BalanceAccess } from '../sales/balance-access.js';
 import { CreditService } from '../sales/credit.service.js';
 import { CustomersService } from '../sales/customers.service.js';
+import { DeliveriesService } from '../sales/deliveries.service.js';
+import { InvoicesService } from '../sales/invoices.service.js';
 import { ReceiptsService } from '../sales/receipts.service.js';
 import { SalesBooksService } from '../sales/sales-books.service.js';
 import { SalesOrdersService } from '../sales/sales-orders.service.js';
@@ -46,7 +53,9 @@ import { StockAccountsHandler } from '../setup/stock-accounts.handler.js';
 import { TaxRatesHandler } from '../setup/tax-rates.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
 import { StorageService } from '../storage/storage.service.js';
+import { createCouriers } from '../shipping/create-couriers.js';
 import { SMS_SENDER, MailSmsSender } from '../sms/sms-sender.js';
+import { SmsQueue } from '../sms/sms-queue.js';
 import { StorefrontImageHandler } from '../storefront/image.handler.js';
 import { GatewayAccounts } from '../storefront/gateway-accounts.js';
 import { OrderConfirmedHandler } from '../storefront/orders/order-confirmed.handler.js';
@@ -54,6 +63,11 @@ import { PaymentPaidHandler } from '../storefront/orders/payment-paid.handler.js
 import { ShopPaymentReceipts } from '../storefront/orders/payment-receipts.js';
 import { PendingOrderSweep } from '../storefront/orders/pending-order-sweep.js';
 import { ShopSalesOrderMaker } from '../storefront/orders/sales-order-maker.js';
+import { ShopOrderMoves } from '../storefront/orders/order-moves.js';
+import { ShipmentBookingHandler } from '../storefront/shipping/booking.handler.js';
+import { ShopCodReceipts } from '../storefront/shipping/cod-receipts.js';
+import { ShipmentNews } from '../storefront/shipping/shipment-news.js';
+import { ShipmentPoll } from '../storefront/shipping/shipment-poll.js';
 import { SyncLogCleanup } from '../sync/sync-log-cleanup.js';
 import { EventHandlers } from './handlers.js';
 import { JobRunner } from './job-runner.js';
@@ -149,6 +163,25 @@ export class WorkerModule implements OnApplicationShutdown {
         ReceiptsService,
         SalesBooksService,
         PostingService,
+        // Step 28a: the couriers. The booking job, the 15-minute poll, and what the courier's
+        // news needs to move an order: Shipped and Delivered with the buttons' own code
+        // (ShopOrderMoves), whose invoice needs the sales and stock services below, and the SMS
+        // queue's producer for the "picked up" SMS (the API's own SmsQueue: it reads only
+        // redisUrl from the config)
+        { provide: SHIPPING_CONFIG, useValue: config.shipping },
+        { provide: COURIERS, useFactory: () => createCouriers(config.shipping) },
+        ShipmentBookingHandler,
+        ShipmentPoll,
+        ShipmentNews,
+        ShopOrderMoves,
+        // Step 28b: the courier's "delivered" makes the rider's COD receipt too
+        ShopCodReceipts,
+        InvoicesService,
+        DeliveriesService,
+        StockPostingService,
+        StockBooksService,
+        ValueAccess,
+        SmsQueue,
         { provide: REDIS, useFactory: () => new Redis(config.redisUrl, { lazyConnect: true }) },
       ],
     };

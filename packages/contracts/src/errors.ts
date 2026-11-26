@@ -755,6 +755,102 @@ export const ERROR_CODES = [
   // Step 27d.4: a delete refused because the account is chosen on the shop's Payment card (the
   // money or the fee account). Archiving it is allowed: Pay online then leaves the checkout
   'account_used_by_shop',
+  // Step 28a: couriers. On the Shop couriers page: a key with other characters, the first save of
+  // an API account without both keys, a manual account with no courier picked, and the server with
+  // no CREDENTIALS_KEY (the same key the payment gateway's password is sealed with)
+  'courier_key_format',
+  'courier_key_required',
+  'courier_pick_one',
+  'courier_key_missing',
+  // The default or a Packed booking with a manual or archived account (a manual parcel has no code
+  // yet at Packed), a change to an archived account, and an account of another provider in a save
+  // (the provider never changes)
+  'courier_account_not_bookable',
+  'courier_account_archived',
+  'courier_provider_fixed',
+  // Book courier: no account picked, a manual parcel without its tracking code or with other
+  // characters in it, an order that is not packed (or is shipped already), an order with a parcel
+  // on its way, and Book again on a parcel that did not fail
+  'courier_pick_account',
+  'courier_tracking_code_required',
+  'courier_tracking_code_format',
+  'storefront_order_not_bookable',
+  'storefront_order_has_parcel',
+  'storefront_shipment_not_failed',
+  // Cancel after the courier picked the parcel up: it comes back as a return (step 28b)
+  'storefront_order_parcel_on_its_way',
+  // 28a.3: cancel while the worker is still booking the parcel. The booking ends booked or failed
+  // within about 15 minutes (decision 4); cancelling in between could leave a parcel at the
+  // courier for an order that no longer exists
+  'storefront_order_parcel_booking',
+  // Why a booking failed, kept on the parcel and shown with Book again (decision 4): the courier
+  // refused the keys (the tenant's account, not our bug, §14.6 rule 5), refused the parcel itself
+  // (its own words in errorDetail: "Invalid phone number"), or never answered in time
+  'courier_rejected_keys',
+  'courier_rejected_parcel',
+  'courier_unreachable',
+  // 28a.3: the courier has a parcel with this order's number already (an earlier call reached it
+  // and its answer was lost), but its answer does not say the tracking code (Steadfast's
+  // status_by_invoice). The parcel is found on the courier's panel
+  'courier_invoice_taken',
+  // The courier's webhook with no token or the wrong one, or for an account that is not an API
+  // account of this provider. A 401, so the courier's panel shows that something is wrong
+  'courier_webhook_token_invalid',
+  // Step 28b: the courier's COD money. On the courier account: a COD account that is not an active
+  // account holding money (or is a group), and a charge account that is not an active expense
+  // account (or is a group)
+  'courier_cod_account_invalid',
+  'courier_charge_account_invalid',
+  // At Delivered: more than the parcel's codAmount typed as collected (the courier was told to
+  // collect that much, never more), and, for a partial delivery, nothing typed and nothing said by
+  // the courier while a COD receipt is to be made (codAmount would be the wrong amount: the
+  // shopper kept only part)
+  'storefront_order_collected_over',
+  'storefront_order_collected_required',
+  // "Record what came back" with nothing ticked (that is Mark delivered) or with every piece
+  // ticked (that is Receive the return)
+  'storefront_order_return_nothing',
+  'storefront_order_return_everything',
+  // "Make the receipt" on a parcel whose COD receipt did not fail
+  'storefront_cod_receipt_not_failed',
+  // Step 28c: the courier's payout. No courier account picked; a bank account that is not an
+  // active account holding money (or is a group, or is the courier's own COD account); no line, or
+  // more than MAX_PAYOUT_LINES; one parcel on two lines
+  'payout_pick_account',
+  'payout_bank_account_invalid',
+  'payout_lines_required',
+  'payout_too_many_lines',
+  'payout_line_twice',
+  // A line's charge box left empty
+  'payout_charge_required',
+  // The courier account has no COD account (it has nothing to pay out), or the payout has charges
+  // and the account has no charges account
+  'payout_account_no_cod',
+  'payout_account_no_charges',
+  // A parcel that this payout cannot take: another account's, still on its way, without a posted
+  // COD receipt in the COD account, or already in a posted payout (also a race: another payout
+  // took it a moment ago). The form reloads its parcels
+  'payout_parcel_unavailable',
+  // A charge line (no cash) with a charge of zero: it would pay nothing and take nothing
+  'payout_charge_line_zero',
+  // The charges are more than what the riders collected on its lines: the bank would pay the
+  // courier. Add the payout's delivered parcels too
+  'payout_below_zero',
+  // Dated before one of its COD receipts: the money was not in the courier's account yet
+  'payout_date_before_receipt',
+  // The CSV: empty or not a CSV, over MAX_PAYOUT_CSV_CHARS, over MAX_PAYOUT_CSV_ROWS rows, and a
+  // mapping box left empty
+  'payout_csv_unreadable',
+  'payout_csv_too_big',
+  'payout_csv_too_many_rows',
+  'payout_csv_column_required',
+  // A payout's entry is undone by voiding the payout on its own page, so its parcels are freed too
+  'journal_is_payout',
+  // Step 28c.3: a voided payout can't be voided again (a second tab's click), and a COD receipt
+  // that a posted payout paid out can't be voided (0083's receipts_paid_out): the payout took its
+  // money out of the COD account already, so the payout is voided first
+  'payout_voided',
+  'receipt_paid_out',
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];

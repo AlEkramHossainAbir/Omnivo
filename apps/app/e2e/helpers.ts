@@ -8,6 +8,7 @@ import {
   HEAD_OFFICES,
   MOCK_NO_HISTORY_KEY,
   MOCK_NO_SHOP_ORDERS_KEY,
+  MOCK_NO_SHOP_PAYOUTS_KEY,
   MOCK_NO_VAT_MONTH_KEY,
   MOCK_ROLE_KEY,
   type MockRole,
@@ -62,6 +63,7 @@ export const test = base.extend<{
   tradeHistory: boolean;
   vatMonth: boolean;
   shopOrders: boolean;
+  shopPayouts: boolean;
 }>({
   seedDevice: [true, { option: true }],
   answerPinDialog: [true, { option: true }],
@@ -71,9 +73,12 @@ export const test = base.extend<{
   vatMonth: [false, { option: true }],
   // Step 27b: Rahman Fashion's shop orders (fixtures.ts → MOCK_NO_SHOP_ORDERS_KEY)
   shopOrders: [false, { option: true }],
+  // Step 28c: Steadfast Dhaka's last week for Shop payouts, with the shop orders
+  // (fixtures.ts → MOCK_NO_SHOP_PAYOUTS_KEY)
+  shopPayouts: [false, { option: true }],
   // `provide`, not Playwright's usual `use`: the React hooks lint rule reads `use(…)` as a hook
   page: async (
-    { page, seedDevice, answerPinDialog, tradeHistory, vatMonth, shopOrders },
+    { page, seedDevice, answerPinDialog, tradeHistory, vatMonth, shopOrders, shopPayouts },
     provide,
   ) => {
     copies.set(page, copyOf(page));
@@ -91,6 +96,11 @@ export const test = base.extend<{
       await page.addInitScript((key) => {
         localStorage.setItem(key, '1');
       }, MOCK_NO_SHOP_ORDERS_KEY);
+    }
+    if (!shopPayouts) {
+      await page.addInitScript((key) => {
+        localStorage.setItem(key, '1');
+      }, MOCK_NO_SHOP_PAYOUTS_KEY);
     }
     if (answerPinDialog) {
       // A new seeded device always asks once; without the seed the branch dialog comes first
@@ -160,10 +170,133 @@ export function readOnlyItem(page: Page, text: string | RegExp): Locator {
 // (client-side), page.goto দিয়ে না। ফোনে nav একটা আড়াআড়ি scroll-এর সারি; Playwright নিজেই scroll করে
 // Step 17d: a string matches part of the name; a RegExp when another item holds it too ("Refunds" and
 // "Supplier refunds", step 17d).
+// Step 29: a link is in the menu only while its module is open (CLAUDE.md → Module rail), so the
+// module's name is needed before the click. The table is here and not read from the app, because
+// the app holds i18n keys, not the English words a test asks for. A link missing from it throws
+// with what to add, so a new page's first test says so plainly instead of timing out.
+const MODULE_OF_LINK: Record<string, string | null> = {
+  // null: the sync line is in every module's menu, so no module has to be opened for it
+  Sync: null,
+  Overview: 'Home',
+  'Kitchen sink': 'Home',
+  POS: 'Sell',
+  'POS sales': 'Sell',
+  'POS returns': 'Sell',
+  'POS shifts': 'Sell',
+  Quotations: 'Sell',
+  'Sales orders': 'Sell',
+  Deliveries: 'Sell',
+  Invoices: 'Sell',
+  'Money receipts': 'Sell',
+  'Sales returns': 'Sell',
+  'Credit notes': 'Sell',
+  Refunds: 'Sell',
+  Customers: 'Sell',
+  'Customer groups': 'Sell',
+  'Price lists': 'Sell',
+  Requisitions: 'Buy',
+  'Purchase orders': 'Buy',
+  'Goods receipts': 'Buy',
+  'Supplier bills': 'Buy',
+  'Supplier payments': 'Buy',
+  'Purchase returns': 'Buy',
+  'Debit notes': 'Buy',
+  'Supplier refunds': 'Buy',
+  Approvals: 'Buy',
+  Suppliers: 'Buy',
+  'Supplier groups': 'Buy',
+  Products: 'Stock',
+  Categories: 'Stock',
+  Units: 'Stock',
+  Imports: 'Stock',
+  'Stock on hand': 'Stock',
+  Adjustments: 'Stock',
+  Transfers: 'Stock',
+  'Batches and expiry': 'Stock',
+  'Sold short': 'Stock',
+  Reorder: 'Stock',
+  Valuation: 'Stock',
+  Revaluations: 'Stock',
+  Warehouses: 'Stock',
+  'Chart of accounts': 'Accounts',
+  Journal: 'Accounts',
+  Ledger: 'Accounts',
+  'Opening balances': 'Accounts',
+  'Year-end close': 'Accounts',
+  'Shop orders': 'Shop',
+  'Shop payouts': 'Shop',
+  Catalog: 'Shop',
+  'Shop coupons': 'Shop',
+  'Shop categories': 'Shop',
+  'Shop appearance': 'Shop',
+  'Shop pages': 'Shop',
+  'Shop settings': 'Shop',
+  'Shop couriers': 'Shop',
+  'Trial balance': 'Reports',
+  'Profit and loss': 'Reports',
+  'Balance sheet': 'Reports',
+  'VAT report': 'Reports',
+  'Sales report': 'Reports',
+  'Receivables aging': 'Reports',
+  'Purchase report': 'Reports',
+  'Payables aging': 'Reports',
+  'Stock movement': 'Reports',
+  Exports: 'Reports',
+  'Scheduled emails': 'Reports',
+  Team: 'Setup',
+  Roles: 'Setup',
+  'Approval levels': 'Setup',
+  'Custom fields': 'Setup',
+  'POS registers': 'Setup',
+  'POS cash reasons': 'Setup',
+  Branches: 'Setup',
+  Devices: 'Setup',
+  Numbering: 'Setup',
+  'Audit log': 'Setup',
+  Settings: 'Setup',
+};
+
+function moduleOfLink(name: string | RegExp): string | null {
+  const link =
+    typeof name === 'string'
+      ? Object.keys(MODULE_OF_LINK).find((key) => key === name || key.startsWith(name))
+      : Object.keys(MODULE_OF_LINK).find((key) => name.test(key));
+  if (link === undefined) {
+    throw new Error(`No nav link matches ${String(name)}: add it to MODULE_OF_LINK in helpers.ts`);
+  }
+  return MODULE_OF_LINK[link] ?? null;
+}
+
+// Open a module from the rail. It clicks only when the module is not open already, so a test that
+// stays inside one module still makes one page load, not two
+export async function openModule(page: Page, module: string): Promise<void> {
+  await pinAnswered(page);
+  const item = page
+    .getByRole('navigation', { name: 'Modules' })
+    .getByRole('link', { name: new RegExp(`^${module}\\b`) });
+  if ((await item.getAttribute('aria-current')) !== 'page') await item.click();
+}
+
+// পেজ reload করলে MSW-এর mock ডেটা শুরুতে ফেরে — তাই পেজ বদলানো সবসময় nav-এর লিংকে ক্লিক করে
+// (client-side), page.goto দিয়ে না। ফোনে nav একটা আড়াআড়ি scroll-এর সারি; Playwright নিজেই scroll করে
+// Step 17d: a string matches part of the name; a RegExp when another item holds it too ("Refunds" and
+// "Supplier refunds", step 17d).
 export async function openFromNav(page: Page, name: string | RegExp): Promise<void> {
   await pinAnswered(page);
-  await page.getByRole('navigation').getByRole('link', { name }).click();
-  await expect(page.getByRole('heading', { level: 1, name })).toBeVisible();
+  const link = page.getByRole('navigation').getByRole('link', { name });
+  const heading = page.getByRole('heading', { level: 1, name });
+  // The link is in the menu only while its module is open. count() does not wait: 0 means another
+  // module is open (or the shell is still drawing, and opening the module draws it anyway)
+  const switched = (await link.count()) === 0;
+  if (switched) {
+    const module = moduleOfLink(name);
+    if (module !== null) await openModule(page, module);
+  }
+  // A rail item lands on its module's landing page, which is one of the module's own links, so a
+  // test that asked for that page is there already — one page load instead of two. With the module
+  // open to begin with, the click always happens, as it did before the rail
+  if (!switched || (await heading.count()) === 0) await link.click();
+  await expect(heading).toBeVisible();
 }
 
 // Step 19b: the PIN dialog opens when the copy is ready, at a moment the test does not choose. On
@@ -176,7 +309,10 @@ export async function openFromNav(page: Page, name: string | RegExp): Promise<vo
 // heading, or an exact link name) calls it before its click too.
 export async function pinAnswered(page: Page): Promise<void> {
   if (!pinWaiting.has(page)) return;
-  const nav = page.getByRole('navigation');
+  // Step 29: first(), because the shell has two navigations now — the module rail and the module
+  // menu. Without it this assertion is a strict-mode error that never passes, and the loop below
+  // spends its whole 25 seconds in every test that waits for the PIN dialog
+  const nav = page.getByRole('navigation').first();
   try {
     await expect(async () => {
       await expect(nav).toBeVisible();

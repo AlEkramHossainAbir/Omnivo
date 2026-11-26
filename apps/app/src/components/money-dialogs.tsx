@@ -155,7 +155,8 @@ export function ApplyForm({
 }
 
 // "Void": the date the money turned out not to be there (or never reached the customer), and why.
-// `words` picks the document's own texts; both have the same keys, but for the dialog's No button.
+// `words` picks the document's own texts; they have the same keys, but for the dialog's No button.
+// Step 28c: and a courier payout's, whose No button is a plain Cancel
 export function VoidForm({
   words,
   number,
@@ -164,7 +165,7 @@ export function VoidForm({
   save,
   onDone,
 }: {
-  words: 'receipts' | 'refunds';
+  words: 'receipts' | 'refunds' | 'storefront.payout';
   number: string;
   version: number;
   today: string;
@@ -203,7 +204,11 @@ export function VoidForm({
         <>
           <DialogClose asChild>
             <Button variant="secondary">
-              {words === 'receipts' ? t('receipts.keepReceipt') : t('refunds.keepRefund')}
+              {words === 'receipts'
+                ? t('receipts.keepReceipt')
+                : words === 'refunds'
+                  ? t('refunds.keepRefund')
+                  : t('common.cancel')}
             </Button>
           </DialogClose>
           <Button type="submit" form="void-form" disabled={isSubmitting}>

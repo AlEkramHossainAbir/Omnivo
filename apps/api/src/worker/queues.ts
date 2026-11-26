@@ -6,12 +6,14 @@ import { z } from 'zod';
 import type { WorkerConfig } from '../config.js';
 import { CONFIG } from '../infra/tokens.js';
 
-export const QUEUE_NAMES = ['email', 'jobs'] as const;
+export const QUEUE_NAMES = ['email', 'jobs', 'couriers'] as const;
 export type QueueName = (typeof QUEUE_NAMES)[number];
 
 // Two queues, so a slow or broken mail server never holds up workspace setup. Each queue gets its
 // own workers, and the email queue can get a rate limit later (a mail provider allows N per second).
-// satisfies: a new event type without a queue does not compile.
+// satisfies: a new event type without a queue does not compile. Step 28a: a third, for the
+// couriers: a courier's API that answers slowly (15 seconds, then a retry minutes later) must not
+// hold up a workspace's setup or a report.
 const QUEUE_OF = {
   'workspace.created': 'email',
   'invitation.issued': 'email',
@@ -33,6 +35,7 @@ const QUEUE_OF = {
   'storefront.image_uploaded': 'jobs',
   'storefront.order_confirmed': 'jobs',
   'storefront.payment_paid': 'jobs',
+  'storefront.shipment_requested': 'couriers',
 } satisfies Record<OutboxEventType, QueueName>;
 
 // The hourly maintenance job. Not an outbox event: no request asks for it, a scheduler adds it.
@@ -44,6 +47,9 @@ export const REPORT_SCHEDULE_SWEEP = 'report-schedules.sweep';
 
 // Step 27a: every 5 minutes, delete the shop orders that never got their phone code (decision 19)
 export const PENDING_ORDER_SWEEP = 'storefront-orders.sweep';
+
+// Step 28a: every 15 minutes, ask the couriers about the parcels on their way (decision 9)
+export const SHIPMENT_POLL = 'storefront-shipments.poll';
 
 // What a job carries: the outbox row minus its bookkeeping. The job name is the event type.
 // Redis is data from outside this process, so the worker checks this shape before using it.
@@ -63,6 +69,7 @@ type OutboxRow = typeof outboxEvents.$inferSelect;
 
 const HOUR_MS = 60 * 60 * 1000;
 const SWEEP_MS = 5 * 60 * 1000;
+const POLL_MS = 15 * 60 * 1000;
 const DAY_S = 24 * 60 * 60;
 
 @Injectable()
@@ -78,6 +85,7 @@ export class Queues implements OnApplicationShutdown {
     this.queues = {
       email: new Queue('email', { connection }),
       jobs: new Queue('jobs', { connection }),
+      couriers: new Queue('couriers', { connection }),
     };
     // As in job-runner.ts: without a listener, every failed reconnect is an "unhandled error"
     // printed by ioredis. The relay already reports the failures that matter.
@@ -90,6 +98,8 @@ export class Queues implements OnApplicationShutdown {
 
   async publish(rows: readonly OutboxRow[]): Promise<void> {
     for (const name of QUEUE_NAMES) {
+      // Step 28a: the couriers' queue has its own tries and pauses (config.ts's courierRetry)
+      const retry = name === 'couriers' ? this.config.courierRetry : this.config.retry;
       const jobs = rows
         .filter((row) => QUEUE_OF[row.type] === name)
         .map((row) => ({
@@ -105,8 +115,8 @@ export class Queues implements OnApplicationShutdown {
             // relay publishes a row twice (it pushed to Redis, then crashed before marking the row),
             // the second add is a no-op while the first job is still kept.
             jobId: row.id,
-            attempts: this.config.retry.attempts,
-            backoff: { type: 'exponential', delay: this.config.retry.backoffMs },
+            attempts: retry.attempts,
+            backoff: { type: 'exponential', delay: retry.backoffMs },
             // Keep finished jobs for a day and failed ones for a week (ages in seconds), so they
             // can be inspected; after that Redis would only fill up with them
             removeOnComplete: { age: DAY_S },
@@ -145,6 +155,16 @@ export class Queues implements OnApplicationShutdown {
       'storefront-orders-sweep',
       { every: SWEEP_MS },
       { name: PENDING_ORDER_SWEEP },
+    );
+  }
+
+  // Step 28a: the same, for the couriers' poll. On the jobs queue: one run is quick database work
+  // around a call per parcel, and a poll held up by a report is only a little late
+  async scheduleShipmentPoll(): Promise<void> {
+    await this.queues.jobs.upsertJobScheduler(
+      'storefront-shipments-poll',
+      { every: POLL_MS },
+      { name: SHIPMENT_POLL },
     );
   }
 

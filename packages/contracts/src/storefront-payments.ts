@@ -102,8 +102,9 @@ export const storefrontPaymentGatewaySchema = z.object({
 });
 export type StorefrontPaymentGateway = z.infer<typeof storefrontPaymentGatewaySchema>;
 
-// An account the selects offer, "1150 · SSLCommerz merchant balance"
-const accountChoiceSchema = z.object({ id: z.uuid(), code: z.string(), name: z.string() });
+// An account the selects offer, "1150 · SSLCommerz merchant balance". Step 28b: exported, for the
+// courier account's two selects (shipping.ts), which storefront.manage fills the same way
+export const accountChoiceSchema = z.object({ id: z.uuid(), code: z.string(), name: z.string() });
 export type StorefrontAccountChoice = z.infer<typeof accountChoiceSchema>;
 
 // The Payment card's one read: the saved account (null before the first save) and what the two

@@ -29,6 +29,7 @@ import {
   createTestApp,
   createTestWorker,
   eventually,
+  lockWaitsOfApi,
   TEST_SHOP_KEY,
   testConfig,
   testWorkerConfig,
@@ -185,8 +186,7 @@ async function atOnce<T>(table: string, waiting: number, send: () => Promise<T>)
     await tx`LOCK TABLE ${tx(table)} IN SHARE MODE`;
     const sent = send();
     await eventually(async () => {
-      const [row] = await tx`SELECT count(*)::int AS n FROM pg_locks WHERE NOT granted`;
-      expect(row?.n).toBe(waiting);
+      expect(await lockWaitsOfApi(tx)).toBe(waiting);
     });
     // Wrapped: a promise returned alone (or in an array) would be awaited before the gate opens,
     // and the requests behind it would wait for ever

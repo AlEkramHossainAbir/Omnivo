@@ -2,7 +2,7 @@ import { documentTotals, lineAmounts, sumMoney } from '@omnivo/contracts';
 import { describe, expect, it } from 'vitest';
 
 import { lineDiscounts } from './sales-order-maker.js';
-import { challanDiscounts } from './storefront-orders.service.js';
+import { challanDiscounts } from './order-moves.js';
 
 // Step 27c: a coupon's discount on the ERP's documents (decision 4)
 describe('lineDiscounts (sales order)', () => {
