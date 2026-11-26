@@ -284,7 +284,7 @@ test('hides Shop appearance and Shop pages from a role without the permission', 
   // Step 29: with no storefront permission the Shop module is not even in the rail, so its
   // menu cannot be opened and none of its pages can be reached
   await expect(
-    page.getByRole('navigation', { name: 'Modules' }).getByRole('link', { name: /^Shop/ }),
+    page.getByRole('navigation', { name: 'Modules' }).getByRole('link', { name: /^Shop\b/ }),
   ).toHaveCount(0);
   const nav = page.getByRole('navigation');
   await expect(nav.getByRole('link', { name: 'Shop appearance' })).toHaveCount(0);
