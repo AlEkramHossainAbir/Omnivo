@@ -5,7 +5,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
-  pinAnswered,
+  openModule,
   test,
   waitForCopy,
 } from './helpers.js';
@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
 
 // The nav says "Categories" and "Imports"; their pages say more in their headings
 async function openPage(page: Page, link: string, heading: string) {
-  await pinAnswered(page);
+  await openModule(page, 'Stock');
   await page.getByRole('navigation').getByRole('link', { name: link, exact: true }).click();
   await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible();
 }

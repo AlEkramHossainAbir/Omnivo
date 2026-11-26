@@ -7,6 +7,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  openModule,
   readOnlyItem,
   test,
 } from './helpers.js';
@@ -307,6 +308,8 @@ test.describe('who sees what', () => {
   }) => {
     await actAs(page, { name: 'Sales officer', permissions: ['sales.report.read'] });
     await page.goto('/');
+    // Step 29: the links of a module show while that module is open, so Reports is opened first
+    await openModule(page, 'Reports');
     const nav = page.getByRole('navigation');
     await expect(nav.getByRole('link', { name: 'Sales report' })).toBeVisible();
     await expect(nav.getByRole('link', { name: 'Receivables aging' })).toBeVisible();

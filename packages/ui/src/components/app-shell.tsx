@@ -10,6 +10,10 @@ interface AppShellProps {
   actions?: ReactNode;
   // শুধু ফোনে, টপ বারের ডানে (যেমন user menu) — ডেস্কটপে সেই কাজ sidebarFooter-এর
   topBarActions?: ReactNode;
+  // Step 29: the module rail (<ModuleRail>). On a desktop it is the 72px column left of the menu;
+  // on a phone the same items are a chip row inside the top bar. It is given once and drawn in
+  // both places, each hidden at the other's width, so the links are never twice in one screen
+  rail?: ReactNode;
   // workspace switcher
   sidebarHeader?: ReactNode;
   nav: ReactNode;
@@ -18,12 +22,14 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-// CLAUDE.md → Layout: ২৪৪px সাইডবার + বাকিটা content; ৮৬০px-এর নিচে সাইডবার উপরে টপ বার হয়ে
-// যায় আর nav আড়াআড়ি। ui রাউটার চেনে না — লিংক, ইউজার, টেন্যান্ট সব app slot-এ পাঠায়
+// CLAUDE.md → Layout: ৭২px module rail + ২৪৪px module menu + বাকিটা content; ৮৬০px-এর নিচে
+// দুটোই টপ বার হয়ে যায় — আগে module-এর সারি, তার নিচে খোলা module-এর লিংকের সারি। ui রাউটার
+// চেনে না — লিংক, ইউজার, টেন্যান্ট সব app slot-এ পাঠায়
 export function AppShell({
   brand,
   actions,
   topBarActions,
+  rail,
   sidebarHeader,
   nav,
   sidebarFooter,
@@ -31,11 +37,24 @@ export function AppShell({
 }: AppShellProps) {
   return (
     // print:block: on paper there is no sidebar column, even when a landscape page is wider than
-    // 860px. print:hidden: the navigation is never printed. overflow-y-auto (step 15d): the nav is
-    // taller than a laptop screen, and the sidebar stays put while the page scrolls, so it scrolls
-    // on its own; otherwise the last links (Settings) cannot be reached on a long page.
-    <div className="min-h-dvh min-[860px]:grid min-[860px]:grid-cols-[244px_minmax(0,1fr)] print:block">
-      <aside className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 min-[860px]:sticky min-[860px]:top-0 min-[860px]:h-dvh min-[860px]:gap-5 min-[860px]:overflow-y-auto min-[860px]:border-r min-[860px]:border-b-0 min-[860px]:px-3 min-[860px]:py-5 print:hidden">
+    // 860px. print:hidden: the navigation is never printed.
+    <div
+      className={cn(
+        'min-h-dvh print:block',
+        rail
+          ? 'min-[860px]:grid min-[860px]:grid-cols-[72px_244px_minmax(0,1fr)]'
+          : 'min-[860px]:grid min-[860px]:grid-cols-[244px_minmax(0,1fr)]',
+      )}
+    >
+      {/* The rail's desktop column. It scrolls on its own so a short screen still reaches Setup */}
+      {rail && (
+        <div className="hidden border-line bg-surface min-[860px]:sticky min-[860px]:top-0 min-[860px]:block min-[860px]:h-dvh min-[860px]:overflow-y-auto min-[860px]:border-r min-[860px]:px-2 min-[860px]:py-5 print:hidden">
+          {rail}
+        </div>
+      )}
+      {/* overflow-y-auto: the menu stays put while the page scrolls, and scrolls on its own if a
+          module ever outgrows the screen */}
+      <aside className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 min-[860px]:sticky min-[860px]:top-0 min-[860px]:h-dvh min-[860px]:gap-4 min-[860px]:overflow-y-auto min-[860px]:border-r min-[860px]:border-b-0 min-[860px]:px-3 min-[860px]:py-5 print:hidden">
         <div className="flex items-center justify-between gap-3 px-2">
           {brand}
           <div className="flex items-center gap-1">
@@ -44,6 +63,9 @@ export function AppShell({
           </div>
         </div>
         {sidebarHeader}
+        {/* The rail's phone row. It sits above the module's links, the way the rail sits left of
+            the menu on a desktop: the module first, then what is in it */}
+        {rail && <div className="min-[860px]:hidden">{rail}</div>}
         {nav}
         {sidebarFooter && (
           <div className="mt-auto hidden border-t border-line pt-4 min-[860px]:block">
@@ -59,22 +81,41 @@ export function AppShell({
   );
 }
 
-export function SidebarNav({ label, children }: { label: string; children: ReactNode }) {
+export function SidebarNav({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string | undefined;
+  children: ReactNode;
+}) {
   return (
     // ফোনে এক সারিতে, নিজের ভেতরে আড়াআড়ি scroll; -mx-4 px-4: scroll কিনারা পর্যন্ত যায়
     <nav
       aria-label={label}
-      className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-2 min-[860px]:mx-0 min-[860px]:grid min-[860px]:gap-4 min-[860px]:overflow-visible min-[860px]:px-0 min-[860px]:pb-0"
+      className={cn(
+        '-mx-4 flex gap-1 overflow-x-auto px-4 pb-2 min-[860px]:mx-0 min-[860px]:grid min-[860px]:gap-4 min-[860px]:overflow-visible min-[860px]:px-0 min-[860px]:pb-0',
+        className,
+      )}
     >
       {children}
     </nav>
   );
 }
 
-export function NavGroup({ label, children }: { label?: string; children: ReactNode }) {
+export function NavGroup({
+  label,
+  className,
+  children,
+}: {
+  label?: string | undefined;
+  className?: string | undefined;
+  children: ReactNode;
+}) {
   return (
     // ফোনে `contents`: group-এর বাক্স মুছে item-গুলো সরাসরি nav-এর সারিতে বসে
-    <div className="contents min-[860px]:grid min-[860px]:gap-px">
+    <div className={cn('contents min-[860px]:grid min-[860px]:gap-px', className)}>
       {label && (
         <p className="hidden px-2.5 pb-1 text-[11.5px] font-medium text-ink-3 min-[860px]:block">
           {label}
@@ -127,6 +168,75 @@ export function NavItem({
           {count}
         </span>
       )}
+    </a>
+  );
+}
+
+// Step 29 (CLAUDE.md → Module rail): the eight modules. A column of 56px items on a desktop, a
+// chip row on a phone — one component, because it is drawn in both of the shell's rail slots
+export function ModuleRail({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <nav
+      aria-label={label}
+      className={cn(
+        '-mx-4 flex gap-1 overflow-x-auto px-4 pb-2 min-[860px]:mx-0 min-[860px]:grid min-[860px]:gap-1 min-[860px]:overflow-visible min-[860px]:px-0 min-[860px]:pb-0',
+        className,
+      )}
+    >
+      {children}
+    </nav>
+  );
+}
+
+interface ModuleRailItemProps extends ComponentProps<'a'> {
+  icon: IconSvgElement;
+  // Which module is open comes from the route (lib/nav.ts → moduleOf), not from the router's own
+  // active link: a rail item points at its module's landing page, but it stays marked on every
+  // page of that module. Set after the spread, so it wins over the Link's own aria-current
+  current: boolean;
+  // Work waiting in this module: a 6px crit dot, never a number (the number is on the menu's
+  // link). The count goes into the item's accessible name instead
+  waiting?: boolean;
+}
+
+export function ModuleRailItem({
+  icon,
+  current,
+  waiting = false,
+  className,
+  children,
+  ...props
+}: ModuleRailItemProps) {
+  return (
+    <a
+      {...props}
+      aria-current={current ? 'page' : undefined}
+      className={cn(
+        'group flex shrink-0 items-center gap-2 rounded-lg px-2.5 py-2 text-body-sm font-medium whitespace-nowrap text-ink-2 transition-colors duration-150 hover:bg-subtle aria-[current=page]:bg-brand-soft aria-[current=page]:text-brand min-[860px]:flex-col min-[860px]:gap-1 min-[860px]:px-1 min-[860px]:py-2 min-[860px]:text-micro',
+        className,
+      )}
+    >
+      {/* relative: the dot sits on the icon's corner, so it never widens the item */}
+      <span className="relative flex shrink-0">
+        <HugeiconsIcon
+          icon={icon}
+          size={20}
+          strokeWidth={1.5}
+          className="text-ink-3 group-aria-[current=page]:text-brand"
+        />
+        {waiting && <span className="absolute -top-0.5 -right-0.5 size-1.5 rounded-full bg-crit" />}
+      </span>
+      <span className="min-[860px]:w-full min-[860px]:truncate min-[860px]:text-center">
+        {children}
+      </span>
     </a>
   );
 }

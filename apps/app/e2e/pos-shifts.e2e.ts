@@ -5,6 +5,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  openModule,
   pinAnswered,
   test,
   toastShown,
@@ -35,6 +36,7 @@ async function start(page: Page): Promise<void> {
 
 async function openPos(page: Page): Promise<void> {
   await pinAnswered(page);
+  await openModule(page, 'Sell');
   await page.getByRole('navigation').getByRole('link', { name: 'POS', exact: true }).click();
 }
 

@@ -6,6 +6,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  openModule,
   pinAnswered,
   test,
   toastShown,
@@ -247,7 +248,8 @@ test('the bell opens the new order', async ({ page }) => {
 test('a reader sees the orders without the buttons', async ({ page }) => {
   await actAs(page, { name: 'Accountant', permissions: ['storefront.order.read'] });
   await start(page);
-  // The Storefront group shows for the orders alone; the shop's own pages need storefront.manage
+  // The Shop menu holds the orders alone; the shop's own pages need storefront.manage
+  await openModule(page, 'Shop');
   const nav = page.getByRole('navigation');
   await expect(nav.getByRole('link', { name: 'Catalog' })).toHaveCount(0);
   await openOrder(page, 'W-000005');

@@ -281,6 +281,11 @@ test('hides Shop appearance and Shop pages from a role without the permission', 
   await actAs(page, { name: 'Store keeper', permissions: ['inventory.stock.adjust'] });
   await start(page);
   await pinAnswered(page);
+  // Step 29: with no storefront permission the Shop module is not even in the rail, so its
+  // menu cannot be opened and none of its pages can be reached
+  await expect(
+    page.getByRole('navigation', { name: 'Modules' }).getByRole('link', { name: /^Shop/ }),
+  ).toHaveCount(0);
   const nav = page.getByRole('navigation');
   await expect(nav.getByRole('link', { name: 'Shop appearance' })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: 'Shop pages' })).toHaveCount(0);

@@ -5,6 +5,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  openModule,
   pinAnswered,
   test,
   toastShown,
@@ -30,6 +31,7 @@ test.beforeEach(async ({ page }) => {
 // The nav item says "Requisitions"; the page's title is the longer "Purchase requisitions"
 async function openRequisitions(page: Page) {
   await pinAnswered(page);
+  await openModule(page, 'Buy');
   await page.getByRole('navigation').getByRole('link', { name: 'Requisitions' }).click();
   await expect(
     page.getByRole('heading', { level: 1, name: 'Purchase requisitions' }),

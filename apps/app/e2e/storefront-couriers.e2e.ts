@@ -8,6 +8,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  openModule,
   readOnlyItem,
   test,
   toastShown,
@@ -381,6 +382,7 @@ test('a packer books with the active accounts without the Shop couriers page', a
     permissions: ['storefront.order.read', 'storefront.order.manage'],
   });
   await page.goto('/');
+  await openModule(page, 'Shop');
   await expect(
     page.getByRole('navigation').getByRole('link', { name: 'Shop couriers' }),
   ).toHaveCount(0);
