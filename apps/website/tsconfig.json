@@ -1,0 +1,15 @@
+{
+  "extends": "../../packages/config/tsconfig/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["astro/client"],
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "declaration": false
+  },
+  "include": [".astro/types.d.ts", "src/**/*", "astro.config.ts"],
+  "exclude": ["dist"]
+}

@@ -1,0 +1,737 @@
+/* Omnivo marketing site, "Halkhata" direction (docs/landing-prototypes/02-halkhata.html).
+   The tokens are the App UI design system's, plus `khata` (the ledger's red), which only the
+   marketing site uses. */
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --subtle: #eef0f4;
+  --line: #e2e5eb;
+  --line-strong: #cfd4dc;
+  --ink: #0f1728;
+  --ink-2: #475467;
+  --ink-3: #8a94a6;
+  --brand: #1f47b5;
+  --brand-hover: #193b97;
+  --brand-ink: #ffffff;
+  --khata: #a3201c;
+  --crit: #b42318;
+  --crit-bg: #fef1f0;
+  --elev-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --elev: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px -6px rgba(16, 24, 40, 0.1);
+  --ring: 0 0 0 4px rgb(31 71 181 / 0.14);
+  --header: rgb(244 245 247 / 0.8);
+  /* The variable fontsource packages register "Geist Variable", not "Geist" */
+  --font-sans: 'Geist Variable', 'Noto Sans Bengali', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-bn: 'Tiro Bangla', 'Noto Sans Bengali', serif;
+  --font-hand: 'Atma', 'Noto Sans Bengali', sans-serif;
+  color-scheme: light;
+}
+
+/* The dark palette, by the OS or by data-theme="dark"; data-theme="light" beats a dark OS */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0a0d14;
+    --surface: #111722;
+    --subtle: #171e2b;
+    --line: #212938;
+    --line-strong: #2f394b;
+    --ink: #eef1f6;
+    --ink-2: #a3adbd;
+    --ink-3: #6b768a;
+    --brand: #7c9cf2;
+    --brand-hover: #95aff5;
+    --brand-ink: #0b0f17;
+    --khata: #f08a80;
+    --crit: #f4837a;
+    --crit-bg: #321614;
+    --elev-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --elev: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -6px rgba(0, 0, 0, 0.5);
+    --ring: 0 0 0 4px rgb(124 156 242 / 0.2);
+    --header: rgb(10 13 20 / 0.78);
+    color-scheme: dark;
+  }
+}
+:root[data-theme='dark'] {
+  --bg: #0a0d14;
+  --surface: #111722;
+  --subtle: #171e2b;
+  --line: #212938;
+  --line-strong: #2f394b;
+  --ink: #eef1f6;
+  --ink-2: #a3adbd;
+  --ink-3: #6b768a;
+  --brand: #7c9cf2;
+  --brand-hover: #95aff5;
+  --brand-ink: #0b0f17;
+  --khata: #f08a80;
+  --crit: #f4837a;
+  --crit-bg: #321614;
+  --elev-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --elev: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -6px rgba(0, 0, 0, 0.5);
+  --ring: 0 0 0 4px rgb(124 156 242 / 0.2);
+  --header: rgb(10 13 20 / 0.78);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+/* `hidden` must win over a class's display (the form's error line is display: flex) */
+[hidden] {
+  display: none !important;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+h1,
+h2,
+h3 {
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  margin: 0;
+}
+p {
+  margin: 0;
+}
+a {
+  color: inherit;
+}
+button:not(:disabled),
+a[href],
+label[for] {
+  cursor: pointer;
+}
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.ico {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+.mono {
+  font-family: var(--font-mono);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.wrap {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding-left: max(32px, env(safe-area-inset-left, 0px));
+  padding-right: max(32px, env(safe-area-inset-right, 0px));
+}
+@media (max-width: 640px) {
+  .wrap {
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+  }
+}
+
+/* The WebGL stage, behind everything. It fades in once its pages are painted */
+#stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  display: block;
+  opacity: 0;
+  transition: opacity 0.4s ease-out;
+}
+#stage[data-ready] {
+  opacity: 1;
+}
+main,
+header,
+footer {
+  position: relative;
+  z-index: 1;
+}
+
+header.top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding-top: env(safe-area-inset-top, 0px);
+  background: var(--header);
+  backdrop-filter: saturate(1.4) blur(12px);
+  -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.top .wrap {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  height: 64px;
+}
+.logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  text-decoration: none;
+  color: var(--ink);
+}
+.logo-mark {
+  position: relative;
+  width: 24px;
+  height: 22px;
+  flex: none;
+}
+.logo-mark::before,
+.logo-mark::after {
+  content: '';
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+}
+.logo-mark::before {
+  left: 0;
+  bottom: 0;
+  background: var(--brand);
+}
+.logo-mark::after {
+  right: 0;
+  top: 0;
+  border: 2px solid var(--brand);
+}
+.nav {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+.nav a {
+  text-decoration: none;
+  color: var(--ink-2);
+  font-size: 13.5px;
+  font-weight: 500;
+  padding: 7px 10px;
+  border-radius: 8px;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.nav a:hover {
+  background: var(--subtle);
+  color: var(--ink);
+}
+.top-actions {
+  display: flex;
+  gap: 8px;
+}
+@media (max-width: 860px) {
+  .nav,
+  .hide-sm {
+    display: none;
+  }
+  .top .wrap {
+    justify-content: space-between;
+  }
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 42px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font: 500 14.5px/1 var(--font-sans);
+  text-decoration: none;
+  border: 1px solid transparent;
+  white-space: nowrap;
+  box-shadow: var(--elev-sm);
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    color 0.15s;
+}
+.btn-primary {
+  background: var(--brand);
+  color: var(--brand-ink);
+}
+.btn-primary:hover {
+  background: var(--brand-hover);
+}
+.btn-secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.btn-secondary:hover {
+  background: var(--subtle);
+}
+.btn-sm {
+  height: 36px;
+  font-size: 13.5px;
+  padding: 0 12px;
+}
+.btn-lg {
+  height: 50px;
+  padding: 0 20px;
+  font-size: 15px;
+}
+
+/* hero */
+.hero {
+  padding-block: 88px 120px;
+  min-height: min(900px, 100svh);
+  display: flex;
+  align-items: center;
+}
+.hero-copy {
+  max-width: 620px;
+  display: grid;
+  /* minmax(0, 1fr), not auto: an auto column is as wide as its widest content (the workspace
+     input), which pushed the card past a 390px phone */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 26px;
+}
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+.stamp .seal {
+  font-family: var(--font-bn);
+  font-size: 15px;
+  color: var(--khata);
+  border: 1.5px solid currentColor;
+  border-radius: 6px;
+  padding: 1px 8px 2px;
+  transform: rotate(-3deg);
+}
+.hero h1 {
+  font-size: clamp(48px, 8vw, 108px);
+  line-height: 0.95;
+  letter-spacing: -0.055em;
+}
+.hero h1 .strike {
+  position: relative;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.hero h1 .strike::after {
+  content: '';
+  position: absolute;
+  left: -2%;
+  right: -2%;
+  top: 52%;
+  height: 0.07em;
+  background: var(--khata);
+  border-radius: 99px;
+  transform: rotate(-2deg);
+}
+.bn-line {
+  font-family: var(--font-bn);
+  font-size: clamp(22px, 2.4vw, 30px);
+  line-height: 1.35;
+  color: var(--brand);
+}
+.lede {
+  font-size: 18px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 52ch;
+}
+.cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.trades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.trades li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  font-size: 13px;
+  color: var(--ink-2);
+  background: var(--surface);
+}
+
+/* the pages of the story */
+.page {
+  min-height: 120svh;
+  display: flex;
+  align-items: center;
+  padding-block: 96px;
+}
+.cap {
+  max-width: 400px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
+}
+.folio {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.folio .n {
+  font-family: var(--font-bn);
+  font-size: 44px;
+  line-height: 1;
+  color: var(--khata);
+}
+.folio .w {
+  font-size: 13px;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.folio .w b {
+  display: block;
+  font-family: var(--font-bn);
+  font-weight: 400;
+  font-size: 17px;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+.page h2 {
+  font-size: clamp(30px, 3.4vw, 46px);
+  line-height: 1.06;
+  letter-spacing: -0.04em;
+}
+.body {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--ink-2);
+}
+.then-now {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--elev-sm);
+}
+.then-now div {
+  padding: 14px 16px;
+  display: grid;
+  gap: 4px;
+  font-size: 13.5px;
+}
+.then-now div + div {
+  border-left: 1px solid var(--line);
+}
+.then-now dt {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+}
+.then-now dd {
+  margin: 0;
+}
+.then-now .old {
+  color: var(--ink-2);
+  font-family: var(--font-hand);
+  font-size: 15px;
+  letter-spacing: 0;
+}
+.then-now .new {
+  color: var(--ink);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* the close */
+.final {
+  min-height: 110svh;
+  display: flex;
+  align-items: center;
+  padding-block: 120px;
+}
+.final-card {
+  max-width: 520px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+}
+.final h2 {
+  font-size: clamp(36px, 4.6vw, 62px);
+  line-height: 1.02;
+  letter-spacing: -0.045em;
+}
+.final .bn-line {
+  font-size: 22px;
+  color: var(--khata);
+}
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.facts div {
+  background: var(--surface);
+  padding: 14px 16px;
+  display: grid;
+  gap: 2px;
+}
+.facts dt {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+.facts dt.bn {
+  font-family: var(--font-bn);
+  letter-spacing: 0;
+}
+.facts dd {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.4;
+}
+.ws-form {
+  display: grid;
+  gap: 6px;
+}
+.ws-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.ws-input {
+  flex: 1 1 250px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: 50px;
+  padding: 0 14px;
+  gap: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  box-shadow: var(--elev-sm);
+  cursor: text;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.ws-input:hover {
+  border-color: var(--ink-3);
+}
+.ws-input:focus-within {
+  border-color: var(--brand);
+  box-shadow: var(--ring);
+}
+.ws-input[data-error] {
+  border-color: var(--crit);
+  box-shadow: 0 0 0 4px var(--crit-bg);
+}
+.ws-input .ico {
+  color: var(--ink-3);
+}
+.ws-input input {
+  flex: 1;
+  min-width: 0;
+  /* an input's default width (size="20") is wider than the box on a phone */
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 500 15px var(--font-sans);
+}
+.ws-input input::placeholder {
+  color: var(--ink-3);
+  font-weight: 400;
+}
+.ws-input .suffix {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 13.5px;
+}
+.ws-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--crit);
+}
+.hint {
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+footer {
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+  padding-block: 28px calc(28px + env(safe-area-inset-bottom, 0px));
+}
+footer .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 28px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+}
+footer nav a {
+  text-decoration: none;
+  color: var(--ink-2);
+}
+footer nav a:hover {
+  color: var(--ink);
+}
+
+/* the folio and progress at the bottom right, only with the book */
+.counter {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right, 0px));
+  bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 500;
+}
+.counter .bar {
+  width: 120px;
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.counter .bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--khata);
+}
+.counter .bn {
+  font-family: var(--font-bn);
+  font-size: 15px;
+  color: var(--ink);
+  min-width: 4ch;
+  text-align: right;
+}
+@media (max-width: 899px) {
+  .counter {
+    display: none;
+  }
+}
+
+/* Phones: the book sits in the top half of the screen, and each caption is a card that
+   scrolls up over the bottom half */
+@media (max-width: 899px) {
+  .hero {
+    padding-block: 48svh 64px;
+    min-height: 0;
+  }
+  .page,
+  .final {
+    min-height: 0;
+    padding-block: 56svh 40px;
+  }
+  .cap,
+  .final-card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 22px 18px;
+    box-shadow: var(--elev);
+    max-width: none;
+  }
+  .hero-copy {
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    border-radius: 14px;
+  }
+  .lede {
+    font-size: 16.5px;
+  }
+  .then-now {
+    grid-template-columns: 1fr;
+  }
+  .then-now div + div {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* Without the book (no WebGL, Save-Data, or it failed): no empty half screens, no counter */
+.no-stage #stage,
+.no-stage .counter {
+  display: none;
+}
+.no-stage .page,
+.no-stage .final {
+  min-height: 0;
+  padding-block: 64px;
+}
+@media (max-width: 899px) {
+  .no-stage .hero {
+    padding-block: 48px;
+  }
+  .no-stage .page,
+  .no-stage .final {
+    padding-block: 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  #stage {
+    transition: none !important;
+  }
+}
