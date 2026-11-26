@@ -1946,3 +1946,7 @@ WebGL the page drops the book (`html.no-stage`). The book's pages are canvases d
 stage picks from the device pixels a page covers (0.75–1.5 × 1024 × 1426), after the fonts load. The
 marketing site alone adds the fonts Atma (handwriting) and Tiro Bangla (the khata's print).
 `PUBLIC_APP_URL` (build time) is where Sign in, Start free trial and the workspace form go.
+The story has five pages (accounts, stock, dues, POS, online shop); a new one is a pair in
+`TURNING_PAGES` (`src/scripts/book/pages.ts`) plus a section in `index.astro`. The pricing section
+reads `src/data/plans.ts`: the README's draft plans with **placeholder prices**, UI only. Its buttons
+go to `/sign-up?plan=<id>`, which the app ignores until the plan flow (build plan step 23) is built.

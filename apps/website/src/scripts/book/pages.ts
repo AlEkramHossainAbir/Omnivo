@@ -12,7 +12,9 @@
 //    never draws in a fallback font and then has to swap.
 import {
   Alert02Icon,
+  CashierIcon,
   CheckmarkCircle02Icon,
+  CloudUploadIcon,
   HourglassIcon,
   Invoice02Icon,
   PackageDeliveredIcon,
@@ -513,6 +515,61 @@ function pageAging(g: CanvasRenderingContext2D): void {
   txt(g, 'Money in is applied to the oldest invoice first.', 72, 1232, F(400, 30), C.ink2);
 }
 
+// The POS counter: a sale made offline (its receipt number, the cart, the payment) and the
+// shift's blind count, like the POS receipt layer of the Layers prototype. The lines add up:
+// 160 + 170 + 400 = 730, paid 500 cash + 230 bKash
+function pagePos(g: CanvasRenderingContext2D): void {
+  paper(g, false);
+  omniHead(g, 'POS', 'The counter never stops.');
+  card(g, X, 250, W, 600);
+  txt(g, 'POS1-000124', X + 36, 318, F(500, 38, true), C.ink);
+  txt(g, 'Counter POS1 · Sumi Akter · Walk-in', X + 36, 362, F(400, 28), C.ink3);
+  pill(g, 'Saved offline', R - 34, 330, 'brand', CloudUploadIcon, true);
+  g.fillStyle = C.subtle;
+  g.fillRect(X + 2, 396, W - 4, 60);
+  txt(g, 'Item', X + 36, 436, F(500, 26), C.ink3);
+  txt(g, 'Qty', R - 260, 436, F(500, 26), C.ink3, 'right');
+  txt(g, 'Amount', R - 36, 436, F(500, 26), C.ink3, 'right');
+  const lines = [
+    ['Paracetamol 500 mg', '× ৳40 · strip', '4 strips', '160.00'],
+    ['Saline 500 ml', '× ৳85 · bag', '2 bags', '170.00'],
+    ['Cotton thread 40s', '× ৳400 · cone', '1 cone', '400.00'],
+  ] as const;
+  lines.forEach(([name, each, qty, amount], i) => {
+    const y = 512 + i * 92;
+    txt(g, name, X + 36, y, F(500, 29), C.ink);
+    txt(g, each, X + 36, y + 34, F(400, 25), C.ink3);
+    txt(g, qty, R - 260, y + 16, F(400, 28), C.ink2, 'right');
+    txt(g, amount, R - 36, y + 16, F(400, 28, true), C.ink, 'right');
+    if (i < lines.length - 1) rule(g, X + 2, y + 56, R - 2);
+  });
+  // the total row on `subtle`, with the card's round bottom corners
+  g.fillStyle = C.subtle;
+  rr(g, X + 2, 770, W - 4, 78, 20);
+  g.fill();
+  g.fillRect(X + 2, 770, W - 4, 30);
+  txt(g, 'Total', X + 36, 820, F(500, 30), C.ink);
+  txt(g, '৳730.00', R - 36, 820, F(500, 30, true), C.ink, 'right');
+  card(g, X, 890, W, 330);
+  txt(g, 'Take payment', X + 36, 956, F(600, 34), C.ink);
+  pill(g, 'Paid', R - 34, 964, 'good', CheckmarkCircle02Icon, true);
+  const pays = [
+    ['Cash', '৳500.00'],
+    ['bKash · TrxID BK7XQ2M4', '৳230.00'],
+    ['Still to pay', '৳0.00'],
+  ] as const;
+  pays.forEach(([label, amount], i) => {
+    const y = 1040 + i * 62;
+    const last = i === pays.length - 1;
+    if (last) rule(g, X + 36, y - 40, R - 36, C.ink);
+    txt(g, label, X + 36, y, F(last ? 500 : 400, 30), last ? C.ink : C.ink2);
+    txt(g, amount, R - 36, y, F(last ? 500 : 400, 29, true), last ? C.ink : C.ink2, 'right');
+  });
+  icon(g, CashierIcon, 72, 1262, 30, C.ink2);
+  txt(g, 'Shift POS1-S0042 closes with a blind count.', 116, 1288, F(400, 30), C.ink2);
+  txt(g, 'It syncs when the line is back.', 116, 1332, F(400, 30), C.ink2);
+}
+
 function pageShop(g: CanvasRenderingContext2D): void {
   paper(g, false);
   omniHead(g, 'Shop orders', 'Parcels that pay you back.');
@@ -641,8 +698,9 @@ function coverOmnivo(g: CanvasRenderingContext2D): void {
 // ---------- every sheet of the book ----------
 
 // coverOut: the red front. coverIn: inside the front cover (the first khata page).
-// pNf / pNb: the front (Omnivo) and back (khata) of turning page N. p4f: the last Omnivo page,
+// pNf / pNb: the front (Omnivo) and back (khata) of turning page N. p5f: the last Omnivo page,
 // on the page block. back: the Omnivo back cover the book lands on.
+// The story: 1 accounts, 2 stock, 3 dues, 4 the POS counter, 5 the online shop
 export const SHEET_NAMES = [
   'coverOut',
   'coverIn',
@@ -653,8 +711,22 @@ export const SHEET_NAMES = [
   'p3f',
   'p3b',
   'p4f',
+  'p4b',
+  'p5f',
   'back',
 ] as const;
+
+// The turning pages, front and back, in the order they turn. The stage builds one turning page
+// per pair, so a new story page is a new pair here plus a section in index.astro
+export const TURNING_PAGES = [
+  ['p1f', 'p1b'],
+  ['p2f', 'p2b'],
+  ['p3f', 'p3b'],
+  ['p4f', 'p4b'],
+] as const satisfies readonly (readonly [SheetName, SheetName])[];
+
+// The Omnivo page that lies on the page block, under every turning page
+export const LAST_PAGE: SheetName = 'p5f';
 export type SheetName = (typeof SHEET_NAMES)[number];
 
 const PAINTERS: Record<SheetName, (g: CanvasRenderingContext2D) => void> = {
@@ -709,7 +781,27 @@ const PAINTERS: Record<SheetName, (g: CanvasRenderingContext2D) => void> = {
     );
   },
   p3f: pageAging,
+  // The counter's cash box: what should be in the drawer and what was counted, ৳520 apart.
+  // 5,000 + 12,430 − 450 = 16,980 expected; 16,460 counted. bKash money is not in the drawer
   p3b: (g) => {
+    khataPage(
+      g,
+      'ক্যাশ বাক্স',
+      [
+        { d: '২৬/১', t: 'সকালের ক্যাশ', a: '৫,০০০' },
+        { d: '২৬/১', t: 'খুচরা বিক্রি', a: '১২,৪৩০' },
+        { t: '— কারেন্ট গেল, স্লিপ নাই', small: true },
+        { d: '২৬/১', t: 'বিকাশে এল', a: '৩,২০০' },
+        { d: '২৬/১', t: 'খরচ — চা, বাজার', a: '৩৫০', strike: true, fix: '৪৫০' },
+        {},
+        { t: 'থাকার কথা', a: '১৬,৯৮০', total: true },
+        { t: 'গুনে পেলাম', a: '১৬,৪৬০' },
+      ],
+      [{ text: 'ক্যাশে ৫২০ টাকা কম!', x: 250, y: 1020, rot: -0.05 }],
+    );
+  },
+  p4f: pagePos,
+  p4b: (g) => {
     khataPage(
       g,
       'কুরিয়ার',
@@ -725,7 +817,7 @@ const PAINTERS: Record<SheetName, (g: CanvasRenderingContext2D) => void> = {
       [{ text: '৬০ টাকা কম কেন?', x: 270, y: 1000, rot: -0.06 }],
     );
   },
-  p4f: pageShop,
+  p5f: pageShop,
   back: coverOmnivo,
 };
 

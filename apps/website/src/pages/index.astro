@@ -1,7 +1,8 @@
 ---
 // The marketing landing page, "Halkhata" direction (docs/landing-prototypes/02-halkhata.html).
 // The words are the prototype's. Placeholders that must be confirmed before launch: the 14-day
-// trial, and the demo business names (Rahman Traders and the customers on the pages).
+// trial, the plans' prices (src/data/plans.ts), the sales email, and the demo business names
+// (Rahman Traders and the customers on the pages).
 import '@fontsource-variable/geist';
 import '@fontsource-variable/geist-mono';
 import '@fontsource/noto-sans-bengali/400.css';
@@ -17,20 +18,29 @@ import '../styles/site.css';
 import {
   Alert02Icon,
   ArrowRight01Icon,
+  CashierIcon,
   DeliveryTruck01Icon,
   FactoryIcon,
   Globe02Icon,
   Medicine02Icon,
+  Tick02Icon,
   TShirtIcon,
 } from '@hugeicons/core-free-icons';
 import { PUBLIC_APP_URL } from 'astro:env/client';
 
 import Icon from '../components/Icon.astro';
+import { PLANS, type Plan } from '../data/plans';
 
 const app = PUBLIC_APP_URL.replace(/\/$/, '');
 const title = 'Omnivo · The khata, rewritten';
 const description =
-  'The cloud ERP for Bangladeshi businesses: accounts, stock, dues and an online shop, in Bangla and English, and it keeps working offline.';
+  'The cloud ERP for Bangladeshi businesses: accounts, stock, dues, a POS counter and an online shop, in Bangla and English, and it keeps working offline.';
+
+// Where a plan's button goes. The sign-up flow for a plan comes later; until then ?plan= tells
+// the app which plan was picked (the app ignores it today). Enterprise is a conversation
+// (PLACEHOLDER address)
+const planHref = (plan: Plan): string =>
+  plan.id === 'enterprise' ? 'mailto:sales@omnivo.app' : `${app}/sign-up?plan=${plan.id}`;
 
 const pages = [
   {
@@ -66,6 +76,16 @@ const pages = [
   {
     id: 'p4',
     n: '৪',
+    bn: 'ক্যাশ কাউন্টার',
+    en: 'POS',
+    title: 'The counter keeps selling, power or not.',
+    body: 'Scan, take cash or bKash and print the receipt. The POS keeps selling offline and syncs when the line is back. Every shift ends with a blind cash count, and a difference posts to its own account.',
+    old: 'ক্যাশে ৫২০ টাকা কম!',
+    now: 'POS1-S0042 · ৳520 short, posted',
+  },
+  {
+    id: 'p5',
+    n: '৫',
     bn: 'কুরিয়ার',
     en: 'Online shop',
     title: "The rider's cash comes home, matched.",
@@ -100,9 +120,12 @@ const pages = [
           {pages.map((p) => (
             <a href={`#${p.id}`}>{p.en}</a>
           ))}
+          <a href="#pricing">Pricing</a>
         </nav>
         <div class="top-actions">
-          <a class="btn btn-secondary btn-sm hide-sm" href={`${app}/login`}>
+          {/* The app's sign-in page links on to sign-up ("Create workspace"), so one button
+              covers both. Shown on phones too */}
+          <a class="btn btn-secondary btn-sm" href={`${app}/login`}>
             Sign in
           </a>
           <a class="btn btn-primary btn-sm" href={`${app}/sign-up`}>
@@ -265,6 +288,90 @@ const pages = [
           </div>
         </div>
       </section>
+      {/* Not a step of the book: its opaque background covers the fixed book as it scrolls up */}
+      <section class="pricing" id="pricing" aria-labelledby="pricing-title">
+        <div class="wrap">
+          <div class="pricing-head">
+            <div class="pricing-intro">
+              <h2 id="pricing-title">Plans for every counter</h2>
+              <p class="body">Start free. Move up when you add people, branches or depots.</p>
+            </div>
+            {/* Monthly / Yearly switches the prices with CSS alone (:has), so it works with no
+                script. The radios are sr-only inside the fieldset, which is relative */}
+            <fieldset class="seg">
+              <legend class="sr-only">Billing</legend>
+              <label>
+                <input class="sr-only" type="radio" name="billing" value="monthly" checked />
+                Monthly
+              </label>
+              <label>
+                <input
+                  class="sr-only"
+                  type="radio"
+                  name="billing"
+                  value="yearly"
+                  id="bill-yearly"
+                />
+                Yearly <span class="save">2 months free</span>
+              </label>
+            </fieldset>
+          </div>
+          <ul class="plans">
+            {PLANS.map((plan) => (
+              <li class="plan" data-recommended={plan.recommended ? '' : undefined}>
+                <div class="plan-top">
+                  <h3>{plan.name}</h3>
+                  {plan.recommended && (
+                    <span class="pill-brand">
+                      <Icon icon={Tick02Icon} size={13} />
+                      Recommended
+                    </span>
+                  )}
+                </div>
+                <p class="audience">{plan.audience}</p>
+                {plan.price ? (
+                  <>
+                    <p class="price m">
+                      <b>{plan.price.monthly}</b> / month
+                    </p>
+                    <p class="price y">
+                      <b>{plan.price.yearlyPerMonth}</b> / month
+                    </p>
+                    <p class="billed m">Billed monthly</p>
+                    <p class="billed y">Billed {plan.price.yearlyTotal} a year</p>
+                  </>
+                ) : (
+                  <>
+                    <p class="price">
+                      <b>Custom</b>
+                    </p>
+                    <p class="billed">Priced for your users and branches</p>
+                  </>
+                )}
+                <a
+                  class:list={['btn', plan.recommended ? 'btn-primary' : 'btn-secondary']}
+                  href={planHref(plan)}
+                >
+                  {plan.cta}
+                </a>
+                <ul class="features">
+                  {plan.features.map((feature) => (
+                    <li>
+                      <Icon icon={Tick02Icon} size={16} />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+          <p class="pricing-note">
+            <Icon icon={CashierIcon} size={16} />
+            Prices in taka. The online shop, courier booking and online payment are an add-on on any
+            paid plan.
+          </p>
+        </div>
+      </section>
     </main>
 
     <footer>
@@ -274,7 +381,7 @@ const pages = [
         </a>
         <nav aria-label="Footer">
           <a href="#p1">Product</a>
-          <a href="#start">Pricing</a>
+          <a href="#pricing">Pricing</a>
           <a href="#start">Contact</a>
         </nav>
         <span>© 2026 Omnivo</span>
@@ -320,6 +427,23 @@ const pages = [
         input.addEventListener('input', () => {
           if (!error.hidden && checkWorkspace(input.value).ok) show(null);
         });
+      }
+
+      // ---------- the page counter ----------
+      // The pricing section covers the book, so the book's folio would only sit on top of the
+      // pricing cards and the footer. It steps aside while pricing or the footer is on screen
+      const counter = document.querySelector<HTMLElement>('.counter');
+      const after = [document.getElementById('pricing'), document.querySelector('footer')];
+      if (counter) {
+        const showing = new Set<Element>();
+        const observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (entry.isIntersecting) showing.add(entry.target);
+            else showing.delete(entry.target);
+          }
+          counter.hidden = showing.size > 0;
+        });
+        for (const el of after) if (el) observer.observe(el);
       }
 
       // ---------- the book ----------

@@ -1,4 +1,4 @@
-// The red khata on a fixed WebGL stage behind the page. Scrolling opens it, turns three pages
+// The red khata on a fixed WebGL stage behind the page. Scrolling opens it, turns four pages
 // (handwriting on the left, Omnivo on the right) and closes it onto Omnivo's back cover.
 //
 // This module is loaded with a dynamic import (see index.astro), so three.js is its own chunk:
@@ -27,25 +27,30 @@ import {
 import {
   CANVAS_FONT_SAMPLE,
   CANVAS_FONTS,
+  LAST_PAGE,
   makeSheet,
   paintAll,
   PH,
   SHEET_NAMES,
   type Sheet,
   type SheetName,
+  TURNING_PAGES,
 } from './pages';
 
 export interface StageOptions {
   canvas: HTMLCanvasElement;
-  // The sections that are the book's steps, in order: cover, four pages, the close
+  // The sections that are the book's steps, in order: cover, the story's pages, the close
   steps: readonly HTMLElement[];
   // The folio and progress bar at the bottom right
   folio: HTMLElement | null;
   bar: HTMLElement | null;
 }
 
-const FOLIO = ['মলাট', 'পাতা ১', 'পাতা ২', 'পাতা ৩', 'পাতা ৪', 'Omnivo'] as const;
-const LAST_STEP = FOLIO.length - 1;
+// The story's pages: one per turning page, plus the last page on the block
+const STORY = TURNING_PAGES.length + 1;
+// Step 0 is the cover, steps 1…STORY the pages, the last step the closed book
+const LAST_STEP = STORY + 1;
+const FOLIO = ['মলাট', 'পাতা ১', 'পাতা ২', 'পাতা ৩', 'পাতা ৪', 'পাতা ৫', 'Omnivo'] as const;
 
 // Book size in scene units: cover width and depth, page width and depth. The page's aspect
 // (2.98 × 4.16) is the canvas page's (1024 × 1426)
@@ -182,7 +187,7 @@ export async function startStage({ canvas, steps, folio, bar }: StageOptions): P
   const block = new Mesh(new BoxGeometry(PGW, 0.12, PGD), std({ color: 0xefe8d8 }));
   block.position.set(PGW / 2 + 0.02, 0.06 - C2, 0);
   right.add(block);
-  const lastPage = new Mesh(plane(PGW, PGD), std({ map: texs.p4f }));
+  const lastPage = new Mesh(plane(PGW, PGD), std({ map: texs[LAST_PAGE] }));
   lastPage.position.set(PGW / 2 + 0.02, 0.1215 - C2, 0);
   right.add(lastPage);
 
@@ -201,7 +206,7 @@ export async function startStage({ canvas, steps, folio, bar }: StageOptions): P
   frontIn.position.set(CW / 2, 0.0695, 0);
   front.add(frontIn);
 
-  // Three turning pages, bent as they turn. Each is a strip of SEG columns; bend() lays the
+  // The turning pages, bent as they turn. Each is a strip of SEG columns; bend() lays the
   // columns along a curve whose bend is largest halfway through the turn
   const SEG = 30;
   interface TurningPage {
@@ -211,12 +216,7 @@ export async function startStage({ canvas, steps, folio, bar }: StageOptions): P
     yL: number; // height when lying on the left
     last: number; // the angle last drawn, to skip work when nothing moved
   }
-  const pairs = [
-    ['p1f', 'p1b'],
-    ['p2f', 'p2b'],
-    ['p3f', 'p3b'],
-  ] as const;
-  const pages: TurningPage[] = pairs.map(([f, b], k) => {
+  const pages: TurningPage[] = TURNING_PAGES.map(([f, b], k) => {
     const geo = new PlaneGeometry(PGW, PGD, SEG, 1);
     geo.rotateX(-Math.PI / 2);
     geo.translate(PGW / 2, 0, 0);
@@ -229,7 +229,13 @@ export async function startStage({ canvas, steps, folio, bar }: StageOptions): P
     g.add(new Mesh(geo, std({ map: texs[b], side: BackSide })));
     book.add(g);
     // stacked so the pages never cut through each other on either side
-    return { geo, colOf, yR: 0.12 + (3 - k) * 0.0035, yL: 0.004 + (k + 1) * 0.003, last: -1 };
+    return {
+      geo,
+      colOf,
+      yR: 0.12 + (TURNING_PAGES.length - k) * 0.0035,
+      yL: 0.004 + (k + 1) * 0.003,
+      last: -1,
+    };
   });
   const BX = new Float32Array(SEG + 1);
   const BY = new Float32Array(SEG + 1);
@@ -269,7 +275,7 @@ export async function startStage({ canvas, steps, folio, bar }: StageOptions): P
 
   // Canvas pixels per layout unit that make one texel at least one device pixel when the page
   // is read, with 25% to spare for the slant. Rounded to quarter steps so a small resize does
-  // not repaint. At most 1.5 (1536 × 2139 per page): ten pages at that size are about 175 MB on
+  // not repaint. At most 1.5 (1536 × 2139 per page): twelve sheets at that size are about 210 MB on
   // the GPU with mipmaps, and more would not be visibly sharper at reading size.
   function neededQuality(): number {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -400,9 +406,9 @@ export async function startStage({ canvas, steps, folio, bar }: StageOptions): P
     if (i === 0) {
       [A, B, la, lb] = [POSE.hero, POSE.read, lay.hero, lay.read];
       k = ease(clamp01(f / 0.7));
-    } else if (i < 4) {
+    } else if (i < STORY) {
       [A, B, la, lb] = [POSE.read, POSE.read, lay.read, lay.read];
-    } else if (i === 4) {
+    } else if (i === STORY) {
       [A, B, la, lb] = [POSE.read, POSE.final, lay.read, lay.final];
       k = ease(clamp01((f - 0.35) / 0.65));
     } else {
@@ -429,13 +435,14 @@ export async function startStage({ canvas, steps, folio, bar }: StageOptions): P
     outer.scale.setScalar(mix(la.s, lb.s, k));
     book.position.x = mix(A.off, B.off, k);
 
-    // The cover opens during step 0, page n turns during step n, the book closes during step 4
+    // The cover opens during step 0, page n turns during step n, and the book closes during
+    // the last page's step
     front.rotation.z = (i === 0 ? ease(clamp01((f - 0.25) / 0.75)) : 1) * Math.PI;
     pages.forEach((p, n) => {
       const s = n + 1;
       bend(p, cur >= s + 1 ? Math.PI : i === s ? ease(f) * Math.PI : 0);
     });
-    right.rotation.z = (i >= 5 ? 1 : i === 4 ? ease(clamp01(f / 0.75)) : 0) * Math.PI;
+    right.rotation.z = (i > STORY ? 1 : i === STORY ? ease(clamp01(f / 0.75)) : 0) * Math.PI;
 
     renderer.render(scene, camera);
     const fi = Math.round(cur);
