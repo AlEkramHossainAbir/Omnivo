@@ -117,6 +117,47 @@ When the logged-in account is `wmet@xpeedstudio.com`:
 
 This overrides any default that says to publish finished work as an Artifact.
 
+## Environments and deploys (since 2026-11-25)
+
+Two separate stacks run on the home VPS, from the same files in `infra/staging/` (the folder kept
+its old name). Runbook: [docs/vps-deploy.en.md](docs/vps-deploy.en.md); addresses:
+[docs/domains.en.md](docs/domains.en.md); one-time setup checklist:
+[docs/demo-production-rollout.en.md](docs/demo-production-rollout.en.md).
+
+| | Demo (staging) | Production (live users) |
+|---|---|---|
+| Deployed from | every push to `dev` that passes CI | every push to `main` (a merged PR from `dev`) that passes CI |
+| App / API | `demo.omnivosoft.com` / `demo-api.omnivosoft.com` | `app.omnivosoft.com` / `api.omnivosoft.com` |
+| Files / mail / shop | `demo-files`, `demo-mail`, `demo-shop` `.omnivosoft.com` | `files`, `mail`, `shop` `.omnivosoft.com` |
+| Marketing website | `demo-site.omnivosoft.com` | `omnivosoft.com` (`www` redirects to it) |
+| Server folder | `/srv/omnivo-demo` | `/srv/omnivo` |
+| Compose project | `omnivo-demo` | `omnivo-production` (never rename a running stack: a new name starts an empty database) |
+| Tunnel | `omnivo-demo` | `omnivo` |
+| GitHub environment | `demo` | `production` (only `main` may deploy) |
+
+- **Separate data:** each stack has its own Postgres, Valkey, MinIO, Mailpit and secrets. Nothing
+  is shared but the machine. Never point one stack at the other's database or tunnel.
+- **"Clean the DB" means the demo only.** Run `infra/staging/reset-demo.sh` in `/srv/omnivo-demo` (it refuses
+  anything but the demo). Never delete, reset or `down -v` production's data, even when asked to "clean the
+  database"; production is only backed up and restored. Production starts empty on its first `main` deploy;
+  the old stack's test data (its users, workspaces and files) was copied into the demo on 2026-11-27, so it
+  lives on there.
+- **A push to `dev` never reaches the users.** Users get a change only when `dev` is merged into
+  `main`; their open tabs show the update notice and get it on reload. Pull requests never deploy.
+- **Migrations run on production at the `main` deploy**, on real data. Every migration must work
+  with the old code too (the old API keeps running while it runs).
+- The workflow is `.github/workflows/deploy.yml` (`target: demo | production`, called from
+  `ci.yml`). The `web` image is per target (`omnivo-web:<commit>-<target>`), because the API's
+  address is built into it (`DEMO_API_URL` / `PRODUCTION_API_URL` repository variables). `api`,
+  `migrate` and `shop` are `<commit>` for both. A production deploy refuses a commit not on `main`.
+- Each stack's `.env` has `DEPLOY_TARGET` and `COMPOSE_PROJECT_NAME`; `compose.yml` refuses to start
+  without the project name, and `deploy.sh <tag> [target]` refuses a build for the other target.
+  A new `.env` name a deploy needs goes into **both** `.env` files first.
+- SSH secrets are repository secrets (`VPS_SSH_HOST`, `VPS_SSH_PORT`, `VPS_SSH_USER`, `VPS_SSH_KEY`,
+  `VPS_KNOWN_HOSTS`): both stacks are on one server.
+- Production still sends its emails to Mailpit (no real email yet), and the shops on both stacks
+  are the mock shop.
+
 ## App UI design system (approved 2026-09-24)
 
 Every screen in the ERP app, Admin console and auth flows (login, sign-up) uses this

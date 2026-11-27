@@ -1,4 +1,5 @@
-# Caddy on staging: one server in front of everything, behind Cloudflare Tunnel.
+# Caddy for one stack (demo or production): one server in front of everything, behind that
+# stack's Cloudflare Tunnel.
 #
 # The server opens no web port. cloudflared (a container in this stack) keeps an outgoing
 # connection to Cloudflare, and Cloudflare sends each visitor's request down it to Caddy. HTTPS ends
@@ -22,7 +23,7 @@
 (common) {
 	encode zstd gzip
 	header {
-		# Staging must never show up in a search engine
+		# The app, the API, the files and the mail are not pages for a search engine (both stacks)
 		X-Robots-Tag "noindex, nofollow"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin

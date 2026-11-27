@@ -1,12 +1,22 @@
-# The staging stack. It runs on one server from /srv/omnivo, next to the .env made from
-# .env.example. No container opens a port on the server: cloudflared connects out to Cloudflare
-# and hands each request to Caddy (web), and everything talks on the stack's own network.
+# One Omnivo stack. The same file runs two stacks on the server, each in its own folder with its
+# own .env (made from .env.example):
+#
+#   /srv/omnivo       production  (DEPLOY_TARGET=production, from main)  app.omnivosoft.com
+#   /srv/omnivo-demo  demo        (DEPLOY_TARGET=demo, from dev)         demo.omnivosoft.com
+#
+# Each stack has its own project name, so its own containers, network and volumes: its own
+# database, job queue, files and mail. The two never share data. No container opens a port on the
+# server: each stack's cloudflared connects out to Cloudflare (its own tunnel) and hands each
+# request to that stack's Caddy (web).
 #
 #   docker compose up -d             start or update everything
 #   docker compose run --rm migrate  apply new migrations (deploy.sh does this first)
 #   docker compose logs -f api       follow one service's log
 
-name: omnivo-staging
+# From .env, never a default (omnivo-production or omnivo-demo). Without it, Compose would name the
+# project after the folder, and a wrong name could start this stack on top of the other one's
+# containers and volumes.
+name: ${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME in .env}
 
 # Each container's log is cut at 10 MB and only 5 files are kept, so the disk never fills up
 x-logging: &logging
@@ -55,11 +65,12 @@ services:
     logging: *logging
     # BullMQ's jobs live here: never drop keys when memory is full (noeviction). 256 MB holds a lot
     # of jobs and keeps Valkey from taking the small server's memory; when it is full, new jobs
-    # fail loudly instead of old ones being dropped.
+    # fail loudly instead of old ones being dropped. Two stacks share the server, so the demo's
+    # .env sets a smaller cap.
     command:
       - valkey-server
       - --maxmemory
-      - 256mb
+      - ${VALKEY_MAXMEMORY:-256mb}
       - --maxmemory-policy
       - noeviction
       - --save
@@ -189,12 +200,14 @@ services:
       WORKER_DATABASE_URL: postgres://omnivo_worker:${WORKER_DB_PASSWORD}@db:5432/omnivo
       REDIS_URL: redis://cache:6379
       SMTP_URL: smtp://mail:1025
-      MAIL_FROM: Omnivo Staging <no-reply@${MAIL_FROM_DOMAIN:?set MAIL_FROM_DOMAIN in .env}>
+      MAIL_FROM: ${MAIL_FROM_NAME:-Omnivo} <no-reply@${MAIL_FROM_DOMAIN:?set MAIL_FROM_DOMAIN in .env}>
     # A deploy waits for the running jobs (a PDF, an export) to finish
     stop_grace_period: 60s
 
   web:
-    image: ${REGISTRY}/omnivo-web:${IMAGE_TAG}
+    # The app has the API's address built into its JavaScript, so each target has its own web
+    # image of the same commit: <commit>-demo or <commit>-production
+    image: ${REGISTRY}/omnivo-web:${IMAGE_TAG}-${DEPLOY_TARGET:?set DEPLOY_TARGET in .env}
     restart: unless-stopped
     logging: *logging
     depends_on:
@@ -216,13 +229,13 @@ services:
   # The online shop (apps/shop). It shows the mock shop (SHOP_SOURCE is not set): its products,
   # prices and orders are made up, and an order lives in this container's memory only, so a restart
   # forgets it. Since 26g a workspace can launch a real shop, but it lives at
-  # <subdomain>.<SHOP_BASE_DOMAIN>, and staging has one fixed SHOP_HOST. Switching to the API needs a
+  # <subdomain>.<SHOP_BASE_DOMAIN>, and each stack has one fixed SHOP_HOST. Switching to the API needs a
   # wildcard host (DNS, the tunnel and Caddy) first, then SHOP_SOURCE=api, SHOP_API_URL, SHOP_API_KEY
   # and the API's SHOP_BASE_DOMAIN and STOREFRONT_SHOP_KEY (the same value as SHOP_API_KEY; step
   # 27a). Paying online (step 27d) also needs CREDENTIALS_KEY on api and worker: production uses
   # SSLCommerz (PAYMENT_GATEWAY), and without the key the Online payment card cannot save a store.
   # Shop couriers (step 28a) need the same key for a courier's API keys. Production books with the
-  # real courier (COURIER_MODE is live), so a staging shop books real parcels once one is set.
+  # real courier (COURIER_MODE is live), so even the demo's shop books real parcels once one is set.
   # It needs nothing else in the stack. `web` does not wait for it either:
   # if the shop fails, the ERP app keeps working and only the shop's address answers 502.
   shop:

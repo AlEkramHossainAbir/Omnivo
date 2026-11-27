@@ -4,6 +4,13 @@
 > server with open ports. Caddy no longer gets Let's Encrypt certificates, and `.env` holds host
 > names (`APP_HOST`, …) instead of full URLs. What changed, and how to run that server, is in
 > [vps-deploy.en.md](vps-deploy.en.md). The rest of this guide still explains every file.
+>
+> **Update (25 Nov 2026):** the same files now run two stacks on that server: production
+> (`app.omnivosoft.com`, deployed from `main`) and the demo (`demo.omnivosoft.com`, deployed from
+> `dev`), each with its own database. The workflow is `.github/workflows/deploy.yml` (it was
+> `deploy-staging.yml`), the secrets are the repository's `VPS_*`, `.env` has `DEPLOY_TARGET` and
+> `COMPOSE_PROJECT_NAME`, and `deploy.sh` takes `<tag> [target]`. See
+> [vps-deploy.en.md](vps-deploy.en.md).
 
 This guide puts Omnivo on a staging server, so that several people can test it from their own
 computers and phones at the same time. It has two parts:
