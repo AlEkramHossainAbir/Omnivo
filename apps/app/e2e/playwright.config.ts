@@ -17,6 +17,7 @@ export default defineConfig({
     baseURL: `http://localhost:${String(PORT)}`,
     // fail করলে পুরো রেকর্ড (DOM, network, screenshot) — `pnpm exec playwright show-trace` দিয়ে দেখা
     trace: 'retain-on-failure',
+    timezoneId: 'Asia/Dhaka',
   },
   // CLAUDE.md-এর দুই আকার: ডেস্কটপ আর ৩৯০px ফোন (৮৬০px-এর নিচে টেবিল কার্ড হয়ে যায়)
   projects: [
