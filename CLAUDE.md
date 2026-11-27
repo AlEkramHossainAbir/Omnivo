@@ -1924,3 +1924,29 @@ because the limits count them across tests).
   আগে আলাদা করে ঠিক করতে হবে (rule 1 অনুযায়ী guidance আগে, কোড পরে)।
 - performance trade-off মাথায় রাখতে হবে — ভারী 3D/scroll effect মোবাইল বা লো-এন্ড
   ডিভাইসে স্লো হতে পারে, তাই lazy-load এবং reduced-motion fallback বিবেচনা করা উচিত।
+
+### Landing page prototypes (2026-11-26)
+
+Three directions for the marketing landing page, built as single-file HTML prototypes
+(Three.js r128 from cdnjs, a hand-written scroll smoother, HugeIcons path data inlined).
+None is chosen yet. The files open in any browser; the Artifact links are private to the owner.
+
+| # | Direction | File | Artifact |
+|---|---|---|---|
+| 1 | Tiles: one set of rounded tiles re-forms into the logo, a device, a ledger, a stock rack and a delivery route | [docs/landing-prototypes/01-tiles.html](docs/landing-prototypes/01-tiles.html) | https://claude.ai/artifact/4uoMPcZtTN9iMDJBTzKF4B |
+| 2 | Halkhata: a 3D red khata opens and turns its pages (handwriting on the left, Omnivo on the right), then closes onto an Omnivo cover | [docs/landing-prototypes/02-halkhata.html](docs/landing-prototypes/02-halkhata.html) | https://claude.ai/artifact/6ttg7cMYsRoVi8jpYPExeb |
+| 3 | Layers: dark, the Overview screen comes apart into 3D layers (outbox, trial balance, POS receipt, the tenant's shop) and snaps back | [docs/landing-prototypes/03-layers.html](docs/landing-prototypes/03-layers.html) | https://claude.ai/artifact/D7BrJfix7cozVZqfvj7pxg |
+
+Names, BIN, phone numbers and "Free for 14 days" in them are placeholders.
+
+**Chosen (2026-11-26): #2 Halkhata**, built as `apps/website` (`@omnivo/website`, static Astro, port
+4341). Stack confirmed: plain `three` from npm plus the prototype's own scroll-to-step code (no GSAP,
+no R3F). three.js loads with a dynamic import after the text paints, and never with Save-Data; without
+WebGL the page drops the book (`html.no-stage`). The book's pages are canvases drawn at a quality the
+stage picks from the device pixels a page covers (0.75–1.5 × 1024 × 1426), after the fonts load. The
+marketing site alone adds the fonts Atma (handwriting) and Tiro Bangla (the khata's print).
+`PUBLIC_APP_URL` (build time) is where Sign in, Start free trial and the workspace form go.
+The story has five pages (accounts, stock, dues, POS, online shop); a new one is a pair in
+`TURNING_PAGES` (`src/scripts/book/pages.ts`) plus a section in `index.astro`. The pricing section
+reads `src/data/plans.ts`: the README's draft plans with **placeholder prices**, UI only. Its buttons
+go to `/sign-up?plan=<id>`, which the app ignores until the plan flow (build plan step 23) is built.

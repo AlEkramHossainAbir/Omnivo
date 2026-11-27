@@ -78,8 +78,11 @@ jobs:
           target: web
           push: true
           # Vite writes the API's address into the app's JavaScript. It must be https:// plus
-          # API_HOST in the server's .env.
-          build-args: VITE_API_URL=${{ vars.STAGING_API_URL }}
+          # API_HOST in the server's .env. The marketing site (in the same image) gets the app's
+          # address the same way, for its "Sign in" and "Start free trial" links.
+          build-args: |
+            VITE_API_URL=${{ vars.STAGING_API_URL }}
+            PUBLIC_APP_URL=${{ vars.STAGING_APP_URL }}
           tags: ${{ steps.meta.outputs.registry }}/omnivo-web:${{ steps.meta.outputs.tag }}
           cache-from: type=gha,scope=staging
 

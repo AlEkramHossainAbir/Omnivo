@@ -62,6 +62,17 @@ RUN pnpm turbo run build --filter=@omnivo/shop
 RUN pnpm --filter @omnivo/shop deploy --prod /out/shop
 
 # ---------------------------------------------------------------------------------------------
+# website-build: the marketing site, plain static files. Astro writes PUBLIC_APP_URL (where "Sign
+# in" and "Start free trial" go) into the pages at build time. Its default in astro.config.ts is
+# localhost, so a build without the argument would pass and send every visitor to localhost:
+# refuse it here instead.
+FROM source AS website-build
+ARG PUBLIC_APP_URL
+RUN test -n "$PUBLIC_APP_URL" || (echo "PUBLIC_APP_URL build argument is required" >&2 && exit 1)
+ENV PUBLIC_APP_URL=${PUBLIC_APP_URL}
+RUN pnpm turbo run build --filter=@omnivo/website
+
+# ---------------------------------------------------------------------------------------------
 # api: the runtime image for the API and the worker
 FROM ${NODE_IMAGE} AS api
 ENV NODE_ENV=production
@@ -96,7 +107,9 @@ EXPOSE 4321
 CMD ["node", "dist/server/entry.mjs"]
 
 # ---------------------------------------------------------------------------------------------
-# web: Caddy with the app's files baked in. The Caddyfile comes from the server (a volume), so a
-# change of host names does not need a new image.
+# web: Caddy with the app's and the marketing site's files baked in. Both are static, so one Caddy
+# serves both and the site needs no container of its own. The Caddyfile comes from the server (a
+# volume), so a change of host names does not need a new image.
 FROM caddy:2.10.2-alpine AS web
 COPY --from=app-build /repo/apps/app/dist /srv/app
+COPY --from=website-build /repo/apps/website/dist /srv/website

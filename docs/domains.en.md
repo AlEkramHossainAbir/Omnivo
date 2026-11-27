@@ -16,7 +16,7 @@ purpose. They are in the VPS access sheet and in the `myvps` entry of `~/.ssh/co
 
 ## Live addresses (demo / staging server)
 
-All five run on the home VPS and reach it through the Cloudflare Tunnel named `omnivo`. Each one is
+All of them run on the home VPS and reach it through the Cloudflare Tunnel named `omnivo`. Each one is
 a proxied `CNAME` to the tunnel (`<tunnel id>.cfargotunnel.com`), made by
 `cloudflared tunnel route dns` or by hand in Cloudflare's DNS page.
 
@@ -27,6 +27,8 @@ a proxied `CNAME` to the tunnel (`<tunnel id>.cfargotunnel.com`), made by
 | `https://files.omnivosoft.com` | File storage (MinIO): logos, imports, PDFs, through signed links | The browser, by itself |
 | `https://mail.omnivosoft.com` | Mailpit: every email the server sends lands here; nothing is really sent | You and testers (user `tester`) |
 | `https://shop.omnivosoft.com` | The online shop (`apps/shop`) as a **demo**: mock products and prices, orders kept in memory only (a deploy forgets them), the phone code is always `123456` and no SMS is sent | You, testers and the designer |
+| `https://omnivosoft.com` | The marketing website (`apps/website`). Static files in the `web` image. Not listed by search engines yet (placeholder prices) | Visitors |
+| `https://www.omnivosoft.com` | Redirects to `https://omnivosoft.com` | Visitors who type `www` |
 
 The names are one level below the domain. Cloudflare's free HTTPS certificate covers
 `*.omnivosoft.com` only, so `app.demo.omnivosoft.com` (two levels) would show a certificate
@@ -36,8 +38,10 @@ error.
 
 - `https://api.omnivosoft.com` is the GitHub repository variable `STAGING_API_URL`. It is built into
   the app's JavaScript, so changing it needs a new build.
-- The server's `/srv/omnivo/.env` has `APP_HOST`, `API_HOST`, `FILES_HOST`, `MAIL_HOST` and
-  `SHOP_HOST`.
+- `https://app.omnivosoft.com` is the GitHub repository variable `STAGING_APP_URL`. It is also built
+  into the website's pages (`PUBLIC_APP_URL`), for "Sign in" and "Start free trial".
+- The server's `/srv/omnivo/.env` has `APP_HOST`, `API_HOST`, `FILES_HOST`, `MAIL_HOST`,
+  `SHOP_HOST` and `SITE_HOST`.
 - Renaming an address means: a new tunnel route in Cloudflare, the `.env` line, the GitHub
   variable, and a new deploy. Do all of them together.
 
@@ -45,7 +49,6 @@ error.
 
 | Address | Planned use |
 | --- | --- |
-| `https://omnivosoft.com` and `www.omnivosoft.com` | The marketing website (step 22) |
 | A tenant's own domain (`shop.acme.com`) | The real online shop, once step 26's public API exists. `shop.omnivosoft.com` is the demo until then |
 | New names for production | A real production server, separate from this demo, when real customers keep their books here |
 
