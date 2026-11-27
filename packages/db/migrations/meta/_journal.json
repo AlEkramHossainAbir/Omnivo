@@ -589,6 +589,13 @@
       "when": 1795516258629,
       "tag": "0083_storefront-payouts-rules",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1795790859269,
+      "tag": "0084_sign-in-last-workspace",
+      "breakpoints": true
     }
   ]
 }

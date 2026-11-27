@@ -145,7 +145,6 @@ test('revoking this device signs you out, and the next sign-in makes a new devic
   ).toBeVisible();
   await expect.poll(() => localDatabases(page)).toEqual([]);
 
-  await page.getByLabel('Workspace', { exact: true }).fill('rahman-garments');
   await page.getByLabel('Email', { exact: true }).fill(OWNER.email);
   await page.getByLabel('Password', { exact: true }).fill('Konabari-cut-2026');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();

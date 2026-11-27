@@ -2,7 +2,7 @@ import type { MeResponse } from '@omnivo/contracts';
 import { createStore } from 'zustand/vanilla';
 import { useStore } from 'zustand';
 
-import { forgetMe, rememberMe } from './remembered-session';
+import { forgetMe, rememberMe, rememberWorkspace } from './remembered-session';
 
 // Step 18c: why the sign-in page is showing, when the person did not sign out themself: this
 // device was revoked (its data was deleted), or (step 19a) the server refused the sign-in once the
@@ -41,8 +41,10 @@ export const sessionStore = createStore<SessionState>()((set) => ({
     set({ accessToken });
   },
   // Step 19a: every `me` the server gives is remembered, for the next reload with no connection
+  // Step 3b: and its workspace, the next sign-in's hint
   signIn: (me) => {
     rememberMe(me);
+    rememberWorkspace(me.tenant.slug);
     set({ status: 'signed-in', me, openedOffline: false, notice: null });
   },
   openOffline: (me) => {
@@ -50,6 +52,7 @@ export const sessionStore = createStore<SessionState>()((set) => ({
   },
   setMe: (me) => {
     rememberMe(me);
+    rememberWorkspace(me.tenant.slug);
     set({ me });
   },
   // Step 18c: a sign-out without a reason keeps the one already there. After a revoke, the requests

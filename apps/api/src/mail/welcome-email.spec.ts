@@ -6,15 +6,15 @@ const input = {
   to: 'farhana@rahmangarments.com',
   fullName: 'Farhana Rahman',
   workspaceName: 'Rahman Garments Ltd.',
-  workspaceSlug: 'rahman-garments',
   signInLink: 'http://localhost:5173/login',
 } as const;
 
 describe('welcomeEmail', () => {
-  it('names the workspace address, which sign-in asks for', () => {
+  it('says how to sign in, with no workspace address', () => {
     const mail = welcomeEmail({ ...input, language: 'en' });
     expect(mail.subject).toBe('Welcome to Omnivo, Farhana Rahman');
-    expect(mail.text).toContain('rahman-garments.omnivo.app');
+    expect(mail.text).toContain('Sign in with this email address and your password.');
+    expect(mail.text).not.toContain('omnivo.app');
     expect(mail.text).toContain('Open Rahman Garments Ltd.: http://localhost:5173/login');
     expect(mail.html).toContain('href="http://localhost:5173/login"');
   });

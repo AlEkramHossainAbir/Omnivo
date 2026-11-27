@@ -1,5 +1,4 @@
 import {
-  Building03Icon,
   LockPasswordIcon,
   Mail01Icon,
   ViewIcon,
@@ -18,9 +17,15 @@ import { Controller, useForm } from 'react-hook-form';
 import { AuthLayout } from '../components/auth-layout';
 import { DocumentNotice } from '../components/document-notice';
 import { applyApiError } from '../lib/field-errors';
+import { rememberedWorkspace } from '../lib/remembered-session';
 import { login } from '../lib/session';
 import { useSession } from '../lib/session-store';
 import { useOnline } from '../lib/use-online';
+
+// Step 3b: the form checks only the boxes it shows. The workspace is a hint added at submit
+// (rememberedWorkspace), never typed. Without the omit, a server error on `workspace` would land
+// on a box that is not on the page, and the person would see nothing.
+const loginFormSchema = loginInputSchema.omit({ workspace: true });
 
 export function LoginPage() {
   const { t } = useLocale();
@@ -39,18 +44,21 @@ export function LoginPage() {
     setError,
     formState: { errors, isSubmitting },
   } = useForm({
-    resolver: zodResolver(loginInputSchema, { error: contractErrorMap }),
-    defaultValues: { workspace: '', email: '', password: '', keepSignedIn: true },
+    resolver: zodResolver(loginFormSchema, { error: contractErrorMap }),
+    defaultValues: { email: '', password: '', keepSignedIn: true },
   });
 
   // handleSubmit: আগে Zod যাচাই, পাস করলে তবেই এই ফাংশন — values-এর টাইপ LoginInput
   // (trim/lowercase হয়ে গেছে)। চলার সময় isSubmitting নিজে থেকেই true
   const onSubmit = handleSubmit(async (values) => {
+    // Read at submit: another tab may have switched workspace while this page was open
+    const hint = rememberedWorkspace();
     try {
-      await login(values);
+      // exactOptionalPropertyTypes: no hint = no `workspace` key, never `workspace: undefined`
+      await login({ ...values, ...(hint !== null && { workspace: hint }) });
       await navigate({ to: '/' });
     } catch (error) {
-      applyApiError(error, loginInputSchema.keyof().options, setError);
+      applyApiError(error, loginFormSchema.keyof().options, setError);
     }
   });
 
@@ -82,18 +90,6 @@ export function LoginPage() {
         )}
         {/* message-এ code; FormAlert আর TextField নিজেরাই বর্তমান ভাষায় লেখে */}
         {errors.root?.server?.message && <FormAlert message={errors.root.server.message} />}
-        <TextField
-          label={t('auth.workspace')}
-          icon={Building03Icon}
-          suffix=".omnivo.app"
-          autoComplete="organization"
-          autoCapitalize="none"
-          spellCheck={false}
-          // উদাহরণ ঠিকানা — ঠিকানা সবসময় ইংরেজি অক্ষরে, তাই অনুবাদ নেই
-          placeholder="rahman-garments"
-          {...register('workspace')}
-          error={errors.workspace?.message}
-        />
         <TextField
           label={t('auth.email')}
           icon={Mail01Icon}

@@ -43,12 +43,22 @@ const karim: SignUpInput = {
   password: 'Batch-expiry-2026',
 };
 
-function login(input: { workspace: string; email: string; password: string }) {
+function login(input: { workspace?: string; email: string; password: string }) {
   return app.inject({
     method: 'POST',
     url: '/auth/login',
     payload: { ...input, keepSignedIn: true },
   });
+}
+
+// Step 3b: where a sign-in landed, now that the server picks the workspace
+async function workspaceOf(res: Awaited<ReturnType<typeof login>>): Promise<string> {
+  const me = await app.inject({
+    method: 'GET',
+    url: '/auth/me',
+    headers: bearer(sessionOf(res).accessToken),
+  });
+  return meResponseSchema.parse(me.json()).tenant.slug;
 }
 
 function refresh(refreshToken: string) {
@@ -149,47 +159,58 @@ describe('sign-up', () => {
 });
 
 describe('login', () => {
-  it('signs in to the workspace named in the form', async () => {
-    const res = await login({
-      workspace: rahman.workspaceSlug,
-      email: rahman.email,
-      password: rahman.password,
-    });
+  it('signs in with an email and a password only, into the only workspace', async () => {
+    const res = await login({ email: rahman.email, password: rahman.password });
     expect(res.statusCode).toBe(200);
     expect(refreshCookieOf(res)).toBeTruthy();
+    expect(await workspaceOf(res)).toBe(rahman.workspaceSlug);
   });
 
   it('rejects a wrong password with 401', async () => {
-    const res = await login({
-      workspace: rahman.workspaceSlug,
-      email: rahman.email,
-      password: 'wrong-password',
-    });
+    const res = await login({ email: rahman.email, password: 'wrong-password' });
     expect(res.statusCode).toBe(401);
     expect(problemSchema.parse(res.json()).code).toBe('invalid_credentials');
   });
 
-  it('rejects an unknown workspace with 404', async () => {
+  it('ignores a hint for a workspace that does not exist', async () => {
     const res = await login({
       workspace: 'nobody-here',
       email: rahman.email,
       password: rahman.password,
     });
-    expect(res.statusCode).toBe(404);
-    expect(problemSchema.parse(res.json()).fieldErrors).toEqual({
-      workspace: ['workspace_not_found'],
-    });
+    expect(res.statusCode).toBe(200);
+    expect(await workspaceOf(res)).toBe(rahman.workspaceSlug);
   });
 
-  it('rejects a real user who is not a member of that workspace with 403', async () => {
+  it('ignores a hint for a workspace the person is not in', async () => {
     await signUp(app, karim);
     const res = await login({
       workspace: rahman.workspaceSlug,
       email: karim.email,
       password: karim.password,
     });
+    expect(res.statusCode).toBe(200);
+    expect(await workspaceOf(res)).toBe(karim.workspaceSlug);
+  });
+
+  it('refuses an account in no workspace with 403, and ends its session', async () => {
+    const alone: SignUpInput = {
+      companyName: 'Sylhet Pharmacy',
+      workspaceSlug: 'sylhet-pharmacy',
+      fullName: 'Ruma Begum',
+      email: 'ruma@sylhetpharmacy.com',
+      password: 'Zindabazar-2026',
+    };
+    await signUp(app, alone);
+    // Removed from the only workspace (step 7 does it with a soft delete)
+    await superuser`
+      UPDATE memberships SET deleted_at = now()
+      WHERE user_id = (SELECT id FROM users WHERE email = ${alone.email})`;
+
+    const res = await login({ email: alone.email, password: alone.password });
     expect(res.statusCode).toBe(403);
     expect(problemSchema.parse(res.json()).code).toBe('not_a_member');
+    expect(res.cookies.find((c) => c.name === 'omnivo_rt')).toBeUndefined();
   });
 });
 
@@ -373,6 +394,19 @@ describe('tenant switcher', () => {
     expect(res.statusCode).toBe(403);
     // refresh token খরচ হয়নি
     expect((await refresh(session.refreshToken)).statusCode).toBe(200);
+  });
+
+  // Step 3b: Nabil is in two workspaces, and the first test of this block switched him into
+  // Rahman Garments
+  it('signs in to the hinted workspace, else to the one used last', async () => {
+    const nabil = { email: 'nabil@example.com', password: 'Depot-route-2026' };
+
+    expect(await workspaceOf(await login(nabil))).toBe(rahman.workspaceSlug);
+
+    // A hint wins, and a sign-in by hint becomes the last one too
+    const hinted = await login({ ...nabil, workspace: 'nabil-distribution' });
+    expect(await workspaceOf(hinted)).toBe('nabil-distribution');
+    expect(await workspaceOf(await login(nabil))).toBe('nabil-distribution');
   });
 });
 

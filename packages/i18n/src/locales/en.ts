@@ -212,7 +212,6 @@ export const en = {
     storefrontPayouts: 'Shop payouts',
   },
   auth: {
-    workspace: 'Workspace',
     email: 'Email',
     password: 'Password',
     login: {
@@ -8387,10 +8386,10 @@ export const en = {
     already_member:
       'This person is already in the workspace. Change their roles from the team list.',
     already_invited: 'This person already has an open invitation. Resend it from the list instead.',
-    workspace_not_found: "We couldn't find this workspace. Check the address.",
     invalid_credentials: 'Email or password is incorrect. Check them and try again.',
+    // Step 3b: sign-in names no workspace any more, so the words say what to do instead
     not_a_member:
-      "This account isn't a member of this workspace. Ask a workspace owner to invite you.",
+      "This account isn't in any workspace yet. Ask a workspace owner to invite you, or create a workspace.",
     sign_in_required: 'Sign in to continue.',
     session_ended: 'Your session has ended. Sign in again.',
     access_revoked: 'You no longer have access to this workspace. Sign in again.',

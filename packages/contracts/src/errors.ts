@@ -40,7 +40,6 @@ export const ERROR_CODES = [
   'already_member',
   'already_invited',
   // auth ও অনুমতি
-  'workspace_not_found',
   'invalid_credentials',
   'not_a_member',
   'sign_in_required',
