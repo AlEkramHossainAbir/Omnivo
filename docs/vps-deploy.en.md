@@ -17,8 +17,11 @@ here. They are in the VPS access sheet and in the `myvps` entry of `~/.ssh/confi
 | `https://files.omnivosoft.com` | File storage (MinIO). The browser uploads and downloads here with signed links. Only the shop's photos (`/omnivo/storefront/…`) are public |
 | `https://mail.omnivosoft.com` | Mailpit: every email the server sends lands here. User `tester`, password below |
 | `https://shop.omnivosoft.com` | The online shop as a demo (the `shop` service). It shows the mock shop, so nothing in it is real, and a deploy forgets its orders |
+| `https://omnivosoft.com` | The marketing website (`apps/website`). Static files inside the `web` image, served by the same Caddy as the app. `www.omnivosoft.com` redirects here. Search engines are told not to list it while its prices are placeholders |
 
-`omnivosoft.com` itself is not used yet. It stays free for the marketing website.
+The website's host is `SITE_HOST` in `/srv/omnivo/.env`. It must be there before the first deploy
+that has the website, or `compose.yml` refuses to start. Its two DNS records (`@` and `www`) are
+made by hand, as in "A new address on the tunnel" below.
 
 The names are one level below the domain (`app.omnivosoft.com`, not `app.demo.omnivosoft.com`).
 Cloudflare's free HTTPS certificate covers only one level, so a deeper name would show a
