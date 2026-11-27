@@ -1,88 +1,13 @@
 import {
-  ArrowDataTransferHorizontalIcon,
-  BalanceScaleIcon,
-  BankIcon,
-  Book02Icon,
-  BookOpen02Icon,
-  CalendarClockIcon,
-  CalendarLock01Icon,
-  Cashier02Icon,
-  CashierIcon,
-  ChartIncreaseIcon,
-  CheckmarkBadge01Icon,
-  Coins01Icon,
   ComputerPhoneSyncIcon,
-  CouponPercentIcon,
-  DashboardSquare01Icon,
-  DeliveryReturn01Icon,
-  DeliveryTruck01Icon,
   Download04Icon,
-  Factory01Icon,
-  FileDownloadIcon,
-  FileImportIcon,
-  FolderLibraryIcon,
-  FolderTreeIcon,
-  HourglassIcon,
-  Invoice01Icon,
-  Invoice03Icon,
-  Invoice04Icon,
-  Layers01Icon,
-  LayoutGridIcon,
-  LeftToRightListNumberIcon,
   LockKeyIcon,
   Logout01Icon,
-  MoneyExchange01Icon,
-  MoneyExchange03Icon,
-  MoneyReceive02Icon,
-  MoneyReceiveCircleIcon,
-  MoneySend02Icon,
-  Note01Icon,
-  Notebook02Icon,
-  NoteRemoveIcon,
-  PackageIcon,
-  PackageMovingIcon,
-  PackageOutOfStockIcon,
-  PackageReceiveIcon,
-  PackageRemoveIcon,
-  Payment02Icon,
-  PieChartIcon,
-  ReceiptDollarIcon,
-  ReturnRequestIcon,
-  RulerIcon,
-  SecurityCheckIcon,
-  Settings02Icon,
-  ShoppingBasket01Icon,
-  ShoppingCart01Icon,
   SquareLock02Icon,
-  Store01Icon,
-  Store04Icon,
-  TableIcon,
-  Tag01Icon,
-  TaxesIcon,
-  TaskAdd01Icon,
-  TaskEdit01Icon,
-  TextIcon,
-  TruckReturnIcon,
   UnfoldMoreIcon,
-  UserCheck01Icon,
   UserCircleIcon,
-  UserGroup02Icon,
-  UserGroup03Icon,
-  UserGroupIcon,
-  UserMultiple02Icon,
-  UserTime01Icon,
-  WarehouseIcon,
-  ShippingTruck01Icon,
-  WebDesign01Icon,
-  PaintBoardIcon,
-  Files01Icon,
   Wifi01Icon,
   WifiDisconnected02Icon,
-  WorkHistoryIcon,
-  ChartLineData01Icon,
-  ShoppingBag01Icon,
-  Time04Icon,
-  TimeQuarterPassIcon,
 } from '@hugeicons/core-free-icons';
 import { HugeiconsIcon } from '@hugeicons/react';
 import { THEMES } from '@omnivo/contracts';
@@ -99,17 +24,32 @@ import {
   DropdownMenuTrigger,
   IconButton,
   Logo,
+  ModuleRail,
+  ModuleRailItem,
   NavGroup,
   NavItem,
   SidebarNav,
   toast,
 } from '@omnivo/ui';
 import { useQuery } from '@tanstack/react-query';
-import { createLink, Outlet, useNavigate } from '@tanstack/react-router';
+import { createLink, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { lazy, Suspense, useState } from 'react';
 
 import { NotificationBell } from '../components/notification-bell';
 import { type InstallWay, promptInstall, useInstallWay } from '../lib/install';
+import {
+  landingFor,
+  leafBadge,
+  leafExact,
+  leafVisible,
+  moduleById,
+  moduleOf,
+  type ModuleId,
+  type NavBadge,
+  sectionLabel,
+  visibleModules,
+  waitingIn,
+} from '../lib/nav';
 import { savePreference } from '../lib/preferences';
 import { logout, switchTenant } from '../lib/session';
 import { useCan } from '../lib/permissions';
@@ -137,6 +77,12 @@ const InstallDialog = lazy(async () => ({
 // ui-র সাধারণ <a> → TanStack-এর টাইপ-চেকড লিংক: to="/kitchn-sink" লিখলে compile error,
 // আর সক্রিয় রুটে Link নিজেই aria-current="page" বসায়
 const NavLink = createLink(NavItem);
+// Step 29: the rail's items are links too (to their module's landing page), so Back works and a
+// module can be opened in a new tab
+const ModuleLink = createLink(ModuleRailItem);
+
+type Can = ReturnType<typeof useCan>;
+type BadgeCounts = Readonly<Record<NavBadge, number>>;
 
 function initials(name: string): string {
   return name
@@ -239,6 +185,8 @@ function WorkspaceSwitcher() {
 // Sync page. The screen reader hears the whole sentence, not "Offline 3".
 // Step 18c (decision 12): 24 hours after the last sync, the line says how long ago it was, in warn,
 // in place of Online or Offline (the icon still says which). "Syncing…" wins: it is the answer.
+// Step 29: it is the last item of every module's menu, not an item of one module: offline is
+// something the person must see wherever they are.
 function SyncNavItem() {
   const { t, format } = useLocale();
   const online = useOnline();
@@ -266,6 +214,92 @@ function SyncNavItem() {
     >
       {stale === null ? state : <span className="text-warn">{stale}</span>}
     </NavLink>
+  );
+}
+
+// Step 29 (CLAUDE.md → Module rail): the eight modules. Which one is marked comes from the route,
+// so a page deep inside a module still says where it is; a page that belongs to no module
+// (/sync, /my-devices) marks none.
+function Modules({ open, can, counts }: { open: ModuleId | null; can: Can; counts: BadgeCounts }) {
+  const { t, format } = useLocale();
+  return (
+    <ModuleRail label={t('shell.modules')}>
+      {visibleModules(can).map((module) => {
+        const waiting = waitingIn(module, can, counts);
+        const name = t(module.labelKey);
+        return (
+          <ModuleLink
+            key={module.id}
+            to={landingFor(module, can)}
+            icon={module.icon}
+            current={module.id === open}
+            waiting={waiting > 0}
+            // The dot is not a number, so the count goes into the name a screen reader reads
+            aria-label={
+              waiting > 0
+                ? t('shell.moduleWaiting', {
+                    name,
+                    count: waiting,
+                    formatted: format.number(waiting),
+                  })
+                : undefined
+            }
+          >
+            {name}
+          </ModuleLink>
+        );
+      })}
+    </ModuleRail>
+  );
+}
+
+// The open module's links, in sections that follow the order of work. The key on the nav remounts
+// it on a module switch, which is what plays the 160ms fade (CLAUDE.md → Module switch motion)
+function ModuleMenu({ open, can, counts }: { open: ModuleId; can: Can; counts: BadgeCounts }) {
+  const { t } = useLocale();
+  const module = moduleById(open);
+  const name = t(module.labelKey);
+  return (
+    <>
+      {/* Visible on a desktop, read by a screen reader on a phone, where there is no room for it */}
+      <p className="sr-only px-2.5 text-h3 font-semibold min-[860px]:not-sr-only">{name}</p>
+      <SidebarNav key={module.id} label={name} className="module-menu-in">
+        {module.sections.map((section) => {
+          const items = section.items.filter((leaf) => leafVisible(leaf, can));
+          if (items.length === 0) return null;
+          const label = sectionLabel(section);
+          return (
+            <NavGroup key={label ?? 'main'} label={label === undefined ? undefined : t(label)}>
+              {items.map((leaf) => {
+                const badge = leafBadge(leaf);
+                const count = badge === undefined ? 0 : counts[badge];
+                return (
+                  <NavLink
+                    key={leaf.to}
+                    to={leaf.to}
+                    icon={leaf.icon}
+                    // exact: a route with children (/products, /stock, /) is active on its own page.
+                    // Spread, not activeOptions={undefined}: exactOptionalPropertyTypes refuses an
+                    // explicit undefined for a prop the router declares as optional
+                    {...(leafExact(leaf) ? { activeOptions: { exact: true } } : {})}
+                    count={count > 0 ? count : undefined}
+                    countTone="crit"
+                  >
+                    {t(leaf.labelKey)}
+                  </NavLink>
+                );
+              })}
+            </NavGroup>
+          );
+        })}
+        {/* sticky: Sell's fifteen links are taller than a 900px laptop, and the menu scrolls. The
+            sync line says whether the device is offline and how much waits on it, so it stays on
+            the screen instead of going under the fold with the last links */}
+        <NavGroup className="min-[860px]:sticky min-[860px]:-bottom-5 min-[860px]:border-t min-[860px]:border-line min-[860px]:bg-surface min-[860px]:pt-4 min-[860px]:pb-5">
+          <SyncNavItem />
+        </NavGroup>
+      </SidebarNav>
+    </>
   );
 }
 
@@ -360,11 +394,9 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
   const me = useSession((state) => state.me);
   // লুকানো শুধু সুবিধা — আসল পাহারা API-র PermissionGuard। যেটা খুললেই 403, সেটা মেনুতে না দেখানো
   const can = useCan();
-  const canAccountingReports = can('accounting.report.read');
-  const canSalesReports = can('sales.report.read');
-  const canPurchaseReports = can('purchase.report.read');
-  // Step 21c: the stock movement report has the stock reports' permission
-  const canInventoryReports = can('inventory.report.read');
+  // Step 29: which module this page belongs to, worked out from the route (lib/nav.ts). null on a
+  // page that belongs to none, and then the menu shows Home while the rail marks nothing
+  const open = useRouterState({ select: (state) => moduleOf(state.location.pathname) });
   // Step 17a: how many documents wait for this person's decision, polled like the bell's badge
   const { data: waiting = 0 } = useQuery(waitingCountQuery(me?.tenant.id ?? ''));
   // Step 27b: the shop orders nobody has packed yet. Only for someone who may read them: anyone
@@ -374,6 +406,7 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
     ...storefrontOrderCountQuery(me?.tenant.id ?? ''),
     enabled: canShopOrders,
   });
+  const counts: BadgeCounts = { approvals: waiting, shopOrders: newOrders };
   // Step 18b: sign out at once with nothing on the device, else ask. Step 20b (decision 6): an
   // open POS shift comes first: it is closed before anything else.
   const { waiting: unsynced, openShift } = useSyncSummary();
@@ -408,385 +441,17 @@ export function AppShell({ lock }: { lock: LockAction | undefined }) {
           <UserMenuContent align="end" onInstall={install} lock={lock} onSignOut={signOut} />
         </DropdownMenu>
       }
-      sidebarHeader={<WorkspaceSwitcher />}
-      nav={
-        <SidebarNav label={t('shell.mainNav')}>
-          <NavGroup>
-            {/* exact: নাহলে "/" সব রুটের পূর্বপুরুষ, তাই সব পেজে Overview-ও সক্রিয় দেখাত */}
-            <NavLink to="/" icon={DashboardSquare01Icon} activeOptions={{ exact: true }}>
-              {t('nav.overview')}
-            </NavLink>
-            <SyncNavItem />
-            {import.meta.env.DEV && (
-              <NavLink to="/kitchen-sink" icon={LayoutGridIcon}>
-                {t('nav.kitchenSink')}
-              </NavLink>
-            )}
-          </NavGroup>
-          {/* Every member reads the chart (from step 10, every entry form picks accounts from it) */}
-          <NavGroup label={t('nav.accounting')}>
-            <NavLink to="/accounts" icon={BookOpen02Icon}>
-              {t('nav.chartOfAccounts')}
-            </NavLink>
-            {/* The books themselves (salaries, margins) are for people with the read permission */}
-            {can('accounting.journal.read') && (
-              <>
-                <NavLink to="/journal" icon={Notebook02Icon}>
-                  {t('nav.journal')}
-                </NavLink>
-                <NavLink to="/ledger" icon={Book02Icon}>
-                  {t('nav.ledger')}
-                </NavLink>
-                <NavLink to="/opening-balances" icon={BalanceScaleIcon}>
-                  {t('nav.openingBalances')}
-                </NavLink>
-                <NavLink to="/year-end" icon={CalendarLock01Icon}>
-                  {t('nav.yearEnd')}
-                </NavLink>
-              </>
-            )}
-          </NavGroup>
-          {/* The statements: for anyone with the report permission, journal or not (a director).
-              Step 21b: each link by its own permission, and the group shows when any link does.
-              A person with only the sales reports sees "Sales report", "Receivables aging" and
-              Exports (the list shows the kinds they can read). */}
-          {(canAccountingReports ||
-            canSalesReports ||
-            canPurchaseReports ||
-            canInventoryReports) && (
-            <NavGroup label={t('nav.reports')}>
-              {canAccountingReports && (
-                <>
-                  <NavLink to="/reports/trial-balance" icon={TableIcon}>
-                    {t('nav.trialBalance')}
-                  </NavLink>
-                  <NavLink to="/reports/profit-and-loss" icon={ChartIncreaseIcon}>
-                    {t('nav.profitAndLoss')}
-                  </NavLink>
-                  <NavLink to="/reports/balance-sheet" icon={PieChartIcon}>
-                    {t('nav.balanceSheet')}
-                  </NavLink>
-                  {/* Step 21c: VAT belongs to the accounts (decision 11) */}
-                  <NavLink to="/reports/vat" icon={TaxesIcon}>
-                    {t('nav.vatReport')}
-                  </NavLink>
-                </>
-              )}
-              {canSalesReports && (
-                <>
-                  <NavLink to="/reports/sales" icon={ChartLineData01Icon}>
-                    {t('nav.salesReport')}
-                  </NavLink>
-                  <NavLink to="/reports/ar-aging" icon={TimeQuarterPassIcon}>
-                    {t('nav.arAging')}
-                  </NavLink>
-                </>
-              )}
-              {canPurchaseReports && (
-                <>
-                  <NavLink to="/reports/purchases" icon={ShoppingBag01Icon}>
-                    {t('nav.purchaseReport')}
-                  </NavLink>
-                  <NavLink to="/reports/ap-aging" icon={Time04Icon}>
-                    {t('nav.apAging')}
-                  </NavLink>
-                </>
-              )}
-              {canInventoryReports && (
-                <NavLink to="/reports/stock-movement" icon={PackageMovingIcon}>
-                  {t('nav.stockMovement')}
-                </NavLink>
-              )}
-              <NavLink to="/reports/exports" icon={FileDownloadIcon}>
-                {t('nav.exports')}
-              </NavLink>
-              {/* Step 21c: the scheduled emails, for the people who may make them */}
-              {can('core.report.schedule') && (
-                <NavLink to="/reports/schedules" icon={CalendarClockIcon}>
-                  {t('nav.reportSchedules')}
-                </NavLink>
-              )}
-            </NavGroup>
-          )}
-          {/* Sales (step 15a): everyone reads the customers and the price lists — every sales
-              document picks them. Changing them is checked on the pages and by the API. Step 15b:
-              the documents come first, in the order they follow each other; everyone reads them
-              too (a store keeper looks up an order before loading the truck). Step 15c: the
-              invoice and the money receipt end the chain. Step 15d: what goes back the other way
-              comes after them, goods first, then money. */}
-          <NavGroup label={t('nav.sales')}>
-            {/* Step 20a: the counter screen first, for the cashiers who sell there (it opens
-                without this sidebar) */}
-            {can('pos.sale.create') && (
-              <NavLink to="/pos" icon={CashierIcon}>
-                {t('nav.pointOfSale')}
-              </NavLink>
-            )}
-            {/* Everyone reads the posted sales, like every sales document */}
-            <NavLink to="/pos/sales" icon={ReceiptDollarIcon}>
-              {t('nav.posSales')}
-            </NavLink>
-            {/* Step 20c: what the counters took back, read by everyone like the sales */}
-            <NavLink to="/pos/returns" icon={ReturnRequestIcon}>
-              {t('nav.posReturns')}
-            </NavLink>
-            {/* Step 20b (decision 26): the shifts show how short a drawer was, so only for the
-                people who look after the counters */}
-            {can('pos.shift.manage') && (
-              <NavLink to="/pos/shifts" icon={UserTime01Icon}>
-                {t('nav.posShifts')}
-              </NavLink>
-            )}
-            <NavLink to="/quotations" icon={Note01Icon}>
-              {t('nav.quotations')}
-            </NavLink>
-            <NavLink to="/sales-orders" icon={ShoppingCart01Icon}>
-              {t('nav.salesOrders')}
-            </NavLink>
-            <NavLink to="/deliveries" icon={DeliveryTruck01Icon}>
-              {t('nav.deliveries')}
-            </NavLink>
-            <NavLink to="/invoices" icon={Invoice03Icon}>
-              {t('nav.invoices')}
-            </NavLink>
-            <NavLink to="/receipts" icon={MoneyReceive02Icon}>
-              {t('nav.receipts')}
-            </NavLink>
-            <NavLink to="/sales-returns" icon={DeliveryReturn01Icon}>
-              {t('nav.salesReturns')}
-            </NavLink>
-            <NavLink to="/credit-notes" icon={Invoice04Icon}>
-              {t('nav.creditNotes')}
-            </NavLink>
-            <NavLink to="/refunds" icon={MoneySend02Icon}>
-              {t('nav.refunds')}
-            </NavLink>
-            <NavLink to="/customers" icon={UserMultiple02Icon}>
-              {t('nav.customers')}
-            </NavLink>
-            <NavLink to="/customer-groups" icon={UserGroup03Icon}>
-              {t('nav.customerGroups')}
-            </NavLink>
-            <NavLink to="/price-lists" icon={Tag01Icon}>
-              {t('nav.priceLists')}
-            </NavLink>
-          </NavGroup>
-          {/* Purchase (step 17a): everyone reads the requisitions and the suppliers, like the sales
-              side. Approvals is "waiting for me": anyone may hold a level's role, so it is there
-              for everyone, with a crit count while something waits (CLAUDE.md → Sidebar nav). */}
-          <NavGroup label={t('nav.purchase')}>
-            <NavLink to="/requisitions" icon={TaskAdd01Icon}>
-              {t('nav.requisitions')}
-            </NavLink>
-            {/* Step 17b: the documents in the order they happen, like the Sales group */}
-            <NavLink to="/purchase-orders" icon={ShoppingBasket01Icon}>
-              {t('nav.purchaseOrders')}
-            </NavLink>
-            <NavLink to="/goods-receipts" icon={PackageReceiveIcon}>
-              {t('nav.goodsReceipts')}
-            </NavLink>
-            {/* Step 17c: then the supplier's bill and what was paid. Not the sales invoice's and
-                receipt's icons: a person scanning for the customer's money must not land here. */}
-            <NavLink to="/bills" icon={Invoice01Icon}>
-              {t('nav.bills')}
-            </NavLink>
-            <NavLink to="/supplier-payments" icon={Payment02Icon}>
-              {t('nav.supplierPayments')}
-            </NavLink>
-            {/* Step 17d: what goes back, what comes off the bill, and what the supplier pays back,
-                after the payments like the sales side's returns after its receipts. Their own
-                icons, not the sales return's and credit note's, for the same reason as above. */}
-            <NavLink to="/purchase-returns" icon={TruckReturnIcon}>
-              {t('nav.purchaseReturns')}
-            </NavLink>
-            <NavLink to="/debit-notes" icon={NoteRemoveIcon}>
-              {t('nav.debitNotes')}
-            </NavLink>
-            <NavLink to="/supplier-refunds" icon={MoneyReceiveCircleIcon}>
-              {t('nav.supplierRefunds')}
-            </NavLink>
-            <NavLink
-              to="/approvals"
-              icon={CheckmarkBadge01Icon}
-              count={waiting > 0 ? waiting : undefined}
-              countTone="crit"
-            >
-              {t('nav.approvals')}
-            </NavLink>
-            <NavLink to="/suppliers" icon={Factory01Icon}>
-              {t('nav.suppliers')}
-            </NavLink>
-            <NavLink to="/supplier-groups" icon={UserGroup02Icon}>
-              {t('nav.supplierGroups')}
-            </NavLink>
-          </NavGroup>
-          {/* Every member reads products (every sales and stock line picks one); imports change
-              them, so only managers see that page */}
-          <NavGroup label={t('nav.inventory')}>
-            <NavLink to="/products" icon={PackageIcon} activeOptions={{ exact: true }}>
-              {t('nav.products')}
-            </NavLink>
-            <NavLink to="/products/categories" icon={FolderTreeIcon}>
-              {t('nav.categories')}
-            </NavLink>
-            <NavLink to="/products/units" icon={RulerIcon}>
-              {t('nav.units')}
-            </NavLink>
-            {can('inventory.product.manage') && (
-              <NavLink to="/products/imports" icon={FileImportIcon}>
-                {t('nav.productImports')}
-              </NavLink>
-            )}
-          </NavGroup>
-          {/* Stock (step 13): everyone reads it — a sales officer checks it before promising a
-              delivery. Adjusting and moving it is checked on the pages and by the API. */}
-          <NavGroup label={t('nav.stock')}>
-            <NavLink to="/stock" icon={Layers01Icon} activeOptions={{ exact: true }}>
-              {t('nav.stockOnHand')}
-            </NavLink>
-            <NavLink to="/stock/adjustments" icon={TaskEdit01Icon}>
-              {t('nav.adjustments')}
-            </NavLink>
-            <NavLink to="/stock/transfers" icon={ArrowDataTransferHorizontalIcon}>
-              {t('nav.transfers')}
-            </NavLink>
-            <NavLink to="/stock/batches" icon={HourglassIcon}>
-              {t('nav.expiry')}
-            </NavLink>
-            <NavLink to="/stock/sold-short" icon={PackageRemoveIcon}>
-              {t('nav.soldShort')}
-            </NavLink>
-            <NavLink to="/stock/reorder" icon={PackageOutOfStockIcon}>
-              {t('nav.reorder')}
-            </NavLink>
-            {/* Step 14: what it costs — only for the people who may see it */}
-            {can('inventory.stock.value') && (
-              <NavLink to="/stock/valuation" icon={Coins01Icon}>
-                {t('nav.valuation')}
-              </NavLink>
-            )}
-            {can('inventory.stock.revalue') && (
-              <NavLink to="/stock/revaluations" icon={MoneyExchange01Icon}>
-                {t('nav.revaluations')}
-              </NavLink>
-            )}
-            <NavLink to="/warehouses" icon={WarehouseIcon}>
-              {t('nav.warehouses')}
-            </NavLink>
-          </NavGroup>
-          {/* Step 26g (decision 5): the online shop, for the people who run it. After Stock, the
-              group the shop sells from */}
-          {/* Step 27b (decision 10): the group shows for the people who run the shop and for the
-              packers, who may only read and move its orders. They see Shop orders alone */}
-          {/* Step 28c: and for the people who record the couriers' payouts, like an accountant
-              with no other shop permission, who sees Shop payouts alone */}
-          {(can('storefront.manage') || canShopOrders || can('storefront.payout.manage')) && (
-            <NavGroup label={t('nav.storefront')}>
-              {/* Decision 34: first, the page the shop's staff open every day. The count is the
-                  orders that wait to be packed, crit like the approvals count: work to do */}
-              {canShopOrders && (
-                <NavLink
-                  to="/storefront/orders"
-                  icon={ShoppingBag01Icon}
-                  count={newOrders > 0 ? newOrders : undefined}
-                  countTone="crit"
-                >
-                  {t('nav.storefrontOrders')}
-                </NavLink>
-              )}
-              {can('storefront.manage') && (
-                <>
-                  <NavLink to="/storefront/listings" icon={Store04Icon}>
-                    {t('nav.storefrontCatalog')}
-                  </NavLink>
-                  {/* Step 27c (decision 29): after Catalog, both about the shop's prices */}
-                  <NavLink to="/storefront/coupons" icon={CouponPercentIcon}>
-                    {t('nav.storefrontCoupons')}
-                  </NavLink>
-                  <NavLink to="/storefront/categories" icon={FolderLibraryIcon}>
-                    {t('nav.storefrontCategories')}
-                  </NavLink>
-                  {/* Step 26h: the look and the text pages, before the settings (approved with
-                      the mockup: the things changed most often come first) */}
-                  <NavLink to="/storefront/appearance" icon={PaintBoardIcon}>
-                    {t('nav.storefrontAppearance')}
-                  </NavLink>
-                  <NavLink to="/storefront/pages" icon={Files01Icon}>
-                    {t('nav.storefrontPages')}
-                  </NavLink>
-                  <NavLink to="/storefront/settings" icon={WebDesign01Icon}>
-                    {t('nav.storefrontSettings')}
-                  </NavLink>
-                  {/* Step 28a: after Shop settings, both set the shop up (decision 15) */}
-                  <NavLink to="/storefront/couriers" icon={ShippingTruck01Icon}>
-                    {t('nav.storefrontCouriers')}
-                  </NavLink>
-                </>
-              )}
-              {/* Step 28c (decision 13): after Shop couriers, the money those accounts hold. The
-                  icon is Bank, not Money receipts' MoneyReceive02 (P1): an accountant sees both */}
-              {can('storefront.payout.manage') && (
-                <NavLink to="/storefront/payouts" icon={BankIcon}>
-                  {t('nav.storefrontPayouts')}
-                </NavLink>
-              )}
-            </NavGroup>
-          )}
-          <NavGroup label={t('nav.workspace')}>
-            {(can('core.user.read') || can('core.user.invite')) && (
-              <NavLink to="/team" icon={UserGroupIcon}>
-                {t('nav.team')}
-              </NavLink>
-            )}
-            {(can('core.user.read') || can('core.role.manage')) && (
-              <NavLink to="/roles" icon={SecurityCheckIcon}>
-                {t('nav.roles')}
-              </NavLink>
-            )}
-            {/* Step 17a: a workspace setting, next to the roles its levels name; shown to the
-                people who may change it, like Numbering */}
-            {can('core.settings.manage') && (
-              <NavLink to="/approval-rules" icon={UserCheck01Icon}>
-                {t('nav.approvalRules')}
-              </NavLink>
-            )}
-            <NavLink to="/custom-fields" icon={TextIcon}>
-              {t('nav.customFields')}
-            </NavLink>
-            {/* Step 20a: everyone reads the registers (read-only without pos.register.manage) */}
-            <NavLink to="/pos/registers" icon={Cashier02Icon}>
-              {t('nav.registers')}
-            </NavLink>
-            {/* Step 20b (decision 67): next to the registers, read by everyone like them */}
-            <NavLink to="/pos/cash-reasons" icon={MoneyExchange03Icon}>
-              {t('nav.cashReasons')}
-            </NavLink>
-            <NavLink to="/branches" icon={Store01Icon}>
-              {t('nav.branches')}
-            </NavLink>
-            {/* Step 18c (decision 22): after the branches the devices are in, for the people who
-                may see them all */}
-            {can('core.device.manage') && (
-              <NavLink to="/devices" icon={ComputerPhoneSyncIcon}>
-                {t('nav.devices')}
-              </NavLink>
-            )}
-            {can('core.settings.manage') && (
-              <NavLink to="/numbering" icon={LeftToRightListNumberIcon}>
-                {t('nav.numbering')}
-              </NavLink>
-            )}
-            {can('core.audit.read') && (
-              <NavLink to="/audit-log" icon={WorkHistoryIcon}>
-                {t('nav.auditLog')}
-              </NavLink>
-            )}
-            <NavLink to="/settings" icon={Settings02Icon}>
-              {t('nav.settings')}
-            </NavLink>
-          </NavGroup>
-        </SidebarNav>
+      rail={<Modules open={open} can={can} counts={counts} />}
+      sidebarHeader={
+        <>
+          <WorkspaceSwitcher />
+          {/* Someone who cannot see the rail hears which menu they are in now */}
+          <p role="status" className="sr-only">
+            {t('shell.moduleMenu', { name: t(moduleById(open ?? 'home').labelKey) })}
+          </p>
+        </>
       }
+      nav={<ModuleMenu open={open ?? 'home'} can={can} counts={counts} />}
       sidebarFooter={
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

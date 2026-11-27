@@ -58,6 +58,36 @@ http://{$APP_HOST} {
 	}
 }
 
+# The marketing website (apps/website): static files from the image. The common block's noindex
+# keeps it out of search engines while its prices are placeholders. Once they are real, replace
+# `import common` with the same block minus the X-Robots-Tag line.
+http://{$SITE_HOST} {
+	import common
+	root * /srv/website
+
+	# Astro puts every built CSS, JS and font file in /_astro/ with a hash in its name, so they can
+	# be kept for a year, like the app's /assets/
+	handle /_astro/* {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
+	# The pages are checked again on each load, so a deploy shows at once. build.format 'file'
+	# writes /pricing as pricing.html (not pricing/index.html), so the .html name is tried second.
+	# No fallback to index.html: a wrong address is a plain 404, not the home page.
+	handle {
+		header Cache-Control "no-cache"
+		try_files {path} {path}.html
+		file_server
+	}
+}
+
+# www goes to the bare domain, so there is one address for every page
+http://www.{$SITE_HOST} {
+	import common
+	redir https://{$SITE_HOST}{uri} permanent
+}
+
 # The API
 http://{$API_HOST} {
 	import common

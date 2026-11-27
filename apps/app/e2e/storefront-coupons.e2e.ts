@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import {
   expect,
   expectNoSideScroll,
+  openModule,
   pinAnswered,
   test,
   toastShown,
@@ -19,6 +20,7 @@ import {
 // "Coupons", so openFromNav() (link name = heading) does not fit
 async function openCoupons(page: Page): Promise<void> {
   await pinAnswered(page);
+  await openModule(page, 'Shop');
   await page.getByRole('navigation').getByRole('link', { name: 'Shop coupons' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Coupons' })).toBeVisible();
 }

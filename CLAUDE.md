@@ -129,6 +129,7 @@ its old name). Runbook: [docs/vps-deploy.en.md](docs/vps-deploy.en.md); addresse
 | Deployed from | every push to `dev` that passes CI | every push to `main` (a merged PR from `dev`) that passes CI |
 | App / API | `demo.omnivosoft.com` / `demo-api.omnivosoft.com` | `app.omnivosoft.com` / `api.omnivosoft.com` |
 | Files / mail / shop | `demo-files`, `demo-mail`, `demo-shop` `.omnivosoft.com` | `files`, `mail`, `shop` `.omnivosoft.com` |
+| Marketing website | `demo-site.omnivosoft.com` | `omnivosoft.com` (`www` redirects to it) |
 | Server folder | `/srv/omnivo-demo` | `/srv/omnivo` |
 | Compose project | `omnivo-demo` | `omnivo-production` (never rename a running stack: a new name starts an empty database) |
 | Tunnel | `omnivo-demo` | `omnivo` |
@@ -241,7 +242,7 @@ Rules:
 | `body-sm` | 13.5px / 1.45 | 400–500 | Table cells, nav items, list rows, secondary buttons |
 | `label` | 13px / 1.4 | 500 | Form labels, card subtitles (`ink-3`) |
 | `caption` | 12px / 1.35 | 500 | Pills, KPI labels, table headers, footnotes |
-| `micro` | 11px / 1.3 | 400 | Chart axes only |
+| `micro` | 11px / 1.3 | 400 | Chart axes, and the module rail's labels (500) |
 
 Exception: the auth side-panel product preview (`apps/app/src/components/auth-preview.tsx`)
 is a scaled-down illustration of the real UI, so it may use the mockup's smaller sizes
@@ -269,9 +270,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
     and `shadow-ring-crit` for the focus rings.
 - **Borders:** 1px `line` on every card. Lift with a shadow only when an element
   floats. Not everything needs to be a card.
-- **Layout:** the app shell is a 244px sidebar plus fluid content. Below 860px the
-  sidebar collapses to a top bar with horizontal nav. Grids collapse to one column on
-  phones.
+- **Layout:** the app shell is a 72px module rail, a 244px module menu and fluid
+  content. The rail holds the eight modules; the menu holds only the open module's
+  links, so no screen ever shows more than about twelve of them. Below 860px both
+  collapse into the top bar: the modules are one horizontally scrolling row and the open
+  module's links are the row under it. Grids collapse to one column on phones.
 
 ### Components
 
@@ -452,7 +455,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
 - **Revoked sign-out:** a device that finds out it was revoked deletes its copy and signs out; the sign-in page
   then shows a neutral document notice, "This device was revoked, so its data was deleted and you were signed
   out.", until the next sign-in, which asks the branch again (a new device).
-- **Sync line (sidebar):** the item after Overview in the sidebar nav (and in the phone's top bar), linking to `/sync`:
+- **Sync line (sidebar):** the last item of the module menu, under a 1px `line` rule, so it shows in every module
+  (and in the phone's top bar, after the module's links), linking to `/sync`:
   `Wifi01` and "Online" (or "Syncing…"), `WifiDisconnected02` and "Offline". The count on the right is the changes
   waiting on the device, or, when any was refused, the refused ones in `crit`. 24 hours after the last sync, "Last
   synced 2 days ago" in `warn` takes the place of the words (the icon still says online or offline), unless it is
@@ -1091,6 +1095,21 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   phones the nav is one horizontally scrolling row and group labels are hidden.
   The desktop sidebar scrolls inside itself (`overflow-y-auto`) when the navigation is
   taller than the screen.
+- **Module rail:** the eight modules — Home, Sell, Buy, Stock, Accounts, Shop, Reports, Setup — as a 72px column
+  of 56px items: a 20px icon over a `micro`/500 label, centred, radius 8px, hover `subtle`, the open one
+  `brand-soft` with `brand` text and icon. A module with work waiting shows a 6px `crit` dot at its icon's
+  top-right, never a number (the number is on the menu's own link), and the item's accessible name says it
+  ("Buy, 3 waiting"). Each item is a link to its module's landing page, so Back works and a page can be
+  bookmarked; which item is open comes from the route, not from a click, and no module is marked on a page that
+  belongs to none (`/sync`, `/my-devices`). A module whose every link is hidden by permission is not in the rail.
+  On a phone the rail is a row of the top bar, above the module's links: the same items as 13.5px chips in a
+  horizontally scrolling row. The logo, the bell and the account menu stay where they are.
+- **Module menu:** the 244px column beside the rail: the module's name (15px/600, `sr-only` on phones), the
+  workspace switcher, then the module's links in named sections (`NavGroup`), then the sync line. Sections are
+  the order of work, not the alphabet (Sell: Counter, Orders, Money in, What comes back, Customers). A module
+  with five links or fewer has no section label. The menu scrolls inside itself when a module is taller than the
+  screen (Sell's fifteen links are, on a 900px laptop); the sync line is then sticky at the bottom of the menu,
+  on `surface`, so it never goes under the fold. The `nav` is labelled by the module's name.
 - **Icon button:** 18px `ink-3` icon, radius 8px, 8px padding, hover `subtle` with an
   `ink` icon. It always has an accessible label.
 - **Notification bell:** an icon button (`Notification03Icon`) next to the logo on every screen size, with an
@@ -1376,6 +1395,16 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   caller's `className` reliably overrides a component's default.
 - **Transitions:** 150ms for color, border and shadow only. No bounce and no scale.
   Respect `prefers-reduced-motion`.
+- **Module switch motion:** the module menu's list enters with opacity 0 → 1 and a 4px upward slide over 160ms
+  `ease-out`, keyed on the module id (`.module-menu-in` in `packages/ui/src/styles.css`). The rail item itself
+  animates colors only. Nothing else in the app animates `transform`. Under `prefers-reduced-motion: reduce` the
+  menu appears with no fade and no slide (the stylesheet's own base rule turns every animation off). No sliding
+  active indicator, no bounce, no scale. A module switch never moves the content's edges: the rail and the menu
+  keep their widths whatever is in them.
+- **The router preloads on intent** (`defaultPreload: 'intent'`, `defaultPreloadDelay: 50` in
+  `apps/app/src/router.tsx`). Every page is its own chunk (`lazyRouteComponent`), so pointing at a rail item or a
+  nav link downloads that page while the pointer is on it and the click then paints at once. It is a download,
+  not a render: a page must not do its work in a route loader.
 - **Focus:** every interactive element shows a visible focus state, either the `brand`
   ring or a 2px `brand` outline with 2px offset.
 - **The service worker keeps every built script, style and woff2 font** (`apps/app/sw/sw.ts`), so every screen loads
@@ -1935,3 +1964,29 @@ because the limits count them across tests).
   আগে আলাদা করে ঠিক করতে হবে (rule 1 অনুযায়ী guidance আগে, কোড পরে)।
 - performance trade-off মাথায় রাখতে হবে — ভারী 3D/scroll effect মোবাইল বা লো-এন্ড
   ডিভাইসে স্লো হতে পারে, তাই lazy-load এবং reduced-motion fallback বিবেচনা করা উচিত।
+
+### Landing page prototypes (2026-11-26)
+
+Three directions for the marketing landing page, built as single-file HTML prototypes
+(Three.js r128 from cdnjs, a hand-written scroll smoother, HugeIcons path data inlined).
+None is chosen yet. The files open in any browser; the Artifact links are private to the owner.
+
+| # | Direction | File | Artifact |
+|---|---|---|---|
+| 1 | Tiles: one set of rounded tiles re-forms into the logo, a device, a ledger, a stock rack and a delivery route | [docs/landing-prototypes/01-tiles.html](docs/landing-prototypes/01-tiles.html) | https://claude.ai/artifact/4uoMPcZtTN9iMDJBTzKF4B |
+| 2 | Halkhata: a 3D red khata opens and turns its pages (handwriting on the left, Omnivo on the right), then closes onto an Omnivo cover | [docs/landing-prototypes/02-halkhata.html](docs/landing-prototypes/02-halkhata.html) | https://claude.ai/artifact/6ttg7cMYsRoVi8jpYPExeb |
+| 3 | Layers: dark, the Overview screen comes apart into 3D layers (outbox, trial balance, POS receipt, the tenant's shop) and snaps back | [docs/landing-prototypes/03-layers.html](docs/landing-prototypes/03-layers.html) | https://claude.ai/artifact/D7BrJfix7cozVZqfvj7pxg |
+
+Names, BIN, phone numbers and "Free for 14 days" in them are placeholders.
+
+**Chosen (2026-11-26): #2 Halkhata**, built as `apps/website` (`@omnivo/website`, static Astro, port
+4341). Stack confirmed: plain `three` from npm plus the prototype's own scroll-to-step code (no GSAP,
+no R3F). three.js loads with a dynamic import after the text paints, and never with Save-Data; without
+WebGL the page drops the book (`html.no-stage`). The book's pages are canvases drawn at a quality the
+stage picks from the device pixels a page covers (0.75–1.5 × 1024 × 1426), after the fonts load. The
+marketing site alone adds the fonts Atma (handwriting) and Tiro Bangla (the khata's print).
+`PUBLIC_APP_URL` (build time) is where Sign in, Start free trial and the workspace form go.
+The story has five pages (accounts, stock, dues, POS, online shop); a new one is a pair in
+`TURNING_PAGES` (`src/scripts/book/pages.ts`) plus a section in `index.astro`. The pricing section
+reads `src/data/plans.ts`: the README's draft plans with **placeholder prices**, UI only. Its buttons
+go to `/sign-up?plan=<id>`, which the app ignores until the plan flow (build plan step 23) is built.

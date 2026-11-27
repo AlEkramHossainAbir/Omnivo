@@ -10,14 +10,15 @@ work, and how to run them day to day, is in [vps-deploy.en.md](vps-deploy.en.md)
 only the one-time setup, in order. Tick each step before you go to the next one: a later step
 needs the earlier ones.
 
-## Where things stand (25 Nov 2026)
+## Where things stand (27 Nov 2026)
 
 | Thing | State |
 | --- | --- |
-| Code (workflow, compose, scripts, docs) | Done, on the `staging-deploy` branch. Not on `dev` or `main` yet |
-| `app.omnivosoft.com` | Still the old stack (Compose project `omnivo-staging`), running the build of `dev` at `a86267d`. It holds **test data only**: no users and no testers to keep |
+| Code (workflow, compose, scripts, docs) | Done, on the `staging-deploy` branch, with `dev` merged into it on 27 Nov 2026 (the marketing website is in). Not on `dev` or `main` yet |
+| Marketing website | Production serves it on `omnivosoft.com` (and `www`), the demo on `demo-site.omnivosoft.com`. Both are in the same `web` image, built with that stack's app address (`PUBLIC_APP_URL`) |
+| `app.omnivosoft.com` | Still the old stack (Compose project `omnivo-staging`), running an older build of `dev`. It holds **test data only**: no users and no testers to keep |
 | Demo stack, demo tunnel, GitHub settings | Not made yet |
-| SSH to the VPS | Timed out on 25 Nov 2026. The home IP may have changed |
+| SSH to the VPS | The server answers again (27 Nov 2026). A new computer still needs its key added (step 0.4) |
 
 Pushing `staging-deploy` changes nothing on the server. CI runs only on pushes to `dev` and `main`
 (and on pull requests), so this branch never deploys.
@@ -175,6 +176,7 @@ the deploy would fail the same way.
    FILES_HOST=demo-files.omnivosoft.com
    MAIL_HOST=demo-mail.omnivosoft.com
    SHOP_HOST=demo-shop.omnivosoft.com
+   SITE_HOST=demo-site.omnivosoft.com
    MAIL_FROM_NAME="Omnivo Demo"
    MAIL_FROM_DOMAIN=omnivosoft.com
    VALKEY_MAXMEMORY=128mb
@@ -190,7 +192,7 @@ the deploy would fail the same way.
 
    Save with Ctrl+O, Enter, and leave with Ctrl+X.
 
-## Step 3: The demo's Cloudflare Tunnel and its five addresses
+## Step 3: The demo's Cloudflare Tunnel and its six addresses
 
 Still as `deploy`, in `/srv/omnivo-demo`:
 
@@ -204,7 +206,7 @@ It prints a link. Open it in a browser **within 10 minutes**, pick `omnivosoft.c
 
 ```bash
 deploy$ cf tunnel create omnivo-demo
-deploy$ for h in demo demo-api demo-files demo-mail demo-shop; do cf tunnel route dns omnivo-demo "$h.omnivosoft.com"; done
+deploy$ for h in demo demo-api demo-files demo-mail demo-shop demo-site; do cf tunnel route dns omnivo-demo "$h.omnivosoft.com"; done
 deploy$ sed -i "s|^CLOUDFLARE_TUNNEL_TOKEN=.*|CLOUDFLARE_TUNNEL_TOKEN=$(cf tunnel token omnivo-demo)|" .env
 deploy$ rm /home/deploy/.cloudflared/cert.pem
 ```
@@ -215,8 +217,8 @@ deploy$ rm /home/deploy/.cloudflared/cert.pem
 
 Check in the Cloudflare dashboard:
 
-- `omnivosoft.com` → **DNS**: five proxied `CNAME`s (`demo`, `demo-api`, `demo-files`, `demo-mail`,
-  `demo-shop`).
+- `omnivosoft.com` → **DNS**: six proxied `CNAME`s (`demo`, `demo-api`, `demo-files`, `demo-mail`,
+  `demo-shop`, `demo-site`).
 - **Zero Trust → Networks → Tunnels**: `omnivo-demo` is listed. "Inactive" is fine until the first
   deploy starts its cloudflared.
 
@@ -312,7 +314,8 @@ When `deploy-demo` is green:
    `ssh myvps 'sudo grep MAIL_UI_PASSWORD /srv/omnivo-demo/.env'`).
 4. Upload a logo in the workspace settings. It goes through `demo-files`.
 5. `https://demo-shop.omnivosoft.com` opens.
-6. Memory with both stacks running: `ssh myvps 'free -h'`.
+6. `https://demo-site.omnivosoft.com` opens, and its "Start free trial" goes to `demo.omnivosoft.com`.
+7. Memory with both stacks running: `ssh myvps 'free -h'`.
 
 If the deploy fails, open the red step in the Actions log. Common causes:
 
@@ -358,8 +361,15 @@ MAIL_FROM_NAME=Omnivo
 EOF
 deploy$ sed -i "s/^MAIL_UI_PASSWORD=.*/MAIL_UI_PASSWORD=$(openssl rand -hex 8)/" .env
 deploy$ grep -E '^(DEPLOY_TARGET|COMPOSE_PROJECT_NAME)=' .env
+deploy$ grep -q '^SITE_HOST=' .env || echo 'SITE_HOST=omnivosoft.com' >>.env
+deploy$ grep ^SITE_HOST= .env                         # must print SITE_HOST=omnivosoft.com
 deploy$ cat .env
 ```
+
+`SITE_HOST` is the marketing website's host. The old stack may already have it (the website went
+live on it before the split); the `grep -q` adds it only when it is missing. Without it,
+`compose.yml` refuses to start. The `@` and `www` DNS records already point at the `omnivo`
+tunnel, so nothing changes in Cloudflare.
 
 Update "Omnivo production .env" in your password manager with the output of `cat .env`. The
 database passwords stay the same: the new database's roles are made from them on its first start.

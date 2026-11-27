@@ -28,8 +28,13 @@ here. They are in the VPS access sheet and in the `myvps` entry of `~/.ssh/confi
 | `https://files.omnivosoft.com` | `https://demo-files.omnivosoft.com` | File storage (MinIO). The browser uploads and downloads here with signed links. Only the shop's photos (`/omnivo/storefront/…`) are public |
 | `https://mail.omnivosoft.com` | `https://demo-mail.omnivosoft.com` | Mailpit: every email that stack sends lands here. User `tester`, each stack has its own password |
 | `https://shop.omnivosoft.com` | `https://demo-shop.omnivosoft.com` | The online shop as a demo (the `shop` service). It shows the mock shop, so nothing in it is real, and a deploy forgets its orders |
+| `https://omnivosoft.com` | `https://demo-site.omnivosoft.com` | The marketing website (`apps/website`). Static files inside the `web` image, served by the same Caddy as the app. On production `www.omnivosoft.com` redirects to it. Search engines are told not to list it while its prices are placeholders |
 
-`omnivosoft.com` itself is not used yet. It stays free for the marketing website.
+The website's host is `SITE_HOST` in each stack's `.env` (`omnivosoft.com` in `/srv/omnivo/.env`,
+`demo-site.omnivosoft.com` in `/srv/omnivo-demo/.env`). It must be there before the first deploy
+that has the website, or `compose.yml` refuses to start. Production's two DNS records (`@` and
+`www`) are made by hand, as in "A new address on a tunnel" below. The demo's one is made by
+`cf tunnel route dns`, with its other names.
 
 The names are one level below the domain (`demo-api.omnivosoft.com`, not
 `api.demo.omnivosoft.com`). Cloudflare's free HTTPS certificate covers only one level, so a deeper
@@ -201,7 +206,7 @@ sudo -iu deploy
 cf() { docker run --rm --user "$(id -u):$(id -g)" -e HOME=/cf -v /home/deploy/.cloudflared:/cf/.cloudflared cloudflare/cloudflared:2026.10.6 "$@"; }
 cf tunnel login            # prints a link: open it, pick omnivosoft.com, click Authorize (10 minutes)
 cf tunnel create omnivo-demo
-for h in demo demo-api demo-files demo-mail demo-shop; do cf tunnel route dns omnivo-demo "$h.omnivosoft.com"; done
+for h in demo demo-api demo-files demo-mail demo-shop demo-site; do cf tunnel route dns omnivo-demo "$h.omnivosoft.com"; done
 cf tunnel token omnivo-demo   # the demo's CLOUDFLARE_TUNNEL_TOKEN, for step 3
 rm /home/deploy/.cloudflared/cert.pem   # delete the login again
 ```
@@ -222,8 +227,8 @@ sed -i "s/^MAIL_UI_PASSWORD=\$/MAIL_UI_PASSWORD=$(openssl rand -hex 8)/" .env
 nano .env
 ```
 
-In `nano`, set the host names to `demo`, `demo-api`, `demo-files`, `demo-mail` and `demo-shop`
-`.omnivosoft.com`, `MAIL_FROM_DOMAIN=omnivosoft.com`, `REGISTRY` (the same as production's),
+In `nano`, set the host names to `demo`, `demo-api`, `demo-files`, `demo-mail`, `demo-shop` and
+`demo-site` `.omnivosoft.com` (`SITE_HOST=demo-site.omnivosoft.com`), `MAIL_FROM_DOMAIN=omnivosoft.com`, `REGISTRY` (the same as production's),
 and `CLOUDFLARE_TUNNEL_TOKEN` (from step 2). Keep `DEPLOY_TARGET=demo` and
 `COMPOSE_PROJECT_NAME=omnivo-demo`. Then check that only `IMAGE_TAG` is empty:
 

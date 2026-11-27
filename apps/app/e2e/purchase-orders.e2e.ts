@@ -5,6 +5,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  openModule,
   pinAnswered,
   test,
   toastShown,
@@ -49,6 +50,7 @@ test('lists the orders: late, waiting for goods, and a draft', async ({ page }) 
 // "Make purchase order" on PR-…-0002, for Gazipur Carton Industries, with its one line
 async function orderMailers(page: Page) {
   await pinAnswered(page);
+  await openModule(page, 'Buy');
   await page.getByRole('navigation').getByRole('link', { name: 'Requisitions' }).click();
   await listItem(page, PR_2).click();
   await expect(page.getByRole('heading', { level: 1, name: PR_2 })).toBeVisible();

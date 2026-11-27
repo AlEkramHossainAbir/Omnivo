@@ -15,7 +15,14 @@ export const en = {
     loadingMore: 'Loading more…',
   },
   shell: {
-    mainNav: 'Main',
+    // The rail of the eight modules (CLAUDE.md → Module rail); the module menu beside it is
+    // labelled by the open module's own name, so it needs no key of its own
+    modules: 'Modules',
+    // A rail item with work waiting says so: the dot alone is not a count
+    moduleWaiting_one: '{{name}}, {{formatted}} waiting',
+    moduleWaiting_other: '{{name}}, {{formatted}} waiting',
+    // Said by the live region when the menu changes, for someone who cannot see the rail
+    moduleMenu: '{{name}} menu',
     workspaces: 'Workspaces',
     switchWorkspace: 'Switch workspace',
     switchFailed: "Couldn't switch workspace. Try again.",
@@ -63,6 +70,43 @@ export const en = {
     setPinToLock: 'Set a PIN to lock',
   },
   nav: {
+    // The eight modules of the rail. Short words: they sit under a 20px icon in 72px
+    modules: {
+      home: 'Home',
+      sell: 'Sell',
+      buy: 'Buy',
+      stock: 'Stock',
+      accounts: 'Accounts',
+      shop: 'Shop',
+      reports: 'Reports',
+      setup: 'Setup',
+    },
+    // A module's links are grouped by the order of work, not by the alphabet
+    sections: {
+      counter: 'Counter',
+      orders: 'Orders',
+      moneyIn: 'Money in',
+      comesBack: 'What comes back',
+      customers: 'Customers',
+      ordering: 'Ordering',
+      moneyOut: 'Money out',
+      goesBack: 'What goes back',
+      approvals: 'Approvals and suppliers',
+      products: 'Products',
+      stockLevels: 'Stock',
+      places: 'Where it is',
+      books: 'The books',
+      trade: 'Sales and purchase',
+      stockReports: 'Stock',
+      files: 'Files and emails',
+      ordersAndMoney: 'Orders and money',
+      catalog: 'Catalog',
+      look: 'Look and pages',
+      shopSetup: 'Shop setup',
+      people: 'People',
+      counterSetup: 'Counter',
+      workspace: 'Workspace',
+    },
     overview: 'Overview',
     kitchenSink: 'Kitchen sink',
     workspace: 'Workspace',

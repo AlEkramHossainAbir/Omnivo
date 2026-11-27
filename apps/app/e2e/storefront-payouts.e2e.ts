@@ -6,6 +6,7 @@ import {
   expectNoSideScroll,
   listItem,
   openFromNav,
+  openModule,
   test,
   toastShown,
 } from './helpers.js';
@@ -251,6 +252,7 @@ test('matches the courier’s payout file, with the preset and with picked colum
 test('an accountant who only records payouts sees Shop payouts alone', async ({ page }) => {
   await actAs(page, { name: 'Accountant', permissions: ['storefront.payout.manage'] });
   await page.goto('/');
+  await openModule(page, 'Shop');
   const nav = page.getByRole('navigation');
   await expect(nav.getByRole('link', { name: 'Shop orders' })).toHaveCount(0);
   await expect(nav.getByRole('link', { name: 'Shop couriers' })).toHaveCount(0);

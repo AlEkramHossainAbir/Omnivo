@@ -31,6 +31,8 @@ DNS page.
 | `https://files.omnivosoft.com` | File storage (MinIO): logos, imports, PDFs, through signed links | The browser, by itself |
 | `https://mail.omnivosoft.com` | Mailpit: every email production sends lands here; nothing is really sent yet | You (user `tester`) |
 | `https://shop.omnivosoft.com` | The online shop (`apps/shop`) as a **demo**: mock products and prices, orders kept in memory only (a deploy forgets them), the phone code is always `123456` and no SMS is sent | You and the designer |
+| `https://omnivosoft.com` | The marketing website (`apps/website`). Static files in the `web` image. Not listed by search engines yet (placeholder prices) | Visitors |
+| `https://www.omnivosoft.com` | Redirects to `https://omnivosoft.com` | Visitors who type `www` |
 
 ### Demo (deployed from `dev`)
 
@@ -41,6 +43,7 @@ DNS page.
 | `https://demo-files.omnivosoft.com` | The demo's file storage | The browser, by itself |
 | `https://demo-mail.omnivosoft.com` | The demo's Mailpit | You and testers (user `tester`) |
 | `https://demo-shop.omnivosoft.com` | The mock shop of the `dev` code | You, testers and the designer |
+| `https://demo-site.omnivosoft.com` | The marketing website of the `dev` code. Its "Sign in" and "Start free trial" go to the demo app | You and the designer |
 
 The names are one level below the domain. Cloudflare's free HTTPS certificate covers
 `*.omnivosoft.com` only, so `api.demo.omnivosoft.com` (two levels) would show a certificate
@@ -51,8 +54,11 @@ The API addresses are also built into the apps and the server settings:
 - `https://api.omnivosoft.com` is the GitHub repository variable `PRODUCTION_API_URL`, and
   `https://demo-api.omnivosoft.com` is `DEMO_API_URL`. Each is built into its app's JavaScript, so
   changing one needs a new build.
+- `https://app.omnivosoft.com` is `PRODUCTION_APP_URL`, and `https://demo.omnivosoft.com` is
+  `DEMO_APP_URL`. Each is built into its website's pages (`PUBLIC_APP_URL`), for "Sign in" and
+  "Start free trial".
 - Each stack's `.env` (`/srv/omnivo/.env`, `/srv/omnivo-demo/.env`) has `APP_HOST`, `API_HOST`,
-  `FILES_HOST`, `MAIL_HOST` and `SHOP_HOST`.
+  `FILES_HOST`, `MAIL_HOST`, `SHOP_HOST` and `SITE_HOST`.
 - Renaming an address means: a new tunnel route in Cloudflare, the `.env` line, the GitHub
   variable, and a new deploy. Do all of them together.
 
@@ -60,7 +66,6 @@ The API addresses are also built into the apps and the server settings:
 
 | Address | Planned use |
 | --- | --- |
-| `https://omnivosoft.com` and `www.omnivosoft.com` | The marketing website (step 22) |
 | A tenant's own domain (`shop.acme.com`) | The real online shop, once step 26's public API exists. `shop.omnivosoft.com` is the demo until then |
 | New server for production | Production on a server of its own, apart from the demo, when many real customers keep their books here |
 

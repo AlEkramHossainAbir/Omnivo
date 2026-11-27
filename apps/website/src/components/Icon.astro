@@ -1,0 +1,13 @@
+---
+import { iconSvg, type IconData } from '../scripts/icons';
+
+interface Props {
+  icon: IconData;
+  // 18px by default; 17px inside buttons and inputs, 16px in chips (CLAUDE.md rule 4)
+  size?: number;
+}
+
+const { icon, size = 18 } = Astro.props;
+---
+
+<Fragment set:html={iconSvg(icon, size)} />

@@ -1382,7 +1382,15 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const router = createRouter({ routeTree });
+// Step 29 (CLAUDE.md → The router preloads on intent): every page is its own chunk
+// (lazyRouteComponent), so pointing at a rail item or a nav link for 50ms downloads that page
+// while the pointer is still on it, and the click then paints at once. It downloads the chunk, it
+// does not render the page: a page that did its work in a route loader would do it on a hover too
+export const router = createRouter({
+  routeTree,
+  defaultPreload: 'intent',
+  defaultPreloadDelay: 50,
+});
 
 // <Link to="…"> আর navigate({ to }) এখন route tree থেকে টাইপ পায় — ভুল path compile error
 declare module '@tanstack/react-router' {
