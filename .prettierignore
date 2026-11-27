@@ -8,3 +8,6 @@ apps/app/public/mockServiceWorker.js
 # Markdown docs: Prettier re-pads Bangla tables (and misjudges Bangla glyph widths), so
 # formatting them adds noise without aligning anything
 *.md
+
+# Brand assets: one-off HTML pages, screenshotted into images (Facebook cover, profile)
+docs/brand/
