@@ -139,8 +139,9 @@ its old name). Runbook: [docs/vps-deploy.en.md](docs/vps-deploy.en.md); addresse
   is shared but the machine. Never point one stack at the other's database or tunnel.
 - **"Clean the DB" means the demo only.** Run `infra/staging/reset-demo.sh` in `/srv/omnivo-demo` (it refuses
   anything but the demo). Never delete, reset or `down -v` production's data, even when asked to "clean the
-  database"; production is only backed up and restored. Production started empty on its first `main` deploy
-  (2026-11-25): the old test data was dropped on purpose.
+  database"; production is only backed up and restored. Production starts empty on its first `main` deploy;
+  the old stack's test data (its users, workspaces and files) was copied into the demo on 2026-11-27, so it
+  lives on there.
 - **A push to `dev` never reaches the users.** Users get a change only when `dev` is merged into
   `main`; their open tabs show the update notice and get it on reload. Pull requests never deploy.
 - **Migrations run on production at the `main` deploy**, on real data. Every migration must work

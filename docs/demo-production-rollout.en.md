@@ -333,8 +333,10 @@ If the deploy fails, open the red step in the Actions log. Common causes:
 
 ## Step 9: Production starts empty
 
-The old stack holds test data only, so production starts with an empty database. Do this **just
-before** step 10. From here until the production deploy ends, `app.omnivosoft.com` does not answer.
+The old stack holds test data only, so production starts with an empty database. That data is
+not lost: on 27 Nov 2026 its database and its files were copied into the demo (a fresh
+`backup.sh` dump loaded into `/srv/omnivo-demo`, and the storage bucket copied across with
+`mc mirror`), so the old logins work on `demo.omnivosoft.com`. Do this **just before** step 10. From here until the production deploy ends, `app.omnivosoft.com` does not answer.
 
 ```bash
 $ ssh myvps
