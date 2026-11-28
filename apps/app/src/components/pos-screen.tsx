@@ -1,4 +1,5 @@
-import { Search01Icon } from '@hugeicons/core-free-icons';
+import { Alert02Icon, Search01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
   compareQuantity,
   formatReturnNumber,
@@ -564,7 +565,10 @@ export function PosScreen({
           {(tiles ?? []).map((tile) => {
             const goods = tile.product.type === 'goods';
             const onHand = onHandOf(stock ?? [], tile.variant.id);
-            const out = goods && !allowNegativeStock && compareQuantity(onHand, '0') <= 0;
+            // Nothing on hand: with no selling below zero the tile is disabled and says so in crit;
+            // when the workspace sells below zero it stays a button, and its count turns warn
+            const empty = goods && compareQuantity(onHand, '0') <= 0;
+            const out = empty && !allowNegativeStock;
             const unit = units?.find((one) => one.id === tile.product.baseUnitId);
             return (
               <button
@@ -593,8 +597,23 @@ export function PosScreen({
                   </span>
                   {goods && (
                     <span
-                      className={cn('text-caption tabular-nums', out ? 'text-ink-3' : 'text-ink-2')}
+                      className={cn(
+                        'inline-flex items-center gap-1 text-caption tabular-nums',
+                        out
+                          ? 'font-medium text-crit'
+                          : empty
+                            ? 'font-medium text-warn'
+                            : 'text-ink-2',
+                      )}
                     >
+                      {empty && (
+                        <HugeiconsIcon
+                          icon={Alert02Icon}
+                          size={13}
+                          strokeWidth={1.5}
+                          className="shrink-0"
+                        />
+                      )}
                       {out
                         ? t('pos.outOfStock')
                         : `${format.number(onHand, unit?.decimals ?? 0)} ${unit?.code ?? ''}`}

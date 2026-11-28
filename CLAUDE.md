@@ -541,8 +541,11 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Below it, from 860px, the products on the left and a 400px cart on the right, each scrolling inside
   itself (`h-dvh`; the page never scrolls). The search box ("Scan or search") has the focus; a scanner types the
   barcode and Enter. Tiles: radius 10px, 1px `line`, the name (13.5px/500, two lines), the SKU in `Geist Mono` `ink-3`,
-  the price (600) and the stock (`ink-2`, or "Out of stock" on a disabled `subtle` tile when the workspace does not
-  sell below zero), two columns on a phone. Keys: F2 search, F4 customer, F6 return, F7 bill discount, F8 hold, F9
+  the price (600) and the stock (`ink-2`; with nothing on hand, `crit`/500 "Out of stock" with `Alert02` on a
+  disabled `subtle` tile when the workspace does not sell below zero, else the count in `warn`/500 with `Alert02` on
+  a tile that still sells), two columns on a phone. In the cart, the stepper's count is a box: focusing it selects
+  the digits, Bangla digits become ASCII, it takes no more decimals than the unit, and empty or zero goes back to 1
+  when it loses the focus. Keys: F2 search, F4 customer, F6 return, F7 bill discount, F8 hold, F9
   held bills, F12 pay, Enter complete and new sale, `?` the shortcuts dialog.
 - **POS cart:** the customer box (walk-in by default), then one row per line that opens on a click
   (`aria-expanded`): a quantity stepper that never goes below 1, "× ৳420 · bag", a `brand` "5% off" pill, the batch;
