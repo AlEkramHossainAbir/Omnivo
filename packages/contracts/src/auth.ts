@@ -5,8 +5,10 @@ import { defineRoute } from './http.js';
 import { preferencesSchema } from './preferences.js';
 import { SETUP_STATUSES } from './setup.js';
 
-// workspace-এর ঠিকানা হবে `{slug}.omnivo.app` — তাই DNS label-এর নিয়ম মানতে হবে
-const workspaceSlugFormat = z
+// workspace-এর ঠিকানা হবে `{slug}.omnivo.app` — তাই DNS label-এর নিয়ম মানতে হবে।
+// Exported (step 3b): the sign-in page checks the remembered workspace with it before sending it
+// as a hint.
+export const workspaceSlugFormat = z
   .string()
   .trim()
   .toLowerCase()
@@ -67,7 +69,9 @@ export const signUpInputSchema = z.object({
 export type SignUpInput = z.infer<typeof signUpInputSchema>;
 
 export const loginInputSchema = z.object({
-  workspace: workspaceSlugFormat,
+  // Step 3b: a hint, not a demand. The server opens this workspace when the person belongs to
+  // it, and ignores it otherwise. The sign-in page sends the workspace this browser used last.
+  workspace: workspaceSlugFormat.optional(),
   email: emailSchema,
   password: z.string().min(1, errorCode('password_required')).max(128),
   keepSignedIn: z.boolean(),
@@ -115,7 +119,7 @@ export const authRoutes = {
   login: defineRoute({
     method: 'POST',
     path: '/auth/login',
-    summary: 'Sign in to a workspace',
+    summary: 'Sign in with an email and a password, into the hinted or the last-used workspace',
     auth: 'public',
     status: 200,
     body: loginInputSchema,

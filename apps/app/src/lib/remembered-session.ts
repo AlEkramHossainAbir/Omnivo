@@ -1,4 +1,4 @@
-import { type MeResponse, meResponseSchema } from '@omnivo/contracts';
+import { type MeResponse, meResponseSchema, workspaceSlugFormat } from '@omnivo/contracts';
 
 // Step 19a: what this browser keeps of the sign-in, for a reload with no connection (decision 2).
 // The last `me` the server gave: the offline opening shows the app as that person, in that
@@ -7,6 +7,8 @@ import { type MeResponse, meResponseSchema } from '@omnivo/contracts';
 
 const ME_KEY = 'omnivo.me';
 const SIGN_OUT_KEY = 'omnivo.signOutPending';
+// Step 3b: the workspace this browser was in last, sent as the sign-in's hint
+const WORKSPACE_KEY = 'omnivo.workspace';
 
 // localStorage itself can throw (a sandboxed frame, storage turned off): then no storage.
 // Exported for offline-session.ts, which reads the device's identity with it.
@@ -44,6 +46,29 @@ export function rememberedMe(): MeResponse | null {
     const saved = storage()?.getItem(ME_KEY);
     if (saved === null || saved === undefined) return null;
     const parsed = meResponseSchema.safeParse(JSON.parse(saved));
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
+// Step 3b: the workspace of every `me` (session-store.ts). Kept after a sign-out on purpose,
+// unlike `me`: the next sign-in on this browser, after "Forgot PIN?" or a refused session, must
+// land in the workspace whose copy is on this device. It is only an address, not a secret: the
+// server opens it only for someone who belongs to it.
+export function rememberWorkspace(slug: string): void {
+  try {
+    storage()?.setItem(WORKSPACE_KEY, slug);
+  } catch {
+    // A storage that refuses: the server uses the workspace the person used last instead
+  }
+}
+
+// Checked, not trusted, like rememberedMe: a value the API would refuse (a hand-edited one) is
+// no hint. Sending it would fail the sign-in on a box that is not on the page.
+export function rememberedWorkspace(): string | null {
+  try {
+    const parsed = workspaceSlugFormat.safeParse(storage()?.getItem(WORKSPACE_KEY));
     return parsed.success ? parsed.data : null;
   } catch {
     return null;

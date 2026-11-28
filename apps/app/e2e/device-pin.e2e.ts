@@ -53,7 +53,6 @@ async function typePin(page: Page, pin: string): Promise<void> {
 
 // The sign-in page after "Forgot PIN?" or a PIN that stopped working
 async function signInWithPassword(page: Page): Promise<void> {
-  await page.getByLabel('Workspace').fill('rahman-garments');
   await page.getByLabel('Email').fill('farhana@rahmangarments.com');
   await page.getByLabel('Password', { exact: true }).fill('Gazipur-knit-2026');
   await page.getByRole('button', { name: 'Sign in' }).click();

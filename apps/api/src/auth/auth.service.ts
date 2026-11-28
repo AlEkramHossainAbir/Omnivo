@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import {
   type Auth,
   AuthError,
@@ -37,6 +37,7 @@ import { setTenantContext, type WithTenant } from '../common/tenant/with-tenant.
 import type { WithUser } from '../common/tenant/with-user.js';
 import { AUTH, DB, WITH_TENANT, WITH_USER } from '../infra/tokens.js';
 import { PermissionService } from '../rbac/permission.service.js';
+import { pickWorkspace, type WorkspaceOption } from './pick-workspace.js';
 
 interface MembershipGrant {
   membershipId: string;
@@ -51,6 +52,11 @@ function workspaceTaken(slug: string): AppError {
 
 function sessionEnded(): AppError {
   return new AppError(401, 'session_ended', 'The session has ended. Sign in again.');
+}
+
+// Step 3b: the password was right, but there is no workspace to open
+function notAMember(): AppError {
+  return new AppError(403, 'not_a_member', "This account isn't a member of any workspace.");
 }
 
 @Injectable()
@@ -86,6 +92,8 @@ export class AuthService {
       if (isUniqueViolation(error, 'tenants_slug_idx')) throw workspaceTaken(input.workspaceSlug);
       throw error;
     }
+    // Step 3b: a new owner's next sign-in opens the company they just made
+    await this.rememberWorkspace(identity.userId, workspace.tenantId);
 
     return this.auth.issueTokens({
       sessionId: identity.sessionId,
@@ -95,46 +103,42 @@ export class AuthService {
   }
 
   async login(input: LoginInput): Promise<IssuedTokens> {
-    const tenant = await this.findTenantBySlug(input.workspace);
-    if (!tenant) {
-      throw new AppError(
-        404,
-        'workspace_not_found',
-        `No workspace at ${input.workspace}.omnivo.app.`,
-        {
-          fieldErrors: { workspace: ['workspace_not_found'] },
-        },
-      );
-    }
-
+    // Step 3b: the password first. Until the person has proved who they are, nothing about
+    // workspaces is read, so a stranger cannot learn which addresses exist.
     const identity = await this.verifyPassword({
       email: input.email,
       password: input.password,
       keepSignedIn: input.keepSignedIn,
     });
 
-    const membership = await this.findMembership(tenant.id, identity.userId);
-    if (!membership) {
-      // পাসওয়ার্ড ঠিক, কিন্তু এই workspace-এ নেই — Better Auth যে session বানিয়েছে সেটা ফেলে দেওয়া
+    const workspace = pickWorkspace(
+      await this.listWorkspaces(identity.userId),
+      input.workspace,
+      await this.lastTenantOf(identity.userId),
+    );
+    // The roles, read inside that workspace. null also when the membership was removed between
+    // the two reads: rare, and it gets the same answer as no workspace at all.
+    const membership = workspace
+      ? await this.findMembership(workspace.tenantId, identity.userId)
+      : null;
+    if (!workspace || !membership) {
+      // Better Auth already made a session for the right password; nothing may use it
       await this.auth.revokeSession(identity.sessionId);
-      throw new AppError(
-        403,
-        'not_a_member',
-        `This account isn't a member of ${tenant.slug}.omnivo.app.`,
-      );
+      throw notAMember();
     }
 
-    await this.recordInTenant(tenant.id, {
+    await this.recordInTenant(workspace.tenantId, {
       action: 'auth.signed_in',
       entityType: 'user',
       entityId: identity.userId,
       actorUserId: identity.userId,
     });
+    await this.rememberWorkspace(identity.userId, workspace.tenantId);
 
     return this.auth.issueTokens({
       sessionId: identity.sessionId,
       sessionExpiresAt: identity.sessionExpiresAt,
-      claims: { userId: identity.userId, tenantId: tenant.id, ...membership },
+      claims: { userId: identity.userId, tenantId: workspace.tenantId, ...membership },
     });
   }
 
@@ -181,6 +185,8 @@ export class AuthService {
       await this.auth.revokeSession(identity.sessionId);
       throw accessRevoked();
     }
+    // Step 3b: someone who accepts an invitation wants to work there; the next sign-in goes there
+    await this.rememberWorkspace(identity.userId, tenantId);
     return this.auth.issueTokens({
       sessionId: identity.sessionId,
       sessionExpiresAt: identity.sessionExpiresAt,
@@ -228,6 +234,8 @@ export class AuthService {
       entityId: principal.userId,
       actorUserId: principal.userId,
     });
+    // Step 3b: a switch is the clearest sign of where the person works now, on every device
+    await this.rememberWorkspace(principal.userId, tenantId);
 
     return this.reissue({
       sessionId: grant.sessionId,
@@ -262,21 +270,8 @@ export class AuthService {
       .where(eq(tenants.id, principal.tenantId));
     if (!user || !tenant) throw sessionEnded();
 
-    // tenant switcher-এর তালিকা: সব টেন্যান্ট জুড়ে নিজের membership — তাই withTenant না, withUser
-    const workspaces = await this.withUser(principal.userId, (tx) =>
-      tx
-        .select({ tenantId: tenants.id, name: tenants.name, slug: tenants.slug })
-        .from(memberships)
-        .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
-        .where(
-          and(
-            eq(memberships.userId, principal.userId),
-            isNull(memberships.deletedAt),
-            isNull(tenants.deletedAt),
-          ),
-        )
-        .orderBy(asc(tenants.name)),
-    );
+    // tenant switcher-এর তালিকা: সব টেন্যান্ট জুড়ে নিজের membership
+    const workspaces = await this.listWorkspaces(principal.userId);
 
     // রোল আর permission টোকেন থেকে না, এখনকার অবস্থা থেকে: টোকেনের roles ১৫ মিনিট পুরনো হতে পারে
     // (কেউ রোল বদলালে বা রোলের নাম বদলালে), UI-র মেনু তখন ভুল জিনিস দেখাত
@@ -349,6 +344,44 @@ export class AuthService {
       .from(tenants)
       .where(and(eq(tenants.slug, slug), isNull(tenants.deletedAt)));
     return tenant;
+  }
+
+  // The person's workspaces across every tenant, sorted by name: the workspace switcher's list
+  // (me) and the sign-in's choices (login). withUser, not withTenant: there is no tenant yet,
+  // and the own_memberships policy shows a person their own memberships only.
+  private listWorkspaces(userId: string): Promise<WorkspaceOption[]> {
+    return this.withUser(userId, (tx) =>
+      tx
+        .select({ tenantId: tenants.id, name: tenants.name, slug: tenants.slug })
+        .from(memberships)
+        .innerJoin(tenants, eq(tenants.id, memberships.tenantId))
+        .where(
+          and(
+            eq(memberships.userId, userId),
+            isNull(memberships.deletedAt),
+            isNull(tenants.deletedAt),
+          ),
+        )
+        .orderBy(asc(tenants.name)),
+    );
+  }
+
+  // users has no RLS (a global table), so the plain connection reads it
+  private async lastTenantOf(userId: string): Promise<string | null> {
+    const [row] = await this.db
+      .select({ lastTenantId: users.lastTenantId })
+      .from(users)
+      .where(eq(users.id, userId));
+    return row?.lastTenantId ?? null;
+  }
+
+  // Step 3b: where the next sign-in goes when the browser gives no hint. updated_at is kept as
+  // it was: it means "the profile changed", and a sign-in changes nothing the person typed.
+  private async rememberWorkspace(userId: string, tenantId: string): Promise<void> {
+    await this.db
+      .update(users)
+      .set({ lastTenantId: tenantId, updatedAt: sql`${users.updatedAt}` })
+      .where(eq(users.id, userId));
   }
 
   private async findMembership(tenantId: string, userId: string): Promise<MembershipGrant | null> {

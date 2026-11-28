@@ -29,7 +29,7 @@ export class WelcomeEmailHandler implements EventHandler<'workspace.created'> {
       .from(users)
       .where(eq(users.id, event.payload.userId));
     const [tenant] = await this.db
-      .select({ name: tenants.name, slug: tenants.slug })
+      .select({ name: tenants.name })
       .from(tenants)
       .where(eq(tenants.id, getTenantId()));
     // The account or the workspace was deleted before the job ran — nobody to welcome
@@ -40,7 +40,6 @@ export class WelcomeEmailHandler implements EventHandler<'workspace.created'> {
         to: user.email,
         fullName: user.fullName,
         workspaceName: tenant.name,
-        workspaceSlug: tenant.slug,
         signInLink: `${this.config.appOrigin}/login`,
         language: user.language ?? 'en',
       }),

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=720" />
+<title>Omnivo · Facebook profile picture</title>
+<style>
+
+@font-face { font-family: 'Geist Variable'; font-weight: 100 900; src: url('../../../apps/website/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Noto Sans Bengali'; font-weight: 400; src: url('../../../apps/website/node_modules/@fontsource/noto-sans-bengali/files/noto-sans-bengali-bengali-400-normal.woff2') format('woff2'); unicode-range: U+0951-0952, U+0964-0965, U+0980-09FE, U+1CD0, U+1CD2, U+1CD5-1CD6, U+1CD8, U+1CE1, U+1CEA, U+1CED, U+1CF2, U+1CF5-1CF7, U+200C-200D, U+20B9, U+25CC, U+A8F1; }
+@font-face { font-family: 'Noto Sans Bengali'; font-weight: 500; src: url('../../../apps/website/node_modules/@fontsource/noto-sans-bengali/files/noto-sans-bengali-bengali-500-normal.woff2') format('woff2'); unicode-range: U+0951-0952, U+0964-0965, U+0980-09FE, U+1CD0, U+1CD2, U+1CD5-1CD6, U+1CD8, U+1CE1, U+1CEA, U+1CED, U+1CF2, U+1CF5-1CF7, U+200C-200D, U+20B9, U+25CC, U+A8F1; }
+@font-face { font-family: 'Noto Sans Bengali'; font-weight: 600; src: url('../../../apps/website/node_modules/@fontsource/noto-sans-bengali/files/noto-sans-bengali-bengali-600-normal.woff2') format('woff2'); unicode-range: U+0951-0952, U+0964-0965, U+0980-09FE, U+1CD0, U+1CD2, U+1CD5-1CD6, U+1CD8, U+1CE1, U+1CEA, U+1CED, U+1CF2, U+1CF5-1CF7, U+200C-200D, U+20B9, U+25CC, U+A8F1; }
+@font-face { font-family: 'Tiro Bangla'; font-weight: 400; src: url('../../../apps/website/node_modules/@fontsource/tiro-bangla/files/tiro-bangla-bengali-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Atma'; font-weight: 500; src: url('../../../apps/website/node_modules/@fontsource/atma/files/atma-bengali-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Atma'; font-weight: 600; src: url('../../../apps/website/node_modules/@fontsource/atma/files/atma-bengali-600-normal.woff2') format('woff2'); }
+
+/* Sora (OFL-1.1, see fonts/OFL-sora.txt): the wordmark of the profile picture only */
+@font-face { font-family: 'Sora'; font-weight: 100 800; src: url('./fonts/sora-latin-wght-normal.woff2') format('woff2'); }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 720px; height: 720px; }
+body {
+  overflow: hidden;
+  position: relative;
+  -webkit-font-smoothing: antialiased;
+  /* Midnight navy (the cover's colour), with a brand-blue glow behind the mark */
+  background:
+    radial-gradient(400px 400px at 50% 40%, rgb(47 91 222 / .55), transparent 72%),
+    linear-gradient(160deg, #10225C 0%, #070E2A 100%);
+}
+/* A fine rim just inside Facebook's circle crop */
+.ring { position: absolute; inset: 22px; border-radius: 50%; border: 2px solid rgb(143 174 255 / .18); }
+.lockup {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 44px;
+}
+.mark { width: 250px; height: 250px; display: block; filter: drop-shadow(0 18px 30px rgb(0 0 0 / .22)); }
+.word {
+  font-family: 'Sora', sans-serif;
+  font-size: 104px;
+  line-height: 1;
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  color: #fff;
+  margin-bottom: 4px;
+}
+body.mark-only .lockup { gap: 0; }
+body.mark-only .mark { width: 330px; height: 330px; }
+body.mark-only .word { display: none; }
+</style>
+</head>
+<body class="">
+  <div class="ring"></div>
+  <div class="lockup">
+    <svg class="mark" viewBox="0 0 26 26" aria-hidden="true">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8FAEFF"/><stop offset="1" stop-color="#2F5BDE"/></linearGradient><mask id="m1"><rect width="26" height="26" fill="#fff"/><rect x="10" y="10" width="16" height="16" rx="5" fill="#000"/></mask></defs>
+  <rect x="0" y="0" width="16" height="16" rx="5" fill="url(#g)" mask="url(#m1)"/>
+  <rect x="11" y="11" width="14" height="14" rx="4" fill="none" stroke="#fff" stroke-width="2"/>
+</svg>
+    <div class="word">Omnivo</div>
+  </div>
+</body>
+</html>

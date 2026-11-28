@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "last_tenant_id" uuid;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_last_tenant_id_tenants_id_fk" FOREIGN KEY ("last_tenant_id") REFERENCES "public"."tenants"("id") ON DELETE set null ON UPDATE no action;
