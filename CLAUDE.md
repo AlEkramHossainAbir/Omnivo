@@ -1328,6 +1328,17 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   hint, the addresses, CC, who and when. A link: Active (`good`, `Link01`), Ended (neutral, `Hourglass`), Turned
   off (neutral, `CancelCircle`), its language, who made it, until when, first and last opened; "Turn off"
   (secondary `sm`, `Unlink01`, asks first) on an active link for people with the send permission.
+- **Check your email (after sign-up):** the sign-up card's place, once the workspace is made: the empty state
+  with `Mail01`, "Check your email", "We sent a link to farhana@rahmangarments.com. Open it to confirm your email
+  and open your workspace. The link works for 24 hours.", "Send the link again" (secondary, disabled with "Send the
+  link again in 42 s" for 60 seconds after each email) and a 13px `ink-3` spam-folder hint. No "use another
+  email": the workspace's address is taken by then.
+- **Email link page (`/verify-email#<token>`):** no login, the invitation page's frame (logo, one centered card
+  of at most 420px, the language switch). "Confirming your email…" (`role="status"`), then the toast "Email
+  confirmed" and `/` (the setup wizard for a new owner), or `/login` when the address is confirmed but its
+  sign-in has ended. A used, ended or unknown link: `crit` empty state, `LinkBackward`, "This link no longer
+  works", a Sign in link (the sign-in sends a new one). No connection: `crit` empty state, `Alert02`, the error
+  and Retry. The token leaves the address at once (`history.replaceState`).
 - **Public document page (`/d/<token>`):** no app shell and no login. The `bg` page with one centered card (at
   most 480px; padding 32px, 22px on phones): the company's logo and name, the document's name and number
   (`Geist Mono`, never broken), the customer or the supplier (`recipient`), then number, date, total (and for an invoice the due date and what

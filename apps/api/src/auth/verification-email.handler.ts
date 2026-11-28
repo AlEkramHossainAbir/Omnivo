@@ -51,9 +51,7 @@ export class VerificationEmailHandler implements EventHandler<'account.verificat
       // opened, or an invitation proved it), or sent_at is set. sent_at set = a working link is
       // out already: this job ran before (a retry after a crash), or a newer request's job sent
       // one first. A second email would only kill the first link. (No row: undefined, also out.)
-      if (!row || row.verifiedAt !== null || row.emailVerified || row.sentAt !== null) {
-        return null;
-      }
+      if (row?.verifiedAt !== null || row.emailVerified || row.sentAt !== null) return null;
 
       // A fresh day from now, not from the sign-up: the day counts from the email it is in
       await tx

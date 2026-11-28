@@ -6,9 +6,9 @@ import type { Redis } from 'ioredis';
 import { REDIS } from '../infra/tokens.js';
 
 // How often one person may get a new link: "Send the link again" and every refused sign-in send
-// one. Without a limit, a script could fill someone's inbox from the sign-in page with their
-// address and any password... no: a refused sign-in needs the right password. But "Send the link
-// again" needs only the address, so it is the one that must be limited.
+// one. "Send the link again" needs only the address, so without a limit a script could fill a
+// stranger's inbox with it. A refused sign-in needs the right password, but counts the same, so
+// one window covers both ways.
 const PER_MINUTE = 1;
 const PER_HOUR = 5;
 
@@ -23,7 +23,7 @@ function keyOf(window: 'minute' | 'hour', userId: string): string {
 // unknown, so it is narrowed here instead of cast
 function countAt(replies: [Error | null, unknown][] | null, index: number): number {
   const reply = replies?.[index];
-  if (!reply || reply[0] !== null || typeof reply[1] !== 'number') {
+  if (reply?.[0] !== null || typeof reply[1] !== 'number') {
     throw new Error('Redis did not count the verification link');
   }
   return reply[1];
