@@ -226,15 +226,35 @@ one average.
 
 At the counter, a cashier cannot sell a line for less than it cost. That counts the line's discount
 and its share of the bill's discount. For example, a KitKat piece at ৳20 or a box at ৳408 is fine,
-but a box at ৳400 is not. The line then says "This is less than it cost", and **Pay** waits until the
+but a box at ৳400 is not. The line then says "Less than it cost", and **Pay** waits until the
 cashier raises the price or lowers the discount. The screen never shows the buying price itself.
 
 Only the **Owner** can sell below the buying price. The Owner sees a warning instead, and can go on.
 To let someone else do it, give their role **"At the POS, sell a line for less than what the goods
 cost"** in **Settings → Roles**. Every sale below the buying price goes into the audit log, by anyone,
-with what the goods cost.
+with what the goods cost. The Owner and the people who manage the counters also get a bell
+notification, "POS1-000123 sold below the buying price". The person who made the sale does not.
 
 A product you never bought (no buying price yet) is never stopped.
+
+**A lowest margin (optional).** In **Settings → Sales**, **Lowest margin** is a percent on top of the
+buying price. With 5%, a KitKat piece that cost ৳17 must sell for at least ৳17.85. Leave it at 0 to
+stop only sales below the buying price.
+
+**Orders and invoices.** The same rule works on **Sales → Orders** (when you confirm) and **Sales →
+Invoices** (when you post). The price boxes of the lines that are too low say so. The Owner gets a
+dialog, "Below the buying price", and can confirm or post anyway. To let a sales manager do it, give
+their role **"Confirm orders and post invoices with lines below their buying price"**. An invoice line
+that bills a confirmed order is not checked again: the order was checked when it was confirmed.
+
+### Who sees the buying price
+
+The product list (**Inventory → Products**) has a **Buying price** column: what one piece cost, on
+average. A product with sizes shows a range, like "৳120.00 – ৳210.00". It needs a connection.
+
+Only roles with **"See what stock costs and what it is worth"** see this column. The Owner has it. The Accountant
+role has it too. The Cashier and Shop manager roles do not. To hide it from a role, take that
+permission off the role in **Settings → Roles**. To show it, tick it.
 
 ## Two limits to know about
 

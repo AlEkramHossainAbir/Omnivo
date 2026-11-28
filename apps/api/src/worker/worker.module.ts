@@ -30,6 +30,7 @@ import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
 import { MailService } from '../mail/mail.service.js';
 import { NumberingService } from '../numbering/numbering.service.js';
 import { ShiftVarianceHandler } from '../pos/shift-variance.handler.js';
+import { SoldBelowCostHandler } from '../pos/sold-below-cost.handler.js';
 import { SoldShortHandler } from '../pos/sold-short.handler.js';
 import { ProductImportHandler } from '../products/import.handler.js';
 import { ProductsService } from '../products/products.service.js';
@@ -125,6 +126,8 @@ export class WorkerModule implements OnApplicationShutdown {
         SoldShortHandler,
         // Step 20b: the bell for a shift whose count was far from the expected cash
         ShiftVarianceHandler,
+        // Cost floor: the bell for a POS sale below the buying price
+        SoldBelowCostHandler,
         // Step 18a: the hourly job also prunes the sync change log, on the relay's pool
         SyncLogCleanup,
         // Step 21c: the 5-minute sweep for due report emails (both pools), one run of a schedule,

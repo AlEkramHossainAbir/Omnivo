@@ -436,7 +436,10 @@ export function answerQuotation(target: MockQuotation, action: 'decline' | 'reop
 // --- Sales orders -------------------------------------------------------------------------------
 
 // overrideCreditLimit is the handler's (invoice-data.ts → confirmWithCredit)
-type OrderFields = Omit<SalesOrderInput, 'confirm' | 'quotationId' | 'overrideCreditLimit'>;
+type OrderFields = Omit<
+  SalesOrderInput,
+  'confirm' | 'quotationId' | 'overrideCreditLimit' | 'overrideBelowCost'
+>;
 
 export function findOrder(data: WorkspaceData, id: string): MockOrder {
   const found = data.salesDocuments.orders.find((item) => item.id === id);

@@ -5,6 +5,7 @@ import {
   APPROVAL_DOCUMENTS,
   type AuditAction,
   type AuthSession,
+  compareMoney,
   compareQuantity,
   dashboardCardsFor,
   type ErrorCode,
@@ -25,6 +26,7 @@ import { meIn, OWNER, WORKSPACES, type Workspace } from './fixtures';
 import {
   allocateReceipt,
   assertNotVoided,
+  checkCostFloor,
   confirmWithCredit,
   createReceipt,
   creditOf,
@@ -396,6 +398,7 @@ import {
 } from './requisition-data';
 import { settleSetup, startSetup } from './setup-data';
 import {
+  averageCostOf,
   batchReport,
   cardOf,
   findAdjustment,
@@ -644,6 +647,7 @@ function editable(settings: Settings) {
   return {
     allowNegativeStock: settings.allowNegativeStock,
     overReceiptPercent: settings.overReceiptPercent,
+    minMarginPercent: settings.minMarginPercent,
     pricesIncludeVat: settings.pricesIncludeVat,
     companyName: settings.companyName,
     legalName: settings.legalName,
@@ -694,9 +698,23 @@ function assertMoneyType(holdsMoney: boolean, type: Account['type']): void {
 
 // Confirming an order checks the credit limit (step 15c). The audit rows are the API's: confirmed,
 // then the override when there was one, with the limit and what the customer owes now.
-function confirmAndRecord(data: WorkspaceData, order: MockOrder, overrideCreditLimit: boolean) {
+function confirmAndRecord(
+  data: WorkspaceData,
+  order: MockOrder,
+  overrideCreditLimit: boolean,
+  overrideBelowCost: boolean,
+) {
+  // Cost floor first, like the API: every line of the order
+  const belowCost = checkCostFloor(
+    data,
+    order.lines.map((line, index) => ({ ...line, index })),
+    overrideBelowCost,
+  );
   const overridden = confirmWithCredit(data, order, overrideCreditLimit);
   record(data, 'sales_order.confirmed', 'sales_order', order.id);
+  if (belowCost !== null) {
+    record(data, 'cost_floor.overridden', 'sales_order', order.id, diff({}, { belowCost }));
+  }
   if (overridden) {
     record(data, 'credit_limit.overridden', 'sales_order', order.id, diff({}, overridden));
   }
@@ -704,8 +722,25 @@ function confirmAndRecord(data: WorkspaceData, order: MockOrder, overrideCreditL
 
 // Posting an invoice, with the audit rows the API writes: the challan it made for its own goods
 // (created and posted), the credit override, then the invoice posted
-function postAndRecord(data: WorkspaceData, draft: MockInvoice, overrideCreditLimit: boolean) {
+function postAndRecord(
+  data: WorkspaceData,
+  draft: MockInvoice,
+  overrideCreditLimit: boolean,
+  overrideBelowCost: boolean,
+) {
+  // Cost floor: the lines of its own only. The API also checks a challan line with no order;
+  // the mock's challans all come from orders, which were checked when they were confirmed.
+  const belowCost = checkCostFloor(
+    data,
+    draft.lines.flatMap((line, index) =>
+      line.orderLineId === null && line.deliveryLineId === null ? [{ ...line, index }] : [],
+    ),
+    overrideBelowCost,
+  );
   const { challan, overridden } = postInvoice(data, draft, overrideCreditLimit);
+  if (belowCost !== null) {
+    record(data, 'cost_floor.overridden', 'invoice', draft.id, diff({}, { belowCost }));
+  }
   if (challan) {
     record(data, 'delivery.created', 'delivery', challan.id);
     record(data, 'delivery.posted', 'delivery', challan.id);
@@ -1241,15 +1276,29 @@ export const handlers = [
       // cutting the 4 that addQuantity() gives is exact); an unchanged percent is not logged
       const overReceiptPercent = addQuantity(fields.overReceiptPercent, '0').slice(0, -2);
       const unchanged = compareQuantity(overReceiptPercent, before.overReceiptPercent) === 0;
-      data.settings = { ...data.settings, ...fields, overReceiptPercent, version: version + 1 };
+      // Cost floor: the same NUMERIC(5,2) form; missing = unchanged, like the API
+      const { minMarginPercent: margin, ...rest } = fields;
+      const minMarginPercent =
+        margin === undefined ? before.minMarginPercent : addQuantity(margin, '0').slice(0, -2);
+      data.settings = {
+        ...data.settings,
+        ...rest,
+        overReceiptPercent,
+        minMarginPercent,
+        version: version + 1,
+      };
       record(
         data,
         'settings.updated',
         'workspace',
         workspace.tenantId,
         diff(before, {
-          ...fields,
+          ...rest,
           overReceiptPercent: unchanged ? before.overReceiptPercent : fields.overReceiptPercent,
+          minMarginPercent:
+            compareQuantity(minMarginPercent, before.minMarginPercent) === 0
+              ? before.minMarginPercent
+              : minMarginPercent,
         }),
       );
       await delay();
@@ -2300,6 +2349,24 @@ export const handlers = [
       }),
     ),
   ),
+
+  // The buying price column (the product list): the average cost of each product's active
+  // variants, like the API; a product never bought is left out
+  mock(routes.products.costs, ({ request }) => {
+    const { ids } = readQuery(routes.products.costs.query, request);
+    const data = current();
+    const items = ids.flatMap((id) => {
+      const product = data.catalog.products.find((one) => one.id === id);
+      const costs = (product?.variants ?? [])
+        .filter((variant) => variant.archivedAt === null)
+        .flatMap((variant) => averageCostOf(data.stock, variant.id) ?? [])
+        .sort(compareMoney);
+      const [minCost] = costs;
+      const maxCost = costs.at(-1);
+      return minCost === undefined || maxCost === undefined ? [] : [{ id, minCost, maxCost }];
+    });
+    return reply(routes.products.costs, { items });
+  }),
 
   mock(routes.products.list, async ({ request }) => {
     const query = readQuery(routes.products.list.query, request);
@@ -3418,17 +3485,15 @@ export const handlers = [
   mock(
     routes.salesOrders.create,
     guarded(async ({ request }) => {
-      const { confirm, quotationId, overrideCreditLimit, ...input } = await readBody(
-        routes.salesOrders.create.body,
-        request,
-      );
+      const { confirm, quotationId, overrideCreditLimit, overrideBelowCost, ...input } =
+        await readBody(routes.salesOrders.create.body, request);
       const data = current();
       // "Confirm order" on a new form: saved and confirmed in one step, or nothing at all, like
       // the API (step 15c: the credit check may refuse the confirmation)
       const saved = transaction(data, () => {
         const created = createOrder(data, input, quotationId);
         record(data, 'sales_order.created', 'sales_order', created.id);
-        if (confirm) confirmAndRecord(data, created, overrideCreditLimit);
+        if (confirm) confirmAndRecord(data, created, overrideCreditLimit, overrideBelowCost);
         return created;
       });
       await delay();
@@ -3440,7 +3505,7 @@ export const handlers = [
     routes.salesOrders.update,
     guarded(async ({ request, params }) => {
       const { id } = routes.salesOrders.update.params.parse(params);
-      const { confirm, version, overrideCreditLimit, ...input } = await readBody(
+      const { confirm, version, overrideCreditLimit, overrideBelowCost, ...input } = await readBody(
         routes.salesOrders.update.body,
         request,
       );
@@ -3450,7 +3515,7 @@ export const handlers = [
       transaction(data, () => {
         updateOrder(data, target, input);
         record(data, 'sales_order.updated', 'sales_order', id);
-        if (confirm) confirmAndRecord(data, target, overrideCreditLimit);
+        if (confirm) confirmAndRecord(data, target, overrideCreditLimit, overrideBelowCost);
       });
       await delay();
       return reply(routes.salesOrders.update, toOrder(data, target));
@@ -3475,7 +3540,7 @@ export const handlers = [
     routes.salesOrders.confirm,
     guarded(async ({ request, params }) => {
       const { id } = routes.salesOrders.confirm.params.parse(params);
-      const { version, overrideCreditLimit } = await readBody(
+      const { version, overrideCreditLimit, overrideBelowCost } = await readBody(
         routes.salesOrders.confirm.body,
         request,
       );
@@ -3483,7 +3548,7 @@ export const handlers = [
       const target = findOrder(data, id);
       checkVersion(target.version, version);
       transaction(data, () => {
-        confirmAndRecord(data, target, overrideCreditLimit);
+        confirmAndRecord(data, target, overrideCreditLimit, overrideBelowCost);
       });
       return reply(routes.salesOrders.confirm, toOrder(data, target));
     }),
@@ -3624,7 +3689,7 @@ export const handlers = [
   mock(
     routes.invoices.create,
     guarded(async ({ request }) => {
-      const { post, overrideCreditLimit, ...input } = await readBody(
+      const { post, overrideCreditLimit, overrideBelowCost, ...input } = await readBody(
         routes.invoices.create.body,
         request,
       );
@@ -3632,7 +3697,7 @@ export const handlers = [
       const saved = transaction(data, () => {
         const draft = saveInvoice(data, input);
         record(data, 'invoice.created', 'invoice', draft.id);
-        if (post) postAndRecord(data, draft, overrideCreditLimit);
+        if (post) postAndRecord(data, draft, overrideCreditLimit, overrideBelowCost);
         return draft;
       });
       await delay();
@@ -3644,7 +3709,7 @@ export const handlers = [
     routes.invoices.update,
     guarded(async ({ request, params }) => {
       const { id } = routes.invoices.update.params.parse(params);
-      const { post, overrideCreditLimit, version, ...input } = await readBody(
+      const { post, overrideCreditLimit, overrideBelowCost, version, ...input } = await readBody(
         routes.invoices.update.body,
         request,
       );
@@ -3654,7 +3719,7 @@ export const handlers = [
       const saved = transaction(data, () => {
         const draft = saveInvoice(data, input, target);
         record(data, 'invoice.updated', 'invoice', id);
-        if (post) postAndRecord(data, draft, overrideCreditLimit);
+        if (post) postAndRecord(data, draft, overrideCreditLimit, overrideBelowCost);
         return draft;
       });
       await delay();
@@ -3680,12 +3745,15 @@ export const handlers = [
     routes.invoices.post,
     guarded(async ({ request, params }) => {
       const { id } = routes.invoices.post.params.parse(params);
-      const { version, overrideCreditLimit } = await readBody(routes.invoices.post.body, request);
+      const { version, overrideCreditLimit, overrideBelowCost } = await readBody(
+        routes.invoices.post.body,
+        request,
+      );
       const data = current();
       const target = findInvoice(data, id);
       checkVersion(target.version, version);
       transaction(data, () => {
-        postAndRecord(data, target, overrideCreditLimit);
+        postAndRecord(data, target, overrideCreditLimit, overrideBelowCost);
       });
       return reply(routes.invoices.post, toInvoice(data, target));
     }),

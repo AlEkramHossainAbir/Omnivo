@@ -8,6 +8,7 @@ import {
 import { HugeiconsIcon } from '@hugeicons/react';
 import {
   isTrackingMode,
+  MAX_COST_IDS,
   PRODUCT_STATUSES,
   type ProductStatus,
   type ProductSummary,
@@ -31,7 +32,7 @@ import {
   productPage,
   productSummaryOf,
 } from '@omnivo/sync';
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -39,12 +40,21 @@ import { LocalState, SyncNotice } from '../components/local-state';
 import { useLocalData, useLocalQuery } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
 import { categoryAndBelow, categoryOptions, categoryPath } from '../lib/products';
-import { productCategoriesQuery, productListQuery, unitsQuery } from '../lib/queries';
+import {
+  productCategoriesQuery,
+  productCostsQuery,
+  productListQuery,
+  unitsQuery,
+} from '../lib/queries';
 import { useSession } from '../lib/session-store';
 import { useDebounced } from '../lib/use-debounced';
 import { useOnline } from '../lib/use-online';
 
-const column = dataTableColumns<ProductSummary>();
+// A row with its buying price: the lowest and highest average cost of its variants. undefined =
+// not known here (offline, still loading, or never bought); the column then shows a dash.
+type ProductRow = ProductSummary & { cost?: { min: string; max: string } };
+
+const column = dataTableColumns<ProductRow>();
 
 // Step 18a: the active products are read from the device, this many more each time the list is
 // scrolled to its end. The first screen reads a hundred rows, not the whole catalog.
@@ -54,6 +64,27 @@ const PAGE = 100;
 // one stable function (useLocalQuery).
 const readCategories = (copy: LocalCopy) => allRows(copy, copy.db.productCategories);
 const readUnits = (copy: LocalCopy) => allRows(copy, copy.db.units);
+
+// The ids of the rows, in groups the costs route takes (like the customer balances): a group keeps
+// its ids while the rows before it do not change, so scrolling further asks only for the new group
+function chunksOf(ids: readonly string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let start = 0; start < ids.length; start += MAX_COST_IDS) {
+    chunks.push(ids.slice(start, start + MAX_COST_IDS));
+  }
+  return chunks;
+}
+
+// The groups' answers as one map. Outside the component, so TanStack's `combine` keeps one map
+// while the answers stay the same.
+function combineCosts(
+  results: { data?: Map<string, { min: string; max: string }> | undefined; isError: boolean }[],
+) {
+  return {
+    byId: new Map(results.flatMap((result) => [...(result.data ?? [])])),
+    failed: results.some((result) => result.isError),
+  };
+}
 
 // The table's sort → the list's. Two sortable columns, each with an index on the device and a
 // stable order on the server.
@@ -68,7 +99,11 @@ export function ProductsPage() {
   const { t, format } = useLocale();
   const navigate = useNavigate();
   const tenantId = useSession((state) => state.me?.tenant.id) ?? '';
-  const canManage = useCan()('inventory.product.manage');
+  const can = useCan();
+  const canManage = can('inventory.product.manage');
+  // The buying price column is left out without the permission, instead of a column of dashes.
+  // An owner keeps it from a role by taking inventory.stock.value off it in Settings → Roles.
+  const canSeeCost = can('inventory.stock.value');
   const [search, setSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [status, setStatus] = useState<ProductStatus>('active');
@@ -116,12 +151,29 @@ export function ProductsPage() {
   });
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = server;
 
-  const products = useMemo(
+  const summaries = useMemo(
     () =>
       archived
         ? server.data?.pages.flatMap((page) => page.items)
         : local?.rows.map(productSummaryOf),
     [archived, server.data, local],
+  );
+  // The costs of the rows shown, online and with the permission only: the device keeps no cost a
+  // list may show, and offline the column shows a dash
+  const costs = useQueries({
+    queries: chunksOf(summaries?.map((product) => product.id) ?? []).map((ids) => ({
+      ...productCostsQuery(tenantId, ids),
+      enabled: canSeeCost && online,
+    })),
+    combine: combineCosts,
+  });
+  const products = useMemo(
+    (): ProductRow[] | undefined =>
+      summaries?.map((product) => {
+        const cost = online ? costs.byId.get(product.id) : undefined;
+        return cost === undefined ? product : { ...product, cost };
+      }),
+    [summaries, costs.byId, online],
   );
 
   const more = local?.more ?? false;
@@ -196,8 +248,34 @@ export function ProductsPage() {
               : `${low} – ${format.money(maxPrice, { decimals: 2 })}`;
           },
         }),
+        ...(canSeeCost
+          ? [
+              column.accessor((product) => product.cost?.min ?? '', {
+                id: 'cost',
+                header: t('products.columns.cost'),
+                enableSorting: false,
+                meta: { align: 'end', card: 'detail' },
+                // Per base unit, a unit cost: 2 decimals shown of the 4 kept (CLAUDE.md → Stock
+                // values). A range when the variants differ.
+                cell: ({ row }) => {
+                  const { cost } = row.original;
+                  if (cost === undefined) {
+                    return (
+                      <span className="text-ink-3">
+                        —{!online && <span className="sr-only">{t('products.costsOffline')}</span>}
+                      </span>
+                    );
+                  }
+                  const low = format.money(cost.min, { decimals: 2 });
+                  return cost.min === cost.max
+                    ? low
+                    : `${low} – ${format.money(cost.max, { decimals: 2 })}`;
+                },
+              }),
+            ]
+          : []),
       ]),
-    [t, format, categories, unitCode],
+    [t, format, categories, unitCode, canSeeCost, online],
   );
 
   const filtered = settled !== '' || categoryId !== '';
@@ -292,6 +370,12 @@ export function ProductsPage() {
       </div>
       {!canManage && <p className="text-body-sm text-ink-3">{t('products.readOnly')}</p>}
       {notice !== null && <SyncNotice code={notice} />}
+      {canSeeCost && !online && products !== undefined && (
+        <p className="text-body-sm text-ink-3">{t('products.costsOffline')}</p>
+      )}
+      {canSeeCost && online && costs.failed && (
+        <p className="text-body-sm text-crit">{t('products.costsFailed')}</p>
+      )}
       {archived && server.isError && (
         <p className="text-body-sm text-crit">{t('products.loadFailed')}</p>
       )}

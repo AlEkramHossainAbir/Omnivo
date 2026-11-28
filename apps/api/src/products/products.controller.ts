@@ -12,6 +12,11 @@ type ImportRoutes = typeof routes.productImports;
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}
 
+  @Endpoint(routes.products.costs)
+  costs({ query }: RouteInput<Routes['costs']>): Promise<RouteResponse<Routes['costs']>> {
+    return this.products.costs(query.ids);
+  }
+
   @Endpoint(routes.products.list)
   list({ query }: RouteInput<Routes['list']>): Promise<RouteResponse<Routes['list']>> {
     return this.products.list(query);

@@ -552,7 +552,8 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   open, the quantity, price, discount, batch and serial boxes. A price the cashier may not change is read-only with
   a 12px `ink-3` sentence saying why; over the register's limit, the discount says it needs `pos.price.override` and
   Pay waits. A line that sells for less than its average cost (after its share of the bill discount, without VAT)
-  says "This is less than it cost…" in `crit` with `Alert02` and Pay waits; with `pos.sale.below_cost` it is a
+  says "Less than it cost…" (or "Less than cost + 5%…" with a lowest margin, Settings → Sales) in `crit` with
+  `Alert02` and Pay waits; with `pos.sale.below_cost` it is a
   `warn` line and Pay goes on. The screen never shows the cost itself. The totals block on `subtle`: bill discount (`DiscountInput`), line discounts only when there are any,
   VAT, the total at the KPI size, and "Pay ৳2,300" (primary, full width). On a phone the cart is a bar at the bottom
   (count, total, Pay) that opens it over the products.
@@ -1247,6 +1248,12 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   document over the limit, someone with `sales.credit.override` gets a dialog (what the customer would owe and the
   limit, in paisa; "The audit log records that you went over the limit."; Back and "Confirm anyway" / "Post
   anyway"); everyone else gets the error text under the form with the same amounts.
+- **Cost floor dialog:** when the API refuses an order's confirm or an invoice's post because lines sell below their
+  average cost plus the lowest margin (`sales_below_cost`), the price boxes of those lines show the error, and
+  someone with `sales.cost.override` gets a dialog ("Below the buying price", "Lines 2, 4 sell below their buying
+  price.", the margin when one is set, "The audit log records it."; Back and "Confirm anyway" / "Post anyway"). No
+  amount is shown. Everyone else gets the sentence above the form. A document can be over the credit limit and
+  below cost at once: each dialog's answer is kept for the next one.
 - **Allocation table (money receipts, supplier payments, debit notes):** the invoices the customer still owes on, oldest due date first, in an
   `overflow-x-auto` box: invoice number (`Geist Mono`) with its dates under it, the total, what is still due
   (500), and a money input for this receipt. Above it "Apply oldest first" and "Clear" (secondary `sm`); below
@@ -1267,7 +1274,10 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   average cost".
 - **Stock values:** a value worked out from the books is shown only with `inventory.stock.value`; without it the
   column is left out (lists) or shows a dash (documents). A stock document links its journal entries
-  ("JV-2026-27-0042") for people who read the journal, and a stock entry links back ("From ADJ-…").
+  ("JV-2026-27-0042") for people who read the journal, and a stock entry links back ("From ADJ-…"). The product
+  list's "Buying price" column (the average cost per base unit, 2 decimals, a range when the variants differ) is
+  asked from the server for the rows shown (`GET /product-costs`, which needs the permission), like the customer
+  balances: online only, a dash offline with "Buying prices need a connection." above the table.
 - **Serial number box:** the text area's look, `Geist Mono`, one serial number per line.
 - **Expiry pill:** expired = `crit`, 30 days or less = `warn` ("12 days left"), later = the date alone.
 - **Text area:** the input box, three rows tall, resizes vertically only.

@@ -8,6 +8,7 @@ import { LowStockHandler } from '../inventory/low-stock.handler.js';
 import { InvitationEmailHandler } from '../invitations/invitation-email.handler.js';
 import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
 import { ShiftVarianceHandler } from '../pos/shift-variance.handler.js';
+import { SoldBelowCostHandler } from '../pos/sold-below-cost.handler.js';
 import { SoldShortHandler } from '../pos/sold-short.handler.js';
 import { ProductImportHandler } from '../products/import.handler.js';
 import { ReportExportHandler } from '../reports/export.handler.js';
@@ -50,6 +51,7 @@ export class EventHandlers {
     documentEmail: DocumentEmailHandler,
     soldShort: SoldShortHandler,
     shiftVariance: ShiftVarianceHandler,
+    soldBelowCost: SoldBelowCostHandler,
     scheduleRun: ReportScheduleRunHandler,
     scheduleEmail: ReportScheduleEmailHandler,
     storefrontImage: StorefrontImageHandler,
@@ -73,6 +75,7 @@ export class EventHandlers {
       'document.email_requested': documentEmail,
       'pos.sold_short': soldShort,
       'pos.shift_variance': shiftVariance,
+      'pos.sold_below_cost': soldBelowCost,
       'report.schedule_due': scheduleRun,
       'report.schedule_email': scheduleEmail,
       'storefront.image_uploaded': storefrontImage,

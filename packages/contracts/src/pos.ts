@@ -391,14 +391,24 @@ export function posChangeOf(payments: readonly PaymentFields[], total: string): 
 // what the line's goods cost, to the paisa: on the device the floor × the base quantity
 // (multiplyMoney rounds it, so a box of 42 at ৳16.6667 costs ৳700.00 and sells at ৳700), on the
 // server the line's posted value. null = no cost known (a service, a variant never bought), which
-// never stops a sale. The device asks for pos.sale.below_cost before the sale; the server only
-// writes the audit log (the money was taken).
+// never stops a sale. `marginPercent` is the workspace's lowest margin (Settings → Sales): the
+// line must sell for at least its cost plus that percent of it, to the paisa ("0" = the cost
+// itself). The device asks for pos.sale.below_cost before the sale; the server only writes the
+// audit log (the money was taken). Orders and invoices use the same rule (salesBelowCostLines).
 export function posBelowCostLines(
   lines: readonly { net: string; cost: string | null }[],
+  marginPercent: string,
 ): number[] {
   return lines.flatMap((line, index) =>
-    line.cost !== null && compareMoney(line.net, line.cost) < 0 ? [index] : [],
+    line.cost !== null && compareMoney(line.net, lowestPriceOf(line.cost, marginPercent)) < 0
+      ? [index]
+      : [],
   );
+}
+
+// The least a line may sell for: its cost plus the margin's percent of it, to the paisa
+export function lowestPriceOf(cost: string, marginPercent: string): string {
+  return addMoney(cost, percentOfMoney(cost, marginPercent));
 }
 
 // What a cashier did that needs pos.price.override (decision 11): a price other than the one the

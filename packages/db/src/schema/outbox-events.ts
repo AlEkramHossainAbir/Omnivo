@@ -22,6 +22,9 @@ export const OUTBOX_EVENT_TYPES = [
   'document.email_requested',
   'pos.sold_short',
   'pos.shift_variance',
+  // Cost floor: a POS sale had lines below their buying price (plus the lowest margin). The
+  // worker rings the owners' and the counter managers' bell
+  'pos.sold_below_cost',
   'report.schedule_due',
   'report.schedule_email',
   'storefront.image_uploaded',

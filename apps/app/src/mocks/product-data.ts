@@ -196,7 +196,8 @@ function product(
     price: string | null;
     options?: { name: string; values: string[] }[];
     barcode?: string;
-    packs?: [string, string][];
+    // [unit code, factor, the pack's own sale price (optional)]
+    packs?: [string, string, string?][];
     customFields?: Record<string, string>;
     updatedMinutesAgo?: number;
   },
@@ -232,11 +233,11 @@ function product(
         values.length === 0 ? (parts.barcode ?? null) : null,
       ),
     ),
-    units: (parts.packs ?? []).map(([code, factor]) => ({
+    units: (parts.packs ?? []).map(([code, factor, price]) => ({
       unitId: unitId(code),
       factor,
       barcode: null,
-      salePrice: null,
+      salePrice: price ?? null,
     })),
     customFields: parts.customFields ?? {},
     archivedAt: null,
@@ -364,9 +365,10 @@ export function pharmaCatalog(): MockCatalog {
     base: 'pcs',
     price: '1.2000',
     barcode: '8941100500200',
+    // A box sells for ৳110, less than its 100 tablets one by one (৳120): the pack price
     packs: [
       ['strip', '10.000000'],
-      ['box', '100.000000'],
+      ['box', '100.000000', '110.0000'],
     ],
     customFields: { generic_name: 'Paracetamol', strength: '500 mg', dosage_form: 'Tablet' },
   });

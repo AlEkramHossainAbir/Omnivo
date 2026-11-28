@@ -33,6 +33,9 @@ export const PERMISSION_KEYS = [
   'sales.invoice.manage',
   'sales.receipt.manage',
   'sales.credit.override',
+  // Cost floor: confirm an order or post an invoice with a line below its buying price (plus the
+  // lowest margin). Apart from the POS's pos.sale.below_cost; no template has it either.
+  'sales.cost.override',
   'sales.return.manage',
   'sales.credit_note.manage',
   'sales.refund.manage',
@@ -122,6 +125,7 @@ export const PERMISSION_GROUP_OF = {
   'sales.invoice.manage': 'sales',
   'sales.receipt.manage': 'sales',
   'sales.credit.override': 'sales',
+  'sales.cost.override': 'sales',
   'sales.return.manage': 'sales',
   'sales.credit_note.manage': 'sales',
   'sales.refund.manage': 'sales',

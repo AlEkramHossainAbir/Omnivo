@@ -30,6 +30,7 @@ import {
   posSalePayments,
   posSales,
   posShifts,
+  tenantSettings,
   users,
   warehouses,
 } from '@omnivo/db';
@@ -443,11 +444,17 @@ export class PosSalesService {
     // movements (the real cost, which the device only knew from its copy). Written whether or not
     // the cashier had pos.sale.below_cost, and never a refusal: the money was taken, like the
     // overrides above. A service moves no stock, so it has no cost here.
+    // The lowest margin is the workspace's now, like the register's discount limit above
+    const [margin] = await tx
+      .select({ percent: tenantSettings.minMarginPercent })
+      .from(tenantSettings)
+      .where(eq(tenantSettings.tenantId, tenantId));
     const belowCost = posBelowCostLines(
       lines.map((line, index) => ({
         net: amounts.lines[index]?.net ?? '0',
         cost: line.variant.type === 'goods' ? (lineValues[index] ?? null) : null,
       })),
+      margin?.percent ?? '0',
     );
     if (belowCost.length > 0) {
       await audit(tx, {
@@ -456,9 +463,14 @@ export class PosSalesService {
         entityId: saleId,
         changes: created({
           belowCost: belowCostText(belowCost, amounts.lines, lineValues),
+          minMarginPercent: margin?.percent ?? '0',
           allowed: access.permissions.includes('pos.sale.below_cost'),
         }),
       });
+    }
+    // Cost floor: the owners and the counter managers hear about it after the commit
+    if (belowCost.length > 0) {
+      await emit(tx, 'pos.sold_below_cost', { saleId, count: belowCost.length });
     }
     // Decision 30: the people who put stock right hear about it after the commit
     if (shortLines > 0) await emit(tx, 'pos.sold_short', { saleId });

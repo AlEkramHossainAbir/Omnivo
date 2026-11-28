@@ -164,6 +164,8 @@ function seed(workspace: Workspace): WorkspaceData {
       allowNegativeStock: false,
       // Step 17b: a receipt takes no more than the order, until the owner allows a little more
       overReceiptPercent: '0.00',
+      // Cost floor: only a sale below the buying price is stopped, until the owner sets a margin
+      minMarginPercent: '0.00',
       // The pharmacy sells at the printed MRP, VAT included; the garments maker quotes before VAT
       pricesIncludeVat: !garments,
       version: 1,

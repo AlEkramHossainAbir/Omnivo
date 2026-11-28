@@ -171,7 +171,8 @@ describe('belowCostLines', () => {
     });
   const box = (fields: Partial<CartLine> = {}) =>
     piece({ factor: '42', unitPrice: '750.0000', startingPrice: '750.0000', ...fields });
-  const check = (cart: Cart) => belowCostLines(cart, cartAmounts(cart, false), floors);
+  const check = (cart: Cart, margin = '0') =>
+    belowCostLines(cart, cartAmounts(cart, false), floors, margin);
 
   it('lets a piece go at ৳20 and a box at its own cost, and stops a box under it', () => {
     const atTwenty = piece({ unitPrice: '20.0000' });
@@ -188,6 +189,13 @@ describe('belowCostLines', () => {
     expect(check(fine).size).toBe(0);
     // ৳750 − ৳60 = ৳690, under the box's ৳700
     expect([...check({ ...fine, billDiscount: '60' })]).toEqual([one.key]);
+  });
+
+  it('keeps the lowest margin on top of the cost', () => {
+    // 10% over a box's ৳700 is ৳770: ৳760 is now too little, ৳770 is fine
+    const low = box({ unitPrice: '760.0000' });
+    const enough = box({ unitPrice: '770.0000' });
+    expect([...check({ ...EMPTY_CART, lines: [low, enough] }, '10')]).toEqual([low.key]);
   });
 
   it('never stops a service or a variant with no cost on the device', () => {

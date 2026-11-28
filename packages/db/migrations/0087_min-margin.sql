@@ -1,0 +1,1 @@
+ALTER TABLE "tenant_settings" ADD COLUMN "min_margin_percent" numeric(5, 2) DEFAULT '0' NOT NULL;

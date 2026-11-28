@@ -31,6 +31,7 @@ const QUEUE_OF = {
   'document.file_requested': 'jobs',
   'pos.sold_short': 'jobs',
   'pos.shift_variance': 'jobs',
+  'pos.sold_below_cost': 'jobs',
   'report.schedule_due': 'jobs',
   'storefront.image_uploaded': 'jobs',
   'storefront.order_confirmed': 'jobs',

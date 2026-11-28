@@ -29,6 +29,7 @@ import type { Transaction, WithTenant } from '../common/tenant/with-tenant.js';
 import { WITH_TENANT } from '../infra/tokens.js';
 import { assertWarehousesActive } from '../inventory/stock-lines.js';
 import { NumberingService } from '../numbering/numbering.service.js';
+import { CostFloorService } from './cost-floor.service.js';
 import { type CreditOverride, CreditService } from './credit.service.js';
 import {
   assertCustomer,
@@ -111,6 +112,7 @@ export class SalesOrdersService {
     @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
     private readonly numbering: NumberingService,
     private readonly credit: CreditService,
+    private readonly costFloor: CostFloorService,
   ) {}
 
   list(query: {
@@ -149,7 +151,9 @@ export class SalesOrdersService {
   create(input: SalesOrderInput): Promise<SalesOrder> {
     return this.withTenant(async (tx) => {
       const row = await this.insert(tx, input, null);
-      if (input.confirm) await this.confirmAndLog(tx, row, input.overrideCreditLimit);
+      if (input.confirm) {
+        await this.confirmAndLog(tx, row, input.overrideCreditLimit, input.overrideBelowCost);
+      }
       return this.read(tx, row.id);
     });
   }
@@ -222,7 +226,9 @@ export class SalesOrdersService {
           await this.snapshot(tx, updated, customer, lines.length),
         ),
       });
-      if (input.confirm) await this.confirmAndLog(tx, updated, input.overrideCreditLimit);
+      if (input.confirm) {
+        await this.confirmAndLog(tx, updated, input.overrideCreditLimit, input.overrideBelowCost);
+      }
       return this.read(tx, id);
     });
   }
@@ -264,11 +270,11 @@ export class SalesOrdersService {
 
   confirm(
     id: string,
-    input: { version: number; overrideCreditLimit: boolean },
+    input: { version: number; overrideCreditLimit: boolean; overrideBelowCost: boolean },
   ): Promise<SalesOrder> {
     return this.withTenant(async (tx) => {
       const draft = await this.lockDraft(tx, id, input.version);
-      await this.confirmAndLog(tx, draft, input.overrideCreditLimit);
+      await this.confirmAndLog(tx, draft, input.overrideCreditLimit, input.overrideBelowCost);
       return this.read(tx, id);
     });
   }
@@ -370,7 +376,9 @@ export class SalesOrdersService {
       pricesIncludeVat: true,
       shippingAddress,
     });
-    await this.confirmAndLog(tx, row, 'storefront_order');
+    // The shop's price and its coupon are the tenant's own choice, and the shopper has ordered:
+    // the cost floor is not asked, like the credit limit is never refused here
+    await this.confirmAndLog(tx, row, 'storefront_order', 'storefront_order');
     return row.id;
   }
 
@@ -438,7 +446,31 @@ export class SalesOrdersService {
     tx: Transaction,
     draft: OrderRow,
     overrideCreditLimit: CreditOverride,
+    // Cost floor: true after its dialog; 'storefront_order' = not checked (a shop order)
+    overrideBelowCost: boolean | 'storefront_order',
   ): Promise<void> {
+    // Cost floor first: a refusal says which lines to change before anything is numbered
+    if (overrideBelowCost !== 'storefront_order') {
+      const lines = await tx
+        .select({
+          lineNo: salesOrderLines.lineNo,
+          variantId: salesOrderLines.variantId,
+          baseQuantity: salesOrderLines.baseQuantity,
+          net: salesOrderLines.net,
+        })
+        .from(salesOrderLines)
+        .where(
+          and(eq(salesOrderLines.tenantId, getTenantId()), eq(salesOrderLines.orderId, draft.id)),
+        )
+        .orderBy(asc(salesOrderLines.lineNo));
+      await this.costFloor.check(tx, {
+        // lineNo counts from 1, the form's lines from 0
+        lines: lines.map((line) => ({ ...line, index: line.lineNo - 1 })),
+        overrideBelowCost,
+        entityType: 'sales_order',
+        entityId: draft.id,
+      });
+    }
     const before = await this.credit.lock(tx, draft.customerId);
     const number = draft.number ?? (await this.numbering.next(tx, 'sales.order', draft.date));
     await this.write(tx, draft.id, {

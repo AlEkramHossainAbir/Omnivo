@@ -299,9 +299,12 @@ export function PosScreen({
   );
   // Worked out for everyone: without the permission it stops the sale, with it the line only says
   // so (pos-cart.tsx). Until the floors are read, nothing is below cost.
+  // The lowest margin of Settings → Sales. A copy from before protocol 5 has none until its full
+  // pull, so '0' there: only below the cost itself.
+  const marginPercent = settings.minMarginPercent ?? '0';
   const belowCost = useMemo(
-    () => belowCostLines(cart, amounts, floors ?? new Map<string, string>()),
-    [cart, amounts, floors],
+    () => belowCostLines(cart, amounts, floors ?? new Map<string, string>(), marginPercent),
+    [cart, amounts, floors, marginPercent],
   );
 
   const payable =
@@ -668,6 +671,7 @@ export function PosScreen({
         canOverride={canOverride}
         belowCost={belowCost}
         canSellBelowCost={canSellBelowCost}
+        marginPercent={marginPercent}
         payable={payable}
         onPay={() => {
           setPaying(true);

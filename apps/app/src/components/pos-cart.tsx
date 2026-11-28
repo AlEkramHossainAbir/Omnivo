@@ -70,6 +70,8 @@ interface PosCartProps {
   // this person may sell them so (pos.sale.below_cost)
   belowCost: ReadonlySet<string>;
   canSellBelowCost: boolean;
+  // The workspace's lowest margin ("0.00" = only below the cost), for the line's words
+  marginPercent: string;
   payable: boolean;
   onPay: () => void;
   open: boolean;
@@ -109,6 +111,7 @@ export function PosCart({
   canOverride,
   belowCost,
   canSellBelowCost,
+  marginPercent,
   payable,
   onPay,
   open,
@@ -241,6 +244,7 @@ export function PosCart({
                 canOverride={canOverride}
                 belowCost={belowCost}
                 canSellBelowCost={canSellBelowCost}
+                marginPercent={marginPercent}
                 line={line}
                 index={index}
                 amount={amounts.lines[index]?.total ?? '0'}
@@ -416,6 +420,7 @@ function LineRow({
   canOverride,
   belowCost,
   canSellBelowCost,
+  marginPercent,
   register,
   stock,
 }: Pick<
@@ -431,12 +436,22 @@ function LineRow({
   | 'canOverride'
   | 'belowCost'
   | 'canSellBelowCost'
+  | 'marginPercent'
 > & { line: CartLine; index: number; amount: string }) {
   const { t, format } = useLocale();
   const money = useScreenMoney();
   const open = selected === line.key;
   const onHand = short.get(line.key);
   const priceOver = overrides.some((item) => item.kind === 'price' && item.line === index);
+  // Cost floor: the words say the margin only when there is one
+  const margin = isZeroMoney(marginPercent) ? null : format.number(marginPercent, 2);
+  const belowCostText = canSellBelowCost
+    ? margin === null
+      ? t('pos.belowCostAllowed')
+      : t('pos.belowMarginAllowed', { margin })
+    : margin === null
+      ? t('pos.belowCost')
+      : t('pos.belowMargin', { margin });
   const discountOver = overrides.some((item) => item.kind === 'discount' && item.line === index);
   const batch = stock.find((row) => row.batchId !== null && row.batchId === line.batchId);
   const id = `pos-line-${line.key}`;
@@ -573,10 +588,10 @@ function LineRow({
               strokeWidth={1.5}
               className="mt-px shrink-0"
             />
-            <span>{t('pos.belowCostAllowed')}</span>
+            <span>{belowCostText}</span>
           </p>
         ) : (
-          <Problem>{t('pos.belowCost')}</Problem>
+          <Problem>{belowCostText}</Problem>
         ))}
       {onHand !== undefined && (
         <Problem>

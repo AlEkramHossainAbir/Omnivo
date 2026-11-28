@@ -174,6 +174,7 @@ export const LOADERS: Record<SyncEntity, Loader> = {
             timezone: settings.timezone,
             allowNegativeStock: settings.allowNegativeStock,
             pricesIncludeVat: settings.pricesIncludeVat,
+            minMarginPercent: settings.minMarginPercent,
             version: settings.version,
           },
         },

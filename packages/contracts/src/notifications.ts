@@ -21,6 +21,9 @@ import { pageOf, pageQuerySchema } from './pagination.js';
 // pos.shift_variance: params { id, number, register, difference } — a shift's closing count was
 // more than its register's limit over or short (difference: counted less expected, signed); sent
 // to the owners and the people with pos.shift.manage, and the bell opens the shift
+// pos.sold_below_cost: params { id, number, count } — a POS sale had count lines below their
+// buying price (plus the lowest margin); sent to the owners and the people with pos.shift.manage,
+// never the seller, and the bell opens the sale
 // report.schedule_skipped: params { report, count } — a scheduled report was not sent to count
 // people, because they can no longer read it; sent to the person who made the schedule
 // report.schedule_paused: params { report } — nobody on the schedule can read the report any more,
@@ -54,6 +57,7 @@ export const NOTIFICATION_TYPES = [
   'approval.rejected',
   'pos.sold_short',
   'pos.shift_variance',
+  'pos.sold_below_cost',
   'storefront.order_confirmed',
   'storefront.shipment_failed',
   'storefront.cod_receipt_failed',

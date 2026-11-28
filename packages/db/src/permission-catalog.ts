@@ -42,6 +42,8 @@ const DESCRIPTIONS = {
   'sales.invoice.manage': 'Write, post and delete draft sales invoices',
   'sales.receipt.manage': 'Record money receipts, apply them to invoices and void them',
   'sales.credit.override': "Confirm orders and post invoices over a customer's credit limit",
+  'sales.cost.override':
+    'Confirm sales orders and post invoices with lines below their buying price',
   'sales.return.manage': 'Write and post sales returns, which bring stock back in',
   'sales.credit_note.manage': 'Write and post credit notes, and apply their money to invoices',
   'sales.refund.manage': 'Pay money back to customers and void refunds',

@@ -203,12 +203,14 @@ export function overridesOf(
 // Cost floor: the keys of the lines sold for less than their goods cost, from the device's floors
 // (floorsOf: the average cost per base unit). A line's net is after its share of the bill's
 // discount and without VAT (posBelowCostLines says why). A service and a variant with no floor
-// have no cost here, and never count. The screen asks for pos.sale.below_cost; without it, the
-// line says so and Pay waits, like overridesOf().
+// have no cost here, and never count. `marginPercent` is the workspace's lowest margin (the synced
+// settings). The screen asks for pos.sale.below_cost; without it, the line says so and Pay waits,
+// like overridesOf().
 export function belowCostLines(
   cart: Cart,
   amounts: CartAmounts,
   floors: ReadonlyMap<string, string>,
+  marginPercent: string,
 ): Set<string> {
   const below = posBelowCostLines(
     cart.lines.map((line, index) => {
@@ -220,6 +222,7 @@ export function belowCostLines(
         cost: floor === undefined ? null : multiplyMoney(baseQuantity(line), floor),
       };
     }),
+    marginPercent,
   );
   return new Set(below.flatMap((index) => cart.lines[index]?.key ?? []));
 }

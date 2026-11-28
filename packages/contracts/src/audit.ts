@@ -130,6 +130,9 @@ export const AUDIT_ACTIONS = [
   // An order confirmed or an invoice posted over the customer's credit limit, by someone with
   // sales.credit.override. The entity is that order or invoice.
   'credit_limit.overridden',
+  // Cost floor: an order confirmed or an invoice posted with lines below their buying price, by
+  // someone with sales.cost.override. The entity is that order or invoice.
+  'cost_floor.overridden',
   // step 15d
   'sales_return.created',
   'sales_return.updated',

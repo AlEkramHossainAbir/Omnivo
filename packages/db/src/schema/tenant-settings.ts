@@ -54,6 +54,13 @@ export const tenantSettings = pgTable(
     // price difference"; NULL = the Cost of goods sold account), and the one a service line starts
     // from ("Purchased services"; NULL = none, the line must name one). Their own route
     // (/purchase-accounts) writes them, never PUT /settings.
+    // Cost floor: the lowest margin a sale may have, in percent of the goods' cost (5.00 = a
+    // line must sell for at least its average cost + 5%). 0 = only below the cost itself is
+    // stopped. The POS (on the device, from the synced settings) and the order and invoice
+    // checks read it.
+    minMarginPercent: numeric('min_margin_percent', { precision: 5, scale: 2 })
+      .notNull()
+      .default('0'),
     purchasePriceDifferenceAccountId: uuid('purchase_price_difference_account_id'),
     purchaseServicesAccountId: uuid('purchase_services_account_id'),
     createdAt: baseColumns().createdAt,

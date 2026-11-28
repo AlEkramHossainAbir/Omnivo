@@ -94,19 +94,26 @@ export const MAX_SYNC_PAGE = 1000;
 // What a sale needs from the settings: how to work out the VAT, whether stock may go below zero,
 // the time zone of its dates, and the company's name and BIN for a receipt (step 20). Not the logo:
 // its url is signed for a short time and would be dead by the next day.
-export const syncSettingsSchema = settingsSchema.pick({
-  companyName: true,
-  legalName: true,
-  bin: true,
-  phone: true,
-  address: true,
-  baseCurrency: true,
-  fiscalYearStartMonth: true,
-  timezone: true,
-  allowNegativeStock: true,
-  pricesIncludeVat: true,
-  version: true,
-});
+export const syncSettingsSchema = settingsSchema
+  .pick({
+    companyName: true,
+    legalName: true,
+    bin: true,
+    phone: true,
+    address: true,
+    baseCurrency: true,
+    fiscalYearStartMonth: true,
+    timezone: true,
+    allowNegativeStock: true,
+    pricesIncludeVat: true,
+    version: true,
+  })
+  .extend({
+    // Cost floor (protocol 5): the lowest margin at the counter. Optional because the device keeps
+    // its rows as they came: a settings row written before protocol 5 has none until the full pull
+    // that the new protocol starts brings it again. Read it as `?? '0'`.
+    minMarginPercent: settingsSchema.shape.minMarginPercent.optional(),
+  });
 export type SyncSettings = z.infer<typeof syncSettingsSchema>;
 
 export const syncCategorySchema = productCategorySchema.omit({ productCount: true });

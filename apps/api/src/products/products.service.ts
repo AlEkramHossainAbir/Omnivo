@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import {
   type ErrorCode,
   type Product,
+  type ProductCosts,
   type ProductInput,
   type ProductPage,
   type ProductSort,
@@ -15,11 +16,12 @@ import {
   products,
   productVariants,
   stockMovements,
+  stockValues,
   taxRates,
   tenantSettings,
   units,
 } from '@omnivo/db';
-import { and, eq, inArray, notInArray, type SQL, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, notInArray, type SQL, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { audit, created, diff } from '../common/audit/audit.js';
@@ -138,6 +140,39 @@ export class ProductsService {
     @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
     private readonly numbering: NumberingService,
   ) {}
+
+  // The buying price column (the product list, which reads its rows from the device). The route
+  // needs inventory.stock.value, so there is no check here. The average cost of the active
+  // variants only, like the price column; an archived product's too (the Archived tab asks). An id
+  // this workspace does not know is left out, never an error.
+  costs(ids: string[]): Promise<ProductCosts> {
+    return this.withTenant(async (tx) => {
+      const rows = await tx
+        .select({
+          id: productVariants.productId,
+          minCost: sql<string>`min(${stockValues.unitCost})::text`,
+          maxCost: sql<string>`max(${stockValues.unitCost})::text`,
+        })
+        .from(stockValues)
+        .innerJoin(
+          productVariants,
+          and(
+            eq(productVariants.tenantId, stockValues.tenantId),
+            eq(productVariants.id, stockValues.variantId),
+          ),
+        )
+        .where(
+          and(
+            eq(stockValues.tenantId, getTenantId()),
+            inArray(stockValues.productId, ids),
+            isNull(productVariants.archivedAt),
+            isNotNull(stockValues.unitCost),
+          ),
+        )
+        .groupBy(productVariants.productId);
+      return { items: rows };
+    });
+  }
 
   list(query: {
     limit: number;

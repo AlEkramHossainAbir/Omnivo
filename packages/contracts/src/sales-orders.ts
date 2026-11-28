@@ -98,6 +98,8 @@ const salesOrderFieldsSchema = salesDocumentFieldsSchema.extend({
   // Confirm even though it takes the customer over the credit limit (step 15c). Only someone with
   // sales.credit.override may send true, after a dialog showed the amount (invoices.ts says how).
   overrideCreditLimit: z.boolean().default(false),
+  // Cost floor: confirm even though a line sells below its buying price (invoices.ts says how)
+  overrideBelowCost: z.boolean().default(false),
 });
 
 // Generic, so the offline draft below (without confirm and the override) shares the rule
@@ -133,7 +135,7 @@ export type SalesOrderFormValues = z.input<typeof updateSalesOrderInputSchema>;
 // the server knows, so the order is confirmed online. No quotation either: "Make order" opens the
 // quotation's page, which is online. The order's id is the device's (sync.ts).
 export const salesOrderDraftInputSchema = salesOrderFieldsSchema
-  .omit({ confirm: true, overrideCreditLimit: true })
+  .omit({ confirm: true, overrideCreditLimit: true, overrideBelowCost: true })
   .superRefine(orderRules);
 export type SalesOrderDraftInput = z.infer<typeof salesOrderDraftInputSchema>;
 export type SalesOrderDraftFormValues = z.input<typeof salesOrderDraftInputSchema>;
@@ -143,6 +145,7 @@ export const salesOrderVersionInputSchema = z.object({ version: versionSchema })
 // Confirming checks the credit limit (step 15c), so it can carry the override
 export const confirmSalesOrderInputSchema = salesOrderVersionInputSchema.extend({
   overrideCreditLimit: z.boolean().default(false),
+  overrideBelowCost: z.boolean().default(false),
 });
 export type ConfirmSalesOrderInput = z.infer<typeof confirmSalesOrderInputSchema>;
 

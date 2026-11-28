@@ -58,6 +58,9 @@ const TARGET = {
   // Step 20b: the list, for an old notification without the shift's id; one with it opens the
   // shift (shiftOf below)
   'pos.shift_variance': '/pos/shifts',
+  // Cost floor: the POS sales, for an old notification without the sale's id; one with it opens
+  // the sale (posSaleOf below)
+  'pos.sold_below_cost': '/pos/sales',
   // Step 27a: a new shop order. Step 27b: the list's New tab, for an old notification without the
   // order's id; one with it opens the order (shopOrderOf below)
   'storefront.order_confirmed': '/storefront/orders',
@@ -133,6 +136,14 @@ function useOpenDocument(): (params: NotificationParams) => Promise<void> {
 function shiftOf(notification: Notification): string | null {
   const { id } = notification.params;
   return notification.type === 'pos.shift_variance' && typeof id === 'string' && id !== ''
+    ? id
+    : null;
+}
+
+// Cost floor: the below-cost bell opens its sale
+function posSaleOf(notification: Notification): string | null {
+  const { id } = notification.params;
+  return notification.type === 'pos.sold_below_cost' && typeof id === 'string' && id !== ''
     ? id
     : null;
 }
@@ -315,10 +326,13 @@ export function NotificationBell() {
                   setOpen(false);
                   const shiftId = shiftOf(notification);
                   const orderId = shopOrderOf(notification);
+                  const saleId = posSaleOf(notification);
                   if (opensDocument(notification.type)) {
                     void openDocument(notification.params);
                   } else if (shiftId !== null) {
                     void navigate({ to: '/pos/shifts/$shiftId', params: { shiftId } });
+                  } else if (saleId !== null) {
+                    void navigate({ to: '/pos/sales/$saleId', params: { saleId } });
                   } else if (orderId !== null) {
                     void navigate({ to: '/storefront/orders/$orderId', params: { orderId } });
                   } else {

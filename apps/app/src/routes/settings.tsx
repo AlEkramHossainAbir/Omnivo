@@ -279,6 +279,20 @@ function SettingsForm({ settings, canManage }: { settings: Settings; canManage: 
             />
             <p className="pl-[27px] text-label text-ink-3">{t('settings.pricesIncludeVatHint')}</p>
           </div>
+          {/* Cost floor: the lowest margin a sale may keep over what its goods cost */}
+          <div className="grid max-w-xs grid-cols-1 border-t border-line p-5">
+            <TextField
+              label={t('settings.minMarginPercent')}
+              hint={t('settings.minMarginPercentHint')}
+              inputMode="decimal"
+              autoComplete="off"
+              align="end"
+              suffix="%"
+              disabled={!canManage}
+              {...register('minMarginPercent')}
+              error={errors.minMarginPercent?.message}
+            />
+          </div>
         </Card>
       </fieldset>
 

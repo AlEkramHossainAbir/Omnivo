@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ERROR_CODES, errorCode } from './errors.js';
+import { errorCode, errorCodeSchema } from './errors.js';
 import { versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { priceSchema } from './money.js';
@@ -266,7 +266,7 @@ export const storefrontShipmentSchema = z.object({
   // could not be made: then receiptError says why ("receipt_account_invalid": the COD account was
   // archived since), the order needs attention, and the page has "Make the receipt"
   receipt: documentRefSchema.nullable(),
-  receiptError: z.enum(ERROR_CODES).nullable(),
+  receiptError: errorCodeSchema.nullable(),
   // Step 28c: the posted payout that paid this parcel out to the bank (the card's "Paid out on
   // CPO-2026-27-0001"). null until one does, and again after it is voided
   payout: documentRefSchema.nullable(),
@@ -275,7 +275,7 @@ export const storefrontShipmentSchema = z.object({
   // Calls made to book it, and why the last one failed (courier_rejected_parcel: the courier said
   // no, with its own words in errorDetail, like "Invalid phone number"). null when it worked
   attempts: z.number().int().min(0),
-  error: z.enum(ERROR_CODES).nullable(),
+  error: errorCodeSchema.nullable(),
   errorDetail: z.string().nullable(),
   // Oldest first. Empty while booking
   events: z.array(shipmentEventSchema).max(100),

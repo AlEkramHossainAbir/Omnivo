@@ -389,9 +389,41 @@ export type ProductPage = z.infer<typeof productPageSchema>;
 
 const productParamsSchema = z.object({ id: z.uuid() });
 
+// The buying price column of the product list: what each product cost, per base unit, as the
+// stock's average cost (step 14). The list reads its rows from the device and asks for the costs of
+// the rows it shows, a page at a time, like the customer balances (step 18a): the costs need
+// inventory.stock.value, and the route checks it, so a role without it never receives one.
+export const MAX_COST_IDS = 100;
+
+export const productCostsQuerySchema = z.object({
+  ids: z
+    .string()
+    .transform((value) => value.split(','))
+    .pipe(z.array(z.uuid()).min(1).max(MAX_COST_IDS)),
+});
+export type ProductCostsQuery = z.input<typeof productCostsQuerySchema>;
+
+// One row per product asked for that has a cost: the lowest and highest average cost of its active
+// variants, 4 decimals. A product never bought (or a service) is left out: the column says "—".
+export const productCostsSchema = z.object({
+  items: z.array(z.object({ id: z.uuid(), minCost: z.string(), maxCost: z.string() })),
+});
+export type ProductCosts = z.infer<typeof productCostsSchema>;
+
 // Reading needs no permission, like the chart of accounts: every sales, purchase and stock line
-// picks a product. A product holds no cost (step 14's valuation does), so the list shows no margin.
+// picks a product. A product holds no cost (step 14's valuation does); its cost is its own route.
 export const productRoutes = {
+  // Its own path, not /products/costs: that one would be read as a product called "costs"
+  costs: defineRoute({
+    method: 'GET',
+    path: '/product-costs',
+    summary: 'What each of up to 100 products cost, per base unit (the average cost)',
+    auth: 'bearer',
+    permission: 'inventory.stock.value',
+    status: 200,
+    query: productCostsQuerySchema,
+    response: productCostsSchema,
+  }),
   list: defineRoute({
     method: 'GET',
     path: '/products',

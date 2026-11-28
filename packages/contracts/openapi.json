@@ -2227,7 +2227,7 @@
                           "maximum": 9007199254740991
                         },
                         "permissions": {
-                          "maxItems": 55,
+                          "maxItems": 57,
                           "type": "array",
                           "items": {
                             "type": "string",
@@ -2263,6 +2263,7 @@
                               "sales.invoice.manage",
                               "sales.receipt.manage",
                               "sales.credit.override",
+                              "sales.cost.override",
                               "sales.return.manage",
                               "sales.credit_note.manage",
                               "sales.refund.manage",
@@ -2280,6 +2281,7 @@
                               "purchase.report.read",
                               "pos.sale.create",
                               "pos.price.override",
+                              "pos.sale.below_cost",
                               "pos.register.manage",
                               "pos.shift.manage",
                               "pos.return.create",
@@ -2494,6 +2496,9 @@
                     "overReceiptPercent": {
                       "type": "string"
                     },
+                    "minMarginPercent": {
+                      "type": "string"
+                    },
                     "version": {
                       "type": "integer",
                       "minimum": -9007199254740991,
@@ -2514,6 +2519,7 @@
                     "allowNegativeStock",
                     "pricesIncludeVat",
                     "overReceiptPercent",
+                    "minMarginPercent",
                     "version"
                   ]
                 }
@@ -2626,6 +2632,9 @@
                     "type": "boolean"
                   },
                   "overReceiptPercent": {
+                    "type": "string"
+                  },
+                  "minMarginPercent": {
                     "type": "string"
                   }
                 },
@@ -2741,6 +2750,9 @@
                     "overReceiptPercent": {
                       "type": "string"
                     },
+                    "minMarginPercent": {
+                      "type": "string"
+                    },
                     "version": {
                       "type": "integer",
                       "minimum": -9007199254740991,
@@ -2761,6 +2773,7 @@
                     "allowNegativeStock",
                     "pricesIncludeVat",
                     "overReceiptPercent",
+                    "minMarginPercent",
                     "version"
                   ]
                 }
@@ -2908,6 +2921,9 @@
                     "overReceiptPercent": {
                       "type": "string"
                     },
+                    "minMarginPercent": {
+                      "type": "string"
+                    },
                     "version": {
                       "type": "integer",
                       "minimum": -9007199254740991,
@@ -2928,6 +2944,7 @@
                     "allowNegativeStock",
                     "pricesIncludeVat",
                     "overReceiptPercent",
+                    "minMarginPercent",
                     "version"
                   ]
                 }
@@ -17835,6 +17852,76 @@
         }
       }
     },
+    "/product-costs": {
+      "get": {
+        "operationId": "products.costs",
+        "tags": [
+          "products"
+        ],
+        "summary": "What each of up to 100 products cost, per base unit (the average cost)",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "description": "Requires the `inventory.stock.value` permission.",
+        "x-permission": "inventory.stock.value",
+        "parameters": [
+          {
+            "name": "ids",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          },
+                          "minCost": {
+                            "type": "string"
+                          },
+                          "maxCost": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "minCost",
+                          "maxCost"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
     "/products": {
       "get": {
         "operationId": "products.list",
@@ -18303,6 +18390,12 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "salePrice": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -18532,12 +18625,20 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "salePrice": {
+                            "default": null,
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "unitId",
                           "factor",
-                          "barcode"
+                          "barcode",
+                          "salePrice"
                         ]
                       }
                     },
@@ -18817,12 +18918,20 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "salePrice": {
+                            "default": null,
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "unitId",
                           "factor",
-                          "barcode"
+                          "barcode",
+                          "salePrice"
                         ]
                       }
                     },
@@ -19171,6 +19280,12 @@
                             "string",
                             "null"
                           ]
+                        },
+                        "salePrice": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
                         }
                       },
                       "required": [
@@ -19406,12 +19521,20 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "salePrice": {
+                            "default": null,
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "unitId",
                           "factor",
-                          "barcode"
+                          "barcode",
+                          "salePrice"
                         ]
                       }
                     },
@@ -19757,12 +19880,20 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "salePrice": {
+                            "default": null,
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "unitId",
                           "factor",
-                          "barcode"
+                          "barcode",
+                          "salePrice"
                         ]
                       }
                     },
@@ -20064,12 +20195,20 @@
                               "string",
                               "null"
                             ]
+                          },
+                          "salePrice": {
+                            "default": null,
+                            "type": [
+                              "string",
+                              "null"
+                            ]
                           }
                         },
                         "required": [
                           "unitId",
                           "factor",
-                          "barcode"
+                          "barcode",
+                          "salePrice"
                         ]
                       }
                     },
@@ -34934,6 +35073,10 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "overrideBelowCost": {
+                    "default": false,
+                    "type": "boolean"
+                  },
                   "quotationId": {
                     "default": null,
                     "anyOf": [
@@ -35984,6 +36127,10 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "overrideBelowCost": {
+                    "default": false,
+                    "type": "boolean"
+                  },
                   "version": {
                     "type": "integer",
                     "minimum": 1,
@@ -36499,6 +36646,10 @@
                     "maximum": 9007199254740991
                   },
                   "overrideCreditLimit": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "overrideBelowCost": {
                     "default": false,
                     "type": "boolean"
                   }
@@ -41312,6 +41463,10 @@
                   "overrideCreditLimit": {
                     "default": false,
                     "type": "boolean"
+                  },
+                  "overrideBelowCost": {
+                    "default": false,
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -42722,6 +42877,10 @@
                     "default": false,
                     "type": "boolean"
                   },
+                  "overrideBelowCost": {
+                    "default": false,
+                    "type": "boolean"
+                  },
                   "version": {
                     "type": "integer",
                     "minimum": 1,
@@ -43387,6 +43546,10 @@
                     "maximum": 9007199254740991
                   },
                   "overrideCreditLimit": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "overrideBelowCost": {
                     "default": false,
                     "type": "boolean"
                   }
@@ -88188,6 +88351,9 @@
                                         "type": "integer",
                                         "minimum": -9007199254740991,
                                         "maximum": 9007199254740991
+                                      },
+                                      "minMarginPercent": {
+                                        "type": "string"
                                       }
                                     },
                                     "required": [
@@ -89162,12 +89328,20 @@
                                                 "string",
                                                 "null"
                                               ]
+                                            },
+                                            "salePrice": {
+                                              "default": null,
+                                              "type": [
+                                                "string",
+                                                "null"
+                                              ]
                                             }
                                           },
                                           "required": [
                                             "unitId",
                                             "factor",
-                                            "barcode"
+                                            "barcode",
+                                            "salePrice"
                                           ]
                                         }
                                       },
@@ -89856,6 +90030,57 @@
                                   "key",
                                   "data"
                                 ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "op": {
+                                    "type": "string",
+                                    "const": "upsert"
+                                  },
+                                  "entity": {
+                                    "type": "string",
+                                    "const": "price_floor"
+                                  },
+                                  "key": {
+                                    "type": "string"
+                                  },
+                                  "data": {
+                                    "type": "object",
+                                    "properties": {
+                                      "productId": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "variantId": {
+                                        "type": "string",
+                                        "format": "uuid",
+                                        "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                      },
+                                      "floor": {
+                                        "type": "string"
+                                      },
+                                      "updatedAt": {
+                                        "type": "string",
+                                        "format": "date-time",
+                                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                      }
+                                    },
+                                    "required": [
+                                      "productId",
+                                      "variantId",
+                                      "floor",
+                                      "updatedAt"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "op",
+                                  "entity",
+                                  "key",
+                                  "data"
+                                ]
                               }
                             ]
                           },
@@ -89882,7 +90107,8 @@
                                   "price_list_item",
                                   "customer",
                                   "stock",
-                                  "pos_sale"
+                                  "pos_sale",
+                                  "price_floor"
                                 ]
                               },
                               "key": {
@@ -90117,6 +90343,9 @@
                                                   "type": "integer",
                                                   "minimum": -9007199254740991,
                                                   "maximum": 9007199254740991
+                                                },
+                                                "minMarginPercent": {
+                                                  "type": "string"
                                                 }
                                               },
                                               "required": [
@@ -91091,12 +91320,20 @@
                                                           "string",
                                                           "null"
                                                         ]
+                                                      },
+                                                      "salePrice": {
+                                                        "default": null,
+                                                        "type": [
+                                                          "string",
+                                                          "null"
+                                                        ]
                                                       }
                                                     },
                                                     "required": [
                                                       "unitId",
                                                       "factor",
-                                                      "barcode"
+                                                      "barcode",
+                                                      "salePrice"
                                                     ]
                                                   }
                                                 },
@@ -91785,6 +92022,57 @@
                                             "key",
                                             "data"
                                           ]
+                                        },
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "op": {
+                                              "type": "string",
+                                              "const": "upsert"
+                                            },
+                                            "entity": {
+                                              "type": "string",
+                                              "const": "price_floor"
+                                            },
+                                            "key": {
+                                              "type": "string"
+                                            },
+                                            "data": {
+                                              "type": "object",
+                                              "properties": {
+                                                "productId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "variantId": {
+                                                  "type": "string",
+                                                  "format": "uuid",
+                                                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                                                },
+                                                "floor": {
+                                                  "type": "string"
+                                                },
+                                                "updatedAt": {
+                                                  "type": "string",
+                                                  "format": "date-time",
+                                                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+                                                }
+                                              },
+                                              "required": [
+                                                "productId",
+                                                "variantId",
+                                                "floor",
+                                                "updatedAt"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "op",
+                                            "entity",
+                                            "key",
+                                            "data"
+                                          ]
                                         }
                                       ]
                                     },
@@ -91811,7 +92099,8 @@
                                             "price_list_item",
                                             "customer",
                                             "stock",
-                                            "pos_sale"
+                                            "pos_sale",
+                                            "price_floor"
                                           ]
                                         },
                                         "key": {
@@ -112115,6 +112404,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -112258,6 +112548,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -112343,6 +112635,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -112864,6 +113157,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -113007,6 +113301,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -113092,6 +113388,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -113664,6 +113961,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -113807,6 +114105,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -113892,6 +114192,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -114368,6 +114669,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -114511,6 +114813,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -114596,6 +114900,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -115581,6 +115886,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -115724,6 +116030,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -115809,6 +116117,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -116330,6 +116639,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -116473,6 +116783,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -116558,6 +116870,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -117130,6 +117443,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -117273,6 +117587,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -117358,6 +117674,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -117834,6 +118151,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -117977,6 +118295,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -118062,6 +118382,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -119317,6 +119638,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -119460,6 +119782,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -119545,6 +119869,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -120066,6 +120391,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -120209,6 +120535,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -120294,6 +120622,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -120866,6 +121195,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -121009,6 +121339,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -121094,6 +121426,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -121570,6 +121903,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -121713,6 +122047,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -121798,6 +122134,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -122783,6 +123120,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -122926,6 +123264,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -123011,6 +123351,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -123532,6 +123873,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -123675,6 +124017,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -123760,6 +124104,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -124332,6 +124677,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -124475,6 +124821,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -124560,6 +124908,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -125036,6 +125385,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -125179,6 +125529,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -125264,6 +125616,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -126259,6 +126612,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -126402,6 +126756,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -126487,6 +126843,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -127008,6 +127365,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -127151,6 +127509,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -127236,6 +127596,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -127808,6 +128169,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -127951,6 +128313,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -128036,6 +128400,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -128512,6 +128877,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -128655,6 +129021,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -128740,6 +129108,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -129737,6 +130106,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -129880,6 +130250,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -129965,6 +130337,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -130486,6 +130859,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -130629,6 +131003,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -130714,6 +131090,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -131286,6 +131663,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -131429,6 +131807,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -131514,6 +131894,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -131990,6 +132371,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -132133,6 +132515,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -132218,6 +132602,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -133213,6 +133598,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -133356,6 +133742,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -133441,6 +133829,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -133962,6 +134351,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -134105,6 +134495,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -134190,6 +134582,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -134762,6 +135155,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -134905,6 +135299,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -134990,6 +135386,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -135466,6 +135863,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -135609,6 +136007,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -135694,6 +136094,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -136691,6 +137092,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -136834,6 +137236,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -136919,6 +137323,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -137440,6 +137845,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -137583,6 +137989,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -137668,6 +138076,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -138240,6 +138649,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -138383,6 +138793,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -138468,6 +138880,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -138944,6 +139357,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -139087,6 +139501,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -139172,6 +139588,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -140163,6 +140580,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -140306,6 +140724,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -140391,6 +140811,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -140912,6 +141333,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -141055,6 +141477,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -141140,6 +141564,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -141712,6 +142137,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -141855,6 +142281,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -141940,6 +142368,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -142416,6 +142845,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -142559,6 +142989,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -142644,6 +143076,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -143835,6 +144268,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -143978,6 +144412,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -144063,6 +144499,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -144584,6 +145021,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -144727,6 +145165,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -144812,6 +145252,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -145384,6 +145825,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -145527,6 +145969,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -145612,6 +146056,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -146088,6 +146533,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -146231,6 +146677,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -146316,6 +146764,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -147313,6 +147762,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -147456,6 +147906,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -147541,6 +147993,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -148062,6 +148515,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -148205,6 +148659,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -148290,6 +148746,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -148862,6 +149319,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -149005,6 +149463,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -149090,6 +149550,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -149566,6 +150027,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -149709,6 +150171,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -149794,6 +150258,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -150789,6 +151254,7 @@
                             "product_variant_unknown",
                             "product_variant_in_use",
                             "product_pack_barcode_variants",
+                            "product_pack_price_variants",
                             "product_tracking_service",
                             "product_expiry_needs_batch",
                             "product_category_invalid",
@@ -150932,6 +151398,8 @@
                             "receipt_void_reason_required",
                             "receipt_void_date",
                             "credit_limit_exceeded",
+                            "sales_below_cost",
+                            "cost_override_forbidden",
                             "credit_override_forbidden",
                             "journal_is_sales",
                             "account_money_type",
@@ -151017,6 +151485,7 @@
                             "grn_line_empty",
                             "grn_rejection_reason",
                             "over_receipt_percent_format",
+                            "min_margin_percent_format",
                             "purchase_branch_invalid",
                             "purchase_account_invalid",
                             "account_used_by_purchase",
@@ -151538,6 +152007,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -151681,6 +152151,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -151766,6 +152238,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -152338,6 +152811,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -152481,6 +152955,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -152566,6 +153042,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",
@@ -153042,6 +153519,7 @@
                                   "product_variant_unknown",
                                   "product_variant_in_use",
                                   "product_pack_barcode_variants",
+                                  "product_pack_price_variants",
                                   "product_tracking_service",
                                   "product_expiry_needs_batch",
                                   "product_category_invalid",
@@ -153185,6 +153663,8 @@
                                   "receipt_void_reason_required",
                                   "receipt_void_date",
                                   "credit_limit_exceeded",
+                                  "sales_below_cost",
+                                  "cost_override_forbidden",
                                   "credit_override_forbidden",
                                   "journal_is_sales",
                                   "account_money_type",
@@ -153270,6 +153750,7 @@
                                   "grn_line_empty",
                                   "grn_rejection_reason",
                                   "over_receipt_percent_format",
+                                  "min_margin_percent_format",
                                   "purchase_branch_invalid",
                                   "purchase_account_invalid",
                                   "account_used_by_purchase",

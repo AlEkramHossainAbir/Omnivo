@@ -610,6 +610,13 @@
       "when": 1795862152255,
       "tag": "0086_price-floor-sync",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1795866498373,
+      "tag": "0087_min-margin",
+      "breakpoints": true
     }
   ]
 }

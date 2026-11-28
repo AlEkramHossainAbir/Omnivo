@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { ERROR_CODES, errorCode } from './errors.js';
+import { errorCode, errorCodeSchema } from './errors.js';
 import { optionalText, versionSchema } from './fields.js';
 import { defineRoute } from './http.js';
 import { pageOf, pageQuerySchema } from './pagination.js';
@@ -155,7 +155,7 @@ export const storefrontOrderPaymentSchema = z.object({
   receipt: documentRefSchema.nullable(),
   // Why the receipt could not be made ("receipt_account_invalid": the money account was archived
   // after the gateway was saved). The page shows it with "Make the receipt", which tries again
-  receiptError: z.enum(ERROR_CODES).nullable(),
+  receiptError: errorCodeSchema.nullable(),
 });
 export type StorefrontOrderPayment = z.infer<typeof storefrontOrderPaymentSchema>;
 
@@ -183,7 +183,7 @@ export const storefrontOrderSchema = storefrontOrderSummarySchema.extend({
   salesReturn: documentRefSchema.nullable(),
   // Why the sales order could not be made (decision 1): the error the sales order's own rules
   // gave ("sales_variant_archived"). The page shows it with "Make the sales order"
-  documentError: z.enum(ERROR_CODES).nullable(),
+  documentError: errorCodeSchema.nullable(),
   // Step 27d: the payment tries, oldest first. Empty for a Cash on Delivery order that never tried
   // to pay online. A paid online order has one paid try; two paid ones mean the shopper paid twice
   // (a second tab), and the page says one of them is to be refunded

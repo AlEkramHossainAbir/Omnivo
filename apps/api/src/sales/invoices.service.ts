@@ -56,6 +56,7 @@ import {
 } from '../inventory/stock-lines.js';
 import { assertPeriodOpen } from '../journal/period-lock.service.js';
 import { NumberingService } from '../numbering/numbering.service.js';
+import { CostFloorService } from './cost-floor.service.js';
 import { CreditService } from './credit.service.js';
 import { DeliveriesService } from './deliveries.service.js';
 import { SalesBooksService } from './sales-books.service.js';
@@ -196,6 +197,7 @@ export class InvoicesService {
     private readonly deliveries: DeliveriesService,
     private readonly books: SalesBooksService,
     private readonly credit: CreditService,
+    private readonly costFloor: CostFloorService,
   ) {}
 
   // Newest date first; open and overdue invoices oldest due date first, the order a receipt pays
@@ -268,7 +270,9 @@ export class InvoicesService {
       entityId: row.id,
       changes: created(this.snapshot(row, customer, fields.lines.length)),
     });
-    if (input.post) await this.postAndLog(tx, row, input.overrideCreditLimit);
+    if (input.post) {
+      await this.postAndLog(tx, row, input.overrideCreditLimit, input.overrideBelowCost);
+    }
     return row.id;
   }
 
@@ -299,7 +303,9 @@ export class InvoicesService {
           this.snapshot(updated, customer, fields.lines.length),
         ),
       });
-      if (input.post) await this.postAndLog(tx, updated, input.overrideCreditLimit);
+      if (input.post) {
+        await this.postAndLog(tx, updated, input.overrideCreditLimit, input.overrideBelowCost);
+      }
       return this.read(tx, id);
     });
   }
@@ -326,10 +332,13 @@ export class InvoicesService {
     });
   }
 
-  post(id: string, input: { version: number; overrideCreditLimit: boolean }): Promise<Invoice> {
+  post(
+    id: string,
+    input: { version: number; overrideCreditLimit: boolean; overrideBelowCost: boolean },
+  ): Promise<Invoice> {
     return this.withTenant(async (tx) => {
       const draft = await this.lockDraft(tx, id, input.version);
-      await this.postAndLog(tx, draft, input.overrideCreditLimit);
+      await this.postAndLog(tx, draft, input.overrideCreditLimit, input.overrideBelowCost);
       return this.read(tx, id);
     });
   }
@@ -675,6 +684,8 @@ export class InvoicesService {
     tx: Transaction,
     draft: InvoiceRow,
     overrideCreditLimit: boolean,
+    // Cost floor: true after its dialog (sales.cost.override)
+    overrideBelowCost: boolean,
   ): Promise<void> {
     const tenantId = getTenantId();
     // The date first: a closed period refuses before anything is locked or moved
@@ -685,6 +696,26 @@ export class InvoicesService {
     const stored = await this.linesOf(tx, draft.id);
     // Again, under the locks: another invoice may have billed a line since the draft was saved
     const sources = await this.checkSources(tx, draft.customerId, stored, 'update');
+    // Cost floor: the lines of its own and the challan lines without an order. A line that bills
+    // an order line (also through its challan) was checked when that order was confirmed, and is
+    // not asked again, like the credit limit.
+    await this.costFloor.check(tx, {
+      lines: stored.flatMap((line, index) =>
+        (sources.lines[index]?.orderLineId ?? null) === null
+          ? [
+              {
+                index: line.lineNo - 1,
+                variantId: line.variantId,
+                baseQuantity: line.baseQuantity,
+                net: line.net,
+              },
+            ]
+          : [],
+      ),
+      overrideBelowCost,
+      entityType: 'invoice',
+      entityId: draft.id,
+    });
     const before = await this.credit.lock(tx, draft.customerId);
     const number = await this.numbering.next(tx, 'sales.invoice', draft.date);
 

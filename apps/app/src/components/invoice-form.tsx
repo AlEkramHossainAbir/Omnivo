@@ -37,6 +37,7 @@ import { rowPath } from '../lib/products';
 import { branchesQuery, customerQuery } from '../lib/queries';
 import { SALES_LINE_FIELDS } from '../lib/sales';
 import { serialPath } from '../lib/stock';
+import { CostFloorDialog, type CostStop, costStopOf, useCostText } from './cost-floor-parts';
 import {
   CreditLimitDialog,
   CreditLine,
@@ -62,6 +63,13 @@ const DatePicker = lazy(async () => ({ default: (await import('./date-input')).D
 
 type FormValues = InvoiceFormValues;
 type LineValues = FormValues['lines'][number];
+
+// The overrides a posting may carry, each after its own dialog
+interface Overrides {
+  credit: boolean;
+  cost: boolean;
+}
+const NO_OVERRIDES: Overrides = { credit: false, cost: false };
 
 function fieldNames(lines: readonly LineValues[]): Path<FormValues>[] {
   return [
@@ -110,10 +118,18 @@ export function InvoiceForm({
   const isoDate = useIsoDate();
   const { active, byId } = useWarehouses();
   const branches = useQuery(branchesQuery(tenantId, 'active')).data ?? [];
-  const canOverride = useCan()('sales.credit.override');
+  const can = useCan();
+  const canOverride = can('sales.credit.override');
+  // Cost floor: may post with lines below their buying price (after its dialog)
+  const canSellBelowCost = can('sales.cost.override');
   const creditText = useCreditText();
+  const costText = useCostText();
   const [confirming, setConfirming] = useState(false);
   const [stop, setStop] = useState<CreditStop | null>(null);
+  const [costStop, setCostStop] = useState<CostStop | null>(null);
+  // What the person already said yes to in this posting, so the second dialog's try keeps the
+  // first one's answer (a document can be below cost and over the credit limit at once)
+  const [granted, setGranted] = useState<Overrides>(NO_OVERRIDES);
   const [saved] = useState(() => {
     if (invoice) return savedInvoiceLines(invoice);
     return {
@@ -151,6 +167,7 @@ export function InvoiceForm({
       lines: saved.values,
       post: false,
       overrideCreditLimit: false,
+      overrideBelowCost: false,
       version: invoice?.version ?? 1,
     },
   });
@@ -179,11 +196,16 @@ export function InvoiceForm({
     if (getValues('branchId') === '' && branchId !== undefined) setValue('branchId', branchId);
   };
 
-  // override: the second try, after the person saw the credit dialog and went on
-  const save = (post: boolean, override = false) =>
+  // overrides: a later try, after the person saw the credit or the cost dialog and went on
+  const save = (post: boolean, overrides: Overrides = NO_OVERRIDES) =>
     handleSubmit(async ({ version, ...values }) => {
       try {
-        const body = { ...values, post, overrideCreditLimit: override };
+        const body = {
+          ...values,
+          post,
+          overrideCreditLimit: overrides.credit,
+          overrideBelowCost: overrides.cost,
+        };
         const result = invoice
           ? await call(routes.invoices.update, {
               params: { id: invoice.id },
@@ -192,6 +214,8 @@ export function InvoiceForm({
           : await call(routes.invoices.create, { body });
         await refresh();
         setStop(null);
+        setCostStop(null);
+        setGranted(NO_OVERRIDES);
         toast(
           result.status === 'posted'
             ? t('invoices.posted', { number: result.number ?? '' })
@@ -205,15 +229,27 @@ export function InvoiceForm({
           });
         }
       } catch (error) {
+        const cost = costStopOf(error);
+        if (cost !== null && canSellBelowCost && !overrides.cost) {
+          setStop(null);
+          setGranted(overrides);
+          setCostStop(cost);
+          return;
+        }
         const credit = creditStopOf(error);
-        if (credit !== null && canOverride && !override) {
+        if (credit !== null && canOverride && !overrides.credit) {
+          setCostStop(null);
+          setGranted(overrides);
           setStop(credit);
           return;
         }
         setStop(null);
-        const text = creditText(error);
+        setCostStop(null);
+        // The price boxes of the lines below cost get their error too; the sentence goes on top
+        if (cost !== null) applyApiError(error, fieldNames(getValues('lines')), setError);
+        const text = creditText(error) ?? costText(error);
         if (text !== null) setError('root.server', { message: text });
-        else applyApiError(error, fieldNames(getValues('lines')), setError);
+        else if (cost === null) applyApiError(error, fieldNames(getValues('lines')), setError);
       }
     });
 
@@ -408,9 +444,18 @@ export function InvoiceForm({
         customer={customer?.name ?? savedCustomer?.name ?? ''}
         confirmLabel={t('creditLimit.postInvoice')}
         pending={isSubmitting}
-        onConfirm={() => void save(true, true)()}
+        onConfirm={() => void save(true, { ...granted, credit: true })()}
         onClose={() => {
           setStop(null);
+        }}
+      />
+      <CostFloorDialog
+        stop={costStop}
+        confirmLabel={t('costFloor.postInvoice')}
+        pending={isSubmitting}
+        onConfirm={() => void save(true, { ...granted, cost: true })()}
+        onClose={() => {
+          setCostStop(null);
         }}
       />
     </div>
