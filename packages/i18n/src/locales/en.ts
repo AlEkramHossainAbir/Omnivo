@@ -265,6 +265,26 @@ export const en = {
       passwordPlaceholder: 'At least 8 characters',
       submit: 'Create workspace',
       submitting: 'Creating workspace…',
+      // After the sign-up: the workspace is made, but it opens from the email's link
+      checkTitle: 'Check your email',
+      checkBody:
+        'We sent a link to {{email}}. Open it to confirm your email and open your workspace. The link works for 24 hours.',
+      checkHint: 'Can’t find it? Look in the spam folder.',
+      resend: 'Send the link again',
+      resendIn: 'Send the link again in {{seconds}} s',
+      resent: 'A new link is on its way',
+    },
+    // The email's link (/verify-email#<token>)
+    verifyEmail: {
+      checking: 'Confirming your email…',
+      done: 'Email confirmed',
+      invalidTitle: 'This link no longer works',
+      invalidBody:
+        'It was used already, or it has ended. Sign in with your email and password, and we send you a new link.',
+      toSignIn: 'Sign in',
+      // No connection, or the server failing: the link may still be good
+      failedTitle: 'Your email could not be confirmed yet',
+      retry: 'Retry',
     },
   },
   dashboard: {
@@ -408,6 +428,9 @@ export const en = {
     overReceiptPercent: 'Receive over the order',
     overReceiptPercentHint:
       'A goods receipt may bring in up to this percent more than was ordered, like 3% for yarn sold by weight. 0 = never more than ordered.',
+    minMarginPercent: 'Lowest margin',
+    minMarginPercentHint:
+      'Each line of a sale, order or invoice sells for at least its buying price plus this. 0 = the buying price.',
     stockAccountsTitle: 'Stock accounts',
     stockAccountsSubtitle:
       'Where stock documents post in the books. Stock itself always goes to {{inventory}}, and opening stock against {{equity}}.',
@@ -1732,6 +1755,8 @@ export const en = {
       unit: 'Unit',
       tracking: 'Tracking',
       price: 'Sale price',
+      // The average cost per base unit, with inventory.stock.value only
+      cost: 'Buying price',
     },
     variantCount_one: '{{count}} variant',
     variantCount_other: '{{count}} variants',
@@ -1746,6 +1771,8 @@ export const en = {
     archivedOfflineBody:
       'Archived products are not kept on this device. Connect to the internet to see them.',
     loadFailed: "Couldn't load the products. Refresh the page to try again.",
+    costsOffline: 'Buying prices need a connection.',
+    costsFailed: "Couldn't load the buying prices. Refresh the page to try again.",
     readOnly:
       'You can see the products. To change them, ask for the inventory.product.manage permission.',
     back: 'Products',
@@ -1824,6 +1851,10 @@ export const en = {
       placeholder: 'Pick a unit',
       factor: 'Holds',
       barcode: 'Pack barcode',
+      // The pack's own sale price (a box of 42 for ৳750); empty = the base unit's price × size
+      price: 'Pack price',
+      priceHint: 'Empty = {{price}} × {{factor}} = {{amount}}',
+      priceHintNone: 'Empty = the {{base}} price × what it holds',
       add: 'Add a pack',
       remove: 'Remove pack {{number}}',
       number: 'Pack {{number}}',
@@ -3422,6 +3453,20 @@ export const en = {
     postInvoice: 'Post anyway',
     back: 'Go back',
   },
+  // Cost floor: an order or an invoice with lines below their buying price (sales_below_cost). The
+  // dialog for someone with sales.cost.override; the sentence under the form for everyone else.
+  costFloor: {
+    title: 'Below the buying price',
+    body_one: 'Line {{lines}} sells below its buying price.',
+    body_other: 'Lines {{lines}} sell below their buying price.',
+    margin: 'With the {{margin}}% lowest margin.',
+    audit: 'The audit log records it.',
+    blocked_one: 'Line {{lines}} sells below its buying price.',
+    blocked_other: 'Lines {{lines}} sell below their buying price.',
+    confirmOrder: 'Confirm anyway',
+    postInvoice: 'Post anyway',
+    back: 'Go back',
+  },
   // Download PDF, email and share link on a quotation, invoice, money receipt and credit note.
   // Only the app's own words: what the customer reads (the PDF, the email, the WhatsApp text) is
   // written by the server, in the customer's language (apps/api/src/documents/copy.ts)
@@ -4725,6 +4770,13 @@ export const en = {
     overLimit: 'More than {{max}}% off needs pos.price.override.',
     priceLocked: 'Changing the price needs pos.price.override.',
     priceChanged: 'Changed from {{price}}',
+    // Cost floor: a line under its average cost, with and without pos.sale.below_cost. Never the
+    // cost itself.
+    belowCost: 'Less than it cost. Raise the price or lower the discount.',
+    belowCostAllowed: 'Less than it cost. The audit log records it.',
+    // With a lowest margin in Settings → Sales ("5" for 5%)
+    belowMargin: 'Less than cost + {{margin}}%. Raise the price or lower the discount.',
+    belowMarginAllowed: 'Less than cost + {{margin}}%. The audit log records it.',
     // Taking the money (decision 5)
     payTitle: 'Take payment',
     payDescription: 'Total {{total}}. Split it over several methods if the customer asks.',
@@ -7408,6 +7460,7 @@ export const en = {
       invoice: { manage: 'Write and post invoices' },
       receipt: { manage: 'Record money receipts, apply them to invoices and void them' },
       credit: { override: 'Confirm orders and post invoices over a customer’s credit limit' },
+      cost: { override: 'Confirm orders and post invoices with lines below their buying price' },
       return: { manage: 'Write and post sales returns: goods come back into a warehouse' },
       credit_note: { manage: 'Write and post credit notes, and apply them to invoices' },
       refund: { manage: 'Pay money back to customers, and void refunds' },
@@ -7441,7 +7494,10 @@ export const en = {
     },
     // Step 20a (decisions 11, 31)
     pos: {
-      sale: { create: 'Sell at a POS counter: take a register, ring up sales and take the money' },
+      sale: {
+        create: 'Sell at a POS counter: take a register, ring up sales and take the money',
+        below_cost: 'At the POS, sell a line for less than what the goods cost',
+      },
       price: {
         override: 'At the POS, change a price or give more discount than the register allows',
       },
@@ -7579,7 +7635,11 @@ export const en = {
         chart_created: 'Added the chart of accounts',
         catalog_created: 'Added the starting units, categories and custom fields',
       },
-      auth: { signed_in: 'Signed in', switched_in: 'Switched into this workspace' },
+      auth: {
+        signed_in: 'Signed in',
+        switched_in: 'Switched into this workspace',
+        email_verified: 'Confirmed their email',
+      },
       settings: { updated: 'Changed the settings', logo_changed: 'Changed the logo' },
       branch: {
         created: 'Added a branch',
@@ -7739,6 +7799,7 @@ export const en = {
         voided: 'Voided a money receipt',
       },
       credit_limit: { overridden: 'Went over a customer’s credit limit' },
+      cost_floor: { overridden: 'Sold below the buying price' },
       sales_return: {
         created: 'Wrote a sales return',
         updated: 'Edited a draft return',
@@ -7844,6 +7905,7 @@ export const en = {
         created: 'Sold at a POS counter',
         overridden: 'Changed a price or gave more discount at the POS',
         without_permission: 'Sold at a POS counter after losing the permission',
+        below_cost: 'Sold below cost at a POS counter',
       },
       // Step 20b. cash_moved: a pay in or pay out. closed_without_count: by a manager online or by
       // a device's revoke (decision 11). expected_differs: decision 22
@@ -8070,6 +8132,7 @@ export const en = {
       comment: 'Comment',
       requisition: 'Purchase requisitions',
       overReceiptPercent: 'Receive over the order (%)',
+      minMarginPercent: 'Lowest margin (%)',
       received_not_billed: 'Goods received, not billed',
       supplier: 'Supplier',
       expectedDate: 'Deliver by',
@@ -8100,6 +8163,7 @@ export const en = {
       paid: 'Paid',
       soldShort: 'Lines sold short',
       overrides: 'Needs pos.price.override',
+      belowCost: 'Below cost',
       allowed: 'Permission',
       missing: 'Missing permission',
       // Step 20b: a register's shift settings, a reason, and a shift's rows
@@ -8335,6 +8399,8 @@ export const en = {
         // posShifts.over / posShifts.short ("৳520 short"), so one sentence reads right both ways
         shift_variance:
           '{{number}} on {{register}} closed {{difference}}. Open the shift to see the count.',
+        // Cost floor. {{count}} is the number of lines, no plural keys, like sold_short
+        sold_below_cost: '{{number}} sold below the buying price. Lines: {{count}}.',
       },
       // Step 27a: a shop order got its phone code. {{total}} arrives as money ("৳578")
       storefront: {
@@ -8390,6 +8456,11 @@ export const en = {
     // Step 3b: sign-in names no workspace any more, so the words say what to do instead
     not_a_member:
       "This account isn't in any workspace yet. Ask a workspace owner to invite you, or create a workspace.",
+    // The sign-in also sends a new link, so the words say where to look
+    email_not_verified:
+      'Confirm your email first. We sent a new link to your email: open it to sign in.',
+    verification_link_invalid:
+      'This link no longer works. Sign in with your email and password to get a new one.',
     sign_in_required: 'Sign in to continue.',
     session_ended: 'Your session has ended. Sign in again.',
     access_revoked: 'You no longer have access to this workspace. Sign in again.',
@@ -8509,6 +8580,8 @@ export const en = {
     product_variant_in_use: 'Documents use this variant, so it stays. Archive it instead.',
     product_pack_barcode_variants:
       'Products with variants keep their barcodes on the variants, not on the packs.',
+    product_pack_price_variants:
+      'Products with variants keep their prices on the variants. Leave the pack price empty.',
     product_tracking_service: "A service isn't stocked, so it isn't tracked. Pick None.",
     product_expiry_needs_batch: 'Expiry dates are kept per batch. Pick batch tracking first.',
     product_category_invalid: 'Pick a category from the list.',
@@ -8695,6 +8768,8 @@ export const en = {
       'This takes the customer to {{exposure}}, over their credit limit of {{limit}}. Record a payment first, or ask someone who may go over the limit.',
     credit_override_forbidden:
       'Going over a credit limit needs the {{permissions}} permission. Ask a workspace owner to grant it.',
+    sales_below_cost: 'Below the buying price. Raise the price or lower the discount.',
+    cost_override_forbidden: 'Selling below the buying price needs the {{permissions}} permission.',
     journal_is_sales:
       'A sales document made this entry, so it is not reversed here. Void a receipt or a refund on its own page; take back an invoice with a credit note.',
     account_money_type:
@@ -8816,6 +8891,7 @@ export const en = {
     grn_line_empty: 'Enter what was accepted, what was rejected, or both.',
     grn_rejection_reason: 'Say why the goods were rejected, like "wet" or "wrong shade".',
     over_receipt_percent_format: 'Enter a percent from 0 to 100, with up to 2 decimals.',
+    min_margin_percent_format: 'Enter a percent from 0 to 100, with up to 2 decimals.',
     purchase_branch_invalid: 'Pick an active branch.',
     purchase_account_invalid:
       'A purchase account must be an active expense account, not a group. Pick another one in Settings → Purchase accounts.',

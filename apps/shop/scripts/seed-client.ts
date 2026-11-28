@@ -7,7 +7,9 @@ import {
   type RouteRequest,
   type RouteResult,
   type SignUpInput,
+  VERIFY_EMAIL_PATH,
 } from '@omnivo/contracts';
+import { z } from 'zod';
 
 // Step 26h: the seed's way to the API. Every call names a route of the contracts, so the path,
 // the method, what is sent and what comes back are the same types the ERP's screens use: a field
@@ -42,17 +44,66 @@ type CallArgs<R extends RouteDef> =
     ? [input?: RouteRequest<R> & RequestParts]
     : [input: RouteRequest<R> & RequestParts];
 
+// Mailpit's HTTP API, outside data, so read with a schema (no cast). Mailpit lists newest first
+const mailboxSchema = z.object({
+  messages: z.array(z.object({ ID: z.string(), To: z.array(z.object({ Address: z.string() })) })),
+});
+const messageSchema = z.object({ Text: z.string() });
+// The link's token: after "/verify-email#", base64url (contracts: verifyEmailLink)
+const LINK_TOKEN = new RegExp(`${VERIFY_EMAIL_PATH}#([A-Za-z0-9_-]+)`);
+// The worker sends the link a moment after the sign-up answered
+const LINK_WAIT_MS = 30_000;
+
+// The email check: sign-up answers with no session, and the email's link starts one. The dev
+// stack's every email lands in Mailpit (pnpm db:up), so the seed reads its own link there, as the
+// owner would read their inbox, and still uses nothing but HTTP
+async function linkTokenFor(mailUrl: string, email: string): Promise<string> {
+  const deadline = Date.now() + LINK_WAIT_MS;
+  for (;;) {
+    let mailbox: z.infer<typeof mailboxSchema> | null = null;
+    try {
+      mailbox = mailboxSchema.parse(await (await fetch(`${mailUrl}/api/v1/messages`)).json());
+    } catch {
+      // No Mailpit on that address (yet): the same wait as no email yet
+    }
+    const found = mailbox?.messages.find((message) =>
+      message.To.some((to) => to.Address === email),
+    );
+    if (found) {
+      const message = messageSchema.parse(
+        await (await fetch(`${mailUrl}/api/v1/message/${found.ID}`)).json(),
+      );
+      const token = LINK_TOKEN.exec(message.Text)?.[1];
+      if (token) return token;
+    }
+    if (Date.now() > deadline) {
+      throw new SeedApiError(
+        0,
+        'verification_link_invalid',
+        `No email link for ${email} in Mailpit at ${mailUrl}. Is the worker running (pnpm dev), and Mailpit (pnpm db:up)?`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
 export class SeedApi {
   private accessToken: string | null = null;
   // Kept so a token that runs out (15 minutes, apps/api/src/config.ts) is replaced by signing in
   // again. A slow machine with the worker busy can take longer than that to make every photo
   private login: LoginInput | null = null;
 
-  constructor(private readonly baseUrl: string) {}
+  constructor(
+    private readonly baseUrl: string,
+    // Where the dev stack's Mailpit answers, for the sign-up's email link
+    private readonly mailUrl: string,
+  ) {}
 
-  // Sign-up answers with a session, like a login, so the seed starts signed in as the owner
+  // Sign-up, then the email's link, so the seed starts signed in as the owner
   async signUp(input: SignUpInput): Promise<void> {
-    const session = await this.call(routes.auth.signUp, { body: input });
+    const { email } = await this.call(routes.auth.signUp, { body: input });
+    const token = await linkTokenFor(this.mailUrl, email);
+    const session = await this.call(routes.auth.verifyEmail, { body: { token } });
     this.accessToken = session.accessToken;
     this.login = {
       workspace: input.workspaceSlug,

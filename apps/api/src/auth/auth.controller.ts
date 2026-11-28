@@ -1,6 +1,12 @@
 import { Controller, Header, Inject, Req, Res } from '@nestjs/common';
 import type { IssuedTokens } from '@omnivo/auth';
-import { type AuthSession, type MeResponse, type RouteInput, routes } from '@omnivo/contracts';
+import {
+  type AuthSession,
+  type MeResponse,
+  type RouteInput,
+  routes,
+  type SignUpResult,
+} from '@omnivo/contracts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { AppError } from '../common/http/app-error.js';
@@ -19,13 +25,27 @@ export class AuthController {
     @Inject(CONFIG) private readonly config: Config,
   ) {}
 
+  // No cookie: the session starts when the email's link is opened (verifyEmail below)
   @Endpoint(routes.auth.signUp)
   @Header('Cache-Control', 'no-store')
-  async signUp(
-    { body }: RouteInput<typeof routes.auth.signUp>,
+  signUp({ body }: RouteInput<typeof routes.auth.signUp>): Promise<SignUpResult> {
+    return this.authService.signUp(body);
+  }
+
+  @Endpoint(routes.auth.verifyEmail)
+  @Header('Cache-Control', 'no-store')
+  async verifyEmail(
+    { body }: RouteInput<typeof routes.auth.verifyEmail>,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<AuthSession> {
-    return this.startSession(reply, await this.authService.signUp(body));
+    return this.startSession(reply, await this.authService.verifyEmail(body.token));
+  }
+
+  @Endpoint(routes.auth.resendVerification)
+  async resendVerification({
+    body,
+  }: RouteInput<typeof routes.auth.resendVerification>): Promise<void> {
+    await this.authService.resendVerification(body.email);
   }
 
   @Endpoint(routes.auth.login)

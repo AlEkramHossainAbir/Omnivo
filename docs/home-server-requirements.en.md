@@ -193,7 +193,7 @@ snap, not `docker.io` from Ubuntu). Then run the stack from `infra/staging/` wit
 | `worker` | `omnivo-api` (`node dist/worker.js`) | One copy. Memory limit 1.5 GB. |
 | `shop` | **new** | The Astro server (`node dist/server/entry.mjs`). The staging stack is older than the shop (step 26) and does not have it yet: the Dockerfile needs a `shop` target and the Caddyfile needs the shop's sites. |
 | `web` | Caddy | Production host names; with a tunnel, the trusted proxies above. |
-| `mail` | Mailpit | **Remove** in production. Set `SMTP_URL` to the real email service. |
+| `mail` | Mailpit | **Keep** in production for now: the SMS go there (`SMS_SMTP_URL`) until a real SMS provider. Real email goes through `SMTP_URL` (Resend, see [email-resend.en.md](email-resend.en.md)). |
 | `cloudflared` | `cloudflare/cloudflared` | **Add** only for Case B (tunnel). |
 
 Postgres settings for 32 GB RAM and NVMe (pass them as `command: ['postgres', '-c', ...]` or a
@@ -313,7 +313,7 @@ in the chat. Secrets are made on the server.
 4. **Docker** from Docker's apt repository, with the Compose plugin; the `deploy` user in the
    `docker` group.
 5. **The stack:** take `infra/` from the `staging-deploy` branch into `/srv/omnivo`, then make the
-   changes in Part 3.5 (add `shop`, remove `mail`, real `SMTP_URL`, Postgres tuning and
+   changes in Part 3.5 (add `shop`, real `SMTP_URL` (keep `mail` for the SMS), Postgres tuning and
    `shm_size`, Valkey `maxmemory`, memory limits, and `cloudflared` for Case B). Changes to the
    repo's own files are proposed to the owner, who writes them (CLAUDE.md, rule 1).
 6. **Secrets:** generate `.env` on the server with `openssl rand -base64 48` for every password and

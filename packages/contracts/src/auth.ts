@@ -68,6 +68,38 @@ export const signUpInputSchema = z.object({
 });
 export type SignUpInput = z.infer<typeof signUpInputSchema>;
 
+// Sign-up makes the workspace but no session: the person must open the link in the email first.
+// status is a literal, so a later answer of another kind can join it as a discriminated union.
+// email: the address the link went to, as the API stored it (trimmed, lower case)
+export const signUpResultSchema = z.object({
+  status: z.literal('verify_email'),
+  email: z.string(),
+});
+export type SignUpResult = z.infer<typeof signUpResultSchema>;
+
+// The email's link: /verify-email#<token>. The token sits after the #, like an invitation's, so
+// the browser never sends it to a server, and it is not in a log or a Referer header
+export const VERIFY_EMAIL_PATH = '/verify-email';
+
+export function verifyEmailLink(appOrigin: string, token: string): string {
+  return `${appOrigin}${VERIFY_EMAIL_PATH}#${token}`;
+}
+
+// How long a link works. A day covers "I'll do it after lunch"; after it, signing in with the
+// password sends a new link, so a late person is never stuck
+export const EMAIL_VERIFICATION_TTL_HOURS = 24;
+
+// The token is 32 random bytes in base64url (43 characters). The max only keeps a huge body out
+export const verifyEmailInputSchema = z.object({
+  token: z.string().min(1).max(200),
+});
+export type VerifyEmailInput = z.infer<typeof verifyEmailInputSchema>;
+
+export const resendVerificationInputSchema = z.object({
+  email: emailSchema,
+});
+export type ResendVerificationInput = z.infer<typeof resendVerificationInputSchema>;
+
 export const loginInputSchema = z.object({
   // Step 3b: a hint, not a demand. The server opens this workspace when the person belongs to
   // it, and ignores it otherwise. The sign-in page sends the workspace this browser used last.
@@ -110,11 +142,32 @@ export const authRoutes = {
   signUp: defineRoute({
     method: 'POST',
     path: '/auth/sign-up',
-    summary: 'Create a workspace and its owner, and start a session',
+    summary: 'Create a workspace and its owner, and email the link that confirms the address',
     auth: 'public',
     status: 201,
     body: signUpInputSchema,
+    response: signUpResultSchema,
+  }),
+  // The email's link. Public: the person has no session yet; the token is the proof
+  verifyEmail: defineRoute({
+    method: 'POST',
+    path: '/auth/verify-email',
+    summary: 'Confirm the email address with the link’s token, and start a session',
+    auth: 'public',
+    status: 200,
+    body: verifyEmailInputSchema,
     response: authSessionSchema,
+  }),
+  // Always 204, whether the address has an account or not: the answer must not tell a stranger
+  // which addresses are signed up
+  resendVerification: defineRoute({
+    method: 'POST',
+    path: '/auth/resend-verification',
+    summary: 'Email a new confirmation link, when the address waits for one',
+    auth: 'public',
+    status: 204,
+    body: resendVerificationInputSchema,
+    response: z.void(),
   }),
   login: defineRoute({
     method: 'POST',

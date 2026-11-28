@@ -23,7 +23,7 @@ export class SettingsService {
 
   update(input: UpdateSettingsInput): Promise<Settings> {
     const tenantId = getTenantId();
-    const { version, companyName, ...fields } = input;
+    const { version, companyName, minMarginPercent: margin, ...fields } = input;
     return this.withTenant(async (tx) => {
       // FOR UPDATE: পড়া থেকে লেখা পর্যন্ত রো-টা এই transaction-এর — মাঝখানে আরেকজন বদলাতে পারে না।
       // আগে পড়তেই হয়: audit-এর পুরনো মান এখান থেকে, আর version মেলানোও এখানে
@@ -57,6 +57,8 @@ export class SettingsService {
         .update(tenantSettings)
         .set({
           ...fields,
+          // Cost floor: missing = unchanged (a body from before the field)
+          ...(margin !== undefined && { minMarginPercent: margin }),
           version: sql`${tenantSettings.version} + 1`,
           updatedBy: currentPrincipal().userId,
         })
@@ -80,6 +82,11 @@ export class SettingsService {
               compareQuantity(fields.overReceiptPercent, before.overReceiptPercent) === 0
                 ? before.overReceiptPercent
                 : fields.overReceiptPercent,
+            // The same for the margin, and a missing one is no change at all
+            minMarginPercent:
+              margin === undefined || compareQuantity(margin, before.minMarginPercent) === 0
+                ? before.minMarginPercent
+                : margin,
           },
         ),
       });
@@ -197,5 +204,7 @@ function pickEditable(settings: typeof tenantSettings.$inferSelect) {
     pricesIncludeVat: settings.pricesIncludeVat,
     // Step 17b: NUMERIC(5,2), so "3" is saved and read back as "3.00"
     overReceiptPercent: settings.overReceiptPercent,
+    // Cost floor: NUMERIC(5,2) too, "5" is read back as "5.00"
+    minMarginPercent: settings.minMarginPercent,
   };
 }

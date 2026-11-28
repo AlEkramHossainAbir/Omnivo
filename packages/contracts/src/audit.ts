@@ -12,6 +12,7 @@ export const AUDIT_ACTIONS = [
   'workspace.chart_created',
   'auth.signed_in',
   'auth.switched_in',
+  'auth.email_verified',
   'settings.updated',
   'settings.logo_changed',
   'branch.created',
@@ -130,6 +131,9 @@ export const AUDIT_ACTIONS = [
   // An order confirmed or an invoice posted over the customer's credit limit, by someone with
   // sales.credit.override. The entity is that order or invoice.
   'credit_limit.overridden',
+  // Cost floor: an order confirmed or an invoice posted with lines below their buying price, by
+  // someone with sales.cost.override. The entity is that order or invoice.
+  'cost_floor.overridden',
   // step 15d
   'sales_return.created',
   'sales_return.updated',
@@ -212,6 +216,8 @@ export const AUDIT_ACTIONS = [
   // written whether or not the cashier had it. The sale is never refused for it.
   // pos_sale.without_permission: the cashier no longer had pos.sale.create when the sale arrived
   // (it was taken away while the device was offline). The sale is posted anyway (decision 28).
+  // pos_sale.below_cost: a line sold for less than its goods cost (posBelowCostLines), written
+  // whether or not the cashier had pos.sale.below_cost. Never a refusal either.
   'pos_register.created',
   'pos_register.updated',
   'pos_register.archived',
@@ -221,6 +227,7 @@ export const AUDIT_ACTIONS = [
   'pos_sale.created',
   'pos_sale.overridden',
   'pos_sale.without_permission',
+  'pos_sale.below_cost',
   // step 20b. A shift's rows name its device like a sale's. cash_moved: a pay in or pay out (the
   // changes name the reason and the amount). closed_without_count: by a manager online, or by the
   // revoke of its device. expected_differs: the device's expected cash at the close was not the

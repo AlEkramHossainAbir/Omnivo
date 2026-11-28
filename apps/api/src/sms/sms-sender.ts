@@ -14,6 +14,10 @@ export interface SmsSender {
 
 export const SMS_SENDER = Symbol('SMS_SENDER');
 
+// The MailService the SMS go out with: its own one, on SMS_SMTP_URL (Mailpit), never the worker's
+// MailService, which is the real email service in production (config.ts, smsConfig)
+export const SMS_MAIL = Symbol('SMS_MAIL');
+
 // The text as the phone would show it: its own lines, in a font that has Bangla
 const PRE_STYLE = 'font: 15px/1.5 system-ui, sans-serif; white-space: pre-wrap';
 
@@ -21,9 +25,10 @@ const PRE_STYLE = 'font: 15px/1.5 system-ui, sans-serif; white-space: pre-wrap';
 // opens for the invitation emails, so the code can be read there and typed into the shop. The
 // address is under .invalid, a name no real mail server delivers to (RFC 2606): if this sender were
 // ever left on with a real SMTP server, the messages would bounce instead of reaching a stranger.
+// It sends through SMS_MAIL, so even in production (real email on Resend) the SMS stay in Mailpit.
 @Injectable()
 export class MailSmsSender implements SmsSender {
-  constructor(@Inject(MailService) private readonly mail: MailService) {}
+  constructor(@Inject(SMS_MAIL) private readonly mail: MailService) {}
 
   async send({ to, text }: SmsJob): Promise<void> {
     await this.mail.send({

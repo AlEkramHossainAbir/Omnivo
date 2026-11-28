@@ -7,6 +7,7 @@ import {
   invitationRoutes,
   type LoginInput,
   type SignUpInput,
+  type SignUpResult,
 } from '@omnivo/contracts';
 
 import { call, isNoAnswer, refreshSession } from './api';
@@ -111,8 +112,19 @@ export function login(input: LoginInput): Promise<void> {
   return signInWith(() => call(authRoutes.login, { body: input }));
 }
 
-export function signUp(input: SignUpInput): Promise<void> {
-  return signInWith(() => call(authRoutes.signUp, { body: input }));
+// Sign-up makes the workspace but no session: the email's link signs the person in (verifyEmail).
+// So nothing of a sign-in happens here, and whoever was signed in before stays signed in
+export function signUp(input: SignUpInput): Promise<SignUpResult> {
+  return call(authRoutes.signUp, { body: input });
+}
+
+// The email's link (/verify-email#<token>) = a sign-in, into the workspace the person created
+export function verifyEmail(token: string): Promise<void> {
+  return signInWith(() => call(authRoutes.verifyEmail, { body: { token } }));
+}
+
+export function resendVerification(email: string): Promise<void> {
+  return call(authRoutes.resendVerification, { body: { email } });
 }
 
 // invitation গ্রহণ = লগইন: উত্তরে একই session, আর সেই workspace-এ। আগে অন্য অ্যাকাউন্টে লগইন থাকলে

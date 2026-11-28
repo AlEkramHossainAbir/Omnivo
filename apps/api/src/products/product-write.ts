@@ -264,6 +264,9 @@ function unitRows(tenantId: string, productId: string, input: ProductInput) {
     unitId: pack.unitId,
     position,
     factor: pack.factor,
+    // null = priced from the variant (startingPrice); productRules refuses one on a product with
+    // variants, so here it is always a simple product's
+    salePrice: pack.salePrice,
     isSalesDefault: input.salesUnitId === pack.unitId,
     isPurchaseDefault: input.purchaseUnitId === pack.unitId,
   }));

@@ -16,9 +16,12 @@ import {
   isOverdue,
   isZeroMoney,
   isZeroQuantity,
+  lowestPriceOf,
   moneyAccountIds,
+  multiplyMoney,
   overAllocated,
   paymentStatusOf,
+  posBelowCostLines,
   prorateMoney,
   type Receipt,
   type ReceiptAllocation,
@@ -52,7 +55,14 @@ import {
   seriesNumber,
   totalsOf,
 } from './sales-document-data';
-import { assertWarehouses, decimalsOf, findVariant, issuesError, resolveLines } from './stock-data';
+import {
+  assertWarehouses,
+  averageCostOf,
+  decimalsOf,
+  findVariant,
+  issuesError,
+  resolveLines,
+} from './stock-data';
 import type { WorkspaceData } from './workspace-data';
 
 // The mock's step 15c: invoices, money receipts and the credit limit. The API's rules
@@ -202,6 +212,49 @@ function checkCredit(
   return { limit, exposure };
 }
 
+// Cost floor: the API's CostFloorService. Lines below their average cost (plus the lowest margin)
+// are refused with sales_below_cost; with the override the answer is the audit row's text. The
+// mock signs in as the owner, who has sales.cost.override. `index` is the line's place on the form.
+export function checkCostFloor(
+  data: WorkspaceData,
+  lines: readonly { index: number; variantId: string; baseQuantity: string; net: string }[],
+  overrideBelowCost: boolean,
+): string | null {
+  const margin = data.settings.minMarginPercent;
+  const costs = lines.map((line) => {
+    const unitCost = averageCostOf(data.stock, line.variantId);
+    return unitCost === null ? null : multiplyMoney(line.baseQuantity, unitCost);
+  });
+  const below = posBelowCostLines(
+    lines.map((line, at) => ({ net: line.net, cost: costs[at] ?? null })),
+    margin,
+  ).flatMap((at) => {
+    const line = lines[at];
+    const cost = costs[at];
+    return line === undefined || cost === undefined || cost === null
+      ? []
+      : [{ line, lowest: lowestPriceOf(cost, margin) }];
+  });
+  if (below.length === 0) return null;
+  if (!overrideBelowCost) {
+    throw new MockProblem(
+      409,
+      'sales_below_cost',
+      Object.fromEntries(
+        below.map(({ line }) => [`lines.${String(line.index)}.unitPrice`, ['sales_below_cost']]),
+      ),
+      {
+        lines: below.map(({ line }) => String(line.index + 1)).join(', '),
+        count: below.length,
+        margin,
+      },
+    );
+  }
+  return below
+    .map(({ line, lowest }) => `line ${String(line.index + 1)} at ${line.net}, at least ${lowest}`)
+    .join('; ');
+}
+
 // "Confirm order" (step 15b) with the credit check of 15c. The handler runs it in a transaction(),
 // so a refused confirmation leaves the order a draft, as the API's does.
 export function confirmWithCredit(
@@ -216,7 +269,7 @@ export function confirmWithCredit(
 
 // --- Invoices: reading --------------------------------------------------------------------------
 
-type InvoiceFields = Omit<InvoiceInput, 'post' | 'overrideCreditLimit'>;
+type InvoiceFields = Omit<InvoiceInput, 'post' | 'overrideCreditLimit' | 'overrideBelowCost'>;
 
 export function findInvoice(data: WorkspaceData, id: string): MockInvoice {
   const found = data.billing.invoices.find((item) => item.id === id);

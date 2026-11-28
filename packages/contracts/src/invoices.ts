@@ -282,6 +282,9 @@ const invoiceFieldsSchema = salesDocumentFieldsSchema.extend({
   // sales.credit.override may send true; the form sends it after the person saw the amount and
   // confirmed (credit_limit_exceeded → a dialog → the same request again with true).
   overrideCreditLimit: z.boolean().default(false),
+  // Cost floor: post even though a line sells below its buying price (plus the lowest margin).
+  // Only someone with sales.cost.override may send true, after sales_below_cost's dialog.
+  overrideBelowCost: z.boolean().default(false),
 });
 
 type InvoiceRuleInput = z.output<typeof invoiceFieldsSchema>;
@@ -325,6 +328,7 @@ export type InvoiceFormValues = z.input<typeof updateInvoiceInputSchema>;
 export const postInvoiceInputSchema = z.object({
   version: versionSchema,
   overrideCreditLimit: z.boolean().default(false),
+  overrideBelowCost: z.boolean().default(false),
 });
 export type PostInvoiceInput = z.infer<typeof postInvoiceInputSchema>;
 

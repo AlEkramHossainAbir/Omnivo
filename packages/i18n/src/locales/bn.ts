@@ -228,6 +228,23 @@ export const bn: Messages = {
       passwordPlaceholder: 'অন্তত ৮ অক্ষর',
       submit: 'ওয়ার্কস্পেস তৈরি করুন',
       submitting: 'ওয়ার্কস্পেস তৈরি হচ্ছে…',
+      checkTitle: 'আপনার ইমেইল দেখুন',
+      checkBody:
+        '{{email}}-এ একটা লিংক পাঠিয়েছি। ইমেইল নিশ্চিত করে আপনার ওয়ার্কস্পেস খুলতে লিংকটা খুলুন। লিংকটা ২৪ ঘণ্টা কাজ করে।',
+      checkHint: 'খুঁজে পাচ্ছেন না? spam ফোল্ডারে দেখুন।',
+      resend: 'লিংকটা আবার পাঠান',
+      resendIn: '{{seconds}} সেকেন্ড পরে লিংকটা আবার পাঠাতে পারবেন',
+      resent: 'নতুন লিংক পাঠানো হচ্ছে',
+    },
+    verifyEmail: {
+      checking: 'আপনার ইমেইল নিশ্চিত করা হচ্ছে…',
+      done: 'ইমেইল নিশ্চিত হয়েছে',
+      invalidTitle: 'এই লিংক আর কাজ করে না',
+      invalidBody:
+        'লিংকটা আগেই ব্যবহার হয়েছে, অথবা এর মেয়াদ শেষ। ইমেইল আর পাসওয়ার্ড দিয়ে সাইন ইন করুন, আমরা নতুন লিংক পাঠাব।',
+      toSignIn: 'সাইন ইন',
+      failedTitle: 'আপনার ইমেইল এখনো নিশ্চিত করা যায়নি',
+      retry: 'আবার চেষ্টা করুন',
     },
   },
   dashboard: {
@@ -355,6 +372,9 @@ export const bn: Messages = {
     overReceiptPercent: 'অর্ডারের বেশি গ্রহণ',
     overReceiptPercentHint:
       'মাল গ্রহণে অর্ডারের চেয়ে এত শতাংশ পর্যন্ত বেশি নেওয়া যাবে, যেমন ওজনে বিক্রি হওয়া সুতার জন্য ৩%। ০ = অর্ডারের বেশি কখনো না।',
+    minMarginPercent: 'সর্বনিম্ন লাভ',
+    minMarginPercentHint:
+      'POS-এর বিক্রি, অর্ডার বা ইনভয়েসে প্রতিটা লাইন অন্তত ক্রয়মূল্য আর এই শতাংশ যোগ করে বিক্রি করতে হবে। ০ = শুধু ক্রয়মূল্যের নিচে বিক্রি আটকায়।',
     stockAccountsTitle: 'স্টকের অ্যাকাউন্ট',
     stockAccountsSubtitle:
       'স্টকের ডকুমেন্ট হিসাবের খাতায় কোথায় পোস্ট হবে। স্টক নিজে সবসময় {{inventory}}-এ যায়, আর ওপেনিং স্টক {{equity}}-এর বিপরীতে।',
@@ -1564,6 +1584,7 @@ export const bn: Messages = {
       unit: 'ইউনিট',
       tracking: 'ট্র্যাকিং',
       price: 'বিক্রয়মূল্য',
+      cost: 'ক্রয়মূল্য',
     },
     variantCount_one: '{{count}}টা ভ্যারিয়েন্ট',
     variantCount_other: '{{count}}টা ভ্যারিয়েন্ট',
@@ -1577,6 +1598,8 @@ export const bn: Messages = {
     archivedEmptyBody:
       'যে প্রোডাক্ট আর্কাইভ করবেন সেটা এখানে দেখাবে। আর বিক্রি হয় না এমনগুলো আর্কাইভ করুন।',
     archivedOfflineBody: 'আর্কাইভ করা প্রোডাক্ট এই ডিভাইসে রাখা হয় না। দেখতে ইন্টারনেটে যুক্ত হন।',
+    costsOffline: 'ক্রয়মূল্য দেখতে ইন্টারনেট লাগে।',
+    costsFailed: 'ক্রয়মূল্য লোড হয়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
     loadFailed: 'প্রোডাক্টের তালিকা আনা যায়নি। পেজটা রিফ্রেশ করে আবার চেষ্টা করুন।',
     readOnly: 'আপনি প্রোডাক্ট দেখতে পারেন। বদলাতে inventory.product.manage অনুমতি চান।',
     back: 'প্রোডাক্ট',
@@ -1654,6 +1677,9 @@ export const bn: Messages = {
       placeholder: 'একটা ইউনিট বাছুন',
       factor: 'ভেতরে',
       barcode: 'প্যাকের বারকোড',
+      price: 'প্যাকের দাম',
+      priceHint: 'খালি থাকলে {{price}} × {{factor}} = {{amount}}',
+      priceHintNone: 'খালি থাকলে {{base}}-এর দাম × ভেতরে যত আছে',
       add: 'একটা প্যাক যোগ করুন',
       remove: 'প্যাক {{number}} সরান',
       number: 'প্যাক {{number}}',
@@ -3205,6 +3231,20 @@ export const bn: Messages = {
     postInvoice: 'তবুও পোস্ট করুন',
     back: 'ফিরে যান',
   },
+  costFloor: {
+    title: 'ক্রয়মূল্যের নিচে',
+    body_one: 'লাইন {{lines}} মালের ক্রয়মূল্যের চেয়ে কমে বিক্রি হচ্ছে।',
+    body_other: 'লাইন {{lines}} মালের ক্রয়মূল্যের চেয়ে কমে বিক্রি হচ্ছে।',
+    margin: '{{margin}}% সর্বনিম্ন লাভও ধরা হয়েছে (Settings → Sales)।',
+    audit: 'ক্রয়মূল্যের নিচে বিক্রির কথা অডিট লগে লেখা থাকবে।',
+    blocked_one:
+      'লাইন {{lines}} মালের ক্রয়মূল্যের চেয়ে কমে বিক্রি হচ্ছে। দাম বাড়ান বা ছাড় কমান, অথবা যিনি ক্রয়মূল্যের নিচে বিক্রি করতে পারেন তাকে বলুন।',
+    blocked_other:
+      'লাইন {{lines}} মালের ক্রয়মূল্যের চেয়ে কমে বিক্রি হচ্ছে। দাম বাড়ান বা ছাড় কমান, অথবা যিনি ক্রয়মূল্যের নিচে বিক্রি করতে পারেন তাকে বলুন।',
+    confirmOrder: 'তবুও কনফার্ম করুন',
+    postInvoice: 'তবুও পোস্ট করুন',
+    back: 'ফিরে যান',
+  },
   suppliers: {
     title: 'সাপ্লায়ার',
     description: 'যে মিল, ইমপোর্টার আর ভেন্ডরের কাছ থেকে কেনেন, আর তাদের কত দেনা',
@@ -4423,6 +4463,11 @@ export const bn: Messages = {
     overLimit: '{{max}}%-এর বেশি ছাড়ে pos.price.override লাগে।',
     priceLocked: 'দাম বদলাতে pos.price.override লাগে।',
     priceChanged: '{{price}} থেকে বদলানো',
+    belowCost: 'এটা কেনা দামের চেয়ে কম। দাম বাড়ান বা ছাড় কমান।',
+    belowCostAllowed: 'এটা কেনা দামের চেয়ে কম। আপনি বিক্রি করতে পারেন; অডিট লগে লেখা থাকবে।',
+    belowMargin: 'এটা কেনা দাম আর {{margin}}% সর্বনিম্ন লাভের চেয়ে কম। দাম বাড়ান বা ছাড় কমান।',
+    belowMarginAllowed:
+      'এটা কেনা দাম আর {{margin}}% সর্বনিম্ন লাভের চেয়ে কম। আপনি বিক্রি করতে পারেন; অডিট লগে লেখা থাকবে।',
     payTitle: 'টাকা নিন',
     payDescription: 'মোট {{total}}। গ্রাহক চাইলে কয়েকভাবে ভাগ করে নিন।',
     methods: { cash: 'নগদ', card: 'কার্ড', bkash: 'bKash', nagad: 'Nagad', exchange: 'এক্সচেঞ্জ' },
@@ -6795,6 +6840,7 @@ export const bn: Messages = {
       invoice: { manage: 'ইনভয়েস লেখা আর পোস্ট করা' },
       receipt: { manage: 'মানি রিসিট লেখা, ইনভয়েসে ধরা আর বাতিল করা' },
       credit: { override: 'গ্রাহকের ক্রেডিট লিমিটের বাইরে অর্ডার কনফার্ম আর ইনভয়েস পোস্ট করা' },
+      cost: { override: 'ক্রয়মূল্যের নিচের লাইনসহ অর্ডার কনফার্ম আর ইনভয়েস পোস্ট করা' },
       return: { manage: 'সেলস রিটার্ন লেখা আর পোস্ট করা: মাল গুদামে ফেরত আসে' },
       credit_note: { manage: 'ক্রেডিট নোট লেখা, পোস্ট করা আর ইনভয়েসে ধরা' },
       refund: { manage: 'গ্রাহকদের টাকা ফেরত দেওয়া, আর রিফান্ড বাতিল করা' },
@@ -6823,7 +6869,10 @@ export const bn: Messages = {
       report: { read: 'কেনাকাটার রিপোর্ট দেখা' },
     },
     pos: {
-      sale: { create: 'POS কাউন্টারে বিক্রি: রেজিস্টার নেওয়া, বিক্রি লেখা আর টাকা নেওয়া' },
+      sale: {
+        create: 'POS কাউন্টারে বিক্রি: রেজিস্টার নেওয়া, বিক্রি লেখা আর টাকা নেওয়া',
+        below_cost: 'POS-এ কোনো লাইন কেনা দামের চেয়ে কমে বিক্রি করা',
+      },
       price: { override: 'POS-এ দাম বদলানো, বা রেজিস্টারের সীমার বেশি ছাড় দেওয়া' },
       register: { manage: 'POS রেজিস্টার যোগ, বদল আর আর্কাইভ' },
       shift: { manage: 'সব রেজিস্টারের শিফট আর গোনা দেখা, আর আটকে থাকা শিফট না গুনে বন্ধ করা' },
@@ -6950,7 +6999,11 @@ export const bn: Messages = {
         chart_created: 'চার্ট অফ অ্যাকাউন্টস যোগ করেছে',
         catalog_created: 'শুরুর ইউনিট, ক্যাটাগরি আর কাস্টম ফিল্ড যোগ করেছে',
       },
-      auth: { signed_in: 'সাইন ইন করেছেন', switched_in: 'এই ওয়ার্কস্পেসে এসেছেন' },
+      auth: {
+        signed_in: 'সাইন ইন করেছেন',
+        switched_in: 'এই ওয়ার্কস্পেসে এসেছেন',
+        email_verified: 'ইমেইল নিশ্চিত করেছেন',
+      },
       settings: { updated: 'সেটিংস বদলেছেন', logo_changed: 'লোগো বদলেছেন' },
       branch: {
         created: 'ব্রাঞ্চ যোগ করেছেন',
@@ -7110,6 +7163,7 @@ export const bn: Messages = {
         voided: 'একটা মানি রিসিট বাতিল করেছেন',
       },
       credit_limit: { overridden: 'গ্রাহকের ক্রেডিট লিমিট পার করেছেন' },
+      cost_floor: { overridden: 'ক্রয়মূল্যের নিচে বিক্রি করেছেন' },
       sales_return: {
         created: 'একটা সেলস রিটার্ন লিখেছেন',
         updated: 'একটা খসড়া রিটার্ন বদলেছেন',
@@ -7213,6 +7267,7 @@ export const bn: Messages = {
         created: 'POS কাউন্টারে বিক্রি করেছেন',
         overridden: 'POS-এ দাম বদলেছেন বা বেশি ছাড় দিয়েছেন',
         without_permission: 'অনুমতি চলে যাওয়ার পরে POS কাউন্টারে বিক্রি করেছেন',
+        below_cost: 'POS কাউন্টারে কেনা দামের নিচে বিক্রি করেছেন',
       },
       pos_cash_reason: {
         created: 'POS ক্যাশের একটা কারণ যোগ করেছেন',
@@ -7431,6 +7486,7 @@ export const bn: Messages = {
       comment: 'মন্তব্য',
       requisition: 'পারচেজ রিকুইজিশন',
       overReceiptPercent: 'অর্ডারের বেশি গ্রহণ (%)',
+      minMarginPercent: 'সর্বনিম্ন লাভ (%)',
       received_not_billed: 'মাল এসেছে, বিল আসেনি',
       supplier: 'সাপ্লায়ার',
       expectedDate: 'যেদিনের মধ্যে আসবে',
@@ -7460,6 +7516,7 @@ export const bn: Messages = {
       paid: 'দেওয়া হয়েছে',
       soldShort: 'স্টকের বেশি বিক্রির লাইন',
       overrides: 'pos.price.override লাগে',
+      belowCost: 'কেনা দামের নিচে',
       allowed: 'অনুমতি',
       missing: 'যে অনুমতি ছিল না',
       overShortAccount: 'বেশি-কমের অ্যাকাউন্ট',
@@ -7675,6 +7732,7 @@ export const bn: Messages = {
           '{{number}}-এ {{warehouse}}-এর স্টকের চেয়ে বেশি বিক্রি হয়েছে। শূন্যের নিচে নামা আইটেম: {{count}}। গুনে স্টক ঠিক করুন।',
         shift_variance:
           '{{register}}-এর {{number}} বন্ধ হয়েছে {{difference}} নিয়ে। গোনাটা দেখতে শিফটটা খুলুন।',
+        sold_below_cost: '{{number}} ক্রয়মূল্যের নিচে বিক্রি হয়েছে। নিচে থাকা লাইন: {{count}}।',
       },
       // Step 27a: a shop order got its phone code. {{total}} arrives as money ("৳578")
       storefront: {
@@ -7728,6 +7786,10 @@ export const bn: Messages = {
     invalid_credentials: 'ইমেইল বা পাসওয়ার্ড ভুল। দেখে আবার চেষ্টা করুন।',
     not_a_member:
       'এই অ্যাকাউন্ট এখনো কোনো workspace-এ নেই। workspace-এর owner-কে invite করতে বলুন, অথবা নতুন workspace তৈরি করুন।',
+    email_not_verified:
+      'আগে আপনার ইমেইল নিশ্চিত করুন। আপনার ইমেইলে নতুন একটা লিংক পাঠিয়েছি: সাইন ইন করতে সেটা খুলুন।',
+    verification_link_invalid:
+      'এই লিংক আর কাজ করে না। নতুন লিংক পেতে ইমেইল আর পাসওয়ার্ড দিয়ে সাইন ইন করুন।',
     sign_in_required: 'চালিয়ে যেতে সাইন ইন করুন।',
     session_ended: 'আপনার সেশন শেষ হয়েছে। আবার সাইন ইন করুন।',
     access_revoked: 'এই ওয়ার্কস্পেসে আপনার অ্যাক্সেস আর নেই। আবার সাইন ইন করুন।',
@@ -7846,6 +7908,8 @@ export const bn: Messages = {
     product_variant_in_use: 'ডকুমেন্টে এই ভ্যারিয়েন্ট আছে, তাই এটা থাকবে। বরং আর্কাইভ করুন।',
     product_pack_barcode_variants:
       'ভ্যারিয়েন্টওয়ালা প্রোডাক্টের বারকোড থাকে ভ্যারিয়েন্টে, প্যাকে না।',
+    product_pack_price_variants:
+      'ভ্যারিয়েন্টওয়ালা প্রোডাক্টের দাম থাকে ভ্যারিয়েন্টে। প্যাকের দামের ঘর খালি রাখুন।',
     product_tracking_service: 'সার্ভিস স্টকে থাকে না, তাই ট্র্যাক হয় না। None বাছুন।',
     product_expiry_needs_batch: 'মেয়াদের তারিখ রাখা হয় ব্যাচে। আগে ব্যাচ ট্র্যাকিং বাছুন।',
     product_category_invalid: 'তালিকা থেকে একটা ক্যাটাগরি বাছুন।',
@@ -8023,6 +8087,10 @@ export const bn: Messages = {
       'এতে গ্রাহকের পাওনা হবে {{exposure}}, তাদের ক্রেডিট লিমিট {{limit}}-এর বেশি। আগে একটা পেমেন্ট লিখুন, অথবা যিনি লিমিট পার করতে পারেন তাকে বলুন।',
     credit_override_forbidden:
       'ক্রেডিট লিমিট পার করতে {{permissions}} permission লাগে। একজন workspace owner-কে দিতে বলুন।',
+    sales_below_cost:
+      'এটা ক্রয়মূল্যের চেয়ে কমে বিক্রি হচ্ছে, সর্বনিম্ন লাভ ঠিক করা থাকলে সেটাসহ। দাম বাড়ান বা ছাড় কমান।',
+    cost_override_forbidden:
+      'ক্রয়মূল্যের নিচে বিক্রি করতে {{permissions}} permission লাগে। একজন workspace owner-কে দিতে বলুন।',
     journal_is_sales:
       'বিক্রির একটা ডকুমেন্ট এই এন্ট্রি বানিয়েছে, তাই এখানে রিভার্স হয় না। রিসিট বা রিফান্ড তার নিজের পেজে বাতিল করুন; ইনভয়েস ফেরত নিন ক্রেডিট নোট দিয়ে।',
     account_money_type:
@@ -8142,6 +8210,7 @@ export const bn: Messages = {
     grn_line_empty: 'কতটা গ্রহণ করা হলো, কতটা রিজেক্ট, বা দুটোই লিখুন।',
     grn_rejection_reason: 'মাল কেন রিজেক্ট হলো লিখুন, যেমন "ভেজা" বা "শেড মেলেনি"।',
     over_receipt_percent_format: '০ থেকে ১০০-এর মধ্যে একটা শতাংশ দিন, সর্বোচ্চ ২ দশমিক ঘর।',
+    min_margin_percent_format: '০ থেকে ১০০-এর মধ্যে একটা শতাংশ দিন, সর্বোচ্চ ২ দশমিক ঘর।',
     purchase_branch_invalid: 'একটা চালু ব্রাঞ্চ বাছুন।',
     purchase_account_invalid:
       'কেনার অ্যাকাউন্টকে একটা চালু খরচের অ্যাকাউন্ট হতে হবে, গ্রুপ না। সেটিংস → কেনার অ্যাকাউন্ট থেকে অন্য একটা বাছুন।',

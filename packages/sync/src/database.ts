@@ -12,6 +12,7 @@ import type {
   SyncPosCashReason,
   SyncPosRegister,
   SyncPosSale,
+  SyncPriceFloor,
   SyncPriceList,
   SyncPriceListItem,
   SyncSettings,
@@ -304,6 +305,7 @@ export const TABLE_OF = {
   customer: 'customers',
   stock: 'stock',
   pos_sale: 'posSales',
+  price_floor: 'priceFloors',
 } as const satisfies Record<SyncEntity, string>;
 export type SyncTableName = (typeof TABLE_OF)[SyncEntity];
 
@@ -371,6 +373,9 @@ export class SyncDatabase extends Dexie {
   posSales!: Table<PosSaleRow, string>;
   // Step 21a: the Overview's last answer (DashboardRow)
   dashboard!: Table<DashboardRow, string>;
+  // Cost floor: each variant's average cost, keyed by the variant's id. Nothing clear but the key:
+  // the cart reads its variants' rows by key (floorsOf), so no index is needed.
+  priceFloors!: Table<SealedRow<SyncPriceFloor>, string>;
 
   constructor(name: string) {
     super(name);
@@ -462,6 +467,11 @@ export class SyncDatabase extends Dexie {
     // table (the pull never writes or sweeps it), and the page fills it the next time it is online.
     this.version(7).stores({
       dashboard: 'key',
+    });
+    // Cost floor: the variants' average costs. No upgrade: SYNC_PROTOCOL is 5 now, so the next pull
+    // is a full one and brings every floor.
+    this.version(8).stores({
+      priceFloors: 'key, gen',
     });
   }
 

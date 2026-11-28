@@ -15,6 +15,7 @@ import {
   compareQuantity,
   isQuantity,
   isZeroMoney,
+  plainQuantity,
   type PosOverride,
   subtractQuantity,
   type SyncPosRegister,
@@ -30,8 +31,9 @@ import {
   DiscountInput,
   Field,
   IconButton,
-  Input,
+  isMoneyDraft,
   MoneyInput,
+  normalizeMoneyInput,
   parseIsoDate,
   Select,
 } from '@omnivo/ui';
@@ -64,6 +66,12 @@ interface PosCartProps {
   // overridesOf(); empty for someone with pos.price.override
   overrides: readonly PosOverride[];
   canOverride: boolean;
+  // Cost floor: belowCostLines(), the keys of the lines sold for less than they cost, and whether
+  // this person may sell them so (pos.sale.below_cost)
+  belowCost: ReadonlySet<string>;
+  canSellBelowCost: boolean;
+  // The workspace's lowest margin ("0.00" = only below the cost), for the line's words
+  marginPercent: string;
   payable: boolean;
   onPay: () => void;
   open: boolean;
@@ -101,6 +109,9 @@ export function PosCart({
   short,
   overrides,
   canOverride,
+  belowCost,
+  canSellBelowCost,
+  marginPercent,
   payable,
   onPay,
   open,
@@ -231,6 +242,9 @@ export function PosCart({
                 short={short}
                 overrides={overrides}
                 canOverride={canOverride}
+                belowCost={belowCost}
+                canSellBelowCost={canSellBelowCost}
+                marginPercent={marginPercent}
                 line={line}
                 index={index}
                 amount={amounts.lines[index]?.total ?? '0'}
@@ -404,6 +418,9 @@ function LineRow({
   short,
   overrides,
   canOverride,
+  belowCost,
+  canSellBelowCost,
+  marginPercent,
   register,
   stock,
 }: Pick<
@@ -417,12 +434,24 @@ function LineRow({
   | 'short'
   | 'overrides'
   | 'canOverride'
+  | 'belowCost'
+  | 'canSellBelowCost'
+  | 'marginPercent'
 > & { line: CartLine; index: number; amount: string }) {
   const { t, format } = useLocale();
   const money = useScreenMoney();
   const open = selected === line.key;
   const onHand = short.get(line.key);
   const priceOver = overrides.some((item) => item.kind === 'price' && item.line === index);
+  // Cost floor: the words say the margin only when there is one
+  const margin = isZeroMoney(marginPercent) ? null : format.number(marginPercent, 2);
+  const belowCostText = canSellBelowCost
+    ? margin === null
+      ? t('pos.belowCostAllowed')
+      : t('pos.belowMarginAllowed', { margin })
+    : margin === null
+      ? t('pos.belowCost')
+      : t('pos.belowMargin', { margin });
   const discountOver = overrides.some((item) => item.kind === 'discount' && item.line === index);
   const batch = stock.find((row) => row.batchId !== null && row.batchId === line.batchId);
   const id = `pos-line-${line.key}`;
@@ -438,6 +467,10 @@ function LineRow({
     const next = by === 1 ? addQuantity(quantity, '1') : subtractQuantity(quantity, '1');
     if (compareQuantity(next, '1') >= 0) onLine(line.key, { quantity: next });
   };
+  // The count box between − and +: what the cashier types while it has the focus, else the line's
+  // quantity without the trailing zeros a merged scan leaves ("2.0000" shows as "2")
+  const [typed, setTyped] = useState<string | null>(null);
+  const shownQuantity = isQuantity(line.quantity) ? plainQuantity(line.quantity) : line.quantity;
   // The batches of this variant here, for the batch select: the one it has, and every other with
   // stock, first expiry first
   const batches = stock
@@ -469,7 +502,7 @@ function LineRow({
       </button>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         {line.tracking !== 'serial' && (
-          <span className="inline-flex items-center rounded-lg border border-line-strong bg-surface">
+          <span className="inline-flex items-center rounded-lg border border-line-strong bg-surface transition-[border-color,box-shadow] duration-150 focus-within:border-brand focus-within:shadow-ring">
             <button
               type="button"
               aria-label={`${t('pos.quantity')} −1`}
@@ -480,9 +513,40 @@ function LineRow({
             >
               <HugeiconsIcon icon={MinusSignIcon} size={14} strokeWidth={1.5} />
             </button>
-            <span className="min-w-8 text-center text-body-sm font-medium tabular-nums">
-              {format.number(isQuantity(line.quantity) ? line.quantity : '0', line.decimals)}
-            </span>
+            <input
+              id={`${id}-quantity`}
+              aria-label={t('pos.quantity')}
+              inputMode="decimal"
+              autoComplete="off"
+              aria-invalid={!isQuantity(line.quantity)}
+              value={typed ?? shownQuantity}
+              onFocus={(event) => {
+                // Start from the plain digits and select them all, so typing replaces the count
+                setTyped(shownQuantity);
+                event.currentTarget.select();
+              }}
+              onChange={(event) => {
+                // Bangla digits become ASCII ones; a keystroke past the unit's decimals ("2.5" pcs)
+                // or a letter is dropped, so the box never holds what the unit can't count
+                const next = normalizeMoneyInput(event.target.value);
+                if (!isMoneyDraft(next, line.decimals)) return;
+                setTyped(next);
+                onLine(line.key, { quantity: next });
+              }}
+              onBlur={() => {
+                setTyped(null);
+                // An empty box or a zero left behind goes back to one (the remove button takes a
+                // line away), so a line never sits unpayable without a reason on the screen
+                if (!isQuantity(line.quantity)) onLine(line.key, { quantity: '1' });
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  event.currentTarget.blur();
+                }
+              }}
+              className="w-12 bg-transparent text-center text-body-sm font-medium tabular-nums outline-none"
+            />
             <button
               type="button"
               aria-label={`${t('pos.quantity')} +1`}
@@ -513,6 +577,22 @@ function LineRow({
           {batch.expiresOn !== null && ` · ${expiry(batch.expiresOn)}`}
         </p>
       )}
+      {/* Cost floor: never the cost itself, only that the line is under it. With the permission
+          it is a warning the seller may pass; without it, it stops the sale like a short line. */}
+      {belowCost.has(line.key) &&
+        (canSellBelowCost ? (
+          <p className="flex items-start gap-1.5 text-label text-warn">
+            <HugeiconsIcon
+              icon={Alert02Icon}
+              size={15}
+              strokeWidth={1.5}
+              className="mt-px shrink-0"
+            />
+            <span>{belowCostText}</span>
+          </p>
+        ) : (
+          <Problem>{belowCostText}</Problem>
+        ))}
       {onHand !== undefined && (
         <Problem>
           {compareQuantity(onHand, '0') > 0
@@ -524,20 +604,7 @@ function LineRow({
       )}
       {open && (
         <div id={`${id}-boxes`} className="grid gap-3 pt-1">
-          <div className="grid grid-cols-3 gap-2">
-            {line.tracking !== 'serial' && (
-              <Field id={`${id}-quantity`} label={t('pos.quantity')}>
-                <Input
-                  id={`${id}-quantity`}
-                  inputMode="decimal"
-                  align="end"
-                  value={line.quantity}
-                  onChange={(event) => {
-                    onLine(line.key, { quantity: event.target.value.trim() });
-                  }}
-                />
-              </Field>
-            )}
+          <div className="grid grid-cols-2 gap-2">
             <Field
               id={`${id}-price`}
               label={t('pos.price')}

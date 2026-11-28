@@ -390,7 +390,10 @@ database, so it takes a little longer.
 
 1. `https://api.omnivosoft.com/health` answers `{"status":"ok"}`.
 2. Sign up on `https://app.omnivosoft.com`. This is the first real workspace.
-3. The welcome email is in `https://mail.omnivosoft.com`, with the new password.
+3. The welcome email is in `https://mail.omnivosoft.com`, with the new password. (Since 28 Nov
+   2026 production can send real email with Resend instead: see
+   [email-resend.en.md](email-resend.en.md). Then the welcome email is in the real inbox, and only
+   the SMS land in Mailpit.)
 4. GitHub → **Settings → Environments → production** lists the deploy.
 5. The nightly backup still works on the new stack:
 

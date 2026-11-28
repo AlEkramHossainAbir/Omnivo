@@ -30,6 +30,7 @@ import { MemberJoinedHandler } from '../invitations/member-joined.handler.js';
 import { MailService } from '../mail/mail.service.js';
 import { NumberingService } from '../numbering/numbering.service.js';
 import { ShiftVarianceHandler } from '../pos/shift-variance.handler.js';
+import { SoldBelowCostHandler } from '../pos/sold-below-cost.handler.js';
 import { SoldShortHandler } from '../pos/sold-short.handler.js';
 import { ProductImportHandler } from '../products/import.handler.js';
 import { ProductsService } from '../products/products.service.js';
@@ -52,9 +53,10 @@ import { ProvisioningHandler } from '../setup/provisioning.handler.js';
 import { StockAccountsHandler } from '../setup/stock-accounts.handler.js';
 import { TaxRatesHandler } from '../setup/tax-rates.handler.js';
 import { WelcomeEmailHandler } from '../setup/welcome-email.handler.js';
+import { VerificationEmailHandler } from '../auth/verification-email.handler.js';
 import { StorageService } from '../storage/storage.service.js';
 import { createCouriers } from '../shipping/create-couriers.js';
-import { SMS_SENDER, MailSmsSender } from '../sms/sms-sender.js';
+import { SMS_MAIL, SMS_SENDER, MailSmsSender } from '../sms/sms-sender.js';
 import { SmsQueue } from '../sms/sms-queue.js';
 import { StorefrontImageHandler } from '../storefront/image.handler.js';
 import { GatewayAccounts } from '../storefront/gateway-accounts.js';
@@ -105,6 +107,7 @@ export class WorkerModule implements OnApplicationShutdown {
         JobRunner,
         EventHandlers,
         WelcomeEmailHandler,
+        VerificationEmailHandler,
         ProvisioningHandler,
         InvitationEmailHandler,
         MemberJoinedHandler,
@@ -125,6 +128,8 @@ export class WorkerModule implements OnApplicationShutdown {
         SoldShortHandler,
         // Step 20b: the bell for a shift whose count was far from the expected cash
         ShiftVarianceHandler,
+        // Cost floor: the bell for a POS sale below the buying price
+        SoldBelowCostHandler,
         // Step 18a: the hourly job also prunes the sync change log, on the relay's pool
         SyncLogCleanup,
         // Step 21c: the 5-minute sweep for due report emails (both pools), one run of a schedule,
@@ -140,6 +145,14 @@ export class WorkerModule implements OnApplicationShutdown {
         OrderConfirmedHandler,
         PendingOrderSweep,
         { provide: SMS_SENDER, useClass: MailSmsSender },
+        // The SMS's own mail server (SMS_SMTP_URL, Mailpit), so a phone code never goes to the
+        // real email service. Same from address and timeouts as the emails. A factory instance
+        // still gets its shutdown hook, so this transport closes with the worker
+        {
+          provide: SMS_MAIL,
+          useFactory: () =>
+            new MailService({ mail: { url: config.sms.mailUrl, from: config.mail.from } }),
+        },
         SmsRunner,
         // Step 27b: a confirmed order's customer and sales order, made by OrderConfirmedHandler
         // with the services the ERP's screens use, so a shop sale follows the same rules

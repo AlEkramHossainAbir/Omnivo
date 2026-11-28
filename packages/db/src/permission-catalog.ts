@@ -42,6 +42,8 @@ const DESCRIPTIONS = {
   'sales.invoice.manage': 'Write, post and delete draft sales invoices',
   'sales.receipt.manage': 'Record money receipts, apply them to invoices and void them',
   'sales.credit.override': "Confirm orders and post invoices over a customer's credit limit",
+  'sales.cost.override':
+    'Confirm sales orders and post invoices with lines below their buying price',
   'sales.return.manage': 'Write and post sales returns, which bring stock back in',
   'sales.credit_note.manage': 'Write and post credit notes, and apply their money to invoices',
   'sales.refund.manage': 'Pay money back to customers and void refunds',
@@ -63,6 +65,8 @@ const DESCRIPTIONS = {
     'Sell at a POS register, take a free register for this device, and run its shifts',
   'pos.price.override':
     "Change a price at the POS, or give more discount than the register's limit",
+  'pos.sale.below_cost':
+    'Sell a line at the POS for less than what the goods cost (their average cost)',
   'pos.register.manage': 'Add, edit and archive POS registers and the pay in and pay out reasons',
   'pos.shift.manage':
     "See every register's shifts and cash differences, and close a stuck shift without a count",

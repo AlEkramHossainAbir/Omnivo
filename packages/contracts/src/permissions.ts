@@ -33,6 +33,9 @@ export const PERMISSION_KEYS = [
   'sales.invoice.manage',
   'sales.receipt.manage',
   'sales.credit.override',
+  // Cost floor: confirm an order or post an invoice with a line below its buying price (plus the
+  // lowest margin). Apart from the POS's pos.sale.below_cost; no template has it either.
+  'sales.cost.override',
   'sales.return.manage',
   'sales.credit_note.manage',
   'sales.refund.manage',
@@ -50,6 +53,10 @@ export const PERMISSION_KEYS = [
   'purchase.report.read',
   'pos.sale.create',
   'pos.price.override',
+  // Selling a line at the POS for less than what it cost (the average cost). Apart from
+  // pos.price.override: a manager may give more than the register's discount and still not sell
+  // at a loss. No template has it; the Owner has every permission.
+  'pos.sale.below_cost',
   'pos.register.manage',
   'pos.shift.manage',
   'pos.return.create',
@@ -118,6 +125,7 @@ export const PERMISSION_GROUP_OF = {
   'sales.invoice.manage': 'sales',
   'sales.receipt.manage': 'sales',
   'sales.credit.override': 'sales',
+  'sales.cost.override': 'sales',
   'sales.return.manage': 'sales',
   'sales.credit_note.manage': 'sales',
   'sales.refund.manage': 'sales',
@@ -135,6 +143,7 @@ export const PERMISSION_GROUP_OF = {
   'purchase.report.read': 'purchase',
   'pos.sale.create': 'pos',
   'pos.price.override': 'pos',
+  'pos.sale.below_cost': 'pos',
   'pos.register.manage': 'pos',
   'pos.shift.manage': 'pos',
   'pos.return.create': 'pos',

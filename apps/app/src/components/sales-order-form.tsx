@@ -40,6 +40,7 @@ import { formTotals, type LineMeta, SALES_LINE_FIELDS, savedLines } from '../lib
 import { useCan } from '../lib/permissions';
 import { customerQuery, taxRatesQuery } from '../lib/queries';
 import { useOnline } from '../lib/use-online';
+import { CostFloorDialog, type CostStop, costStopOf, useCostText } from './cost-floor-parts';
 import {
   CreditLimitDialog,
   CreditLine,
@@ -67,6 +68,13 @@ const CustomerPicker = lazy(async () => ({
 const DatePicker = lazy(async () => ({ default: (await import('./date-input')).DatePicker }));
 
 type FormValues = SalesOrderFormValues;
+
+// The overrides a confirming may carry, each after its own dialog
+interface Overrides {
+  credit: boolean;
+  cost: boolean;
+}
+const NO_OVERRIDES: Overrides = { credit: false, cost: false };
 
 function fieldNames(lineCount: number): Path<FormValues>[] {
   return [
@@ -128,8 +136,15 @@ export function SalesOrderForm({
   // Step 15c: the limit and the amount when confirming would go over the customer's credit limit,
   // for someone who may go over it (the dialog asks); null otherwise
   const [stop, setStop] = useState<CreditStop | null>(null);
-  const canOverride = useCan()('sales.credit.override');
+  const can = useCan();
+  const canOverride = can('sales.credit.override');
   const creditText = useCreditText();
+  // Cost floor: the lines below their buying price, for someone who may confirm them anyway (the
+  // dialog asks); and what the person already said yes to in this confirming
+  const canSellBelowCost = can('sales.cost.override');
+  const costText = useCostText();
+  const [costStop, setCostStop] = useState<CostStop | null>(null);
+  const [granted, setGranted] = useState<Overrides>(NO_OVERRIDES);
   const [start] = useState(() => {
     if (order) return savedLines(order.lines, order.customer.id);
     if (quotation) return savedLines(quotation.lines, quotation.customer.id);
@@ -216,11 +231,16 @@ export function SalesOrderForm({
     setValue('shippingAddressId', shippingAddresses(picked.addresses)[0]?.id ?? '');
   };
 
-  // override: the second try, after the person saw the credit dialog and went on
-  const save = (confirm: boolean, override = false) =>
+  // overrides: a later try, after the person saw the credit or the cost dialog and went on
+  const save = (confirm: boolean, overrides: Overrides = NO_OVERRIDES) =>
     handleSubmit(async ({ version, ...values }) => {
       try {
-        const body = { ...values, confirm, overrideCreditLimit: override };
+        const body = {
+          ...values,
+          confirm,
+          overrideCreditLimit: overrides.credit,
+          overrideBelowCost: overrides.cost,
+        };
         const saved = order
           ? await call(routes.salesOrders.update, {
               params: { id: order.id },
@@ -236,6 +256,8 @@ export function SalesOrderForm({
             : t('salesOrders.draftSaved'),
         );
         setStop(null);
+        setCostStop(null);
+        setGranted(NO_OVERRIDES);
         if (!order) {
           void navigate({
             to: '/sales-orders/$orderId',
@@ -245,15 +267,28 @@ export function SalesOrderForm({
         }
       } catch (error) {
         // Over the credit limit: ask, if the person may go over it; else say so, with the amounts
+        // Below the buying price first (the API checks it first): ask, if the person may
+        const cost = costStopOf(error);
+        if (cost !== null && canSellBelowCost && !overrides.cost) {
+          setStop(null);
+          setGranted(overrides);
+          setCostStop(cost);
+          return;
+        }
         const credit = creditStopOf(error);
-        if (credit !== null && canOverride && !override) {
+        if (credit !== null && canOverride && !overrides.credit) {
+          setCostStop(null);
+          setGranted(overrides);
           setStop(credit);
           return;
         }
         setStop(null);
-        const text = creditText(error);
+        setCostStop(null);
+        // The price boxes of the lines below cost get their error too; the sentence goes on top
+        if (cost !== null) applyApiError(error, fieldNames(lineCount), setError);
+        const text = creditText(error) ?? costText(error);
         if (text !== null) setError('root.server', { message: text });
-        else applyApiError(error, fieldNames(lineCount), setError);
+        else if (cost === null) applyApiError(error, fieldNames(lineCount), setError);
       }
     });
 
@@ -494,9 +529,18 @@ export function SalesOrderForm({
         customer={customer?.name ?? savedCustomer?.name ?? ''}
         confirmLabel={t('creditLimit.confirmOrder')}
         pending={isSubmitting}
-        onConfirm={() => void save(true, true)()}
+        onConfirm={() => void save(true, { ...granted, credit: true })()}
         onClose={() => {
           setStop(null);
+        }}
+      />
+      <CostFloorDialog
+        stop={costStop}
+        confirmLabel={t('costFloor.confirmOrder')}
+        pending={isSubmitting}
+        onConfirm={() => void save(true, { ...granted, cost: true })()}
+        onClose={() => {
+          setCostStop(null);
         }}
       />
     </div>

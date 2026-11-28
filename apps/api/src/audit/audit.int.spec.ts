@@ -90,11 +90,13 @@ async function everyPage(query: string, limit: number): Promise<AuditEntry[]> {
 describe('audit log', () => {
   it('records the workspace creation and every sign-in, newest first', async () => {
     const { items } = auditPageSchema.parse((await list('limit=50')).json());
+    // The owner's email link comes between the two: the helper's signUp opens it
     expect(items.map((entry) => [entry.action, entry.actor?.fullName])).toEqual([
       ['auth.signed_in', 'Nasrin Akter'],
+      ['auth.email_verified', 'Farhana Rahman'],
       ['workspace.created', 'Farhana Rahman'],
     ]);
-    expect(items[1]?.changes).toEqual({
+    expect(items[2]?.changes).toEqual({
       name: { from: null, to: 'Rahman Garments Ltd.' },
       slug: { from: null, to: 'rahman-garments' },
     });

@@ -646,15 +646,22 @@ describe('Running the schedules', { timeout: 40_000 }, () => {
     return reportExportPageSchema.parse(res.json()).items;
   }
 
-  // How many emails this person has had (the welcome email of their sign-up too)
+  // How many emails this person has had (the welcome email of their sign-up too). The link that
+  // confirms the address is left out: the test helper confirms it by itself, so whether the worker
+  // also sent one depends on timing
   const mailboxSchema = z.object({
-    messages: z.array(z.object({ To: z.array(z.object({ Address: z.string() })) })),
+    messages: z.array(
+      z.object({ Subject: z.string(), To: z.array(z.object({ Address: z.string() })) }),
+    ),
   });
   async function mailsTo(person: Person): Promise<number> {
     const res = await fetch(`${mail.apiUrl}/api/v1/messages`);
     const { messages } = mailboxSchema.parse(await res.json());
-    return messages.filter((message) => message.To.some((to) => to.Address === person.email))
-      .length;
+    return messages.filter(
+      (message) =>
+        message.Subject !== 'Confirm your email for Omnivo' &&
+        message.To.some((to) => to.Address === person.email),
+    ).length;
   }
 
   // Waits for the newest email to this person to be the one the test expects

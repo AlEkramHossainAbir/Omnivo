@@ -1,6 +1,7 @@
 export { cn } from './lib/cn.js';
 export { DESKTOP_QUERY, useMediaQuery } from './lib/use-media-query.js';
 export { parseIsoDate, toIsoDate } from './lib/iso-date.js';
+export { isMoneyDraft, normalizeMoneyInput } from './lib/money.js';
 export { buildTree, filterTree, flattenTree, type TreeNode } from './lib/tree.js';
 
 export {

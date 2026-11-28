@@ -155,8 +155,13 @@ its old name). Runbook: [docs/vps-deploy.en.md](docs/vps-deploy.en.md); addresse
   A new `.env` name a deploy needs goes into **both** `.env` files first.
 - SSH secrets are repository secrets (`VPS_SSH_HOST`, `VPS_SSH_PORT`, `VPS_SSH_USER`, `VPS_SSH_KEY`,
   `VPS_KNOWN_HOSTS`): both stacks are on one server.
-- Production still sends its emails to Mailpit (no real email yet), and the shops on both stacks
-  are the mock shop.
+- **Email (since 2026-11-28):** production sends real email through Resend once its `.env` has
+  `SMTP_URL` (`smtps://resend:<API key>@smtp.resend.com:465`; without it, Mailpit). The demo never
+  sets it and stays on Mailpit. The SMS (phone codes) go to Mailpit on both stacks through their own
+  `SMS_SMTP_URL` (`SMS_MAIL` in `worker.module.ts`), never to Resend: `<phone>@sms.invalid` would
+  bounce and get the account blocked; a production worker without `SMS_SMTP_URL` refuses to start.
+  Runbook: [docs/email-resend.en.md](docs/email-resend.en.md). The shops on both stacks are the mock
+  shop.
 
 ## App UI design system (approved 2026-09-24)
 
@@ -541,14 +546,20 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   Below it, from 860px, the products on the left and a 400px cart on the right, each scrolling inside
   itself (`h-dvh`; the page never scrolls). The search box ("Scan or search") has the focus; a scanner types the
   barcode and Enter. Tiles: radius 10px, 1px `line`, the name (13.5px/500, two lines), the SKU in `Geist Mono` `ink-3`,
-  the price (600) and the stock (`ink-2`, or "Out of stock" on a disabled `subtle` tile when the workspace does not
-  sell below zero), two columns on a phone. Keys: F2 search, F4 customer, F6 return, F7 bill discount, F8 hold, F9
+  the price (600) and the stock (`ink-2`; with nothing on hand, `crit`/500 "Out of stock" with `Alert02` on a
+  disabled `subtle` tile when the workspace does not sell below zero, else the count in `warn`/500 with `Alert02` on
+  a tile that still sells), two columns on a phone. In the cart, the stepper's count is a box: focusing it selects
+  the digits, Bangla digits become ASCII, it takes no more decimals than the unit, and empty or zero goes back to 1
+  when it loses the focus. Keys: F2 search, F4 customer, F6 return, F7 bill discount, F8 hold, F9
   held bills, F12 pay, Enter complete and new sale, `?` the shortcuts dialog.
 - **POS cart:** the customer box (walk-in by default), then one row per line that opens on a click
   (`aria-expanded`): a quantity stepper that never goes below 1, "× ৳420 · bag", a `brand` "5% off" pill, the batch;
   open, the quantity, price, discount, batch and serial boxes. A price the cashier may not change is read-only with
   a 12px `ink-3` sentence saying why; over the register's limit, the discount says it needs `pos.price.override` and
-  Pay waits. The totals block on `subtle`: bill discount (`DiscountInput`), line discounts only when there are any,
+  Pay waits. A line that sells for less than its average cost (after its share of the bill discount, without VAT)
+  says "Less than it cost…" (or "Less than cost + 5%…" with a lowest margin, Settings → Sales) in `crit` with
+  `Alert02` and Pay waits; with `pos.sale.below_cost` it is a
+  `warn` line and Pay goes on. The screen never shows the cost itself. The totals block on `subtle`: bill discount (`DiscountInput`), line discounts only when there are any,
   VAT, the total at the KPI size, and "Pay ৳2,300" (primary, full width). On a phone the cart is a bar at the bottom
   (count, total, Pay) that opens it over the products.
 - **Pay and done dialogs:** "Take payment": rows of method select, amount and reference (each method's own
@@ -1242,6 +1253,12 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   document over the limit, someone with `sales.credit.override` gets a dialog (what the customer would owe and the
   limit, in paisa; "The audit log records that you went over the limit."; Back and "Confirm anyway" / "Post
   anyway"); everyone else gets the error text under the form with the same amounts.
+- **Cost floor dialog:** when the API refuses an order's confirm or an invoice's post because lines sell below their
+  average cost plus the lowest margin (`sales_below_cost`), the price boxes of those lines show the error, and
+  someone with `sales.cost.override` gets a dialog ("Below the buying price", "Lines 2, 4 sell below their buying
+  price.", the margin when one is set, "The audit log records it."; Back and "Confirm anyway" / "Post anyway"). No
+  amount is shown. Everyone else gets the sentence above the form. A document can be over the credit limit and
+  below cost at once: each dialog's answer is kept for the next one.
 - **Allocation table (money receipts, supplier payments, debit notes):** the invoices the customer still owes on, oldest due date first, in an
   `overflow-x-auto` box: invoice number (`Geist Mono`) with its dates under it, the total, what is still due
   (500), and a money input for this receipt. Above it "Apply oldest first" and "Clear" (secondary `sm`); below
@@ -1262,7 +1279,10 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   average cost".
 - **Stock values:** a value worked out from the books is shown only with `inventory.stock.value`; without it the
   column is left out (lists) or shows a dash (documents). A stock document links its journal entries
-  ("JV-2026-27-0042") for people who read the journal, and a stock entry links back ("From ADJ-…").
+  ("JV-2026-27-0042") for people who read the journal, and a stock entry links back ("From ADJ-…"). The product
+  list's "Buying price" column (the average cost per base unit, 2 decimals, a range when the variants differ) is
+  asked from the server for the rows shown (`GET /product-costs`, which needs the permission), like the customer
+  balances: online only, a dash offline with "Buying prices need a connection." above the table.
 - **Serial number box:** the text area's look, `Geist Mono`, one serial number per line.
 - **Expiry pill:** expired = `crit`, 30 days or less = `warn` ("12 days left"), later = the date alone.
 - **Text area:** the input box, three rows tall, resizes vertically only.
@@ -1308,6 +1328,17 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   hint, the addresses, CC, who and when. A link: Active (`good`, `Link01`), Ended (neutral, `Hourglass`), Turned
   off (neutral, `CancelCircle`), its language, who made it, until when, first and last opened; "Turn off"
   (secondary `sm`, `Unlink01`, asks first) on an active link for people with the send permission.
+- **Check your email (after sign-up):** the sign-up card's place, once the workspace is made: the empty state
+  with `Mail01`, "Check your email", "We sent a link to farhana@rahmangarments.com. Open it to confirm your email
+  and open your workspace. The link works for 24 hours.", "Send the link again" (secondary, disabled with "Send the
+  link again in 42 s" for 60 seconds after each email) and a 13px `ink-3` spam-folder hint. No "use another
+  email": the workspace's address is taken by then.
+- **Email link page (`/verify-email#<token>`):** no login, the invitation page's frame (logo, one centered card
+  of at most 420px, the language switch). "Confirming your email…" (`role="status"`), then the toast "Email
+  confirmed" and `/` (the setup wizard for a new owner), or `/login` when the address is confirmed but its
+  sign-in has ended. A used, ended or unknown link: `crit` empty state, `LinkBackward`, "This link no longer
+  works", a Sign in link (the sign-in sends a new one). No connection: `crit` empty state, `Alert02`, the error
+  and Retry. The token leaves the address at once (`history.replaceState`).
 - **Public document page (`/d/<token>`):** no app shell and no login. The `bg` page with one centered card (at
   most 480px; padding 32px, 22px on phones): the company's logo and name, the document's name and number
   (`Geist Mono`, never broken), the customer or the supplier (`recipient`), then number, date, total (and for an invoice the due date and what

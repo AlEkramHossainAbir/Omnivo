@@ -76,6 +76,9 @@ export const settingsSchema = z.object({
   // Step 17b: "3.00" lets a goods receipt bring in up to 3% more than the order line. "0.00" (the
   // default) = never more than ordered.
   overReceiptPercent: z.string(),
+  // Cost floor: "5.00" = a sale must keep at least 5% over what the goods cost; "0.00" (the
+  // default) = it only may not go below the cost itself
+  minMarginPercent: z.string(),
   version: z.number().int(),
 });
 export type Settings = z.infer<typeof settingsSchema>;
@@ -95,6 +98,18 @@ export const overReceiptPercentSchema = z
     errorCode('over_receipt_percent_format'),
   );
 
+// Cost floor: the lowest margin a sale may have, in percent of what its goods cost. '' or 0 = only a
+// sale below the cost is stopped. At most 100 (twice the cost): a shop that needs more sets its
+// prices, not a floor.
+export const minMarginPercentSchema = z
+  .string()
+  .trim()
+  .transform((value) => (value === '' ? '0' : value))
+  .refine(
+    (value) => PERCENT.test(value) && compareQuantity(value, '100') <= 0,
+    errorCode('min_margin_percent_format'),
+  );
+
 // PUT: পুরো ফর্ম একসাথে। version = ফর্ম খোলার সময়ের version (optimistic locking)
 export const updateSettingsInputSchema = z.object({
   version: versionSchema,
@@ -110,6 +125,8 @@ export const updateSettingsInputSchema = z.object({
   allowNegativeStock: z.boolean(),
   pricesIncludeVat: z.boolean(),
   overReceiptPercent: overReceiptPercentSchema,
+  // Optional: a body from before this field keeps the saved margin (missing = unchanged)
+  minMarginPercent: minMarginPercentSchema.optional(),
 });
 export type UpdateSettingsInput = z.infer<typeof updateSettingsInputSchema>;
 

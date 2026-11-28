@@ -367,6 +367,22 @@ export interface ProductFilter {
   sort: ProductSort;
 }
 
+// The buying price column: what the products on screen cost (their average cost per base unit),
+// up to 100 at a time. Under ['stock', tenantId]: every save that moves stock refreshes that key,
+// and a receipt is what changes a cost. Needs inventory.stock.value (the page asks only with it).
+export function productCostsQuery(tenantId: string, ids: readonly string[]) {
+  return queryOptions({
+    queryKey: ['stock', tenantId, 'product-costs', ids],
+    queryFn: async () =>
+      new Map(
+        (await call(routes.products.costs, { query: { ids: ids.join(',') } })).items.map(
+          (item) => [item.id, { min: item.minCost, max: item.maxCost }] as const,
+        ),
+      ),
+    placeholderData: keepPreviousData,
+  });
+}
+
 // The list, 50 at a time; the server searches, filters and sorts (10,000 products never come to
 // the browser at once)
 export function productListQuery(tenantId: string, filter: ProductFilter) {

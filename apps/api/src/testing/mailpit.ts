@@ -39,11 +39,17 @@ export interface Mail {
   attachments: { partId: string; fileName: string; contentType: string }[];
 }
 
-// The newest email to this address (Mailpit lists newest first). Throws when there is none yet —
-// wrap it in eventually(): the worker sends a moment after the request has answered.
-export async function lastMailTo(apiUrl: string, address: string): Promise<Mail> {
+// The newest email to this address (Mailpit lists newest first), or the newest with this subject.
+// Throws when there is none yet — wrap it in eventually(): the worker sends a moment after the
+// request has answered. The subject matters when one address gets two kinds of email in any order
+// (a sign-up's link and its welcome email)
+export async function lastMailTo(apiUrl: string, address: string, subject?: string): Promise<Mail> {
   const mailbox = mailboxSchema.parse(await (await fetch(`${apiUrl}/api/v1/messages`)).json());
-  const found = mailbox.messages.find((message) => message.To.some((to) => to.Address === address));
+  const found = mailbox.messages.find(
+    (message) =>
+      message.To.some((to) => to.Address === address) &&
+      (subject === undefined || message.Subject === subject),
+  );
   if (!found) throw new Error(`no mail to ${address}`);
   const message = messageSchema.parse(
     await (await fetch(`${apiUrl}/api/v1/message/${found.ID}`)).json(),

@@ -280,15 +280,24 @@ export type PriceLookupItem = z.infer<typeof priceLookupItemSchema>;
 // offline.
 //   listPrice  the price of the customer's price list for this variant in this unit, if the list is
 //              active and has one; else null
+//   packPrice  the pack's own price, per one pack (product_units.sale_price); null for the base
+//              unit, and for a pack without a price of its own
 //   salePrice  the variant's own sale price, per base unit; null = none set
 //   factor     the unit's size in the base unit, as product_units.factor keeps it: "1" for the base
 //              unit, "24" for a case of 24, "0.914400" for a yard in metres
+// The order: the customer's list, then the pack's own price, then the piece price × the factor. A
+// pack price comes before the product's because a box is usually cheaper than its pieces one by
+// one (42 KitKat at ৳30 is ৳1,260; the box sells for ৳750). Both are the 'product' source: the
+// form's hint says "Product price" either way.
 export function startingPrice(input: {
   listPrice: string | null;
+  packPrice: string | null;
   salePrice: string | null;
   factor: string;
 }): Pick<PriceLookupItem, 'price' | 'source'> {
   if (input.listPrice !== null) return { price: sumMoney([input.listPrice]), source: 'price_list' };
+  // sumMoney of one value: the price in the 4 decimals every price keeps ("750" → "750.0000")
+  if (input.packPrice !== null) return { price: sumMoney([input.packPrice]), source: 'product' };
   if (input.salePrice === null) return { price: null, source: null };
   // salePrice × factor, to the 4 decimals a price keeps: a case of 24 at ৳21 a piece is ৳504
   return { price: priceInUnit(input.salePrice, '1', input.factor), source: 'product' };

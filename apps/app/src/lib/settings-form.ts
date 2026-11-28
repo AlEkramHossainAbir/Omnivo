@@ -25,5 +25,7 @@ export function settingsToForm(settings: Settings): SettingsFormValues {
     pricesIncludeVat: settings.pricesIncludeVat,
     // Step 17b: "3.00" from the server is "3" in the box, and "0.00" is "0"
     overReceiptPercent: plainQuantity(settings.overReceiptPercent),
+    // Cost floor: "5.00" is "5" in the box
+    minMarginPercent: plainQuantity(settings.minMarginPercent),
   };
 }

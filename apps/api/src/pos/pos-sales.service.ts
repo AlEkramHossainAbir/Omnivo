@@ -7,6 +7,7 @@ import {
   isWholeQuantity,
   negateMoney,
   type PartyRef,
+  posBelowCostLines,
   type PosOverride,
   posOverridesOf,
   type PosSale,
@@ -29,6 +30,7 @@ import {
   posSalePayments,
   posSales,
   posShifts,
+  tenantSettings,
   users,
   warehouses,
 } from '@omnivo/db';
@@ -112,6 +114,21 @@ function overrideText(overrides: readonly PosOverride[]): string {
       override.kind === 'bill_discount'
         ? 'bill discount'
         : `${override.kind} on line ${String(override.line + 1)}`,
+    )
+    .join(', ');
+}
+
+// "line 2: 680.0000 for goods that cost 700.0000": what the audit log shows of the lines sold
+// below cost, counted from 1 like the receipt, without VAT on both sides
+function belowCostText(
+  indexes: readonly number[],
+  amounts: readonly { net: string }[],
+  values: readonly string[],
+): string {
+  return indexes
+    .map(
+      (index) =>
+        `line ${String(index + 1)}: ${amounts[index]?.net ?? '0'} for goods that cost ${values[index] ?? '0'}`,
     )
     .join(', ');
 }
@@ -422,6 +439,38 @@ export class PosSalesService {
           allowed: access.permissions.includes('pos.price.override'),
         }),
       });
+    }
+    // Cost floor: the lines sold for less than their goods cost, by the posted value of their
+    // movements (the real cost, which the device only knew from its copy). Written whether or not
+    // the cashier had pos.sale.below_cost, and never a refusal: the money was taken, like the
+    // overrides above. A service moves no stock, so it has no cost here.
+    // The lowest margin is the workspace's now, like the register's discount limit above
+    const [margin] = await tx
+      .select({ percent: tenantSettings.minMarginPercent })
+      .from(tenantSettings)
+      .where(eq(tenantSettings.tenantId, tenantId));
+    const belowCost = posBelowCostLines(
+      lines.map((line, index) => ({
+        net: amounts.lines[index]?.net ?? '0',
+        cost: line.variant.type === 'goods' ? (lineValues[index] ?? null) : null,
+      })),
+      margin?.percent ?? '0',
+    );
+    if (belowCost.length > 0) {
+      await audit(tx, {
+        action: 'pos_sale.below_cost',
+        entityType: 'pos_sale',
+        entityId: saleId,
+        changes: created({
+          belowCost: belowCostText(belowCost, amounts.lines, lineValues),
+          minMarginPercent: margin?.percent ?? '0',
+          allowed: access.permissions.includes('pos.sale.below_cost'),
+        }),
+      });
+    }
+    // Cost floor: the owners and the counter managers hear about it after the commit
+    if (belowCost.length > 0) {
+      await emit(tx, 'pos.sold_below_cost', { saleId, count: belowCost.length });
     }
     // Decision 30: the people who put stock right hear about it after the commit
     if (shortLines > 0) await emit(tx, 'pos.sold_short', { saleId });

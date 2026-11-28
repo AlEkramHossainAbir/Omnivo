@@ -59,10 +59,11 @@ export async function lookUpPrices(
     const product = products.get(item.variantId);
     const variant = product?.variants.find((one) => one.id === item.variantId);
     if (!product || !variant) continue;
-    const factor =
+    const pack =
       item.unitId === product.baseUnitId
-        ? '1'
-        : product.units.find((pack) => pack.unitId === item.unitId)?.factor;
+        ? undefined
+        : product.units.find((one) => one.unitId === item.unitId);
+    const factor = item.unitId === product.baseUnitId ? '1' : pack?.factor;
     if (factor === undefined) continue;
     const own = rates.find((rate) => rate.id === product.taxRateId && rate.archivedAt === null);
     const taxRateId = own?.id ?? defaultRate?.id;
@@ -73,6 +74,8 @@ export async function lookUpPrices(
       ...item,
       ...startingPrice({
         listPrice: listItem?.price ?? null,
+        // Step pack prices: the box's own price. A copy made before it has no field (null).
+        packPrice: pack?.salePrice ?? null,
         salePrice: variant.salePrice,
         factor,
       }),

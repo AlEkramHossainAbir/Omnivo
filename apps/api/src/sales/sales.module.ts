@@ -8,6 +8,7 @@ import { BalanceAccess } from './balance-access.js';
 import { CustomerGroupsService } from './customer-groups.service.js';
 import { CustomerGroupsController, CustomersController } from './customers.controller.js';
 import { CreditNotesService } from './credit-notes.service.js';
+import { CostFloorService } from './cost-floor.service.js';
 import { CreditService } from './credit.service.js';
 import { CustomersService } from './customers.service.js';
 import { DeliveriesService } from './deliveries.service.js';
@@ -71,6 +72,7 @@ import { SalesReturnsService } from './sales-returns.service.js';
     SalesOrdersService,
     DeliveriesService,
     CreditService,
+    CostFloorService,
     SalesBooksService,
     InvoicesService,
     ReceiptsService,

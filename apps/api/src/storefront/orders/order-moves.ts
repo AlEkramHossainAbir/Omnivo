@@ -291,6 +291,8 @@ export class ShopOrderMoves {
       // Never over the limit: the invoice bills the confirmed order at its own prices, which
       // moves the amount from "on order" to "owed" and adds nothing (CreditService.check)
       overrideCreditLimit: false,
+      // Every line bills an order line (or is a service), which the cost floor never asks again
+      overrideBelowCost: false,
     });
     // Step 27d (decision 6): a paid online order's advance pays its invoice at once
     await this.paymentReceipts.applyToInvoice(tx, order.id, invoiceId);

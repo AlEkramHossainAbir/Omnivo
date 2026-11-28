@@ -11,6 +11,8 @@ import type { Transaction } from '../tenant/with-tenant.js';
 // compile.
 export const outboxPayloadSchemas = {
   'workspace.created': z.object({ userId: z.uuid() }),
+  // Only who: the email_verifications row says the rest, and the link's token is made by the worker
+  'account.verification_requested': z.object({ userId: z.uuid() }),
   'workspace.setup_requested': z.object({ userId: z.uuid() }),
   // actorUserId: who sent or resent it — their name goes in the email, and they hear if it fails
   'invitation.issued': z.object({ invitationId: z.uuid(), actorUserId: z.uuid() }),
@@ -46,6 +48,9 @@ export const outboxPayloadSchemas = {
   // Step 20b: a shift's closing count was further from the expected cash than its register's
   // limit. The shift's row has the numbers; the worker tells the managers.
   'pos.shift_variance': z.object({ shiftId: z.uuid() }),
+  // Cost floor: a POS sale had `count` lines below their buying price. The count is in the event
+  // because it depends on the cost and the margin of that moment, which the sale does not keep.
+  'pos.sold_below_cost': z.object({ saleId: z.uuid(), count: z.number().int().positive() }),
   // Step 21c: a scheduled report is due. runAt is the run it stands for: the period is worked out
   // from its day, not from the moment the job happens to run.
   'report.schedule_due': z.object({ scheduleId: z.uuid(), runAt: z.iso.datetime() }),

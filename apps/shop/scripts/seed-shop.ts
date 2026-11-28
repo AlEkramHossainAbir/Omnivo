@@ -32,6 +32,8 @@ import { PAGES } from './seed-words';
 // and it is atomic, so two runs at once cannot both make it.
 
 const API_URL = process.env.SEED_API_URL ?? 'http://localhost:3000';
+// The dev stack's Mailpit, where the sign-up's email link lands (infra/docker/docker-compose.yml)
+const MAIL_URL = process.env.SEED_MAIL_URL ?? 'http://localhost:8025';
 // Also the shop's subdomain: http://demo-shop.localhost:4321
 const SLUG = process.env.SEED_SHOP_SLUG ?? 'demo-shop';
 
@@ -51,7 +53,7 @@ const SETUP_WAIT_MS = 60_000;
 const PHOTO_WAIT_MS = 180_000;
 const POLL_MS = 500;
 
-const api = new SeedApi(API_URL);
+const api = new SeedApi(API_URL, MAIL_URL);
 const started = performance.now();
 
 function step(text: string): void {

@@ -54,6 +54,8 @@ Omnivo already has an account for cash ("Cash in hand"). You add the bKash accou
 3. **Units and packs:**
    - **Base unit:** `pcs`. Stock is always counted in pieces.
    - Click **Add a pack**. Pack: `box`. **Holds:** 24. The form then shows "1 box = 24 pcs".
+   - **Pack price:** 444. This is the price of the whole box. If you leave it empty, a box costs the
+     piece price times 24 (৳20 × 24 = ৳480). The hint under the box shows that sum.
    - **Pack barcode:** scan the barcode printed on the box. This matters: the counter can sell a box
      only by scanning this barcode (see Step 10).
    - **Sell in:** `pcs`. **Buy in:** `box`.
@@ -80,16 +82,21 @@ Omnivo counts the stock of each size on its own. Reports also show each size on 
 If you have many products, you do not have to add them one by one. Use **Products → Import** to bring
 them in from an Excel or CSV file in one go.
 
-### Step 6: The wholesale price (a cheaper price for a box)
+### Step 6: Special prices for some customers (optional)
 
-Omnivo works out the price of a box by itself: the piece price times 24, so **৳20 × 24 = ৳480**. To
-sell a box for ৳444, you need this step.
+The box price from Step 4 is for everyone, walk-in customers too. Do this step only if some shops
+get a lower price than that, for example ৳430 a box.
 
 1. Go to **Sales → Price lists** and click **Add price list**. Name: "Wholesale". Save.
 2. Open the list and click **Add items**. Find KitKat and click **Add**. You get two rows: `pcs` and
    `box`.
-3. In the `box` row, type **444**. If you leave the `pcs` row empty, a piece stays ৳20.
+3. In the `box` row, type **430**. If you leave the `pcs` row empty, a piece stays ৳20.
 4. Click **Save prices**.
+
+A customer's price list always comes first. Then the pack price. Then the piece price.
+
+Pond's has sizes, so its packs cannot have a pack price: each size has its own price. Use a price
+list for a Pond's carton.
 
 ### Step 7: Customers and suppliers
 
@@ -98,11 +105,9 @@ sell a box for ৳444, you need this step.
    - **Price list:** Wholesale.
    - If you give them credit, set a **Credit limit**, for example ৳20,000. Omnivo stops a sale that
      would take them over it.
-2. Also add one customer called **"Wholesale counter"** with the price list **Wholesale**. You pick it
-   at the counter when someone you do not know buys a full box.
-3. **Purchase → Suppliers → Add supplier:** add your suppliers, such as the Nestlé dealer and the
+2. **Purchase → Suppliers → Add supplier:** add your suppliers, such as the Nestlé dealer and the
    Unilever dealer.
-4. You do not add retail customers. At the counter, every sale starts as a "Walk-in customer".
+3. You do not add retail customers. At the counter, every sale starts as a "Walk-in customer".
 
 ### Step 8: Enter what the shop has today
 
@@ -154,9 +159,9 @@ Setup is done.
    owner".
 2. Sell:
    - **One piece:** scan the KitKat piece. It adds ৳20.
-   - **A box:** scan the box's barcode. It adds 1 box.
-   - **A box at the wholesale price:** first press **F4** and pick "Wholesale counter", then scan the
-     box. It adds ৳444.
+   - **A box:** scan the box's barcode. It adds 1 box at ৳444.
+   - **A box for a shop on the Wholesale list:** first press **F4** and pick the shop, then scan the
+     box. It adds ৳430.
    - **Pond's:** scan the barcode of the size the customer wants.
 3. Press **F12** (Pay).
    - Cash: type what the customer gave. Omnivo shows the change to give back.
@@ -213,11 +218,47 @@ Setup is done.
 
 ---
 
-## Three limits to know about
+## Selling below the buying price
 
-1. **When a walk-in customer buys a box**, the price is ৳480. To charge ৳444, press F4 and pick
-   "Wholesale counter" first.
-2. **The counter sells a box only by scanning the box's barcode.** If the box has no barcode, sell it
+Omnivo knows what each piece cost you: the average of what you paid. For KitKat bought at ৳408 a box
+of 24, a piece costs ৳17. If you also buy loose pieces at another price, Omnivo mixes the two into
+one average.
+
+At the counter, a cashier cannot sell a line for less than it cost. That counts the line's discount
+and its share of the bill's discount. For example, a KitKat piece at ৳20 or a box at ৳408 is fine,
+but a box at ৳400 is not. The line then says "Less than it cost", and **Pay** waits until the
+cashier raises the price or lowers the discount. The screen never shows the buying price itself.
+
+Only the **Owner** can sell below the buying price. The Owner sees a warning instead, and can go on.
+To let someone else do it, give their role **"At the POS, sell a line for less than what the goods
+cost"** in **Settings → Roles**. Every sale below the buying price goes into the audit log, by anyone,
+with what the goods cost. The Owner and the people who manage the counters also get a bell
+notification, "POS1-000123 sold below the buying price". The person who made the sale does not.
+
+A product you never bought (no buying price yet) is never stopped.
+
+**A lowest margin (optional).** In **Settings → Sales**, **Lowest margin** is a percent on top of the
+buying price. With 5%, a KitKat piece that cost ৳17 must sell for at least ৳17.85. Leave it at 0 to
+stop only sales below the buying price.
+
+**Orders and invoices.** The same rule works on **Sales → Orders** (when you confirm) and **Sales →
+Invoices** (when you post). The price boxes of the lines that are too low say so. The Owner gets a
+dialog, "Below the buying price", and can confirm or post anyway. To let a sales manager do it, give
+their role **"Confirm orders and post invoices with lines below their buying price"**. An invoice line
+that bills a confirmed order is not checked again: the order was checked when it was confirmed.
+
+### Who sees the buying price
+
+The product list (**Inventory → Products**) has a **Buying price** column: what one piece cost, on
+average. A product with sizes shows a range, like "৳120.00 – ৳210.00". It needs a connection.
+
+Only roles with **"See what stock costs and what it is worth"** see this column. The Owner has it. The Accountant
+role has it too. The Cashier and Shop manager roles do not. To hide it from a role, take that
+permission off the role in **Settings → Roles**. To show it, tick it.
+
+## Two limits to know about
+
+1. **The counter sells a box only by scanning the box's barcode.** If the box has no barcode, sell it
    as 24 pcs.
-3. **A product with sizes (like Pond's) cannot have a carton barcode**, so the counter sells it by the
+2. **A product with sizes (like Pond's) cannot have a carton barcode**, so the counter sells it by the
    piece only. To sell a full carton, use an invoice (Step 13).

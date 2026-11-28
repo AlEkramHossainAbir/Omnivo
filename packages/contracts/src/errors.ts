@@ -42,6 +42,8 @@ export const ERROR_CODES = [
   // auth ও অনুমতি
   'invalid_credentials',
   'not_a_member',
+  'email_not_verified',
+  'verification_link_invalid',
   'sign_in_required',
   'session_ended',
   'access_revoked',
@@ -152,6 +154,7 @@ export const ERROR_CODES = [
   'product_variant_unknown',
   'product_variant_in_use',
   'product_pack_barcode_variants',
+  'product_pack_price_variants',
   'product_tracking_service',
   'product_expiry_needs_batch',
   'product_category_invalid',
@@ -301,6 +304,10 @@ export const ERROR_CODES = [
   'receipt_void_reason_required',
   'receipt_void_date',
   'credit_limit_exceeded',
+  // Cost floor: an order or an invoice with lines below their buying price (plus the lowest
+  // margin), and the override without sales.cost.override
+  'sales_below_cost',
+  'cost_override_forbidden',
   'credit_override_forbidden',
   'journal_is_sales',
   'account_money_type',
@@ -399,6 +406,7 @@ export const ERROR_CODES = [
   'grn_line_empty',
   'grn_rejection_reason',
   'over_receipt_percent_format',
+  'min_margin_percent_format',
   // Step 17c: supplier bills and supplier payments. The purchase_* codes of 17a and 17b
   // (purchase_not_draft, purchase_was_submitted, purchase_cannot_reopen, purchase_cannot_cancel,
   // purchase_delete_instead) serve them too.
@@ -853,6 +861,14 @@ export const ERROR_CODES = [
 ] as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[number];
+
+// An error code as a field of a response (a payment's receiptError, a shipment's error). One
+// schema with a named type, never z.enum(ERROR_CODES) again at each field: the .d.ts of a route
+// that holds an inline enum writes every code out, once per field, and with ~650 codes the routes
+// of storefront-orders.ts passed what TypeScript will write (TS7056). With the name, the .d.ts
+// says `ErrorCodeEnum` instead.
+export type ErrorCodeEnum = { readonly [K in ErrorCode]: K };
+export const errorCodeSchema: z.ZodEnum<ErrorCodeEnum> = z.enum(ERROR_CODES);
 
 export function isErrorCode(value: unknown): value is ErrorCode {
   return ERROR_CODES.some((code) => code === value);

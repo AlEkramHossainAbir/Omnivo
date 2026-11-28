@@ -132,6 +132,12 @@ export const productUnitSchema = z.object({
   factor: z.string(),
   // The pack's own barcode (a carton's ITF or EAN). Only on products without variants.
   barcode: z.string().nullable(),
+  // The pack's own sale price, per one pack: a box of 42 KitKat for ৳750 when a piece is ৳30.
+  // null = the variant's price × the factor. Only on products without variants, like the barcode:
+  // the variants of a product may have different prices, and one pack price cannot fit them all.
+  // .default(null): a device's copy made before this field existed still reads (step 19b keeps
+  // the server's rows as they came).
+  salePrice: z.string().nullable().default(null),
 });
 export type ProductUnit = z.infer<typeof productUnitSchema>;
 
@@ -222,6 +228,9 @@ const productUnitInputSchema = z.object({
   unitId: z.uuid(errorCode('product_unit_required')),
   factor: factorSchema,
   barcode: barcodeSchema,
+  // '' = no price of its own. Optional, so an import or a client from before this field still
+  // sends a valid unit.
+  salePrice: priceSchema.optional().transform((value) => value ?? null),
 });
 
 // The fields without the cross-field rules below: the product form extends it with the
@@ -303,6 +312,9 @@ export function productRules(input: ProductRuleInput, ctx: z.RefinementCtx<Produ
     if (input.options.length > 0 && unit.barcode !== null) {
       issue(['units', index, 'barcode'], 'product_pack_barcode_variants');
     }
+    if (input.options.length > 0 && unit.salePrice !== null) {
+      issue(['units', index, 'salePrice'], 'product_pack_price_variants');
+    }
   });
   for (const field of ['salesUnitId', 'purchaseUnitId'] as const) {
     const unitId = input[field];
@@ -377,9 +389,41 @@ export type ProductPage = z.infer<typeof productPageSchema>;
 
 const productParamsSchema = z.object({ id: z.uuid() });
 
+// The buying price column of the product list: what each product cost, per base unit, as the
+// stock's average cost (step 14). The list reads its rows from the device and asks for the costs of
+// the rows it shows, a page at a time, like the customer balances (step 18a): the costs need
+// inventory.stock.value, and the route checks it, so a role without it never receives one.
+export const MAX_COST_IDS = 100;
+
+export const productCostsQuerySchema = z.object({
+  ids: z
+    .string()
+    .transform((value) => value.split(','))
+    .pipe(z.array(z.uuid()).min(1).max(MAX_COST_IDS)),
+});
+export type ProductCostsQuery = z.input<typeof productCostsQuerySchema>;
+
+// One row per product asked for that has a cost: the lowest and highest average cost of its active
+// variants, 4 decimals. A product never bought (or a service) is left out: the column says "—".
+export const productCostsSchema = z.object({
+  items: z.array(z.object({ id: z.uuid(), minCost: z.string(), maxCost: z.string() })),
+});
+export type ProductCosts = z.infer<typeof productCostsSchema>;
+
 // Reading needs no permission, like the chart of accounts: every sales, purchase and stock line
-// picks a product. A product holds no cost (step 14's valuation does), so the list shows no margin.
+// picks a product. A product holds no cost (step 14's valuation does); its cost is its own route.
 export const productRoutes = {
+  // Its own path, not /products/costs: that one would be read as a product called "costs"
+  costs: defineRoute({
+    method: 'GET',
+    path: '/product-costs',
+    summary: 'What each of up to 100 products cost, per base unit (the average cost)',
+    auth: 'bearer',
+    permission: 'inventory.stock.value',
+    status: 200,
+    query: productCostsQuerySchema,
+    response: productCostsSchema,
+  }),
   list: defineRoute({
     method: 'GET',
     path: '/products',

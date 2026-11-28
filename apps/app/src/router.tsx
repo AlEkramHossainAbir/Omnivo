@@ -6,7 +6,12 @@ import {
   Outlet,
   redirect,
 } from '@tanstack/react-router';
-import { INVITE_PATH, type PayoutStatus, type StorefrontOrderView } from '@omnivo/contracts';
+import {
+  INVITE_PATH,
+  type PayoutStatus,
+  type StorefrontOrderView,
+  VERIFY_EMAIL_PATH,
+} from '@omnivo/contracts';
 
 import { restoreSession } from './lib/session';
 import { sessionStore } from './lib/session-store';
@@ -37,6 +42,14 @@ const inviteRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: INVITE_PATH,
   component: lazyRouteComponent(() => import('./routes/invite'), 'InvitePage'),
+});
+
+// The sign-up's email link (/verify-email#<token>). Like the invitation's: no login needed, and no
+// redirect for someone who is signed in, since the link signs its owner in in their place
+const verifyEmailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: VERIFY_EMAIL_PATH,
+  component: lazyRouteComponent(() => import('./routes/verify-email'), 'VerifyEmailPage'),
 });
 
 // Step 16: a share link (/d/<token>, sent on WhatsApp). No login, and no redirect for someone who
@@ -1234,6 +1247,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   signUpRoute,
   inviteRoute,
+  verifyEmailRoute,
   publicDocumentRoute,
   onboardingRoute,
   appRoute.addChildren([

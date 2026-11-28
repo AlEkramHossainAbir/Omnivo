@@ -1,4 +1,5 @@
-import { Search01Icon } from '@hugeicons/core-free-icons';
+import { Alert02Icon, Search01Icon } from '@hugeicons/core-free-icons';
+import { HugeiconsIcon } from '@hugeicons/react';
 import {
   compareQuantity,
   formatReturnNumber,
@@ -17,6 +18,7 @@ import { useLocale } from '@omnivo/i18n';
 import {
   allRows,
   type DeviceShift,
+  floorsOf,
   heldCount,
   holdCart,
   type LocalCopy,
@@ -46,6 +48,7 @@ import { useLocalQuery } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
 import {
   addToCart,
+  belowCostLines,
   type Cart,
   cartAmounts,
   type CartLine,
@@ -208,6 +211,8 @@ export function PosScreen({
   const { allowNegativeStock, pricesIncludeVat } = settings;
   // Decision 11: without the permission the boxes say so, and Pay waits
   const canOverride = can('pos.price.override');
+  // Cost floor: selling a line below what it cost needs its own permission (the Owner's)
+  const canSellBelowCost = can('pos.sale.below_cost');
   // Step 18c's limit: offline more than 7 days after the last sync, no new work on this device
   const blocked = !online && age?.age === 'blocked';
   // Decision 6: a shift left open on an earlier day sells nothing more; the menu's Close is the way
@@ -271,6 +276,17 @@ export function PosScreen({
     [register.warehouseId, variantIds],
   );
   const stock = useLocalQuery(readStock);
+  // Cost floor: the average costs of the cart's variants only (the tiles never show a cost). Read
+  // live, so a pull that brings a new cost checks the cart again.
+  const cartVariantIds = useMemo(
+    () => [...new Set(cart.lines.map((line) => line.variantId))].sort().join(','),
+    [cart.lines],
+  );
+  const readFloors = useCallback(
+    (open: LocalCopy) => floorsOf(open, cartVariantIds === '' ? [] : cartVariantIds.split(',')),
+    [cartVariantIds],
+  );
+  const floors = useLocalQuery(readFloors);
 
   const amounts = useMemo(() => cartAmounts(cart, pricesIncludeVat), [cart, pricesIncludeVat]);
   const short = useMemo(
@@ -281,12 +297,22 @@ export function PosScreen({
     () => (canOverride ? [] : overridesOf(cart, register)),
     [cart, register, canOverride],
   );
+  // Worked out for everyone: without the permission it stops the sale, with it the line only says
+  // so (pos-cart.tsx). Until the floors are read, nothing is below cost.
+  // The lowest margin of Settings → Sales. A copy from before protocol 5 has none until its full
+  // pull, so '0' there: only below the cost itself.
+  const marginPercent = settings.minMarginPercent ?? '0';
+  const belowCost = useMemo(
+    () => belowCostLines(cart, amounts, floors ?? new Map<string, string>(), marginPercent),
+    [cart, amounts, floors, marginPercent],
+  );
 
   const payable =
     cart.lines.length > 0 &&
     cart.lines.every(lineReady) &&
     short.size === 0 &&
     overrides.length === 0 &&
+    (canSellBelowCost || belowCost.size === 0) &&
     !blocked &&
     !stale;
 
@@ -564,7 +590,10 @@ export function PosScreen({
           {(tiles ?? []).map((tile) => {
             const goods = tile.product.type === 'goods';
             const onHand = onHandOf(stock ?? [], tile.variant.id);
-            const out = goods && !allowNegativeStock && compareQuantity(onHand, '0') <= 0;
+            // Nothing on hand: with no selling below zero the tile is disabled and says so in crit;
+            // when the workspace sells below zero it stays a button, and its count turns warn
+            const empty = goods && compareQuantity(onHand, '0') <= 0;
+            const out = empty && !allowNegativeStock;
             const unit = units?.find((one) => one.id === tile.product.baseUnitId);
             return (
               <button
@@ -593,8 +622,23 @@ export function PosScreen({
                   </span>
                   {goods && (
                     <span
-                      className={cn('text-caption tabular-nums', out ? 'text-ink-3' : 'text-ink-2')}
+                      className={cn(
+                        'inline-flex items-center gap-1 text-caption tabular-nums',
+                        out
+                          ? 'font-medium text-crit'
+                          : empty
+                            ? 'font-medium text-warn'
+                            : 'text-ink-2',
+                      )}
                     >
+                      {empty && (
+                        <HugeiconsIcon
+                          icon={Alert02Icon}
+                          size={13}
+                          strokeWidth={1.5}
+                          className="shrink-0"
+                        />
+                      )}
                       {out
                         ? t('pos.outOfStock')
                         : `${format.number(onHand, unit?.decimals ?? 0)} ${unit?.code ?? ''}`}
@@ -625,6 +669,9 @@ export function PosScreen({
         short={short}
         overrides={overrides}
         canOverride={canOverride}
+        belowCost={belowCost}
+        canSellBelowCost={canSellBelowCost}
+        marginPercent={marginPercent}
         payable={payable}
         onPay={() => {
           setPaying(true);

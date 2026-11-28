@@ -4,6 +4,8 @@ import { contractErrorMap } from './errors.js';
 import {
   formatPosNumber,
   lockAfterMs,
+  lowestPriceOf,
+  posBelowCostLines,
   posChangeOf,
   posOverridesOf,
   posRegisterInputSchema,
@@ -224,6 +226,28 @@ describe('change and overrides', () => {
       { kind: 'bill_discount' },
     ]);
     expect(posOverridesOf({ ...sale, lines: [], billDiscount: '0' }, '10')).toEqual([]);
+  });
+});
+
+describe('cost floor', () => {
+  it('stops a line under its cost, and never one at its cost or with no cost', () => {
+    expect(
+      posBelowCostLines(
+        [
+          { net: '700.0000', cost: '700.0000' },
+          { net: '699.9900', cost: '700.0000' },
+          { net: '1.0000', cost: null },
+        ],
+        '0.00',
+      ),
+    ).toEqual([1]);
+  });
+
+  it('adds the lowest margin to the cost, to the paisa', () => {
+    // 5% of ৳16.67 is ৳0.8335, which rounds to ৳0.83
+    expect(lowestPriceOf('16.6700', '5.00')).toBe('17.5000');
+    expect(posBelowCostLines([{ net: '17.4900', cost: '16.6700' }], '5')).toEqual([0]);
+    expect(posBelowCostLines([{ net: '17.5000', cost: '16.6700' }], '5')).toEqual([]);
   });
 });
 

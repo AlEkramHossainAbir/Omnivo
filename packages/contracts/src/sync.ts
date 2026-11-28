@@ -43,7 +43,9 @@ import { warehouseSchema } from './warehouses.js';
 // and the part of the settings a sale needs. No customer balances and no stock values: they
 // change with every invoice and every movement, and they need their own permissions. Step 20a adds
 // the POS registers of the branch, step 20b the pay in and pay out reasons, step 20c the recent
-// sales of the register the device holds (for returns offline).
+// sales of the register the device holds (for returns offline). The cost floor (protocol 5) is the
+// one exception to "no stock values": each variant's average cost, so the counter can refuse a
+// sale below cost without a connection (syncPriceFloorSchema says why that is acceptable).
 
 // The version of this protocol: what the entities below are and what their rows hold. A client
 // sends the version it was built with; the server answers sync_protocol_mismatch to any other,
@@ -55,7 +57,9 @@ import { warehouseSchema } from './warehouses.js';
 // latest shift, a sale's shift, and the three shift commands.
 // 4 (step 20c): the register's recent sales (pos_sale), a register's return settings, the
 // exchange tender, and the pos_return.create command.
-export const SYNC_PROTOCOL = 4;
+// 5 (cost floor): each variant's average cost (price_floor), and a pack's own sale price on the
+// product row (that one alone would not need a new protocol: it reads as null on an old row).
+export const SYNC_PROTOCOL = 5;
 
 // Every kind of row a device keeps. The order is the order of a full pull: the small lists that
 // the others point at come first, so a page never shows a product before its units.
@@ -74,6 +78,7 @@ export const SYNC_ENTITIES = [
   'customer',
   'stock',
   'pos_sale',
+  'price_floor',
 ] as const;
 export type SyncEntity = (typeof SYNC_ENTITIES)[number];
 
@@ -89,19 +94,26 @@ export const MAX_SYNC_PAGE = 1000;
 // What a sale needs from the settings: how to work out the VAT, whether stock may go below zero,
 // the time zone of its dates, and the company's name and BIN for a receipt (step 20). Not the logo:
 // its url is signed for a short time and would be dead by the next day.
-export const syncSettingsSchema = settingsSchema.pick({
-  companyName: true,
-  legalName: true,
-  bin: true,
-  phone: true,
-  address: true,
-  baseCurrency: true,
-  fiscalYearStartMonth: true,
-  timezone: true,
-  allowNegativeStock: true,
-  pricesIncludeVat: true,
-  version: true,
-});
+export const syncSettingsSchema = settingsSchema
+  .pick({
+    companyName: true,
+    legalName: true,
+    bin: true,
+    phone: true,
+    address: true,
+    baseCurrency: true,
+    fiscalYearStartMonth: true,
+    timezone: true,
+    allowNegativeStock: true,
+    pricesIncludeVat: true,
+    version: true,
+  })
+  .extend({
+    // Cost floor (protocol 5): the lowest margin at the counter. Optional because the device keeps
+    // its rows as they came: a settings row written before protocol 5 has none until the full pull
+    // that the new protocol starts brings it again. Read it as `?? '0'`.
+    minMarginPercent: settingsSchema.shape.minMarginPercent.optional(),
+  });
 export type SyncSettings = z.infer<typeof syncSettingsSchema>;
 
 export const syncCategorySchema = productCategorySchema.omit({ productCount: true });
@@ -173,6 +185,21 @@ export const syncStockSchema = z.object({
 });
 export type SyncStock = z.infer<typeof syncStockSchema>;
 
+// Cost floor: the lowest price a variant sells at on this device without pos.sale.below_cost, per
+// base unit: its average cost (stock_values.unit_cost, 4 decimals), the same in every warehouse.
+// Keyed by the variant's id. A variant that never had a cost has no row, and nothing stops its sale.
+// It is a cost on a cashier's device, which the stock rows above never carry. The counter needs it
+// offline, so it is here, with three limits: the row is sealed like every row (step 19b), the
+// screen never shows the number (only "below what it cost"), and nothing else on the device reads
+// it. The log writes it only when the cost moves by a paisa or more (0086), not on every sale.
+export const syncPriceFloorSchema = z.object({
+  productId: z.uuid(),
+  variantId: z.uuid(),
+  floor: z.string(),
+  updatedAt: z.iso.datetime(),
+});
+export type SyncPriceFloor = z.infer<typeof syncPriceFloorSchema>;
+
 // The rows without an id of their own are keyed by the ids that make them one row. The database's
 // change log (step 18a.2) writes the same keys in SQL, so the format must not change: a stock row
 // of an untracked variant ends in '-', never in an empty part.
@@ -218,6 +245,7 @@ export const syncUpsertSchema = z.discriminatedUnion('entity', [
   upsertOf('customer', syncCustomerSchema),
   upsertOf('stock', syncStockSchema),
   upsertOf('pos_sale', syncPosSaleSchema),
+  upsertOf('price_floor', syncPriceFloorSchema),
 ]);
 export type SyncUpsert = z.infer<typeof syncUpsertSchema>;
 
