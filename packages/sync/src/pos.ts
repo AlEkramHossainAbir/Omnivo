@@ -12,6 +12,7 @@ import {
   sumMoney,
   type SyncCommand,
   type SyncPosRegister,
+  type SyncPriceFloor,
   type SyncStock,
   toBaseQuantity,
 } from '@omnivo/contracts';
@@ -332,6 +333,21 @@ export async function stockOf(
     const less = taken.get(`${row.variantId}|${row.batchId ?? ''}`);
     return less === undefined ? row : { ...row, quantity: subtractQuantity(row.quantity, less) };
   });
+}
+
+// Cost floor: the average cost per base unit of some variants, for the cart's below-cost check.
+// By key (the variant's id), so a cart of 30 lines is one read. A variant with no row has no cost
+// on the device and is left out. Read live by the screen, so a pull that moves a cost re-checks
+// the cart at once.
+export async function floorsOf(
+  copy: LocalCopy,
+  variantIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (variantIds.length === 0) return new Map();
+  const rows = await copy.db.priceFloors.bulkGet([...variantIds]);
+  const kept = rows.filter((row) => row !== undefined);
+  const floors = await openRows<SyncPriceFloor>(copy, 'priceFloors', kept);
+  return new Map(floors.map((row) => [row.variantId, row.floor]));
 }
 
 // The product a scanned barcode belongs to: a variant's or a pack's. By the multi-entry index, so

@@ -73,6 +73,7 @@ export async function productsOf(tx: Transaction, rows: ProductRow[]): Promise<P
         unitId: pack.unitId,
         factor: pack.factor,
         barcode: packBarcode.get(`${row.id}:${pack.unitId}`) ?? null,
+        salePrice: pack.salePrice,
       })),
       customFields: row.customFields,
       archivedAt: row.archivedAt?.toISOString() ?? null,

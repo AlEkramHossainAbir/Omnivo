@@ -31,7 +31,7 @@ const napa = product({
   name: 'Napa 500 mg tablet',
   code: 'MED-0002',
   categoryId: MEDICINE,
-  units: [{ unitId: MEDICINE, factor: '10', barcode: '8941100500017' }],
+  units: [{ unitId: MEDICINE, factor: '10', barcode: '8941100500017', salePrice: null }],
 });
 const ace = product({ name: 'ace Plus tablet', code: 'MED-0001', categoryId: MEDICINE });
 const tusca = product({ name: 'Tusca syrup 100 ml', code: 'MED-0003', categoryId: SYRUP });

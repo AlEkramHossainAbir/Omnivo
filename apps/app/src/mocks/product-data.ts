@@ -236,6 +236,7 @@ function product(
       unitId: unitId(code),
       factor,
       barcode: null,
+      salePrice: null,
     })),
     customFields: parts.customFields ?? {},
     archivedAt: null,

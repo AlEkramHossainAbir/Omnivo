@@ -1824,6 +1824,10 @@ export const en = {
       placeholder: 'Pick a unit',
       factor: 'Holds',
       barcode: 'Pack barcode',
+      // The pack's own sale price (a box of 42 for ৳750); empty = the base unit's price × size
+      price: 'Pack price',
+      priceHint: 'Empty = {{price}} × {{factor}} = {{amount}}',
+      priceHintNone: 'Empty = the {{base}} price × what it holds',
       add: 'Add a pack',
       remove: 'Remove pack {{number}}',
       number: 'Pack {{number}}',
@@ -4725,6 +4729,10 @@ export const en = {
     overLimit: 'More than {{max}}% off needs pos.price.override.',
     priceLocked: 'Changing the price needs pos.price.override.',
     priceChanged: 'Changed from {{price}}',
+    // Cost floor: a line under its average cost, with and without pos.sale.below_cost. Never the
+    // cost itself.
+    belowCost: 'This is less than it cost. Raise the price or lower the discount.',
+    belowCostAllowed: 'This is less than it cost. You may sell it; the audit log records it.',
     // Taking the money (decision 5)
     payTitle: 'Take payment',
     payDescription: 'Total {{total}}. Split it over several methods if the customer asks.',
@@ -7441,7 +7449,10 @@ export const en = {
     },
     // Step 20a (decisions 11, 31)
     pos: {
-      sale: { create: 'Sell at a POS counter: take a register, ring up sales and take the money' },
+      sale: {
+        create: 'Sell at a POS counter: take a register, ring up sales and take the money',
+        below_cost: 'At the POS, sell a line for less than what the goods cost',
+      },
       price: {
         override: 'At the POS, change a price or give more discount than the register allows',
       },
@@ -7844,6 +7855,7 @@ export const en = {
         created: 'Sold at a POS counter',
         overridden: 'Changed a price or gave more discount at the POS',
         without_permission: 'Sold at a POS counter after losing the permission',
+        below_cost: 'Sold below cost at a POS counter',
       },
       // Step 20b. cash_moved: a pay in or pay out. closed_without_count: by a manager online or by
       // a device's revoke (decision 11). expected_differs: decision 22
@@ -8100,6 +8112,7 @@ export const en = {
       paid: 'Paid',
       soldShort: 'Lines sold short',
       overrides: 'Needs pos.price.override',
+      belowCost: 'Below cost',
       allowed: 'Permission',
       missing: 'Missing permission',
       // Step 20b: a register's shift settings, a reason, and a shift's rows
@@ -8509,6 +8522,8 @@ export const en = {
     product_variant_in_use: 'Documents use this variant, so it stays. Archive it instead.',
     product_pack_barcode_variants:
       'Products with variants keep their barcodes on the variants, not on the packs.',
+    product_pack_price_variants:
+      'Products with variants keep their prices on the variants. Leave the pack price empty.',
     product_tracking_service: "A service isn't stocked, so it isn't tracked. Pick None.",
     product_expiry_needs_batch: 'Expiry dates are kept per batch. Pick batch tracking first.',
     product_category_invalid: 'Pick a category from the list.',

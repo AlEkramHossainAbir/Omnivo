@@ -596,6 +596,20 @@
       "when": 1795790859269,
       "tag": "0084_sign-in-last-workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1795859905478,
+      "tag": "0085_pack-sale-price",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1795862152255,
+      "tag": "0086_price-floor-sync",
+      "breakpoints": true
     }
   ]
 }

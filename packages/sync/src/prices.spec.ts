@@ -54,7 +54,7 @@ function list(id: string, archivedAt: string | null): SyncChange {
 const juice = product({
   name: 'Mango juice 250 ml',
   taxRateId: VAT_5,
-  units: [{ unitId: CASE, factor: '24', barcode: null }],
+  units: [{ unitId: CASE, factor: '24', barcode: null, salePrice: null }],
 });
 const variant = juice.variants[0];
 if (!variant) throw new Error('no variant');
@@ -117,6 +117,26 @@ describe('lookUpPrices', () => {
     ]);
     // A unit the product does not have drops out, like on the server
     expect(await lookUpPrices(copy, null, [{ variantId, unitId: DOZEN }])).toEqual([]);
+  });
+
+  it('takes a pack’s own price before the piece price, and the list’s before both', async () => {
+    const copy = await loaded();
+    // The case sells for ৳450, not 24 × ৳21 = ৳504
+    const boxed = {
+      ...pricedJuice,
+      units: [
+        { ...juice.units[0], unitId: CASE, factor: '24', barcode: null, salePrice: '450.0000' },
+      ],
+    };
+    await applyPage(copy, page({ changes: [upsertProduct(boxed)] }), 'cursor');
+    const variantId = variant.id;
+    expect(await lookUpPrices(copy, null, [{ variantId, unitId: CASE }])).toEqual([
+      { variantId, unitId: CASE, price: '450.0000', source: 'product', taxRateId: VAT_5 },
+    ]);
+    // The customer's list still comes first
+    expect(await lookUpPrices(copy, LIST, [{ variantId, unitId: CASE }])).toEqual([
+      { variantId, unitId: CASE, price: '480.0000', source: 'price_list', taxRateId: VAT_5 },
+    ]);
   });
 
   it('falls back to the default rate when the product’s own is archived', async () => {

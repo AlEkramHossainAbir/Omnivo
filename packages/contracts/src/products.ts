@@ -132,6 +132,12 @@ export const productUnitSchema = z.object({
   factor: z.string(),
   // The pack's own barcode (a carton's ITF or EAN). Only on products without variants.
   barcode: z.string().nullable(),
+  // The pack's own sale price, per one pack: a box of 42 KitKat for ৳750 when a piece is ৳30.
+  // null = the variant's price × the factor. Only on products without variants, like the barcode:
+  // the variants of a product may have different prices, and one pack price cannot fit them all.
+  // .default(null): a device's copy made before this field existed still reads (step 19b keeps
+  // the server's rows as they came).
+  salePrice: z.string().nullable().default(null),
 });
 export type ProductUnit = z.infer<typeof productUnitSchema>;
 
@@ -222,6 +228,9 @@ const productUnitInputSchema = z.object({
   unitId: z.uuid(errorCode('product_unit_required')),
   factor: factorSchema,
   barcode: barcodeSchema,
+  // '' = no price of its own. Optional, so an import or a client from before this field still
+  // sends a valid unit.
+  salePrice: priceSchema.optional().transform((value) => value ?? null),
 });
 
 // The fields without the cross-field rules below: the product form extends it with the
@@ -302,6 +311,9 @@ export function productRules(input: ProductRuleInput, ctx: z.RefinementCtx<Produ
     unitIds.add(unit.unitId);
     if (input.options.length > 0 && unit.barcode !== null) {
       issue(['units', index, 'barcode'], 'product_pack_barcode_variants');
+    }
+    if (input.options.length > 0 && unit.salePrice !== null) {
+      issue(['units', index, 'salePrice'], 'product_pack_price_variants');
     }
   });
   for (const field of ['salesUnitId', 'purchaseUnitId'] as const) {

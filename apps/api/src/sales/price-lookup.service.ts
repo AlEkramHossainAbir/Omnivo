@@ -18,6 +18,7 @@ const rowSchema = z.object({
   variant_id: z.uuid(),
   unit_id: z.uuid(),
   list_price: z.string().nullable(),
+  pack_price: z.string().nullable(),
   sale_price: z.string().nullable(),
   factor: z.string(),
   tax_rate_id: z.uuid().nullable(),
@@ -26,6 +27,7 @@ const rowSchema = z.object({
 // The price and VAT rate a new sales line starts with (step 15b). The person may change both on
 // the line: this is only where they start.
 //   price     the customer's price list, if it is active and has this variant in this unit (15a);
+//             else the pack's own price, for a pack that has one;
 //             else the variant's own sale price (per base unit) × the unit's factor;
 //             else none (null): the person types it. Since step 18b this rule is startingPrice()
 //             in the contracts, which the order form on a device without a connection uses too.
@@ -77,6 +79,8 @@ export class PriceLookupService {
           WITH wanted(ord, variant_id, unit_id) AS (VALUES ${wanted})
           SELECT w.variant_id::text AS variant_id, w.unit_id::text AS unit_id,
                  pli.price::text AS list_price,
+                 -- NULL for the base unit: the LEFT JOIN finds no pack row for it
+                 pu.sale_price::text AS pack_price,
                  v.sale_price::text AS sale_price,
                  CASE WHEN w.unit_id = p.base_unit_id THEN '1' ELSE pu.factor::text END AS factor,
                  coalesce(own.id, d.id)::text AS tax_rate_id
@@ -104,6 +108,7 @@ export class PriceLookupService {
             unitId: row.unit_id,
             ...startingPrice({
               listPrice: row.list_price,
+              packPrice: row.pack_price,
               salePrice: row.sale_price,
               factor: row.factor,
             }),

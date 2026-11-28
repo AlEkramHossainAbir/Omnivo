@@ -441,7 +441,9 @@ describe('a product', () => {
         units: [{ unitId: unitId('yard'), factor: '0.9144', barcode: '' }],
       }),
     );
-    expect(fabric.units).toEqual([{ unitId: unitId('yard'), factor: '0.914400', barcode: null }]);
+    expect(fabric.units).toEqual([
+      { unitId: unitId('yard'), factor: '0.914400', barcode: null, salePrice: null },
+    ]);
   });
 
   it('checks the custom fields against the workspace’s', async () => {

@@ -205,7 +205,9 @@ describe('sales line input', () => {
 
 describe('starting price', () => {
   it("takes the price list's price as it is", () => {
-    expect(startingPrice({ listPrice: '504', salePrice: '21.0000', factor: '24' })).toEqual({
+    expect(
+      startingPrice({ listPrice: '504', packPrice: null, salePrice: '21.0000', factor: '24' }),
+    ).toEqual({
       price: '504.0000',
       source: 'price_list',
     });
@@ -213,19 +215,39 @@ describe('starting price', () => {
 
   it("works out the product's price in the unit, to 4 decimals", () => {
     // A case of 24 at ৳21 a piece
-    expect(startingPrice({ listPrice: null, salePrice: '21.0000', factor: '24' })).toEqual({
+    expect(
+      startingPrice({ listPrice: null, packPrice: null, salePrice: '21.0000', factor: '24' }),
+    ).toEqual({
       price: '504.0000',
       source: 'product',
     });
     // A yard of fabric priced by the metre: 0.8512 × 0.9144 = 0.77833728
-    expect(startingPrice({ listPrice: null, salePrice: '0.8512', factor: '0.914400' })).toEqual({
+    expect(
+      startingPrice({ listPrice: null, packPrice: null, salePrice: '0.8512', factor: '0.914400' }),
+    ).toEqual({
       price: '0.7783',
       source: 'product',
     });
   });
 
+  it("takes the pack's own price before the piece price, and the list's before both", () => {
+    // A box of 42 KitKat: ৳30 a piece would be ৳1,260; the box sells for ৳750
+    expect(
+      startingPrice({ listPrice: null, packPrice: '750', salePrice: '30.0000', factor: '42' }),
+    ).toEqual({ price: '750.0000', source: 'product' });
+    expect(
+      startingPrice({ listPrice: '720', packPrice: '750', salePrice: '30.0000', factor: '42' }),
+    ).toEqual({ price: '720.0000', source: 'price_list' });
+    // A pack price with no piece price: the box still has its price
+    expect(
+      startingPrice({ listPrice: null, packPrice: '750', salePrice: null, factor: '42' }),
+    ).toEqual({ price: '750.0000', source: 'product' });
+  });
+
   it('starts with no price when there is none anywhere', () => {
-    expect(startingPrice({ listPrice: null, salePrice: null, factor: '1' })).toEqual({
+    expect(
+      startingPrice({ listPrice: null, packPrice: null, salePrice: null, factor: '1' }),
+    ).toEqual({
       price: null,
       source: null,
     });

@@ -66,6 +66,10 @@ interface PosCartProps {
   // overridesOf(); empty for someone with pos.price.override
   overrides: readonly PosOverride[];
   canOverride: boolean;
+  // Cost floor: belowCostLines(), the keys of the lines sold for less than they cost, and whether
+  // this person may sell them so (pos.sale.below_cost)
+  belowCost: ReadonlySet<string>;
+  canSellBelowCost: boolean;
   payable: boolean;
   onPay: () => void;
   open: boolean;
@@ -103,6 +107,8 @@ export function PosCart({
   short,
   overrides,
   canOverride,
+  belowCost,
+  canSellBelowCost,
   payable,
   onPay,
   open,
@@ -233,6 +239,8 @@ export function PosCart({
                 short={short}
                 overrides={overrides}
                 canOverride={canOverride}
+                belowCost={belowCost}
+                canSellBelowCost={canSellBelowCost}
                 line={line}
                 index={index}
                 amount={amounts.lines[index]?.total ?? '0'}
@@ -406,6 +414,8 @@ function LineRow({
   short,
   overrides,
   canOverride,
+  belowCost,
+  canSellBelowCost,
   register,
   stock,
 }: Pick<
@@ -419,6 +429,8 @@ function LineRow({
   | 'short'
   | 'overrides'
   | 'canOverride'
+  | 'belowCost'
+  | 'canSellBelowCost'
 > & { line: CartLine; index: number; amount: string }) {
   const { t, format } = useLocale();
   const money = useScreenMoney();
@@ -550,6 +562,22 @@ function LineRow({
           {batch.expiresOn !== null && ` · ${expiry(batch.expiresOn)}`}
         </p>
       )}
+      {/* Cost floor: never the cost itself, only that the line is under it. With the permission
+          it is a warning the seller may pass; without it, it stops the sale like a short line. */}
+      {belowCost.has(line.key) &&
+        (canSellBelowCost ? (
+          <p className="flex items-start gap-1.5 text-label text-warn">
+            <HugeiconsIcon
+              icon={Alert02Icon}
+              size={15}
+              strokeWidth={1.5}
+              className="mt-px shrink-0"
+            />
+            <span>{t('pos.belowCostAllowed')}</span>
+          </p>
+        ) : (
+          <Problem>{t('pos.belowCost')}</Problem>
+        ))}
       {onHand !== undefined && (
         <Problem>
           {compareQuantity(onHand, '0') > 0

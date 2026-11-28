@@ -30,6 +30,7 @@ import {
   type SalesLineInput,
   type SalesOrder,
   type SalesOrderInput,
+  startingPrice,
   type StockLine,
   subtractQuantity,
   sumMoney,
@@ -287,8 +288,8 @@ export function ratesOf(lines: readonly SalesLine[]): Set<string> {
 
 // --- The price a line starts with ---------------------------------------------------------------
 
-// The API's PriceLookupService: the customer's active price list, else the variant's own price ×
-// the unit's factor, else none; and the product's own active VAT rate, else the default one
+// The API's PriceLookupService: the customer's active price list, else the pack's own price, else
+// the variant's own price × the unit's factor, else none; and the product's own active VAT rate, else the default one
 export function lookupPrices(data: WorkspaceData, input: PriceLookupInput): PriceLookup {
   const { sales } = data;
   const customer =
@@ -304,10 +305,11 @@ export function lookupPrices(data: WorkspaceData, input: PriceLookupInput): Pric
     const found = findVariant(data, item.variantId);
     if (!found) return [];
     const { product, variant } = found;
-    const factor =
+    const pack =
       item.unitId === product.baseUnitId
-        ? '1'
-        : product.units.find((pack) => pack.unitId === item.unitId)?.factor;
+        ? undefined
+        : product.units.find((one) => one.unitId === item.unitId);
+    const factor = item.unitId === product.baseUnitId ? '1' : pack?.factor;
     // A unit that is not this product's is left out, like an unknown variant
     if (factor === undefined) return [];
     const rate =
@@ -323,18 +325,20 @@ export function lookupPrices(data: WorkspaceData, input: PriceLookupInput): Pric
               price.variantId === variant.id &&
               price.unitId === item.unitId,
           )?.price;
-    // The price per base unit × the pack's factor, rounded to the 4 decimals a price keeps, like
-    // the API's NUMERIC round(…, 4). toBaseQuantity() is exactly that sum: a number with 4 decimals
-    // times a factor with 6, rounded half up.
-    const productPrice =
-      variant.salePrice === null ? null : toBaseQuantity(variant.salePrice, factor, 4);
-    const price = listPrice ?? productPrice;
+    // The API's own rule (startingPrice in the contracts): the list, the pack's price, then the
+    // piece price × the factor
+    const { price, source } = startingPrice({
+      listPrice: listPrice ?? null,
+      packPrice: pack?.salePrice ?? null,
+      salePrice: variant.salePrice,
+      factor,
+    });
     return [
       {
         variantId: variant.id,
         unitId: item.unitId,
         price,
-        source: listPrice !== undefined ? 'price_list' : price === null ? null : 'product',
+        source,
         taxRateId: rate.id,
       },
     ];

@@ -6,6 +6,7 @@ import type {
   SyncPosCashReason,
   SyncPosRegister,
   SyncPosSale,
+  SyncPriceFloor,
   SyncPriceList,
   SyncPull,
   SyncSettings,
@@ -52,6 +53,7 @@ export interface SealedChanges {
     customers: Unstamped<SealedRow<SyncCustomer>>[];
     stock: Unstamped<StockRow>[];
     posSales: Unstamped<PosSaleRow>[];
+    priceFloors: Unstamped<SealedRow<SyncPriceFloor>>[];
   };
   deletes: Map<SyncTableName, string[]>;
 }
@@ -88,6 +90,7 @@ export async function sealChanges(
       customers: [],
       stock: [],
       posSales: [],
+      priceFloors: [],
     },
     deletes: new Map(),
   };
@@ -160,6 +163,10 @@ export async function sealChanges(
             date: change.data.date,
           });
           break;
+        // Cost floor: sealed whole; its key is the variant's id
+        case 'price_floor':
+          puts.priceFloors.push(await boxed(copy, 'priceFloors', key, change.data));
+          break;
       }
     }),
   );
@@ -221,6 +228,7 @@ export async function writeSealed(
   await db.customers.bulkPut(stamp(puts.customers, gen));
   await db.stock.bulkPut(stamp(puts.stock, gen));
   await db.posSales.bulkPut(stamp(puts.posSales, gen));
+  await db.priceFloors.bulkPut(stamp(puts.priceFloors, gen));
   // Step 19b: only a write that touched them, so a page of stock alone leaves the in-memory
   // copies as they are
   if (puts.products.length > 0 || deletes.has('products')) await db.markWritten('products');

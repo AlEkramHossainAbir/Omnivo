@@ -18,6 +18,7 @@ import { useLocale } from '@omnivo/i18n';
 import {
   allRows,
   type DeviceShift,
+  floorsOf,
   heldCount,
   holdCart,
   type LocalCopy,
@@ -47,6 +48,7 @@ import { useLocalQuery } from '../lib/local-data';
 import { useCan } from '../lib/permissions';
 import {
   addToCart,
+  belowCostLines,
   type Cart,
   cartAmounts,
   type CartLine,
@@ -209,6 +211,8 @@ export function PosScreen({
   const { allowNegativeStock, pricesIncludeVat } = settings;
   // Decision 11: without the permission the boxes say so, and Pay waits
   const canOverride = can('pos.price.override');
+  // Cost floor: selling a line below what it cost needs its own permission (the Owner's)
+  const canSellBelowCost = can('pos.sale.below_cost');
   // Step 18c's limit: offline more than 7 days after the last sync, no new work on this device
   const blocked = !online && age?.age === 'blocked';
   // Decision 6: a shift left open on an earlier day sells nothing more; the menu's Close is the way
@@ -272,6 +276,17 @@ export function PosScreen({
     [register.warehouseId, variantIds],
   );
   const stock = useLocalQuery(readStock);
+  // Cost floor: the average costs of the cart's variants only (the tiles never show a cost). Read
+  // live, so a pull that brings a new cost checks the cart again.
+  const cartVariantIds = useMemo(
+    () => [...new Set(cart.lines.map((line) => line.variantId))].sort().join(','),
+    [cart.lines],
+  );
+  const readFloors = useCallback(
+    (open: LocalCopy) => floorsOf(open, cartVariantIds === '' ? [] : cartVariantIds.split(',')),
+    [cartVariantIds],
+  );
+  const floors = useLocalQuery(readFloors);
 
   const amounts = useMemo(() => cartAmounts(cart, pricesIncludeVat), [cart, pricesIncludeVat]);
   const short = useMemo(
@@ -282,12 +297,19 @@ export function PosScreen({
     () => (canOverride ? [] : overridesOf(cart, register)),
     [cart, register, canOverride],
   );
+  // Worked out for everyone: without the permission it stops the sale, with it the line only says
+  // so (pos-cart.tsx). Until the floors are read, nothing is below cost.
+  const belowCost = useMemo(
+    () => belowCostLines(cart, amounts, floors ?? new Map<string, string>()),
+    [cart, amounts, floors],
+  );
 
   const payable =
     cart.lines.length > 0 &&
     cart.lines.every(lineReady) &&
     short.size === 0 &&
     overrides.length === 0 &&
+    (canSellBelowCost || belowCost.size === 0) &&
     !blocked &&
     !stale;
 
@@ -644,6 +666,8 @@ export function PosScreen({
         short={short}
         overrides={overrides}
         canOverride={canOverride}
+        belowCost={belowCost}
+        canSellBelowCost={canSellBelowCost}
         payable={payable}
         onPay={() => {
           setPaying(true);

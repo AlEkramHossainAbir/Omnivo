@@ -101,6 +101,7 @@ export {
 export { changedCustomer, createdCustomer, projectCustomer } from './overlay.js';
 export {
   dropClaim,
+  floorsOf,
   keepClaim,
   localRegisters,
   type PosSaleSave,

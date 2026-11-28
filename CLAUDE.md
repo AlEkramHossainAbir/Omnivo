@@ -551,7 +551,9 @@ is a scaled-down illustration of the real UI, so it may use the mockup's smaller
   (`aria-expanded`): a quantity stepper that never goes below 1, "× ৳420 · bag", a `brand` "5% off" pill, the batch;
   open, the quantity, price, discount, batch and serial boxes. A price the cashier may not change is read-only with
   a 12px `ink-3` sentence saying why; over the register's limit, the discount says it needs `pos.price.override` and
-  Pay waits. The totals block on `subtle`: bill discount (`DiscountInput`), line discounts only when there are any,
+  Pay waits. A line that sells for less than its average cost (after its share of the bill discount, without VAT)
+  says "This is less than it cost…" in `crit` with `Alert02` and Pay waits; with `pos.sale.below_cost` it is a
+  `warn` line and Pay goes on. The screen never shows the cost itself. The totals block on `subtle`: bill discount (`DiscountInput`), line discounts only when there are any,
   VAT, the total at the KPI size, and "Pay ৳2,300" (primary, full width). On a phone the cart is a bar at the bottom
   (count, total, Pay) that opens it over the products.
 - **Pay and done dialogs:** "Take payment": rows of method select, amount and reference (each method's own

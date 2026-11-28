@@ -183,7 +183,7 @@ describe('draftLines', () => {
         archivedAt: null,
       },
     ],
-    units: [{ unitId: 'case', factor: '24', barcode: null }],
+    units: [{ unitId: 'case', factor: '24', barcode: null, salePrice: null }],
     customFields: {},
     archivedAt: null,
     version: 1,

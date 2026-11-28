@@ -63,6 +63,8 @@ const DESCRIPTIONS = {
     'Sell at a POS register, take a free register for this device, and run its shifts',
   'pos.price.override':
     "Change a price at the POS, or give more discount than the register's limit",
+  'pos.sale.below_cost':
+    'Sell a line at the POS for less than what the goods cost (their average cost)',
   'pos.register.manage': 'Add, edit and archive POS registers and the pay in and pay out reasons',
   'pos.shift.manage':
     "See every register's shifts and cash differences, and close a stuck shift without a count",

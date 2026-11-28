@@ -385,6 +385,22 @@ export function posChangeOf(payments: readonly PaymentFields[], total: string): 
   return compareMoney(change, '0') > 0 ? change : '0.0000';
 }
 
+// Cost floor: the lines sold for less than their goods cost, by index. `net` is the line after its
+// own discount and its share of the bill's discount, without VAT (posSaleAmounts' net): the bill's
+// discount counts, or a cashier could take the loss off the bill instead of the line. `cost` is
+// what the line's goods cost, to the paisa: on the device the floor × the base quantity
+// (multiplyMoney rounds it, so a box of 42 at ৳16.6667 costs ৳700.00 and sells at ৳700), on the
+// server the line's posted value. null = no cost known (a service, a variant never bought), which
+// never stops a sale. The device asks for pos.sale.below_cost before the sale; the server only
+// writes the audit log (the money was taken).
+export function posBelowCostLines(
+  lines: readonly { net: string; cost: string | null }[],
+): number[] {
+  return lines.flatMap((line, index) =>
+    line.cost !== null && compareMoney(line.net, line.cost) < 0 ? [index] : [],
+  );
+}
+
 // What a cashier did that needs pos.price.override (decision 11): a price other than the one the
 // line started with, or a discount above the register's limit, on a line or on the bill. The device
 // asks for the permission before the sale; the server writes the same list to the audit log, and

@@ -152,6 +152,7 @@ export const ERROR_CODES = [
   'product_variant_unknown',
   'product_variant_in_use',
   'product_pack_barcode_variants',
+  'product_pack_price_variants',
   'product_tracking_service',
   'product_expiry_needs_batch',
   'product_category_invalid',

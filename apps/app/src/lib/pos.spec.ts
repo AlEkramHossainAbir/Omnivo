@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   addToCart,
+  belowCostLines,
   type Cart,
   cartAmounts,
   type CartLine,
@@ -152,6 +153,47 @@ describe('overridesOf', () => {
     ).toContainEqual({
       kind: 'bill_discount',
     });
+  });
+});
+
+describe('belowCostLines', () => {
+  // KitKat 2 finger: a box of 42 bought for ৳700, so a piece costs ৳16.6667 on average. No VAT, so
+  // the line's net is what the customer pays.
+  const KITKAT = '01928c4e-8888-7000-8000-000000000003';
+  const floors = new Map([[KITKAT, '16.6667']]);
+  const piece = (fields: Partial<CartLine> = {}) =>
+    line({
+      variantId: KITKAT,
+      rate: '0',
+      unitPrice: '30.0000',
+      startingPrice: '30.0000',
+      ...fields,
+    });
+  const box = (fields: Partial<CartLine> = {}) =>
+    piece({ factor: '42', unitPrice: '750.0000', startingPrice: '750.0000', ...fields });
+  const check = (cart: Cart) => belowCostLines(cart, cartAmounts(cart, false), floors);
+
+  it('lets a piece go at ৳20 and a box at its own cost, and stops a box under it', () => {
+    const atTwenty = piece({ unitPrice: '20.0000' });
+    // 42 × ৳16.6667 is ৳700.0014, which rounds to ৳700.00: a box at ৳700 is not a loss
+    const atCost = box({ unitPrice: '700.0000' });
+    const under = box({ unitPrice: '680.0000' });
+    const cart: Cart = { ...EMPTY_CART, lines: [atTwenty, atCost, under] };
+    expect([...check(cart)]).toEqual([under.key]);
+  });
+
+  it('counts the bill discount, so a loss cannot hide in it', () => {
+    const one = box();
+    const fine: Cart = { ...EMPTY_CART, lines: [one], billDiscount: '50' };
+    expect(check(fine).size).toBe(0);
+    // ৳750 − ৳60 = ৳690, under the box's ৳700
+    expect([...check({ ...fine, billDiscount: '60' })]).toEqual([one.key]);
+  });
+
+  it('never stops a service or a variant with no cost on the device', () => {
+    const service = piece({ goods: false, unitPrice: '1.0000' });
+    const unknown = line({ unitPrice: '1.0000' });
+    expect(check({ ...EMPTY_CART, lines: [service, unknown] }).size).toBe(0);
   });
 });
 

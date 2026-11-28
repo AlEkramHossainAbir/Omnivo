@@ -12,13 +12,16 @@ import {
   contractErrorMap,
   type CustomFieldDefinition,
   customFieldsInputSchema,
+  factorSchema,
   isCustomFieldType,
+  isMoneyAmount,
   MAX_PRODUCT_OPTIONS,
   type Product,
   type ProductCategory,
   productFieldsSchema,
   productRules,
   PRODUCT_TYPES,
+  priceInUnit,
   routes,
   standardFactor,
   type TaxRate,
@@ -153,6 +156,7 @@ function valuesOf(
       unitId: pack.unitId,
       factor: plainFactor(pack.factor),
       barcode: pack.barcode ?? '',
+      salePrice: pack.salePrice ?? '',
     })),
     customFields,
     version: product.version,
@@ -190,6 +194,7 @@ function fieldNames(
       rowPath('units', index, 'unitId'),
       rowPath('units', index, 'factor'),
       rowPath('units', index, 'barcode'),
+      rowPath('units', index, 'salePrice'),
     );
   });
   for (const field of fields) names.push(`customFields.${field.key}`);
@@ -390,6 +395,8 @@ export function ProductForm({
   const type = useWatch({ control, name: 'type' });
   const tracking = useWatch({ control, name: 'tracking' });
   const options = useWatch({ control, name: 'options' });
+  // A simple product's one price, for the pack price's hint ("Empty = ৳30 × 42 = ৳1,260")
+  const piecePrice = useWatch({ control, name: 'variants.0.salePrice' });
 
   const unitById = useMemo(() => new Map(units.map((unit) => [unit.id, unit])), [units]);
   const base = unitById.get(baseUnitId);
@@ -479,6 +486,10 @@ export function ProductForm({
     if (next === 'variants') {
       // The one variant stays (its id carries over to the first combination when created)
       optionArray.replace([{ name: '', values: [] }]);
+      // Variants keep their own prices: a pack price would be refused, in a box no longer shown
+      getValues('units').forEach((_, index) => {
+        setValue(rowPath('units', index, 'salePrice'), '');
+      });
     } else {
       const [only] = getValues('variants');
       optionArray.replace([]);
@@ -503,7 +514,20 @@ export function ProductForm({
     (remove.error instanceof ApiRequestError ? remove.error.code : undefined);
   const variantsError = errors.variants?.root?.message ?? errors.variants?.message;
   const unitWord = base?.code ?? '';
-  const { errorText } = useLocale();
+  const { errorText, format } = useLocale();
+  // What a pack costs when its own price is left empty: the piece price × what it holds, as
+  // startingPrice() works it out. Only while both boxes hold a valid number.
+  const packPriceHint = (factor: string | undefined) => {
+    const price = piecePrice ?? '';
+    if (!isMoneyAmount(price) || !factorSchema.safeParse(factor).success || factor === undefined) {
+      return t('products.packs.priceHintNone', { base: unitWord });
+    }
+    return t('products.packs.priceHint', {
+      price: format.money(price, { decimals: 2 }),
+      factor: plainFactor(factor),
+      amount: format.money(priceInUnit(price, '1', factor), { decimals: 2 }),
+    });
+  };
   const rateText = useRateText();
   const defaultRate = taxRates.find((rate) => rate.isDefault);
   const priceHint = pricesIncludeVat
@@ -632,7 +656,14 @@ export function ProductForm({
                     <li
                       key={pack.id}
                       aria-label={t('products.packs.number', { number })}
-                      className="grid grid-cols-1 gap-3 rounded-control border border-line p-3 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto] sm:items-start"
+                      className={cn(
+                        'grid grid-cols-1 gap-3 rounded-control border border-line p-3 sm:items-start',
+                        // A simple product has the pack's price and barcode too: two columns on
+                        // a small screen, one row from lg
+                        kind === 'simple'
+                          ? 'sm:grid-cols-2 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)_minmax(0,1.1fr)_minmax(0,1.2fr)_auto]'
+                          : 'sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1.2fr)_auto]',
+                      )}
                     >
                       <div className="grid gap-1.5">
                         <label
@@ -688,6 +719,19 @@ export function ProductForm({
                           />
                         )}
                       </div>
+                      {kind === 'simple' && (
+                        // The box's own price: a box of 42 for ৳750 while a piece is ৳30. Only on
+                        // a simple product (productRules: product_pack_price_variants).
+                        <FormField
+                          control={control}
+                          name={rowPath('units', index, 'salePrice')}
+                          label={t('products.packs.price')}
+                          hint={packPriceHint(packs[index]?.factor)}
+                          optional
+                        >
+                          {(field) => <MoneyInput {...field} value={field.value ?? ''} />}
+                        </FormField>
+                      )}
                       {kind === 'simple' ? (
                         <div className="grid gap-1.5">
                           <label
@@ -713,7 +757,11 @@ export function ProductForm({
                       <IconButton
                         icon={Delete02Icon}
                         label={t('products.packs.remove', { number })}
-                        className="justify-self-end sm:mt-[26px]"
+                        className={cn(
+                          'justify-self-end sm:mt-[26px]',
+                          // Two columns: the button gets a row of its own, on the right
+                          kind === 'simple' && 'sm:col-span-2 sm:mt-0 lg:col-span-1 lg:mt-[26px]',
+                        )}
                         onClick={() => {
                           packArray.remove(index);
                         }}
@@ -728,7 +776,7 @@ export function ProductForm({
                 variant="secondary"
                 size="sm"
                 onClick={() => {
-                  packArray.append({ unitId: '', factor: '', barcode: '' });
+                  packArray.append({ unitId: '', factor: '', barcode: '', salePrice: '' });
                 }}
               >
                 <HugeiconsIcon icon={PlusSignIcon} size={16} strokeWidth={1.5} />

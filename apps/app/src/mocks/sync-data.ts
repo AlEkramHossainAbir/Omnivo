@@ -15,6 +15,7 @@ import {
   type SyncNotice,
   syncPosCashReasonSchema,
   syncPosRegisterSchema,
+  type SyncPriceFloor,
   type SyncPull,
   syncSettingsSchema,
   type SyncStock,
@@ -254,6 +255,28 @@ function stockRows(
     });
 }
 
+// Cost floor: every variant with an average cost (the stock's company-wide value, like the API's
+// stock_values), the archived products' too, like the API's loader. updatedAt stays while the
+// floor does, as for the stock rows.
+function floorRows(data: WorkspaceData): SyncPriceFloor[] {
+  const productOf = new Map(
+    data.catalog.products.flatMap((product) =>
+      product.variants.map((variant) => [variant.id, product.id] as const),
+    ),
+  );
+  return [...data.stock.values.entries()].flatMap(([variantId, state]) => {
+    const productId = productOf.get(variantId);
+    if (state.unitCost === null || productId === undefined) return [];
+    const key = `floor|${variantId}`;
+    const stamp = data.sync.stamps.get(key);
+    const at = stamp?.quantity === state.unitCost ? stamp.at : now();
+    if (stamp?.quantity !== state.unitCost) {
+      data.sync.stamps.set(key, { quantity: state.unitCost, at });
+    }
+    return [{ productId, variantId, floor: state.unitCost, updatedAt: at }];
+  });
+}
+
 // Every row the device of this branch keeps, in the order of SYNC_ENTITIES: what a list points at
 // comes before the list. Step 20c: and the recent sales of the register the device holds.
 function rowsOf(data: WorkspaceData, tenantId: string, device: Device): SyncUpsert[] {
@@ -384,6 +407,12 @@ function rowsOf(data: WorkspaceData, tenantId: string, device: Device): SyncUpse
       entity: 'pos_sale' as const,
       key: sale.id,
       data: toReturnable(data, sale),
+    })),
+    ...floorRows(data).map((row) => ({
+      op: 'upsert' as const,
+      entity: 'price_floor' as const,
+      key: row.variantId,
+      data: row,
     })),
   ];
 }

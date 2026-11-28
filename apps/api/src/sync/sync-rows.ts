@@ -4,6 +4,7 @@ import {
   type SyncCategory,
   type SyncCustomerGroup,
   type SyncEntity,
+  type SyncPriceFloor,
   type SyncPriceList,
   type SyncUpsert,
 } from '@omnivo/contracts';
@@ -18,11 +19,12 @@ import {
   products,
   taxRates,
   tenantSettings,
+  stockValues,
   tenants,
   units,
   warehouses,
 } from '@omnivo/db';
-import { and, asc, eq, gt, gte, inArray, isNull, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, type SQL, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { z } from 'zod';
 
@@ -139,6 +141,9 @@ const stockRowSchema = z.object({
 //                       shift (step 20b)
 //   pos_cash_reason     active, all of them (step 20b): a reason belongs to no branch
 //   pos_sale            of the register the device holds, from the last 30 days (step 20c)
+//   price_floor         every variant with an average cost (cost floor). An archived product's
+//                       too: archiving does not touch stock_values, so 0086 would never log it
+//                       leaving, and a floor alone sells nothing (the product row is gone)
 export const LOADERS: Record<SyncEntity, Loader> = {
   // One row, keyed by the workspace's id (the contract's settings key)
   settings: async (tx, scope, pick) => {
@@ -476,6 +481,45 @@ export const LOADERS: Record<SyncEntity, Loader> = {
       sort: [sale.id],
       change: { op: 'upsert', entity: 'pos_sale', key: sale.id, data: sale },
     }));
+  },
+
+  // Cost floor: keyed by the variant's id (stock_values_key is unique on it). The full pull pages
+  // by variant id; stock_values has no index of its own on (tenant, variant) beyond that key.
+  price_floor: async (tx, scope, pick) => {
+    const { where, limit } = byId(stockValues.variantId, pick);
+    const rows = await tx
+      .select({
+        productId: stockValues.productId,
+        variantId: stockValues.variantId,
+        unitCost: stockValues.unitCost,
+        updatedAt: stockValues.updatedAt,
+      })
+      .from(stockValues)
+      .where(
+        and(
+          eq(stockValues.tenantId, scope.tenantId),
+          // A variant never bought has no cost: no row, so nothing stops its sale
+          isNotNull(stockValues.unitCost),
+          where,
+        ),
+      )
+      .orderBy(asc(stockValues.variantId))
+      .limit(limit);
+    return rows.flatMap((row) => {
+      if (row.unitCost === null) return [];
+      const data: SyncPriceFloor = {
+        productId: row.productId,
+        variantId: row.variantId,
+        floor: row.unitCost,
+        updatedAt: row.updatedAt.toISOString(),
+      };
+      return [
+        {
+          sort: [row.variantId],
+          change: { op: 'upsert', entity: 'price_floor', key: row.variantId, data },
+        },
+      ];
+    });
   },
 
   // In keys mode the batch is compared with IS NOT DISTINCT FROM ('-' = no batch = NULL); the

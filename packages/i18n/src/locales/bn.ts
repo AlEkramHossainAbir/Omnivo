@@ -1654,6 +1654,9 @@ export const bn: Messages = {
       placeholder: 'একটা ইউনিট বাছুন',
       factor: 'ভেতরে',
       barcode: 'প্যাকের বারকোড',
+      price: 'প্যাকের দাম',
+      priceHint: 'খালি থাকলে {{price}} × {{factor}} = {{amount}}',
+      priceHintNone: 'খালি থাকলে {{base}}-এর দাম × ভেতরে যত আছে',
       add: 'একটা প্যাক যোগ করুন',
       remove: 'প্যাক {{number}} সরান',
       number: 'প্যাক {{number}}',
@@ -4423,6 +4426,8 @@ export const bn: Messages = {
     overLimit: '{{max}}%-এর বেশি ছাড়ে pos.price.override লাগে।',
     priceLocked: 'দাম বদলাতে pos.price.override লাগে।',
     priceChanged: '{{price}} থেকে বদলানো',
+    belowCost: 'এটা কেনা দামের চেয়ে কম। দাম বাড়ান বা ছাড় কমান।',
+    belowCostAllowed: 'এটা কেনা দামের চেয়ে কম। আপনি বিক্রি করতে পারেন; অডিট লগে লেখা থাকবে।',
     payTitle: 'টাকা নিন',
     payDescription: 'মোট {{total}}। গ্রাহক চাইলে কয়েকভাবে ভাগ করে নিন।',
     methods: { cash: 'নগদ', card: 'কার্ড', bkash: 'bKash', nagad: 'Nagad', exchange: 'এক্সচেঞ্জ' },
@@ -6823,7 +6828,10 @@ export const bn: Messages = {
       report: { read: 'কেনাকাটার রিপোর্ট দেখা' },
     },
     pos: {
-      sale: { create: 'POS কাউন্টারে বিক্রি: রেজিস্টার নেওয়া, বিক্রি লেখা আর টাকা নেওয়া' },
+      sale: {
+        create: 'POS কাউন্টারে বিক্রি: রেজিস্টার নেওয়া, বিক্রি লেখা আর টাকা নেওয়া',
+        below_cost: 'POS-এ কোনো লাইন কেনা দামের চেয়ে কমে বিক্রি করা',
+      },
       price: { override: 'POS-এ দাম বদলানো, বা রেজিস্টারের সীমার বেশি ছাড় দেওয়া' },
       register: { manage: 'POS রেজিস্টার যোগ, বদল আর আর্কাইভ' },
       shift: { manage: 'সব রেজিস্টারের শিফট আর গোনা দেখা, আর আটকে থাকা শিফট না গুনে বন্ধ করা' },
@@ -7213,6 +7221,7 @@ export const bn: Messages = {
         created: 'POS কাউন্টারে বিক্রি করেছেন',
         overridden: 'POS-এ দাম বদলেছেন বা বেশি ছাড় দিয়েছেন',
         without_permission: 'অনুমতি চলে যাওয়ার পরে POS কাউন্টারে বিক্রি করেছেন',
+        below_cost: 'POS কাউন্টারে কেনা দামের নিচে বিক্রি করেছেন',
       },
       pos_cash_reason: {
         created: 'POS ক্যাশের একটা কারণ যোগ করেছেন',
@@ -7460,6 +7469,7 @@ export const bn: Messages = {
       paid: 'দেওয়া হয়েছে',
       soldShort: 'স্টকের বেশি বিক্রির লাইন',
       overrides: 'pos.price.override লাগে',
+      belowCost: 'কেনা দামের নিচে',
       allowed: 'অনুমতি',
       missing: 'যে অনুমতি ছিল না',
       overShortAccount: 'বেশি-কমের অ্যাকাউন্ট',
@@ -7846,6 +7856,8 @@ export const bn: Messages = {
     product_variant_in_use: 'ডকুমেন্টে এই ভ্যারিয়েন্ট আছে, তাই এটা থাকবে। বরং আর্কাইভ করুন।',
     product_pack_barcode_variants:
       'ভ্যারিয়েন্টওয়ালা প্রোডাক্টের বারকোড থাকে ভ্যারিয়েন্টে, প্যাকে না।',
+    product_pack_price_variants:
+      'ভ্যারিয়েন্টওয়ালা প্রোডাক্টের দাম থাকে ভ্যারিয়েন্টে। প্যাকের দামের ঘর খালি রাখুন।',
     product_tracking_service: 'সার্ভিস স্টকে থাকে না, তাই ট্র্যাক হয় না। None বাছুন।',
     product_expiry_needs_batch: 'মেয়াদের তারিখ রাখা হয় ব্যাচে। আগে ব্যাচ ট্র্যাকিং বাছুন।',
     product_category_invalid: 'তালিকা থেকে একটা ক্যাটাগরি বাছুন।',

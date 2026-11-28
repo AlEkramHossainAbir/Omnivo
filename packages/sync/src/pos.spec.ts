@@ -264,7 +264,7 @@ describe('the stock and the scanner', () => {
           archivedAt: null,
         },
       ],
-      units: [{ unitId: BOX, factor: '5', barcode: null }],
+      units: [{ unitId: BOX, factor: '5', barcode: null, salePrice: null }],
     });
     const row = stock({ productId: rice.id });
     await applyPage(
@@ -326,7 +326,7 @@ describe('the stock and the scanner', () => {
           archivedAt: null,
         },
       ],
-      units: [{ unitId: BOX, factor: '10', barcode: '8941100500024' }],
+      units: [{ unitId: BOX, factor: '10', barcode: '8941100500024', salePrice: null }],
     });
     await applyPage(copy, page({ changes: [upsertProduct(strip)] }), null);
     expect((await productByBarcode(copy, '8941100500017'))?.name).toBe(strip.name);

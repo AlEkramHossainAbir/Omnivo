@@ -170,6 +170,10 @@ export const productUnits = pgTable(
     // The unit sales and purchase forms start with. No row flagged = the base unit.
     isSalesDefault: boolean('is_sales_default').notNull().default(false),
     isPurchaseDefault: boolean('is_purchase_default').notNull().default(false),
+    // The pack's own price, per one pack (a box of 42 for ৳750 when a piece is ৳30). NULL = the
+    // variant's sale_price × factor. Only on products without variants (the API checks it:
+    // product_pack_price_variants). A customer's price list still comes first.
+    salePrice: numeric('sale_price', { precision: 19, scale: 4 }),
   },
   (table) => [
     // Each unit once per product. Also the target of the barcodes' FK below.
@@ -194,6 +198,7 @@ export const productUnits = pgTable(
       foreignColumns: [units.tenantId, units.id],
     }),
     check('product_units_factor_check', sql`${table.factor} > 0`),
+    check('product_units_price_check', sql`${table.salePrice} IS NULL OR ${table.salePrice} >= 0`),
   ],
 );
 
