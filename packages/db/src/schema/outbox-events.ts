@@ -7,7 +7,12 @@ import { tenants } from './tenants.js';
 // the worker decides what to do about each one. Server-only, so the list lives here and not in
 // contracts — the browser never sees an outbox event.
 export const OUTBOX_EVENT_TYPES = [
+  // The welcome email. Since the email check, it is emitted when the address is confirmed, not at
+  // sign-up, so a new owner gets one email at a time
   'workspace.created',
+  // A new owner's address waits to be confirmed: the worker makes the link and emails it. Emitted
+  // at sign-up, by "Send the link again" and by a sign-in refused for it
+  'account.verification_requested',
   'workspace.setup_requested',
   'invitation.issued',
   'member.joined',

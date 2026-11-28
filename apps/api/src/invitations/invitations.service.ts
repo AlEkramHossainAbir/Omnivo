@@ -11,6 +11,7 @@ import {
 } from '@omnivo/contracts';
 import {
   type Db,
+  emailVerifications,
   invitationRoles,
   invitations,
   membershipRoles,
@@ -367,6 +368,17 @@ export class InvitationsService {
         updatedBy: userId,
       })
       .where(and(eq(invitations.tenantId, tenantId), eq(invitations.id, invitationId)));
+    // The invitation's link went to this address, so opening it proves the address as well as
+    // the sign-up's link would. A person who signed up and never opened that link can now sign in,
+    // so the link it waited for stops (no hash to match). updated_at kept: the profile did not change
+    await tx
+      .update(users)
+      .set({ emailVerified: true, updatedAt: sql`${users.updatedAt}` })
+      .where(eq(users.id, userId));
+    await tx
+      .update(emailVerifications)
+      .set({ tokenHash: null, verifiedAt: new Date() })
+      .where(and(eq(emailVerifications.userId, userId), isNull(emailVerifications.verifiedAt)));
     await audit(tx, {
       action: 'member.joined',
       entityType: 'member',

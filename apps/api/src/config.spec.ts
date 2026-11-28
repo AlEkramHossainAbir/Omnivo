@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { loadConfig } from './config.js';
+import { loadConfig, loadWorkerConfig } from './config.js';
 
 // Step 26f: the shop's settings in the API's config. Every other value is the same as in
 // testConfig (testing/app.ts); only the ones under test change.
@@ -149,5 +149,38 @@ describe('shipping config', () => {
     expect(loadConfig(env({})).shipping.credentialsKey).toBeNull();
     const config = loadConfig(env({ CREDENTIALS_KEY: key }));
     expect(config.shipping.credentialsKey).toBe(config.payments.credentialsKey);
+  });
+});
+
+// Real email: the emails may go to the real email service (Resend), the SMS never do
+describe('mail config', () => {
+  // The worker's own values; the rest come from env() above
+  function workerEnv(extra: Record<string, string>): Record<string, string> {
+    return env({
+      WORKER_DATABASE_URL: 'postgres://omnivo_worker:worker@localhost:5432/omnivo',
+      SMTP_URL: 'smtp://localhost:1025',
+      ...extra,
+    });
+  }
+  const resend = 'smtps://resend:re_test_key@smtp.resend.com:465';
+
+  it('sends the SMS where the emails go outside production (Mailpit)', () => {
+    const config = loadWorkerConfig(workerEnv({}));
+    expect(config.sms.mailUrl).toBe('smtp://localhost:1025');
+  });
+
+  it('keeps the SMS on their own server while the emails go to Resend', () => {
+    const config = loadWorkerConfig(
+      workerEnv({ NODE_ENV: 'production', SMTP_URL: resend, SMS_SMTP_URL: 'smtp://mail:1025' }),
+    );
+    expect(config.mail.url).toBe(resend);
+    expect(config.sms.mailUrl).toBe('smtp://mail:1025');
+  });
+
+  // Without the line, production would send every phone code to the real email service
+  it('refuses production without SMS_SMTP_URL', () => {
+    expect(() => loadWorkerConfig(workerEnv({ NODE_ENV: 'production', SMTP_URL: resend }))).toThrow(
+      /SMS_SMTP_URL/,
+    );
   });
 });

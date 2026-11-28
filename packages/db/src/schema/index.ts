@@ -9,6 +9,7 @@ export * from './audit-logs.js';
 export * from './sessions.js';
 export * from './accounts.js';
 export * from './verifications.js';
+export * from './email-verifications.js';
 export * from './refresh-tokens.js';
 export * from './attachments.js';
 export * from './tenant-settings.js';

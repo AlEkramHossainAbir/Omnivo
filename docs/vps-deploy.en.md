@@ -161,6 +161,12 @@ To deploy an older build again, run on the server, in that stack's folder:
 `./deploy.sh <full commit hash>`. Every deploy is listed in `deploys.log` in the folder. Or use
 **Actions → Deploy → Run workflow**, pick the target and type the commit.
 
+## Real email (production)
+
+Production sends real email through Resend when its `.env` has `SMTP_URL`; the demo has none and sends
+everything to Mailpit. The SMS stay in Mailpit on both stacks (`SMS_SMTP_URL` in `compose.yml`). Setup,
+checks and fixes: [email-resend.en.md](email-resend.en.md).
+
 ## Setting up the two stacks (once, 25 Nov 2026)
 
 The full checklist, with checks after each step and the setup of a new computer, is

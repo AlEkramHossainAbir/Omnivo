@@ -99,8 +99,16 @@ const workerEnvSchema = sharedEnvSchema
     WORKER_DATABASE_URL: z.url(),
     // ইমেইল: dev-এ docker-compose-এর Mailpit (smtp://localhost:1025, সব চিঠি http://localhost:8025-এ),
     // production-এ আসল SMTP (smtps://user:pass@host:465)। পাসওয়ার্ড URL-এর ভেতরেই — একটাই secret
+    // Production uses Resend: smtps://resend:<API key>@smtp.resend.com:465 (docs/email-resend.en.md).
+    // A password with + / = or @ in it must be percent-encoded, or the URL is read wrong
     SMTP_URL: z.url(),
     MAIL_FROM: z.string().min(3).default('Omnivo <no-reply@omnivo.app>'),
+    // Where the SMS go until a real SMS provider is chosen: a mail server that keeps them (Mailpit),
+    // never the real one. MailSmsSender writes each SMS as an email to <phone>@sms.invalid, which a
+    // real provider refuses or bounces, and bounces count against the account (Resend and SES block
+    // an account that bounces too much, and then the invitations stop too). Left out: SMTP_URL,
+    // outside production only (smsConfig)
+    SMS_SMTP_URL: z.url().optional(),
   });
 
 const DAY = 24 * 60 * 60;
@@ -165,6 +173,18 @@ function shippingConfig(
 }
 
 export type ShippingConfig = ReturnType<typeof shippingConfig>;
+
+// The SMS's mail server (SMS_SMTP_URL above). In development and the tests SMTP_URL is Mailpit, so
+// the SMS go there too. Production must name it: there SMTP_URL may be the real email service, and
+// a guess would send every phone code to it. Refused before the worker takes a job
+function smsConfig(e: z.output<typeof workerEnvSchema>) {
+  if (e.NODE_ENV === 'production' && e.SMS_SMTP_URL === undefined) {
+    throw new Error(
+      'Invalid environment — set SMS_SMTP_URL (Mailpit, smtp://mail:1025). Production must not send the SMS to SMTP_URL, the real email service.',
+    );
+  }
+  return { mailUrl: e.SMS_SMTP_URL ?? e.SMTP_URL };
+}
 
 function parseEnv<S extends z.ZodType>(schema: S, env: Record<string, string | undefined>) {
   const parsed = schema.safeParse(env);
@@ -259,6 +279,8 @@ export function loadWorkerConfig(env: Record<string, string | undefined>) {
       url: e.SMTP_URL,
       from: e.MAIL_FROM,
     },
+    // The SMS's own mail server (Mailpit), apart from the real email service
+    sms: smsConfig(e),
     // The report exports (step 11) go to the same bucket as the uploads
     storage: storageConfig(e),
     // Step 27d: the sweep asks the gateway before it deletes an unpaid online order

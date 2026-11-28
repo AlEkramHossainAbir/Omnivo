@@ -199,7 +199,12 @@ services:
       DATABASE_URL: postgres://omnivo_app:${APP_DB_PASSWORD}@db:5432/omnivo
       WORKER_DATABASE_URL: postgres://omnivo_worker:${WORKER_DB_PASSWORD}@db:5432/omnivo
       REDIS_URL: redis://cache:6379
-      SMTP_URL: smtp://mail:1025
+      # The emails: the real email service when .env sets SMTP_URL (production: Resend), else
+      # Mailpit (the demo, so a tester's made-up address never gets a real email)
+      SMTP_URL: ${SMTP_URL:-smtp://mail:1025}
+      # The SMS (phone codes) always go to Mailpit until a real SMS provider is chosen, on both
+      # stacks: never to the real email service (config.ts refuses production without this line)
+      SMS_SMTP_URL: smtp://mail:1025
       MAIL_FROM: ${MAIL_FROM_NAME:-Omnivo} <no-reply@${MAIL_FROM_DOMAIN:?set MAIL_FROM_DOMAIN in .env}>
     # A deploy waits for the running jobs (a PDF, an export) to finish
     stop_grace_period: 60s

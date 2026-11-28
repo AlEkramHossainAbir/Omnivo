@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { OutboxEventType } from '@omnivo/db';
 
+import { VerificationEmailHandler } from '../auth/verification-email.handler.js';
 import type { EventHandler } from '../common/outbox/outbox.js';
 import { DocumentEmailHandler } from '../documents/email.handler.js';
 import { DocumentFileHandler } from '../documents/file.handler.js';
@@ -37,6 +38,7 @@ export class EventHandlers {
 
   constructor(
     welcome: WelcomeEmailHandler,
+    verificationEmail: VerificationEmailHandler,
     provisioning: ProvisioningHandler,
     invitationEmail: InvitationEmailHandler,
     memberJoined: MemberJoinedHandler,
@@ -61,6 +63,7 @@ export class EventHandlers {
   ) {
     this.byType = {
       'workspace.created': welcome,
+      'account.verification_requested': verificationEmail,
       'workspace.setup_requested': provisioning,
       'invitation.issued': invitationEmail,
       'member.joined': memberJoined,

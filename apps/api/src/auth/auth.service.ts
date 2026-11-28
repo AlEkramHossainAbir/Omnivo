@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, isNull, sql } from 'drizzle-orm';
 import {
   type Auth,
   AuthError,
@@ -8,20 +8,24 @@ import {
   type Principal,
   type RefreshGrant,
 } from '@omnivo/auth';
-import type {
-  LoginInput,
-  MeResponse,
-  Preferences,
-  SignUpInput,
-  UpdatePreferencesInput,
+import {
+  EMAIL_VERIFICATION_TTL_HOURS,
+  type LoginInput,
+  type MeResponse,
+  type Preferences,
+  type SignUpInput,
+  type SignUpResult,
+  type UpdatePreferencesInput,
 } from '@omnivo/contracts';
 import {
   type Db,
   OWNER_ROLE_NAME,
   branches,
+  emailVerifications,
   membershipRoles,
   memberships,
   roles,
+  sessions,
   tenantSettings,
   tenants,
   users,
@@ -33,11 +37,17 @@ import { isUniqueViolation } from '../common/db/pg-errors.js';
 import { accessRevoked, AppError } from '../common/http/app-error.js';
 import { emit } from '../common/outbox/outbox.js';
 import { runWithTenant } from '../common/tenant/tenant-context.js';
-import { setTenantContext, type WithTenant } from '../common/tenant/with-tenant.js';
+import {
+  setTenantContext,
+  type Transaction,
+  type WithTenant,
+} from '../common/tenant/with-tenant.js';
 import type { WithUser } from '../common/tenant/with-user.js';
 import { AUTH, DB, WITH_TENANT, WITH_USER } from '../infra/tokens.js';
 import { PermissionService } from '../rbac/permission.service.js';
 import { pickWorkspace, type WorkspaceOption } from './pick-workspace.js';
+import { VerificationLimits } from './verification-limits.js';
+import { hashVerificationToken } from './verification-token.js';
 
 interface MembershipGrant {
   membershipId: string;
@@ -59,6 +69,24 @@ function notAMember(): AppError {
   return new AppError(403, 'not_a_member', "This account isn't a member of any workspace.");
 }
 
+// The password was right, but the address is not confirmed yet. The sign-in sent a new link
+function emailNotVerified(): AppError {
+  return new AppError(
+    403,
+    'email_not_verified',
+    'Confirm the email address first. A new link was sent to it.',
+  );
+}
+
+// One answer for an unknown, used and expired link: a stranger learns nothing from it
+function verificationLinkInvalid(): AppError {
+  return new AppError(400, 'verification_link_invalid', 'This link no longer works.');
+}
+
+function linkExpiresAt(): Date {
+  return new Date(Date.now() + EMAIL_VERIFICATION_TTL_HOURS * 60 * 60 * 1000);
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -67,9 +95,12 @@ export class AuthService {
     @Inject(WITH_TENANT) private readonly withTenant: WithTenant,
     @Inject(WITH_USER) private readonly withUser: WithUser,
     private readonly permissionService: PermissionService,
+    private readonly verificationLimits: VerificationLimits,
   ) {}
 
-  async signUp(input: SignUpInput): Promise<IssuedTokens> {
+  // The workspace is made now, but no token is given out: the session Better Auth made waits in
+  // email_verifications until the person opens the email's link (verifyEmail)
+  async signUp(input: SignUpInput): Promise<SignUpResult> {
     // ইউজার তৈরির আগে slug চেক — নাহলে প্রায় প্রতিটা "taken" ক্ষেত্রে ইউজার বানিয়ে আবার মুছতে হতো
     if (await this.findTenantBySlug(input.workspaceSlug)) {
       throw workspaceTaken(input.workspaceSlug);
@@ -81,9 +112,9 @@ export class AuthService {
       fullName: input.fullName,
     });
 
-    let workspace: { tenantId: string } & MembershipGrant;
+    let workspace: { tenantId: string };
     try {
-      workspace = await this.provisionWorkspace(identity.userId, input);
+      workspace = await this.provisionWorkspace(identity, input);
     } catch (error) {
       // Better Auth-এর ইউজার আর আমাদের workspace আলাদা transaction-এ — তাই হাতে rollback।
       // provision-এর transaction rollback হয়েছে, তাই এই ইউজারের কোনো membership নেই, মোছা যায়
@@ -95,11 +126,118 @@ export class AuthService {
     // Step 3b: a new owner's next sign-in opens the company they just made
     await this.rememberWorkspace(identity.userId, workspace.tenantId);
 
-    return this.auth.issueTokens({
-      sessionId: identity.sessionId,
-      sessionExpiresAt: identity.sessionExpiresAt,
-      claims: { userId: identity.userId, ...workspace },
+    // input.email went through emailSchema, so it is the address exactly as users.email has it
+    return { status: 'verify_email', email: input.email };
+  }
+
+  // The email's link. Confirms the address, then finishes the sign-in that sign-up (or a refused
+  // sign-in) started, in the workspace the person created
+  async verifyEmail(token: string): Promise<IssuedTokens> {
+    const hash = hashVerificationToken(token);
+    // Which workspace first, so the confirmation, its audit row and the welcome email are one
+    // transaction in that tenant. A row's tenant never changes once written, so this read cannot
+    // go stale; the locked read below checks everything else again
+    const [candidate] = await this.db
+      .select({ tenantId: emailVerifications.tenantId })
+      .from(emailVerifications)
+      .where(eq(emailVerifications.tokenHash, hash));
+    if (!candidate) throw verificationLinkInvalid();
+
+    const now = new Date();
+    const verified = await runWithTenant(candidate.tenantId, () =>
+      this.withTenant(async (tx) => {
+        // FOR UPDATE: the same link opened twice at once (two tabs, or a mail scanner that opens
+        // links). The second waits, then sees token_hash NULL and gets "no longer works"
+        const [row] = await tx
+          .select({ userId: emailVerifications.userId, sessionId: emailVerifications.sessionId })
+          .from(emailVerifications)
+          .where(
+            and(
+              eq(emailVerifications.tokenHash, hash),
+              isNull(emailVerifications.verifiedAt),
+              gt(emailVerifications.expiresAt, now),
+            ),
+          )
+          .for('update');
+        if (!row) return null;
+
+        // token_hash NULL: a link works once
+        await tx
+          .update(emailVerifications)
+          .set({ tokenHash: null, verifiedAt: now })
+          .where(eq(emailVerifications.userId, row.userId));
+        // updated_at kept, like rememberWorkspace: it means "the profile changed"
+        await tx
+          .update(users)
+          .set({ emailVerified: true, updatedAt: sql`${users.updatedAt}` })
+          .where(eq(users.id, row.userId));
+        await audit(tx, {
+          action: 'auth.email_verified',
+          entityType: 'user',
+          entityId: row.userId,
+          actorUserId: row.userId,
+        });
+        // The welcome email waits for the address to be real, so a new owner gets one email at a time
+        await emit(tx, 'workspace.created', { userId: row.userId });
+        return row;
+      }),
+    );
+    if (!verified) throw verificationLinkInvalid();
+
+    // The address is confirmed from here on, even when the session below is gone: then the
+    // person signs in with the password, and the sign-in lets them in
+    const [session] = verified.sessionId
+      ? await this.db
+          .select({ id: sessions.id, expiresAt: sessions.expiresAt })
+          .from(sessions)
+          .where(and(eq(sessions.id, verified.sessionId), gt(sessions.expiresAt, now)))
+      : [];
+    if (!session) throw sessionEnded();
+
+    // The workspace they created, unless they were taken out of it since; then the sign-in's own rule
+    const tenantId = (await this.findMembership(candidate.tenantId, verified.userId))
+      ? candidate.tenantId
+      : pickWorkspace(
+          await this.listWorkspaces(verified.userId),
+          undefined,
+          await this.lastTenantOf(verified.userId),
+        )?.tenantId;
+    const membership = tenantId ? await this.findMembership(tenantId, verified.userId) : null;
+    if (!tenantId || !membership) {
+      await this.auth.revokeSession(session.id);
+      throw notAMember();
+    }
+
+    await this.rememberWorkspace(verified.userId, tenantId);
+    return this.reissue({
+      sessionId: session.id,
+      sessionExpiresAt: session.expiresAt,
+      claims: { userId: verified.userId, tenantId, ...membership },
     });
+  }
+
+  // "Send the link again". Says nothing about the address: no account, an address confirmed
+  // already and a limit reached all end quietly, and the controller answers 204 to all of them
+  async resendVerification(email: string): Promise<void> {
+    const [row] = await this.db
+      .select({
+        userId: users.id,
+        emailVerified: users.emailVerified,
+        tenantId: emailVerifications.tenantId,
+        verifiedAt: emailVerifications.verifiedAt,
+      })
+      .from(users)
+      .innerJoin(emailVerifications, eq(emailVerifications.userId, users.id))
+      .where(eq(users.email, email));
+    if (!row || row.emailVerified || row.verifiedAt !== null) return;
+    if (!(await this.verificationLimits.take(row.userId))) return;
+
+    await runWithTenant(row.tenantId, () =>
+      this.withTenant(async (tx) => {
+        await this.killLink(tx, row.userId);
+        await emit(tx, 'account.verification_requested', { userId: row.userId });
+      }),
+    );
   }
 
   async login(input: LoginInput): Promise<IssuedTokens> {
@@ -125,6 +263,12 @@ export class AuthService {
       // Better Auth already made a session for the right password; nothing may use it
       await this.auth.revokeSession(identity.sessionId);
       throw notAMember();
+    }
+    // After the workspace, so the rule is the same in every workspace the person is in, and a
+    // switch never asks again: the address belongs to the person, not to a workspace
+    if (!(await this.isEmailVerified(identity.userId))) {
+      await this.sendLinkForSignIn(identity, workspace.tenantId);
+      throw emailNotVerified();
     }
 
     await this.recordInTenant(workspace.tenantId, {
@@ -366,6 +510,61 @@ export class AuthService {
     );
   }
 
+  private async isEmailVerified(userId: string): Promise<boolean> {
+    const [row] = await this.db
+      .select({ emailVerified: users.emailVerified })
+      .from(users)
+      .where(eq(users.id, userId));
+    return row?.emailVerified === true;
+  }
+
+  // A sign-in with the right password, but the address is not confirmed. This sign-in's session
+  // takes the old one's place in the row, so the link (the new one, or the last one when the limit
+  // says wait) finishes THIS sign-in; the old session never had a token, so ending it signs no one
+  // out. No row at all = an account made by the old code while this version was being deployed:
+  // it gets one now, for the workspace this sign-in picked.
+  private async sendLinkForSignIn(identity: Identity, pickedTenantId: string): Promise<void> {
+    const [existing] = await this.db
+      .select({ tenantId: emailVerifications.tenantId, sessionId: emailVerifications.sessionId })
+      .from(emailVerifications)
+      .where(eq(emailVerifications.userId, identity.userId));
+    const tenantId = existing?.tenantId ?? pickedTenantId;
+    const send = await this.verificationLimits.take(identity.userId);
+
+    await runWithTenant(tenantId, () =>
+      this.withTenant(async (tx) => {
+        await tx
+          .insert(emailVerifications)
+          .values({
+            userId: identity.userId,
+            tenantId,
+            sessionId: identity.sessionId,
+            expiresAt: linkExpiresAt(),
+          })
+          .onConflictDoUpdate({
+            target: emailVerifications.userId,
+            set: { sessionId: identity.sessionId },
+          });
+        if (send) {
+          await this.killLink(tx, identity.userId);
+          await emit(tx, 'account.verification_requested', { userId: identity.userId });
+        }
+      }),
+    );
+    if (existing?.sessionId && existing.sessionId !== identity.sessionId) {
+      await this.auth.revokeSession(existing.sessionId);
+    }
+  }
+
+  // Before a new link: the old one stops at once (no hash to match), and sent_at NULL tells the
+  // worker that this row waits for an email (verification-email.handler.ts)
+  private async killLink(tx: Transaction, userId: string): Promise<void> {
+    await tx
+      .update(emailVerifications)
+      .set({ tokenHash: null, sentAt: null })
+      .where(eq(emailVerifications.userId, userId));
+  }
+
   // users has no RLS (a global table), so the plain connection reads it
   private async lastTenantOf(userId: string): Promise<string | null> {
     const [row] = await this.db
@@ -422,9 +621,10 @@ export class AuthService {
 
   // একটা transaction: tenant → (context বসিয়ে) membership → owner রোল → রোল বরাদ্দ
   private async provisionWorkspace(
-    userId: string,
+    identity: Identity,
     input: SignUpInput,
-  ): Promise<{ tenantId: string } & MembershipGrant> {
+  ): Promise<{ tenantId: string }> {
+    const { userId } = identity;
     return this.db.transaction(async (tx) => {
       const [tenant] = await tx
         .insert(tenants)
@@ -479,11 +679,18 @@ export class AuthService {
         actorUserId: userId,
         changes: created({ name: input.companyName, slug: input.workspaceSlug }),
       });
-      // The welcome email: queued in this transaction, sent by the worker after the commit.
-      // Sign-up no longer waits for a mail server, and cannot fail because of one.
-      await emit(tx, 'workspace.created', { userId });
+      // The link that confirms the address. The row holds the session sign-up made, and the
+      // worker emails the link after the commit: sign-up never waits for a mail server, and
+      // cannot fail because of one. The welcome email follows once the link is opened.
+      await tx.insert(emailVerifications).values({
+        userId,
+        tenantId: tenant.id,
+        sessionId: identity.sessionId,
+        expiresAt: linkExpiresAt(),
+      });
+      await emit(tx, 'account.verification_requested', { userId });
 
-      return { tenantId: tenant.id, membershipId: membership.id, roles: [OWNER_ROLE_NAME] };
+      return { tenantId: tenant.id };
     });
   }
 }

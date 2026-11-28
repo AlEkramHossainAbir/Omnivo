@@ -265,6 +265,26 @@ export const en = {
       passwordPlaceholder: 'At least 8 characters',
       submit: 'Create workspace',
       submitting: 'Creating workspace…',
+      // After the sign-up: the workspace is made, but it opens from the email's link
+      checkTitle: 'Check your email',
+      checkBody:
+        'We sent a link to {{email}}. Open it to confirm your email and open your workspace. The link works for 24 hours.',
+      checkHint: 'Can’t find it? Look in the spam folder.',
+      resend: 'Send the link again',
+      resendIn: 'Send the link again in {{seconds}} s',
+      resent: 'A new link is on its way',
+    },
+    // The email's link (/verify-email#<token>)
+    verifyEmail: {
+      checking: 'Confirming your email…',
+      done: 'Email confirmed',
+      invalidTitle: 'This link no longer works',
+      invalidBody:
+        'It was used already, or it has ended. Sign in with your email and password, and we send you a new link.',
+      toSignIn: 'Sign in',
+      // No connection, or the server failing: the link may still be good
+      failedTitle: 'Your email could not be confirmed yet',
+      retry: 'Retry',
     },
   },
   dashboard: {
@@ -7615,7 +7635,11 @@ export const en = {
         chart_created: 'Added the chart of accounts',
         catalog_created: 'Added the starting units, categories and custom fields',
       },
-      auth: { signed_in: 'Signed in', switched_in: 'Switched into this workspace' },
+      auth: {
+        signed_in: 'Signed in',
+        switched_in: 'Switched into this workspace',
+        email_verified: 'Confirmed their email',
+      },
       settings: { updated: 'Changed the settings', logo_changed: 'Changed the logo' },
       branch: {
         created: 'Added a branch',
@@ -8432,6 +8456,11 @@ export const en = {
     // Step 3b: sign-in names no workspace any more, so the words say what to do instead
     not_a_member:
       "This account isn't in any workspace yet. Ask a workspace owner to invite you, or create a workspace.",
+    // The sign-in also sends a new link, so the words say where to look
+    email_not_verified:
+      'Confirm your email first. We sent a new link to your email: open it to sign in.',
+    verification_link_invalid:
+      'This link no longer works. Sign in with your email and password to get a new one.',
     sign_in_required: 'Sign in to continue.',
     session_ended: 'Your session has ended. Sign in again.',
     access_revoked: 'You no longer have access to this workspace. Sign in again.',

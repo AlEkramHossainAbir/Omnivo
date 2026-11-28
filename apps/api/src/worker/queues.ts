@@ -16,6 +16,7 @@ export type QueueName = (typeof QUEUE_NAMES)[number];
 // hold up a workspace's setup or a report.
 const QUEUE_OF = {
   'workspace.created': 'email',
+  'account.verification_requested': 'email',
   'invitation.issued': 'email',
   'document.email_requested': 'email',
   'report.schedule_email': 'email',

@@ -11,6 +11,8 @@ import type { Transaction } from '../tenant/with-tenant.js';
 // compile.
 export const outboxPayloadSchemas = {
   'workspace.created': z.object({ userId: z.uuid() }),
+  // Only who: the email_verifications row says the rest, and the link's token is made by the worker
+  'account.verification_requested': z.object({ userId: z.uuid() }),
   'workspace.setup_requested': z.object({ userId: z.uuid() }),
   // actorUserId: who sent or resent it — their name goes in the email, and they hear if it fails
   'invitation.issued': z.object({ invitationId: z.uuid(), actorUserId: z.uuid() }),

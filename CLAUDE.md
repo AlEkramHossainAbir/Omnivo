@@ -155,8 +155,13 @@ its old name). Runbook: [docs/vps-deploy.en.md](docs/vps-deploy.en.md); addresse
   A new `.env` name a deploy needs goes into **both** `.env` files first.
 - SSH secrets are repository secrets (`VPS_SSH_HOST`, `VPS_SSH_PORT`, `VPS_SSH_USER`, `VPS_SSH_KEY`,
   `VPS_KNOWN_HOSTS`): both stacks are on one server.
-- Production still sends its emails to Mailpit (no real email yet), and the shops on both stacks
-  are the mock shop.
+- **Email (since 2026-11-28):** production sends real email through Resend once its `.env` has
+  `SMTP_URL` (`smtps://resend:<API key>@smtp.resend.com:465`; without it, Mailpit). The demo never
+  sets it and stays on Mailpit. The SMS (phone codes) go to Mailpit on both stacks through their own
+  `SMS_SMTP_URL` (`SMS_MAIL` in `worker.module.ts`), never to Resend: `<phone>@sms.invalid` would
+  bounce and get the account blocked; a production worker without `SMS_SMTP_URL` refuses to start.
+  Runbook: [docs/email-resend.en.md](docs/email-resend.en.md). The shops on both stacks are the mock
+  shop.
 
 ## App UI design system (approved 2026-09-24)
 

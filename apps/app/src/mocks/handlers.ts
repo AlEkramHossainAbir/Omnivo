@@ -495,6 +495,8 @@ import {
 
 // mock সার্ভারের অবস্থা — শুধু এই ট্যাবের memory-তে, reload করলে আবার শুরু থেকে
 let signedIn = true;
+// The company of a sign-up whose email link is not opened yet (see routes.auth.signUp below)
+const MOCK_SIGN_UP_KEY = 'omnivo-mock-sign-up';
 // Step 18c: the sign-in this browser uses, like the API's session id. A new one at every sign-in; a
 // device remembers the one it was last used with (device-data.ts), so revoking it can end it.
 let sessionId = crypto.randomUUID();
@@ -921,7 +923,9 @@ function paymentSnapshot(payment: MockSupplierPayment) {
 }
 
 // UI-র প্রতিটা পথ দেখার জন্য: লগইনে পাসওয়ার্ড "wrong-password" → invalid_credentials,
-// সাইনআপে ঠিকানা "rahman-garments" → slug_taken
+// "unverified-password" → email_not_verified, সাইনআপে ঠিকানা "rahman-garments" → slug_taken.
+// The email check: the mock sends no email, so any token opens /verify-email#<token> (the e2e test
+// and a developer use /verify-email#mock), and "not-a-real-token" shows the "no longer works" page
 export const handlers = [
   // Step 18a: an offline browser (Playwright's context.setOffline, DevTools' "Offline") gets what a
   // dead network gives, a failed fetch. MSW runs these handlers inside the page, so without this
@@ -949,6 +953,7 @@ export const handlers = [
     const body = await readBody(routes.auth.login.body, request);
     await delay();
     if (body.password === 'wrong-password') return problem(401, 'invalid_credentials');
+    if (body.password === 'unverified-password') return problem(403, 'email_not_verified');
     signedIn = true;
     sessionId = crypto.randomUUID();
     return reply(routes.auth.login, session());
@@ -960,12 +965,32 @@ export const handlers = [
     if (body.workspaceSlug === WORKSPACES[0].slug) {
       return problem(409, 'slug_taken', { workspaceSlug: ['slug_taken'] });
     }
+    // No session yet, like the real API. The new workspace waits in sessionStorage: the email's
+    // link is a new page load (a click in a mail program), which starts the mock afresh
+    sessionStorage.setItem(MOCK_SIGN_UP_KEY, body.companyName);
+    signedIn = false;
+    return reply(routes.auth.signUp, { status: 'verify_email', email: body.email });
+  }),
+
+  mock(routes.auth.verifyEmail, async ({ request }) => {
+    const { token } = await readBody(routes.auth.verifyEmail.body, request);
+    await delay();
+    if (token === 'not-a-real-token') return problem(400, 'verification_link_invalid');
     // A new workspace: setup 'pending', so the app goes on to the onboarding wizard
-    workspace = WORKSPACES[0];
-    startFresh(workspace, body.companyName);
+    const companyName = sessionStorage.getItem(MOCK_SIGN_UP_KEY);
+    if (companyName !== null) {
+      sessionStorage.removeItem(MOCK_SIGN_UP_KEY);
+      workspace = WORKSPACES[0];
+      startFresh(workspace, companyName);
+    }
     signedIn = true;
     sessionId = crypto.randomUUID();
-    return reply(routes.auth.signUp, session());
+    return reply(routes.auth.verifyEmail, session());
+  }),
+
+  mock(routes.auth.resendVerification, async () => {
+    await delay();
+    return reply(routes.auth.resendVerification, undefined);
   }),
 
   mock(routes.auth.switchTenant, async ({ request }) => {

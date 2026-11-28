@@ -12,6 +12,7 @@ export const AUDIT_ACTIONS = [
   'workspace.chart_created',
   'auth.signed_in',
   'auth.switched_in',
+  'auth.email_verified',
   'settings.updated',
   'settings.logo_changed',
   'branch.created',

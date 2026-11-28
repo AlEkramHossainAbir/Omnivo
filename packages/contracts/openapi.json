@@ -297,7 +297,7 @@
         "tags": [
           "auth"
         ],
-        "summary": "Create a workspace and its owner, and start a session",
+        "summary": "Create a workspace and its owner, and email the link that confirms the address",
         "security": [],
         "parameters": [],
         "requestBody": {
@@ -351,6 +351,65 @@
                 "schema": {
                   "type": "object",
                   "properties": {
+                    "status": {
+                      "type": "string",
+                      "const": "verify_email"
+                    },
+                    "email": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "email"
+                  ]
+                }
+              }
+            }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/auth/verify-email": {
+      "post": {
+        "operationId": "auth.verifyEmail",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Confirm the email address with the link’s token, and start a session",
+        "security": [],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
                     "accessToken": {
                       "type": "string"
                     },
@@ -367,6 +426,43 @@
                 }
               }
             }
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
+      }
+    },
+    "/auth/resend-verification": {
+      "post": {
+        "operationId": "auth.resendVerification",
+        "tags": [
+          "auth"
+        ],
+        "summary": "Email a new confirmation link, when the address waits for one",
+        "security": [],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "No content"
           },
           "default": {
             "$ref": "#/components/responses/Problem"
@@ -112302,6 +112398,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -113055,6 +113153,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -113859,6 +113959,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -114567,6 +114669,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -115784,6 +115888,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -116537,6 +116643,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -117341,6 +117449,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -118049,6 +118159,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -119536,6 +119648,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -120289,6 +120403,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -121093,6 +121209,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -121801,6 +121919,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -123018,6 +123138,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -123771,6 +123893,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -124575,6 +124699,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -125283,6 +125409,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -126510,6 +126638,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -127263,6 +127393,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -128067,6 +128199,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -128775,6 +128909,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -130004,6 +130140,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -130757,6 +130895,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -131561,6 +131701,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -132269,6 +132411,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -133496,6 +133640,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -134249,6 +134395,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -135053,6 +135201,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -135761,6 +135911,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -136990,6 +137142,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -137743,6 +137897,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -138547,6 +138703,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -139255,6 +139413,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -140478,6 +140638,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -141231,6 +141393,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -142035,6 +142199,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -142743,6 +142909,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -144166,6 +144334,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -144919,6 +145089,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -145723,6 +145895,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -146431,6 +146605,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -147660,6 +147836,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -148413,6 +148591,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -149217,6 +149397,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -149925,6 +150107,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -151152,6 +151336,8 @@
                             "already_invited",
                             "invalid_credentials",
                             "not_a_member",
+                            "email_not_verified",
+                            "verification_link_invalid",
                             "sign_in_required",
                             "session_ended",
                             "access_revoked",
@@ -151905,6 +152091,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -152709,6 +152897,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",
@@ -153417,6 +153607,8 @@
                                   "already_invited",
                                   "invalid_credentials",
                                   "not_a_member",
+                                  "email_not_verified",
+                                  "verification_link_invalid",
                                   "sign_in_required",
                                   "session_ended",
                                   "access_revoked",

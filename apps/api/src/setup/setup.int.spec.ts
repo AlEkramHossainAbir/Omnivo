@@ -109,8 +109,12 @@ describe('sign-up', () => {
     expect(me.tenant.setupStatus).toBe('pending');
   });
 
-  it('sends the welcome email from the worker, with how to sign in', async () => {
-    const welcome = await eventually(() => lastMailTo(mail.apiUrl, 'farhana@rahmangarments.com'));
+  // Since the email check, the welcome email follows the confirmed address (the helper's signUp
+  // opens the link), so it is found by its subject: the link's own email may come before or after
+  it('sends the welcome email from the worker once the address is confirmed', async () => {
+    const welcome = await eventually(() =>
+      lastMailTo(mail.apiUrl, 'farhana@rahmangarments.com', 'Welcome to Omnivo, Farhana Rahman'),
+    );
     expect(welcome.subject).toBe('Welcome to Omnivo, Farhana Rahman');
     // Step 3b: sign-in needs only the email and the password, so the email names no workspace address
     expect(welcome.text).toContain('Sign in with this email address and your password.');

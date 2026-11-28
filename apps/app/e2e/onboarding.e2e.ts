@@ -24,6 +24,12 @@ async function signUpNewWorkspace(page: Page): Promise<void> {
   await page.getByLabel('Work email').fill('karim@karimknitwear.com');
   await page.getByLabel('Password').fill('Ashulia-knit-2026');
   await page.getByRole('button', { name: 'Create workspace' }).click();
+
+  // The workspace opens from the email's link. The mock sends no email and takes any token
+  await expect(page.getByRole('heading', { name: 'Check your email' })).toBeVisible();
+  await expect(page.getByText('We sent a link to karim@karimknitwear.com.')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Send the link again in \d+ s/ })).toBeDisabled();
+  await page.goto('/verify-email#mock-link');
 }
 
 test('a new workspace goes through the setup wizard', async ({ page }) => {

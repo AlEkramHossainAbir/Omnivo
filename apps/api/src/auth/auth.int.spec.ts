@@ -5,6 +5,7 @@ import {
   meResponseSchema,
   PERMISSION_KEYS,
   problemSchema,
+  signUpResultSchema,
   type SignUpInput,
 } from '@omnivo/contracts';
 import postgres from 'postgres';
@@ -19,7 +20,14 @@ import {
   type TestPostgres,
   type TestRedis,
 } from '../testing/containers.js';
-import { bearer, refreshCookieOf, sessionOf, signUp } from '../testing/http.js';
+import {
+  bearer,
+  refreshCookieOf,
+  sessionOf,
+  signUp,
+  verificationTokenFor,
+  verifyEmail,
+} from '../testing/http.js';
 
 let pg: TestPostgres;
 let redis: TestRedis;
@@ -78,22 +86,32 @@ afterAll(async () => {
 });
 
 describe('sign-up', () => {
-  it('creates a workspace, returns an access token and sets a locked-down refresh cookie', async () => {
+  it('creates a workspace but no session; the email’s link starts one, with a locked-down cookie', async () => {
     const res = await app.inject({ method: 'POST', url: '/auth/sign-up', payload: rahman });
     expect(res.statusCode).toBe(201);
     expect(res.headers['cache-control']).toBe('no-store');
+    expect(signUpResultSchema.parse(res.json())).toEqual({
+      status: 'verify_email',
+      email: rahman.email,
+    });
+    // No token until the address is confirmed
+    expect(res.cookies.find((c) => c.name === 'omnivo_rt')).toBeUndefined();
+    expect(res.body).not.toContain('accessToken');
 
-    const cookie = res.cookies.find((c) => c.name === 'omnivo_rt');
+    const verified = await verifyEmail(app, await verificationTokenFor(app, rahman.email));
+    expect(verified.statusCode).toBe(200);
+    expect(verified.headers['cache-control']).toBe('no-store');
+    const cookie = verified.cookies.find((c) => c.name === 'omnivo_rt');
     expect(cookie).toMatchObject({ httpOnly: true, sameSite: 'Strict', path: '/auth' });
     // refresh token কখনো JSON-এ না
-    expect(res.body).not.toContain(cookie?.value);
+    expect(verified.body).not.toContain(cookie?.value);
 
     const me = meResponseSchema.parse(
       (
         await app.inject({
           method: 'GET',
           url: '/auth/me',
-          headers: bearer(sessionOf(res).accessToken),
+          headers: bearer(sessionOf(verified).accessToken),
         })
       ).json(),
     );
@@ -155,6 +173,98 @@ describe('sign-up', () => {
       WHERE u.email = ${rahman.email} AND a.provider_id = 'credential'`;
     expect(row?.password).toBeTypeOf('string');
     expect(row?.password).not.toContain(rahman.password);
+  });
+});
+
+describe('the email check', () => {
+  // One owner per test: the link and the "send again" limit are per person
+  function owner(slug: string): SignUpInput {
+    return {
+      companyName: `${slug} Ltd.`,
+      workspaceSlug: slug,
+      fullName: 'Nadia Islam',
+      email: `nadia@${slug}.com`,
+      password: 'Depot-Sylhet-2026',
+    };
+  }
+
+  async function signUpOnly(input: SignUpInput): Promise<void> {
+    const res = await app.inject({ method: 'POST', url: '/auth/sign-up', payload: input });
+    expect(res.statusCode).toBe(201);
+  }
+
+  function codeOf(res: Awaited<ReturnType<typeof login>>): string {
+    return problemSchema.parse(res.json()).code;
+  }
+
+  it('refuses a sign-in until the address is confirmed; that sign-in’s link lets the person in', async () => {
+    const nadia = owner('bogura-agro');
+    await signUpOnly(nadia);
+
+    const refused = await login({ email: nadia.email, password: nadia.password });
+    expect(refused.statusCode).toBe(403);
+    expect(codeOf(refused)).toBe('email_not_verified');
+    expect(refused.cookies.find((c) => c.name === 'omnivo_rt')).toBeUndefined();
+    // The refused sign-in's session took the sign-up's place, which never had a token and is gone
+    const [row] = await superuser<{ n: number }[]>`
+      SELECT count(*)::int AS n FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE u.email = ${nadia.email}`;
+    expect(row?.n).toBe(1);
+
+    const verified = await verifyEmail(app, await verificationTokenFor(app, nadia.email));
+    expect(verified.statusCode).toBe(200);
+    expect(await workspaceOf(verified)).toBe(nadia.workspaceSlug);
+    // From now on the password is enough
+    const signedIn = await login({ email: nadia.email, password: nadia.password });
+    expect(signedIn.statusCode).toBe(200);
+  });
+
+  it('opens a link once', async () => {
+    const nadia = owner('khulna-fish');
+    await signUpOnly(nadia);
+    const token = await verificationTokenFor(app, nadia.email);
+
+    expect((await verifyEmail(app, token)).statusCode).toBe(200);
+    const again = await verifyEmail(app, token);
+    expect(again.statusCode).toBe(400);
+    expect(codeOf(again)).toBe('verification_link_invalid');
+  });
+
+  it('gives an unknown link and an ended one the same answer', async () => {
+    const unknown = await verifyEmail(app, 'not-a-real-token');
+    expect(unknown.statusCode).toBe(400);
+    expect(codeOf(unknown)).toBe('verification_link_invalid');
+
+    const nadia = owner('rangpur-tea');
+    await signUpOnly(nadia);
+    const token = await verificationTokenFor(app, nadia.email);
+    await superuser`
+      UPDATE email_verifications SET expires_at = now() - interval '1 minute'
+      WHERE user_id = (SELECT id FROM users WHERE email = ${nadia.email})`;
+    const ended = await verifyEmail(app, token);
+    expect(ended.statusCode).toBe(400);
+    expect(codeOf(ended)).toBe('verification_link_invalid');
+  });
+
+  it('answers "send the link again" with 204 for any address, and stops the old link', async () => {
+    const nadia = owner('cumilla-rice');
+    await signUpOnly(nadia);
+    const oldToken = await verificationTokenFor(app, nadia.email);
+
+    for (const email of ['nobody@nowhere.com', rahman.email, nadia.email]) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/auth/resend-verification',
+        payload: { email },
+      });
+      expect(res.statusCode).toBe(204);
+    }
+    // The new link is the worker's to make; the old one stopped at once
+    const [row] = await superuser<{ tokenHash: string | null; sentAt: Date | null }[]>`
+      SELECT token_hash AS "tokenHash", sent_at AS "sentAt" FROM email_verifications
+      WHERE user_id = (SELECT id FROM users WHERE email = ${nadia.email})`;
+    expect(row).toEqual({ tokenHash: null, sentAt: null });
+    expect((await verifyEmail(app, oldToken)).statusCode).toBe(400);
   });
 });
 

@@ -42,6 +42,8 @@ export const ERROR_CODES = [
   // auth ও অনুমতি
   'invalid_credentials',
   'not_a_member',
+  'email_not_verified',
+  'verification_link_invalid',
   'sign_in_required',
   'session_ended',
   'access_revoked',
