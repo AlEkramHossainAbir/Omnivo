@@ -109,10 +109,12 @@ describe('sign-up', () => {
     expect(me.tenant.setupStatus).toBe('pending');
   });
 
-  it('sends the welcome email from the worker, with the workspace address', async () => {
+  it('sends the welcome email from the worker, with how to sign in', async () => {
     const welcome = await eventually(() => lastMailTo(mail.apiUrl, 'farhana@rahmangarments.com'));
     expect(welcome.subject).toBe('Welcome to Omnivo, Farhana Rahman');
-    expect(welcome.text).toContain('rahman-garments.omnivo.app');
+    // Step 3b: sign-in needs only the email and the password, so the email names no workspace address
+    expect(welcome.text).toContain('Sign in with this email address and your password.');
+    expect(welcome.text).not.toContain('omnivo.app');
     expect(welcome.text).toContain('http://localhost:5173/login');
   });
 });
