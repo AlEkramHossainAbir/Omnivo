@@ -43,11 +43,7 @@ export interface Mail {
 // Throws when there is none yet — wrap it in eventually(): the worker sends a moment after the
 // request has answered. The subject matters when one address gets two kinds of email in any order
 // (a sign-up's link and its welcome email)
-export async function lastMailTo(
-  apiUrl: string,
-  address: string,
-  subject?: string,
-): Promise<Mail> {
+export async function lastMailTo(apiUrl: string, address: string, subject?: string): Promise<Mail> {
   const mailbox = mailboxSchema.parse(await (await fetch(`${apiUrl}/api/v1/messages`)).json());
   const found = mailbox.messages.find(
     (message) =>
